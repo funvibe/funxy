@@ -16,7 +16,7 @@ Restart VSCode and open any `.lang` or `.funxy` file.
 cd editors/vscode
 npm install -g @vscode/vsce
 vsce package
-code --install-extension funxy-language-0.1.0.vsix
+code --install-extension funxy-language-0.4.1.vsix
 ```
 
 ## Sublime Text
@@ -79,7 +79,9 @@ File: `examples/playground/playground.html` — contains full CodeMirror mode de
 | Strings | `"hello"`, `"${name}"` | `string.quoted.double` |
 | Chars | `'a'`, `'\n'` | `string.quoted.single` |
 | Bytes | `@"data"`, `@x"FF"`, `@b"01"` | `string.quoted.other` |
-| Numbers | `42`, `3.14`, `0xFF` | `constant.numeric` |
+| Bits | `#b"01"`, `#x"FF"`, `#o"77"` | `string.quoted.other` |
+| Format | `%"%.2f"`, `%"Hello %s"` | `string.quoted.other` |
+| Numbers | `42`, `3.14`, `0xFF`, `100n` | `constant.numeric` |
 | Operators | `->`, `|>`, `>>=`, `++`, `::` | `keyword.operator` |
 | Comments | `// comment` | `comment.line` |
 | Builtins | `print`, `show`, `map`, `filter` | `support.function` |

@@ -1,11 +1,11 @@
-# 01. Option и Result
+# 01. Option and Result
 
-## Задача
-Обрабатывать отсутствующие значения и ошибки без null/exceptions.
+## Task
+Handle missing values and errors without null/exceptions.
 
-## Option: может быть значение, а может не быть
+## Option: may have a value, may not have
 
-Option — встроенный тип: `Some T | Zero`.
+Option is a built-in type: `Some T | Zero`.
 
 ```rust
 fun safeDivide(a: Int, b: Int) -> Option<Int> {
@@ -16,7 +16,7 @@ print(safeDivide(10, 2))  // Some(5)
 print(safeDivide(10, 0))  // Zero
 ```
 
-## Обработка Option
+## Handling Option
 
 ```rust
 fun showResult(opt: Option<Int>) -> String {
@@ -30,10 +30,10 @@ print(showResult(Some(42)))  // Got: 42
 print(showResult(Zero))      // Nothing
 ```
 
-## Быстрая проверка: `T?` синтаксис
+## Quick check: `T?` syntax
 
 ```rust
-// T? эквивалентно T | Nil
+// T? is equivalent to T | Nil
 type User = { name: String, id: Int }
 
 fun findUser(id: Int) -> User? {
@@ -47,9 +47,9 @@ match user {
 }
 ```
 
-## Result: успех или ошибка с информацией
+## Result: success or error with information
 
-Result — встроенный тип: `Ok A | Fail E`.
+Result is a built-in type: `Ok A | Fail E`.
 
 ```rust
 fun parseNumber(s: String) -> Result<String, Int> {
@@ -63,7 +63,7 @@ print(parseNumber("42"))     // Ok(42)
 print(parseNumber("hello"))  // Fail("Cannot parse: hello")
 ```
 
-## Обработка Result
+## Handling Result
 
 ```rust
 fun handleResult(r: Result<String, Int>) -> String {
@@ -77,10 +77,10 @@ print(handleResult(Ok(100)))          // Success: 100
 print(handleResult(Fail("oops")))     // Error: oops
 ```
 
-## Функции для работы с Option
+## Functions for working with Option
 
 ```rust
-// Применить функцию к значению внутри Option
+// Apply function to value inside Option
 fun mapOption(opt, f) {
     match opt {
         Some(x) -> Some(f(x))
@@ -88,7 +88,7 @@ fun mapOption(opt, f) {
     }
 }
 
-// Значение по умолчанию
+// Default value
 fun getOrElse(opt, default) {
     match opt {
         Some(x) -> x
@@ -96,7 +96,7 @@ fun getOrElse(opt, default) {
     }
 }
 
-// Примеры
+// Examples
 x = Some(10)
 doubled = mapOption(x, fun(n) -> n * 2)  // Some(20)
 print(doubled)
@@ -105,10 +105,10 @@ value = getOrElse(Zero, 42)  // 42
 print(value)
 ```
 
-## Цепочка операций (flatMap)
+## Chain of operations (flatMap)
 
 ```rust
-// Цепочка операций с Option
+// Chain of operations with Option
 fun flatMapOption(opt, f) {
     match opt {
         Some(x) -> f(x)
@@ -116,7 +116,7 @@ fun flatMapOption(opt, f) {
     }
 }
 
-// Пример: безопасное деление с цепочкой
+// Example: safe division with chain
 fun safeDivide(a: Int, b: Int) -> Option<Int> {
     if b == 0 { Zero } else { Some(a / b) }
 }
@@ -128,7 +128,7 @@ result = Some(100)
 print(result)  // Some(10)
 ```
 
-## Практический пример: валидация формы
+## Practical example: form validation
 
 ```rust
 import "lib/list" (contains)
@@ -158,7 +158,7 @@ fun validateUser(name: String, email: String) -> Result<ValidationError, User> {
     }
 }
 
-// Использование
+// Usage
 match validateUser("Alice", "alice@example.com") {
     Ok(user) -> print("Valid: " ++ user.name)
     Fail(EmptyField(f)) -> print("Field " ++ f ++ " is empty")
@@ -167,7 +167,7 @@ match validateUser("Alice", "alice@example.com") {
 }
 ```
 
-## Комбинирование нескольких Result
+## Combining multiple Results
 
 ```rust
 fun sequence(results) {
@@ -188,16 +188,16 @@ withError = [Ok(1), Fail("oops"), Ok(3)]
 print(sequence(withError))  // Fail("oops")
 ```
 
-## Когда использовать что?
+## When to use what?
 
-| Ситуация | Тип |
+| Situation | Type |
 |----------|-----|
-| Значение может отсутствовать | `Option<T>` или `T?` |
-| Нужна информация об ошибке | `Result<E, A>` |
-| Быстрый null-check | `T?` (T \| Nil) |
-| Сложная обработка ошибок | `Result<E, A>` |
+| Value may be missing | `Option<T>` or `T?` |
+| Need error information | `Result<E, A>` |
+| Quick null-check | `T?` (T \| Nil) |
+| Complex error handling | `Result<E, A>` |
 
-## Преобразование между типами
+## Converting between types
 
 ```rust
 fun optionToResult(opt, error) {
@@ -214,11 +214,10 @@ fun resultToOption(res) {
     }
 }
 
-// Примеры
+// Examples
 print(optionToResult(Some(42), "missing"))  // Ok(42)
 print(optionToResult(Zero, "missing"))      // Fail("missing")
 
 print(resultToOption(Ok(42)))       // Some(42)
 print(resultToOption(Fail("err")))  // Zero
 ```
-

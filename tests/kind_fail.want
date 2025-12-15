@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error at 3:26 [A003]: type error: Type Box has kind (* -> *), cannot be applied to argument 2
+- error at 4:25 [A003]: type error: Type Int has kind *, cannot be applied to argument 1
+- error at 5:29 [A003]: type error: Type argument mismatch: expected kind *, got (* -> *)

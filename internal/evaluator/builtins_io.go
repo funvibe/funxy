@@ -60,7 +60,7 @@ func stringToCharList(s string) []Object {
 // charListToString converts List<Char> to Go string
 func charListToString(list *List) string {
 	runes := make([]rune, list.len())
-	for i, elem := range list.toSlice() {
+	for i, elem := range list.ToSlice() {
 		if ch, ok := elem.(*Char); ok {
 			runes[i] = rune(ch.Value)
 		}

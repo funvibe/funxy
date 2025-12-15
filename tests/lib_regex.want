@@ -1,0 +1,25 @@
+true
+false
+true
+false
+Some("123")
+Zero
+["1", "2", "3", "4"]
+[]
+2024-03-15
+2024
+03
+15
+Zero
+aXb2c3
+abc
+aXbXcX
+[hello] [world]
+["a", "b", "c", "d"]
+["hello", "world", "foo"]
+Valid pattern
+Invalid pattern detected
+true
+false
+true
+lib/regex tests passed!

@@ -1,0 +1,24 @@
+=== Basic logging ===
+=== Level filtering ===
+=== Structured logging ===
+=== JSON format ===
+=== Prefixed logger ===
+=== Colors disabled ===
+=== lib/log tests passed! ===
+[90m2025-12-08T15:21:44Z DEBUG[0m Debug message
+[34m2025-12-08T15:21:44Z INFO[0m Info message
+[33m2025-12-08T15:21:44Z WARN[0m Warning message
+[31m2025-12-08T15:21:44Z ERROR[0m Error message
+[31m2025-12-08T15:21:44Z FATAL[0m Fatal message (no exit)
+[33m2025-12-08T15:21:44Z WARN[0m This should appear
+[31m2025-12-08T15:21:44Z ERROR[0m This should appear too
+[34m2025-12-08T15:21:44Z INFO[0m User action action=login duration_ms=45 user_id=123
+{"level":"info","msg":"JSON log message","time":"2025-12-08T15:21:44Z"}
+{"level":"warn","msg":"Request failed","path":"/api/users","status":"500","time":"2025-12-08T15:21:44Z"}
+[34m2025-12-08T15:21:44Z INFO[0m [http] Server started
+[33m2025-12-08T15:21:44Z WARN[0m [http] Slow request
+[34m2025-12-08T15:21:44Z INFO[0m [db] Connected to database
+[31m2025-12-08T15:21:44Z ERROR[0m [db] Query failed
+[34m2025-12-08T15:21:44Z INFO[0m [http] Request completed method=GET path=/api/health status=200
+2025-12-08T15:21:44Z INFO No colors here
+[34m2025-12-08T15:21:44Z INFO[0m Colors back

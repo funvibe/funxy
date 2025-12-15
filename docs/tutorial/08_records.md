@@ -1,39 +1,39 @@
-# Записи (Records)
+# Records
 
-Записи (Records) — это структурные типы с именованными полями.
+Records are structural types with named fields.
 
-## Определение типа записи
+## Record Type Definition
 
 ```rust
-// Именованный тип записи
+// Named record type
 type Point = { x: Int, y: Int }
 
-// Тип с несколькими полями разных типов
+// Type with multiple fields of different types
 type Person = { name: String, age: Int, active: Bool }
 
-// Вложенные записи
+// Nested records
 type Rectangle = { topLeft: Point, bottomRight: Point }
 ```
 
-## Создание записей
+## Creating Records
 
-### Литералы записей
+### Record Literals
 
 ```rust
 type Point = { x: Int, y: Int }
 type Person = { name: String, age: Int, active: Bool }
 
-// Анонимная запись (без объявления типа)
+// Anonymous record (without type declaration)
 point = { x: 10, y: 20 }
 
-// Запись с аннотацией типа
+// Record with type annotation
 p: Point = { x: 10, y: 20 }
 
-// Порядок полей не важен
+// Field order doesn't matter
 person: Person = { age: 30, name: "Alice", active: true }
 ```
 
-### Пустая запись
+### Empty Record
 
 ```rust
 type Empty = {}
@@ -41,9 +41,9 @@ type Empty = {}
 e: Empty = {}
 ```
 
-## Доступ к полям
+## Field Access
 
-Используйте точечную нотацию:
+Use dot notation:
 
 ```rust
 p = { x: 10, y: 20 }
@@ -51,58 +51,58 @@ p = { x: 10, y: 20 }
 print(p.x)    // 10
 print(p.y)    // 20
 
-// Вложенный доступ
+// Nested access
 rect = { topLeft: { x: 0, y: 0 }, bottomRight: { x: 100, y: 50 } }
 print(rect.topLeft.x)      // 0
 print(rect.bottomRight.y)  // 50
 ```
 
-## Изменение полей
+## Field Modification
 
-Funxy позволяет изменять поля записей:
+Funxy allows modifying record fields:
 
 ```rust
 p = { x: 10, y: 20 }
 p.x = 100
 print(p.x)  // 100
 
-// Вложенное изменение
+// Nested modification
 rect = { tl: { x: 0, y: 0 }, br: { x: 10, y: 10 } }
 rect.tl.y = 50
 print(rect.tl.y)  // 50
 ```
 
-## Обновление записи (spread)
+## Record Update (spread)
 
-Создание новой записи на основе существующей с изменением некоторых полей:
+Creating a new record based on an existing one with some fields changed:
 
 ```rust
 type Point = { x: Int, y: Int }
 
 base: Point = { x: 1, y: 2 }
 
-// Создать новую запись, изменив только x
+// Create new record, changing only x
 updated = { ...base, x: 10 }
 print(updated.x)  // 10
-print(updated.y)  // 2 (из base)
+print(updated.y)  // 2 (from base)
 
-// Оригинал не изменён
+// Original is unchanged
 print(base.x)     // 1
 ```
 
-## Деструктуризация записей
+## Record Destructuring
 
-Записи поддерживают деструктуризацию для извлечения полей в переменные:
+Records support destructuring to extract fields into variables:
 
 ```rust
-// Базовая деструктуризация
+// Basic destructuring
 p = { x: 3, y: 4 }
 { x: a, y: b } = p
 print(a)  // 3
 print(b)  // 4
 ```
 
-### С именованными типами
+### With Named Types
 
 ```rust
 type Point = { x: Int, y: Int }
@@ -113,19 +113,19 @@ print(x)  // 10
 print(y)  // 20
 ```
 
-### Частичная деструктуризация
+### Partial Destructuring
 
-Можно извлечь только нужные поля:
+You can extract only the needed fields:
 
 ```rust
 person = { name: "Alice", age: 30, city: "Moscow" }
 
-// Только name
+// Only name
 { name: n } = person
 print(n)  // Alice
 ```
 
-### Вложенная деструктуризация
+### Nested Destructuring
 
 ```rust
 data = { 
@@ -139,7 +139,7 @@ print(r)         // admin
 print(c)         // 42
 ```
 
-### В функциях
+### In Functions
 
 ```rust
 import "lib/math" (sqrt)
@@ -155,61 +155,61 @@ p: Point = { x: 3, y: 4 }
 print(magnitude(p))  // 5
 ```
 
-## Номинальные vs Структурные типы
+## Nominal vs Structural Types
 
-### Структурные типы (анонимные записи)
+### Structural Types (Anonymous Records)
 
-Без аннотации типа запись имеет структурный тип:
+Without type annotation, a record has a structural type:
 
 ```rust
 point1 = { x: 10, y: 20 }
 print(getType(point1))  // { x: Int, y: Int }
 ```
 
-### Номинальные типы (определение типа записи)
+### Nominal Types (Record Type Definition)
 
-Когда вы определяете тип записи и используете аннотацию, запись имеет номинальный тип:
+When you define a record type and use annotation, the record has a nominal type:
 
 ```rust
-// Определение типа записи
+// Record type definition
 type Point = { x: Int, y: Int }
 
 p: Point = { x: 10, y: 20 }
 print(getType(p))  // Point
 ```
 
-**Важно:** `type Point = { ... }` — это **определение типа записи**, а не type alias. Type alias определяется с ключевым словом `alias`:
+**Important:** `type Point = { ... }` is a **record type definition**, not a type alias. Type alias is defined with the `alias` keyword:
 
 ```rust
 type Point = { x: Int, y: Int }
 
-// Type alias — просто другое имя для существующего типа
+// Type alias — just another name for existing type
 type alias Coordinate = Point
 ```
 
-### Почему это важно?
+### Why is this important?
 
-Номинальные типы нужны для:
+Nominal types are needed for:
 
-1. **Extension methods** — методы привязаны к имени типа:
+1. **Extension methods** — methods are bound to the type name:
 
 ```rust
 type Point = { x: Int, y: Int }
 
 fun (p: Point) length() -> Int {
-    p.x + p.y  // упрощённо
+    p.x + p.y  // simplified
 }
 
-// Работает только с Point
+// Works only with Point
 p: Point = { x: 3, y: 4 }
 print(p.length())  // 7
 
-// НЕ работает с анонимной записью
+// DOESN'T work with anonymous record
 anon = { x: 3, y: 4 }
-// anon.length()  // Ошибка! У { x: Int, y: Int } нет метода length
+// anon.length()  // Error! { x: Int, y: Int } has no method length
 ```
 
-2. **Trait instances** — реализации трейтов привязаны к имени типа:
+2. **Trait instances** — trait implementations are bound to the type name:
 
 ```rust
 type Point = { x: Int, y: Int }
@@ -219,36 +219,36 @@ instance Default Point {}
 p: Point = default(Point)  // { x: 0, y: 0 }
 ```
 
-3. **Ясность кода** — имена типов документируют намерение:
+3. **Code clarity** — type names document intent:
 
 ```rust
 type Point = { x: Int, y: Int }
 
-// Неясно что это
+// Unclear what this is
 fun processAnon(data: { x: Int, y: Int }) -> Int { data.x + data.y }
 
-// Ясно что это координата
+// Clear this is a coordinate
 fun processNamed(data: Point) -> Int { data.x + data.y }
 ```
 
 ## Extension Methods
 
-Определение методов на записях:
+Defining methods on records:
 
 ```rust
 type Point = { x: Int, y: Int }
 
-// Метод без параметров
+// Method without parameters
 fun (p: Point) distanceFromOrigin() -> Int {
     p.x * p.x + p.y * p.y
 }
 
-// Метод с параметрами
+// Method with parameters
 fun (p: Point) add(other: Point) -> Point {
     { x: p.x + other.x, y: p.y + other.y }
 }
 
-// Использование
+// Usage
 p1: Point = { x: 3, y: 4 }
 p2: Point = { x: 1, y: 1 }
 
@@ -258,10 +258,10 @@ print(p1.add(p2).x)             // 4
 
 ## Pattern Matching
 
-Анонимные записи поддерживают паттерн-матчинг:
+Anonymous records support pattern matching:
 
 ```rust
-// Pattern matching работает с анонимными записями
+// Pattern matching works with anonymous records
 fun describe(p: { x: Int, y: Int }) -> String {
     match p {
         { x: 0, y: 0 } -> "origin"
@@ -275,7 +275,7 @@ p = { x: 0, y: 5 }
 print(describe(p))  // "on Y axis"
 ```
 
-Для именованных типов записей используйте доступ к полям:
+For named record types, use field access:
 
 ```rust
 type Point = { x: Int, y: Int }
@@ -291,45 +291,45 @@ p: Point = { x: 0, y: 5 }
 print(describePoint(p))  // "on Y axis"
 ```
 
-### Частичный матчинг (Row Polymorphism)
+### Partial Matching (Row Polymorphism)
 
-Можно матчить только часть полей:
+You can match only part of the fields:
 
 ```rust
 r = { x: 10, y: 20, z: 30 }
 
 match r {
-    { x: val } -> print(val)  // 10 — остальные поля игнорируются
+    { x: val } -> print(val)  // 10 — other fields are ignored
 }
 ```
 
 ## Row Polymorphism
 
-Функция может принимать записи с "дополнительными" полями. В отличие от некоторых языков, синтаксис `...` **не требуется** — row polymorphism работает автоматически:
+A function can accept records with "additional" fields. Unlike some languages, the `...` syntax is **not required** — row polymorphism works automatically:
 
 ```rust
-// Функция ожидает запись с полем x (без "...")
+// Function expects a record with field x (without "...")
 fun getX(r: { x: Int }) -> Int {
     r.x
 }
 
-// Можно передать запись с любым количеством дополнительных полей
+// You can pass a record with any number of additional fields
 point = { x: 10, y: 20 }
 print(getX(point))  // 10
 
 extended = { x: 5, y: 6, z: 7, name: "test" }
 print(getX(extended))  // 5
 
-// Даже совершенно разные записи, если есть нужное поле
+// Even completely different records, if they have the needed field
 config = { x: 100, host: "localhost", port: 8080 }
 print(getX(config))  // 100
 ```
 
-> **Примечание**: Синтаксис `{ x: Int, ... }` для row polymorphism **не нужен** и не поддерживается. Язык автоматически допускает любые записи, содержащие как минимум указанные поля.
+> **Note**: The `{ x: Int, ... }` syntax for row polymorphism is **not needed** and not supported. The language automatically allows any records containing at least the specified fields.
 
-## Записи в функциях
+## Records in Functions
 
-### Как параметры
+### As Parameters
 
 ```rust
 type Config = { host: String, port: Int, debug: Bool }
@@ -342,7 +342,7 @@ config: Config = { host: "localhost", port: 8080, debug: true }
 print(connect(config))  // "localhost:8080"
 ```
 
-### Как возвращаемое значение
+### As Return Value
 
 ```rust
 type Point = { x: Int, y: Int }
@@ -355,7 +355,7 @@ p = makePoint(10, 20)
 print(p.x)  // 10
 ```
 
-## Generics с записями
+## Generics with Records
 
 ```rust
 type Box<T> = { value: T }
@@ -371,9 +371,9 @@ strBox = makeBox("hello")
 print(strBox.value)  // "hello"
 ```
 
-## Практические примеры
+## Practical Examples
 
-### Конфигурация
+### Configuration
 
 ```rust
 type ServerConfig = {
@@ -390,11 +390,11 @@ defaultConfig: ServerConfig = {
     debug: false
 }
 
-// Создать конфигурацию для production
+// Create configuration for production
 prodConfig = { ...defaultConfig, host: "api.example.com", debug: false }
 ```
 
-### Состояние в игре
+### Game State
 
 ```rust
 type Player = { name: String, health: Int, x: Int, y: Int }
@@ -414,7 +414,7 @@ print(player.health)  // 80
 print(player.x)       // 10
 ```
 
-### DTO для API
+### DTO for API
 
 ```rust
 type User = { id: Int, name: String, email: String }
@@ -425,40 +425,39 @@ fun createUser(req: CreateUserRequest, id: Int) -> User {
 }
 ```
 
-## Когда использовать Records
+## When to Use Records
 
-**Используйте Records когда:**
-- Структура данных фиксирована и известна заранее
-- Нужна типизация каждого поля
-- Хотите использовать extension methods
-- Хотите реализовать трейты для типа
+**Use Records when:**
+- Data structure is fixed and known in advance
+- Need typing for each field
+- Want to use extension methods
+- Want to implement traits for the type
 
-**Используйте Map когда:**
-- Ключи динамические или неизвестны заранее
-- Все значения одного типа
-- Нужен быстрый поиск по произвольному ключу
+**Use Map when:**
+- Keys are dynamic or unknown in advance
+- All values are of the same type
+- Need fast lookup by arbitrary key
 
-**Используйте Tuple когда:**
-- Нужна фиксированная коллекция без имён полей
-- Данные временные (например, возврат нескольких значений)
+**Use Tuple when:**
+- Need a fixed collection without field names
+- Data is temporary (e.g., returning multiple values)
 
-## Сводка
+## Summary
 
-| Операция | Синтаксис | Пример |
+| Operation | Syntax | Example |
 |----------|-----------|--------|
-| Определение типа | `type Name = { field: Type }` | `type Point = { x: Int, y: Int }` |
-| Создание | `{ field: value }` | `{ x: 10, y: 20 }` |
-| С аннотацией | `name: Type = { ... }` | `p: Point = { x: 10, y: 20 }` |
-| Доступ к полю | `record.field` | `p.x` |
-| Изменение поля | `record.field = value` | `p.x = 100` |
+| Type definition | `type Name = { field: Type }` | `type Point = { x: Int, y: Int }` |
+| Creation | `{ field: value }` | `{ x: 10, y: 20 }` |
+| With annotation | `name: Type = { ... }` | `p: Point = { x: 10, y: 20 }` |
+| Field access | `record.field` | `p.x` |
+| Field modification | `record.field = value` | `p.x = 100` |
 | Spread/Update | `{ ...base, field: value }` | `{ ...p, x: 0 }` |
 | Extension method | `fun (r: Type) name() { }` | `fun (p: Point) len() { }` |
 | Pattern match | `match r { { f: v } -> ... }` | `match p { { x: 0 } -> "zero" }` |
 
-## См. также
+## See Also
 
-- [Custom Types](06_custom_types.md) — ADT и type aliases
-- [Pattern Matching](07_pattern_matching.md) — деструктуризация записей
-- [Traits](08_traits.md) — реализация трейтов для записей
-- [Maps](24_maps.md) — динамические ассоциативные массивы
-
+- [Custom Types](06_custom_types.md) — ADT and type aliases
+- [Pattern Matching](07_pattern_matching.md) — record destructuring
+- [Traits](08_traits.md) — trait implementation for records
+- [Maps](24_maps.md) — dynamic associative arrays

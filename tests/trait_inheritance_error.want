@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 14:9 [A003]: type error: cannot implement Ord for Int: missing implementation of super trait Cmp

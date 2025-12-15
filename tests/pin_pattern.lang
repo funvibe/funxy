@@ -1,0 +1,22 @@
+// Test pin pattern (^variable)
+target = 10
+matched = match 10 {
+    ^target -> true
+    _ -> false
+}
+print("Pin match success: " ++ show(matched))
+
+matched_fail = match 20 {
+    ^target -> true
+    _ -> false
+}
+print("Pin match fail: " ++ show(matched_fail))
+
+// Test pin in nested pattern
+user = { name: "Alice", age: 30 }
+target_age = 30
+matched_nested = match user {
+    { age: ^target_age } -> "Correct age"
+    _ -> "Wrong age"
+}
+print("Nested pin: " ++ matched_nested)

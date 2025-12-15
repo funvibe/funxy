@@ -1,0 +1,11 @@
+true
+true
+false
+true
+true
+true
+true
+type(Int)
+type(String)
+type(String)
+lib/sys tests passed!

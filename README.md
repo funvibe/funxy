@@ -11,6 +11,8 @@ Download from [Releases](https://github.com/funvibe/funxy/releases):
 - Linux: `funxy-linux-amd64` or `funxy-linux-arm64`
 - Windows: `funxy-windows-amd64.exe`
 
+Each release also includes a `-tree` variant (e.g., `funxy-darwin-arm64-tree`) which uses the legacy Tree-Walk interpreter. This is slower but provides more detailed stack traces for debugging compiler issues.
+
 ```bash
 mv funxy-darwin-arm64 funxy
 ./funxy hello.lang
@@ -23,6 +25,16 @@ git clone https://github.com/funvibe/funxy
 cd funxy
 make build
 ./funxy hello.lang
+```
+
+**Running Tests:**
+
+```bash
+# Run all tests (VM backend)
+go test -v ./tests/...
+
+# Run all tests (Tree-Walk backend)
+go test -v ./tests/... -tree
 ```
 
 Requires Go 1.25+
@@ -151,7 +163,7 @@ package a (getB)
 import "../b" as b
 fun getB() -> b.BType { b.makeB() }
 
-// b/b.lang  
+// b/b.lang
 package b (BType, makeB)
 import "../a" as a
 type BType = { val: Int }

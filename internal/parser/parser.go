@@ -17,7 +17,7 @@ type Parser struct {
 
 	prefixParseFns map[token.TokenType]prefixParseFn
 	infixParseFns  map[token.TokenType]infixParseFn
-	
+
 	// splitRshift tracks when we've consumed one > from >>
 	// When true, the next nextToken() call will return > instead of reading from stream
 	splitRshift bool
@@ -136,6 +136,7 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 	p.registerPrefix(token.IF, p.parseIfExpression)
 	p.registerPrefix(token.MATCH, p.parseMatchExpression)
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
+	p.registerPrefix(token.FORMAT_STRING, p.parseFormatStringLiteral)
 	p.registerPrefix(token.INTERP_STRING, p.parseInterpolatedString)
 	p.registerPrefix(token.CHAR, p.parseCharLiteral)
 	p.registerPrefix(token.BYTES_STRING, p.parseBytesLiteral)
@@ -190,7 +191,7 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 	p.registerInfix(token.QUESTION, p.parsePostfixExpression)
 	p.registerInfix(token.DOT, p.parseMemberExpression)
 	p.registerInfix(token.OPTIONAL_CHAIN, p.parseOptionalChainExpression)
-	
+
 	// User-definable operators - registered from centralized config
 	for _, op := range config.UserOperators {
 		tokenType := token.TokenType(op.Symbol)
@@ -222,7 +223,7 @@ func (p *Parser) nextToken() {
 		// peekToken remains unchanged (it was already peeked)
 		return
 	}
-	
+
 	p.curToken = p.peekToken
 	peekResult := p.stream.Peek(1)
 	if len(peekResult) > 0 {
@@ -246,12 +247,12 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 	if p.peekTokenIs(token.COLON_MINUS) {
 		p.nextToken() // consume last token of expr
 		p.nextToken() // consume :-
-		
+
 		// validate LHS - can be identifier, annotated identifier, or tuple pattern
 		var name *ast.Identifier
 		var pattern ast.Pattern
 		var typeAnnot ast.Type
-		
+
 		if ident, ok := expr.(*ast.Identifier); ok {
 			name = ident
 		} else if anno, ok := expr.(*ast.AnnotatedExpression); ok {
@@ -281,9 +282,9 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "expected identifier or pattern in constant declaration"))
 			return nil
 		}
-		
+
 		val := p.parseExpression(LOWEST)
-		
+
 		return &ast.ConstantDeclaration{
 			Token:          expr.GetToken(),
 			Name:           name,
@@ -491,7 +492,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 			// We can peek ahead.
 			// Case 1: IDENT COLON_MINUS ...
 			// Case 2: IDENT COLON ... (could be annotation expr `x: Int` OR const decl `x: Int :- ...`)
-			
+
 			// Peek for :-
 			if p.curToken.Type == token.IDENT_LOWER && p.peekTokenIs(token.COLON_MINUS) {
 				// Direct match: kVAL :- ...
@@ -502,38 +503,38 @@ func (p *Parser) ParseProgram() *ast.Program {
 				// Try parsing expression.
 				// If expression parses successfully, check if next token is `:-`.
 				// This handles `x : Int :- ...` because `x : Int` is `AnnotatedExpression`.
-				
+
 				// However, `parseExpressionStatement` calls `parseExpression` and consumes tokens.
 				// We can't easily backtrack.
-				
+
 				// Option: Add `:-` as an infix operator (CONST_ASSIGN) with precedence like ASSIGN.
 				// Then `x :- 5` parses as `AssignExpression` (or new type) inside `parseExpression`.
 				// Then we convert it to `ConstantDeclaration` statement.
 				// But `x: Int :- 5`? `(x: Int) :- 5`.
 				// `AnnotatedExpression` binds tightly? `COLON` precedence is ANNOTATION.
 				// If `:-` has precedence ASSIGN (LOWEST), then `x: Int` binds first. Correct.
-				
+
 				// So, plan:
 				// 1. Register `COLON_MINUS` as infix operator in Parser.
 				// 2. Parse it as `ConstAssignExpression` (new AST node? or reuse ConstantDeclaration as Expr?).
 				// 3. In `parseExpressionStatement`, if result is `ConstAssignExpression`, return it (wrapped).
 				// 4. But `ConstantDeclaration` is a Statement.
-				
+
 				// Let's register `:-` in `infixParseFns` to call `p.parseConstantDefinitionExpr`.
 				// It will return `ConstantDeclaration`? No, `parseExpression` expects `Expression`.
 				// So `ConstantDeclaration` must implement `Expression` interface?
 				// Or we return a temporary Expression wrapper.
-				
+
 				// Simpler: In `parseExpressionStatement`:
 				// Parse expr.
 				// If next token is `:-`, it's a constant decl with LHS expr.
 				// Check if LHS is Identifier or AnnotatedExpression.
 				// If so, convert to ConstantDeclaration.
-				
+
 				stmt = p.parseExpressionStatementOrConstDecl()
 				p.nextToken()
 			}
-			
+
 			if p.curToken.Type == token.NEWLINE {
 				// p.nextToken() // Loop handles skipping
 			}

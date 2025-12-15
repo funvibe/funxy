@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 6:21 [A003]: type error: type Int has kind *, but trait Functor requires kind * -> * (type constructor)

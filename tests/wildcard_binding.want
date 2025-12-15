@@ -1,0 +1,4 @@
+Wildcard binding works
+Reassign wildcard works
+Tuple wildcard: 1
+List wildcard: 10, 30

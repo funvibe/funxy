@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"hash/fnv"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
 
@@ -16,6 +17,11 @@ func (u *Uuid) Type() ObjectType             { return "UUID" }
 func (u *Uuid) TypeName() string             { return "Uuid" }
 func (u *Uuid) Inspect() string              { return u.Value.String() }
 func (u *Uuid) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Uuid"} }
+func (u *Uuid) Hash() uint32 {
+	h := fnv.New32a()
+	h.Write(u.Value[:])
+	return h.Sum32()
+}
 
 // Pre-defined namespace UUIDs for v5
 var (

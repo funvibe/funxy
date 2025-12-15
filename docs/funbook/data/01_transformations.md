@@ -1,69 +1,69 @@
-# 01. Трансформации данных
+# 01. Data Transformations
 
-## Задача
-Преобразовывать данные элегантно и эффективно.
+## Task
+Transform data elegantly and efficiently.
 
 ---
 
-## Map: применить функцию к каждому элементу
+## Map: apply function to each element
 
 ```rust
 import "lib/list" (map)
 
 numbers = [1, 2, 3, 4, 5]
 
-// Удвоить каждый
+// Double each
 doubled = map(fun(x) -> x * 2, numbers)
 print(doubled)  // [2, 4, 6, 8, 10]
 
-// Преобразовать в строки
+// Convert to strings
 strings = map(fun(x) -> show(x), numbers)
 print(strings)  // ["1", "2", "3", "4", "5"]
 ```
 
 ---
 
-## Filter: оставить только нужные
+## Filter: keep only needed ones
 
 ```rust
 import "lib/list" (filter)
 
 numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-// Только чётные
+// Only even
 evens = filter(fun(x) -> x % 2 == 0, numbers)
 print(evens)  // [2, 4, 6, 8, 10]
 
-// Больше 5
+// Greater than 5
 big = filter(fun(x) -> x > 5, numbers)
 print(big)  // [6, 7, 8, 9, 10]
 ```
 
 ---
 
-## Fold/Reduce: свернуть в одно значение
+## Fold/Reduce: fold into one value
 
 ```rust
 import "lib/list" (foldl)
 
 numbers = [1, 2, 3, 4, 5]
 
-// Сумма
+// Sum
 sum = foldl(fun(acc, x) -> acc + x, 0, numbers)
 print(sum)  // 15
 
-// Произведение
+// Product
 product = foldl(fun(acc, x) -> acc * x, 1, numbers)
 print(product)  // 120
 
-// Максимум
+// Maximum
 maxVal = foldl(fun(acc, x) -> if x > acc { x } else { acc }, numbers[0], numbers)
 print(maxVal)  // 5
 ```
 
 ---
 
-## Flatten: развернуть вложенные списки
+## Flatten: unfold nested lists
 
 ```rust
 import "lib/list" (flatten)
@@ -75,7 +75,7 @@ print(flat)  // [1, 2, 3, 4, 5]
 
 ---
 
-## Комбинирование трансформаций
+## Combining transformations
 
 ```rust
 import "lib/list" (filter, map)
@@ -87,7 +87,7 @@ users = [
     { name: "David", age: 28, active: true }
 ]
 
-// Получить имена активных пользователей старше 27
+// Get names of active users over 27
 result = users
     |> filter(fun(u) -> u.active)
     |> filter(fun(u) -> u.age > 27)
@@ -98,7 +98,7 @@ print(result)  // ["Alice", "Carol", "David"]
 
 ---
 
-## Группировка
+## Grouping
 
 ```rust
 import "lib/list" (foldl)
@@ -126,25 +126,25 @@ print(byDept)
 
 ---
 
-## Сортировка
+## Sorting
 
 ```rust
 import "lib/list" (sort, sortBy)
 
 numbers = [3, 1, 4, 1, 5, 9, 2, 6]
 
-// Стандартная сортировка
+// Standard sorting
 sorted = sort(numbers)
 print(sorted)  // [1, 1, 2, 3, 4, 5, 6, 9]
 
-// С кастомным компаратором (по убыванию)
+// With custom comparator (descending)
 descending = sortBy(numbers, fun(a, b) -> b - a)
 print(descending)  // [9, 6, 5, 4, 3, 2, 1, 1]
 ```
 
 ---
 
-## Сортировка записей
+## Sorting records
 
 ```rust
 import "lib/list" (sortBy, map)
@@ -155,7 +155,7 @@ users = [
     { name: "Bob", score: 78 }
 ]
 
-// По score (по убыванию)
+// By score (descending)
 byScore = sortBy(users, fun(a, b) -> b.score - a.score)
 names = map(fun(u) -> u.name, byScore)
 print(names)  // ["Alice", "Carol", "Bob"]
@@ -163,7 +163,7 @@ print(names)  // ["Alice", "Carol", "Bob"]
 
 ---
 
-## Уникальные значения
+## Unique values
 
 ```rust
 import "lib/list" (unique)
@@ -174,7 +174,7 @@ print(unique(nums))  // [1, 2, 3, 4]
 
 ---
 
-## Zip: объединить два списка
+## Zip: combine two lists
 
 ```rust
 import "lib/list" (zip)
@@ -187,7 +187,7 @@ print(pairs)  // [("Alice", 30), ("Bob", 25), ("Carol", 35)]
 
 ---
 
-## Partition: разделить на две группы
+## Partition: split into two groups
 
 ```rust
 import "lib/list" (partition)
@@ -200,7 +200,7 @@ print(odds)   // [1, 3, 5, 7, 9]
 
 ---
 
-## Take и Drop
+## Take and Drop
 
 ```rust
 import "lib/list" (take, drop)
@@ -216,12 +216,12 @@ print(rest)  // [6, 7, 8, 9, 10]
 
 ---
 
-## Практический пример: обработка данных
+## Practical example: data processing
 
 ```rust
 import "lib/list" (filter, map, foldl, sortBy, take)
 
-// Данные о продажах
+// Sales data
 sales = [
     { product: "Laptop", amount: 999.0, region: "EU" },
     { product: "Phone", amount: 699.0, region: "US" },
@@ -230,7 +230,7 @@ sales = [
     { product: "Laptop", amount: 1099.0, region: "US" }
 ]
 
-// Топ-3 продажи в US по сумме
+// Top 3 sales in US by amount
 topUS = sales
     |> filter(fun(s) -> s.region == "US")
     |> fun(xs) -> sortBy(xs, fun(a, b) -> floatToInt(b.amount - a.amount))
@@ -240,7 +240,7 @@ topUS = sales
 print(topUS)
 // ["Laptop: $1099", "Phone: $699", "Watch: $299"]
 
-// Общая сумма по регионам
+// Total amount by regions
 euTotal = sales
     |> filter(fun(s) -> s.region == "EU")
     |> foldl(fun(acc, s) -> acc + s.amount, 0.0)
@@ -250,7 +250,7 @@ print("EU Total: $" ++ show(euTotal))  // EU Total: $1448
 
 ---
 
-## Сравнение: императивный vs функциональный
+## Comparison: imperative vs functional
 
 ```rust
 import "lib/list" (filter, sortBy, take, map)
@@ -263,18 +263,18 @@ users = [
     { name: "Eve", score: 88, active: true }
 ]
 
-// Задача: получить топ-3 активных пользователя по score
+// Task: get top 3 active users by score
 
-// Императивно
+// Imperative
 filtered = []
 for u in users {
     if u.active {
         filtered = filtered ++ [u]
     }
 }
-// ... нужна ручная сортировка и срез
+// ... need manual sorting and slicing
 
-// Функционально (одна цепочка!)
+// Functional (one chain!)
 top3 = users
     |> filter(fun(u) -> u.active)
     |> sortBy(fun(a, b) -> b.score - a.score)
@@ -282,4 +282,3 @@ top3 = users
     |> map(fun(u) -> u.name)
 
 print(top3)  // ["David", "Eve", "Alice"]
-```

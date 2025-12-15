@@ -177,7 +177,7 @@ func builtinMapFst(e *Evaluator, args ...Object) Object {
 		return newError("mapFst: tuple must have at least 2 elements")
 	}
 
-	newFirst := e.applyFunction(fn, []Object{tuple.Elements[0]})
+	newFirst := e.ApplyFunction(fn, []Object{tuple.Elements[0]})
 	if isError(newFirst) {
 		return newFirst
 	}
@@ -199,7 +199,7 @@ func builtinMapSnd(e *Evaluator, args ...Object) Object {
 		return newError("mapSnd: tuple must have at least 2 elements")
 	}
 
-	newSecond := e.applyFunction(fn, []Object{tuple.Elements[1]})
+	newSecond := e.ApplyFunction(fn, []Object{tuple.Elements[1]})
 	if isError(newSecond) {
 		return newSecond
 	}
@@ -222,12 +222,12 @@ func builtinMapPair(e *Evaluator, args ...Object) Object {
 		return newError("mapPair: tuple must have at least 2 elements")
 	}
 
-	newFirst := e.applyFunction(fnFirst, []Object{tuple.Elements[0]})
+	newFirst := e.ApplyFunction(fnFirst, []Object{tuple.Elements[0]})
 	if isError(newFirst) {
 		return newFirst
 	}
 
-	newSecond := e.applyFunction(fnSecond, []Object{tuple.Elements[1]})
+	newSecond := e.ApplyFunction(fnSecond, []Object{tuple.Elements[1]})
 	if isError(newSecond) {
 		return newSecond
 	}
@@ -266,7 +266,7 @@ func builtinCurry(e *Evaluator, args ...Object) Object {
 
 					// Create tuple and apply original function
 					tuple := &Tuple{Elements: []Object{firstArg, secondArg}}
-					return e.applyFunction(fn, []Object{tuple})
+					return e.ApplyFunction(fn, []Object{tuple})
 				},
 			}
 		},
@@ -296,13 +296,13 @@ func builtinUncurry(e *Evaluator, args ...Object) Object {
 			}
 
 			// Apply fn to first element
-			intermediate := e.applyFunction(fn, []Object{tuple.Elements[0]})
+			intermediate := e.ApplyFunction(fn, []Object{tuple.Elements[0]})
 			if isError(intermediate) {
 				return intermediate
 			}
 
 			// Apply result to second element
-			return e.applyFunction(intermediate, []Object{tuple.Elements[1]})
+			return e.ApplyFunction(intermediate, []Object{tuple.Elements[1]})
 		},
 	}
 }
@@ -326,7 +326,7 @@ func builtinBoth(e *Evaluator, args ...Object) Object {
 	}
 
 	// Check first element
-	result1 := e.applyFunction(pred, []Object{tuple.Elements[0]})
+	result1 := e.ApplyFunction(pred, []Object{tuple.Elements[0]})
 	if isError(result1) {
 		return result1
 	}
@@ -339,7 +339,7 @@ func builtinBoth(e *Evaluator, args ...Object) Object {
 	}
 
 	// Check second element
-	result2 := e.applyFunction(pred, []Object{tuple.Elements[1]})
+	result2 := e.ApplyFunction(pred, []Object{tuple.Elements[1]})
 	if isError(result2) {
 		return result2
 	}
@@ -366,7 +366,7 @@ func builtinEither(e *Evaluator, args ...Object) Object {
 	}
 
 	// Check first element
-	result1 := e.applyFunction(pred, []Object{tuple.Elements[0]})
+	result1 := e.ApplyFunction(pred, []Object{tuple.Elements[0]})
 	if isError(result1) {
 		return result1
 	}
@@ -379,7 +379,7 @@ func builtinEither(e *Evaluator, args ...Object) Object {
 	}
 
 	// Check second element
-	result2 := e.applyFunction(pred, []Object{tuple.Elements[1]})
+	result2 := e.ApplyFunction(pred, []Object{tuple.Elements[1]})
 	if isError(result2) {
 		return result2
 	}

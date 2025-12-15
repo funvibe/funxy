@@ -8,15 +8,22 @@ import (
 	"io"
 	"net/http"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"sync"
 	"time"
 )
 
 // HTTP client timeout (default 30 seconds)
 var httpTimeout = 30 * time.Second
 
+// Default server stop timeout
+const DefaultServerStopTimeoutMs = 5000
+
 // Running HTTP servers (for async mode)
-var httpServers = make(map[int64]*http.Server)
-var httpServerCounter int64 = 0
+var (
+	httpServers       = make(map[int64]*http.Server)
+	httpServersMu     sync.Mutex
+	httpServerCounter int64 = 0
+)
 
 // HttpBuiltins returns built-in functions for lib/http virtual package
 func HttpBuiltins() map[string]*Builtin {
@@ -167,7 +174,7 @@ func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 
 	// Parse headers
 	var headers [][2]string
-	for _, h := range headersList.toSlice() {
+	for _, h := range headersList.ToSlice() {
 		tuple, ok := h.(*Tuple)
 		if !ok || len(tuple.Elements) != 2 {
 			return newError("httpRequest expects headers as list of (String, String) tuples")
@@ -213,22 +220,22 @@ func doHttpRequest(method, url string, headers [][2]string, body string) Object 
 func doHttpRequestWithTimeout(method, url string, headers [][2]string, body string, timeout time.Duration) Object {
 	// Check for HTTP mocks first
 	tr := GetTestRunner()
-	
+
 	// Check for error mock
 	if errMsg, found := tr.FindHttpMockError(url); found {
 		return makeFail(stringToList(errMsg))
 	}
-	
+
 	// Check for response mock
 	if mockResp, found := tr.FindHttpMock(url); found {
 		return makeOk(mockResp)
 	}
-	
+
 	// Check if we should block real HTTP (mocks active but no match)
 	if tr.ShouldBlockHttp(url) {
 		return makeFail(stringToList("HTTP request blocked: no mock found for " + url))
 	}
-	
+
 	// Make real HTTP request
 	client := &http.Client{
 		Timeout: timeout,
@@ -271,13 +278,11 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body stri
 	}
 
 	// Build response record
-	response := &RecordInstance{
-		Fields: map[string]Object{
-			"status":  &Integer{Value: int64(resp.StatusCode)},
-			"body":    stringToList(string(respBody)),
-			"headers": newList(respHeaders),
-		},
-	}
+	response := NewRecord(map[string]Object{
+		"status":  &Integer{Value: int64(resp.StatusCode)},
+		"body":    stringToList(string(respBody)),
+		"headers": newList(respHeaders),
+	})
 
 	return makeOk(response)
 }
@@ -310,7 +315,7 @@ func objectToGoValue(obj Object) interface{} {
 		}
 		// Regular list
 		arr := make([]interface{}, o.len())
-		for i, el := range o.toSlice() {
+		for i, el := range o.ToSlice() {
 			arr[i] = objectToGoValue(el)
 		}
 		return arr
@@ -322,8 +327,8 @@ func objectToGoValue(obj Object) interface{} {
 		return arr
 	case *RecordInstance:
 		m := make(map[string]interface{})
-		for k, v := range o.Fields {
-			m[k] = objectToGoValue(v)
+		for _, f := range o.Fields {
+			m[f.Key] = objectToGoValue(f.Value)
 		}
 		return m
 	case *DataInstance:
@@ -387,17 +392,38 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		return newError("httpServe expects an integer port, got %s", args[0].Type())
 	}
 
-	handler, ok := args[1].(*Function)
-	if !ok {
+	handler := args[1]
+	if !httpIsCallable(handler) {
 		return newError("httpServe expects a handler function, got %s", args[1].Type())
 	}
 
 	port := int(portInt.Value)
-	_ = e // evaluator reference (currently unused, kept for future callback support)
+
+	// Capture handler if CaptureHandler is available
+	if e.CaptureHandler != nil {
+		handler = e.CaptureHandler(handler)
+	}
+
+	// Create a snapshot of the evaluator/VM for the server
+	// This avoids race conditions when the main VM continues execution and modifies globals
+	var serverEval *Evaluator
+	if e.Fork != nil {
+		serverEval = e.Fork()
+	} else {
+		serverEval = e.Clone()
+	}
 
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Create a fresh evaluator/VM for each request from the snapshot
+		var reqEval *Evaluator
+		if serverEval.Fork != nil {
+			reqEval = serverEval.Fork()
+		} else {
+			reqEval = serverEval.Clone()
+		}
+
 		// Build HttpRequest object
 		var headers []Object
 		for key, values := range r.Header {
@@ -411,18 +437,16 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		bodyBytes, _ := io.ReadAll(r.Body)
 		defer func() { _ = r.Body.Close() }()
 
-		request := &RecordInstance{
-			Fields: map[string]Object{
-				"method":  stringToList(r.Method),
-				"path":    stringToList(r.URL.Path),
-				"query":   stringToList(r.URL.RawQuery),
-				"headers": newList(headers),
-				"body":    stringToList(string(bodyBytes)),
-			},
-		}
+		request := NewRecord(map[string]Object{
+			"method":  stringToList(r.Method),
+			"path":    stringToList(r.URL.Path),
+			"query":   stringToList(r.URL.RawQuery),
+			"headers": newList(headers),
+			"body":    stringToList(string(bodyBytes)),
+		})
 
 		// Call handler
-		result := e.applyFunction(handler, []Object{request})
+		result := reqEval.ApplyFunction(handler, []Object{request})
 
 		// Parse response
 		if result == nil {
@@ -445,9 +469,9 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		}
 
 		// Set response headers
-		if headersObj, ok := respRec.Fields["headers"]; ok {
+		if headersObj := respRec.Get("headers"); headersObj != nil {
 			if headersList, ok := headersObj.(*List); ok {
-				for _, h := range headersList.toSlice() {
+				for _, h := range headersList.ToSlice() {
 					if tuple, ok := h.(*Tuple); ok && len(tuple.Elements) == 2 {
 						key := listToString(tuple.Elements[0].(*List))
 						val := listToString(tuple.Elements[1].(*List))
@@ -459,7 +483,7 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 
 		// Set status
 		status := 200
-		if statusObj, ok := respRec.Fields["status"]; ok {
+		if statusObj := respRec.Get("status"); statusObj != nil {
 			if statusInt, ok := statusObj.(*Integer); ok {
 				status = int(statusInt.Value)
 			}
@@ -467,7 +491,7 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		w.WriteHeader(status)
 
 		// Write body
-		if bodyObj, ok := respRec.Fields["body"]; ok {
+		if bodyObj := respRec.Get("body"); bodyObj != nil {
 			if bodyList, ok := bodyObj.(*List); ok {
 				_, _ = w.Write([]byte(listToString(bodyList)))
 			}
@@ -500,17 +524,39 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 		return newError("httpServeAsync expects an integer port, got %s", args[0].Type())
 	}
 
-	handler, ok := args[1].(*Function)
-	if !ok {
+	handler := args[1]
+	// Check for tree-walk Function or VM closure
+	if !httpIsCallable(handler) {
 		return newError("httpServeAsync expects a handler function, got %s", args[1].Type())
 	}
 
 	port := int(portInt.Value)
-	_ = e // evaluator reference (currently unused, kept for future callback support)
+
+	// Capture handler if CaptureHandler is available
+	if e.CaptureHandler != nil {
+		handler = e.CaptureHandler(handler)
+	}
+
+	// Create a snapshot of the evaluator/VM for the server
+	// This avoids race conditions when the main VM continues execution and modifies globals
+	var serverEval *Evaluator
+	if e.Fork != nil {
+		serverEval = e.Fork()
+	} else {
+		serverEval = e.Clone()
+	}
 
 	// Create HTTP server with same handler logic as httpServe
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Create a fresh evaluator/VM for each request from the snapshot
+		var reqEval *Evaluator
+		if serverEval.Fork != nil {
+			reqEval = serverEval.Fork()
+		} else {
+			reqEval = serverEval.Clone()
+		}
+
 		// Build HttpRequest object
 		var headers []Object
 		for key, values := range r.Header {
@@ -524,18 +570,16 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 		bodyBytes, _ := io.ReadAll(r.Body)
 		defer func() { _ = r.Body.Close() }()
 
-		request := &RecordInstance{
-			Fields: map[string]Object{
-				"method":  stringToList(r.Method),
-				"path":    stringToList(r.URL.Path),
-				"query":   stringToList(r.URL.RawQuery),
-				"headers": newList(headers),
-				"body":    stringToList(string(bodyBytes)),
-			},
-		}
+		request := NewRecord(map[string]Object{
+			"method":  stringToList(r.Method),
+			"path":    stringToList(r.URL.Path),
+			"query":   stringToList(r.URL.RawQuery),
+			"headers": newList(headers),
+			"body":    stringToList(string(bodyBytes)),
+		})
 
 		// Call handler
-		result := e.applyFunction(handler, []Object{request})
+		result := reqEval.ApplyFunction(handler, []Object{request})
 
 		// Parse response
 		if result == nil {
@@ -558,9 +602,9 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 		}
 
 		// Set response headers
-		if headersObj, ok := respRec.Fields["headers"]; ok {
+		if headersObj := respRec.Get("headers"); headersObj != nil {
 			if headersList, ok := headersObj.(*List); ok {
-				for _, h := range headersList.toSlice() {
+				for _, h := range headersList.ToSlice() {
 					if tuple, ok := h.(*Tuple); ok && len(tuple.Elements) == 2 {
 						key := listToString(tuple.Elements[0].(*List))
 						val := listToString(tuple.Elements[1].(*List))
@@ -572,7 +616,7 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 
 		// Set status
 		status := 200
-		if statusObj, ok := respRec.Fields["status"]; ok {
+		if statusObj := respRec.Get("status"); statusObj != nil {
 			if statusInt, ok := statusObj.(*Integer); ok {
 				status = int(statusInt.Value)
 			}
@@ -580,7 +624,7 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 		w.WriteHeader(status)
 
 		// Write body
-		if bodyObj, ok := respRec.Fields["body"]; ok {
+		if bodyObj := respRec.Get("body"); bodyObj != nil {
 			if bodyList, ok := bodyObj.(*List); ok {
 				_, _ = w.Write([]byte(listToString(bodyList)))
 			}
@@ -593,11 +637,13 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 	}
 
 	// Generate server ID
+	httpServersMu.Lock()
 	httpServerCounter++
 	serverId := httpServerCounter
 
 	// Store server
 	httpServers[serverId] = server
+	httpServersMu.Unlock()
 
 	// Start server in background (non-blocking)
 	go func() {
@@ -606,7 +652,9 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 			// Log error but don't fail - server might have been stopped
 		}
 		// Clean up when server stops
+		httpServersMu.Lock()
 		delete(httpServers, serverId)
+		httpServersMu.Unlock()
 	}()
 
 	// Give server a moment to start
@@ -615,11 +663,11 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 	return &Integer{Value: serverId}
 }
 
-// httpServerStop: (Int) -> Nil
-// Stops a running HTTP server by ID
+// httpServerStop: (Int, Int) -> Nil
+// Stops a running HTTP server by ID. Optional second argument is timeout in ms (default 5000).
 func builtinHttpServerStop(e *Evaluator, args ...Object) Object {
-	if len(args) != 1 {
-		return newError("httpServerStop expects 1 argument, got %d", len(args))
+	if len(args) < 1 || len(args) > 2 {
+		return newError("httpServerStop expects 1 or 2 arguments, got %d", len(args))
 	}
 
 	idInt, ok := args[0].(*Integer)
@@ -627,21 +675,37 @@ func builtinHttpServerStop(e *Evaluator, args ...Object) Object {
 		return newError("httpServerStop expects an integer server ID, got %s", args[0].Type())
 	}
 
+	timeoutMs := DefaultServerStopTimeoutMs
+	if len(args) == 2 {
+		t, ok := args[1].(*Integer)
+		if !ok {
+			return newError("httpServerStop expects an integer timeout, got %s", args[1].Type())
+		}
+		timeoutMs = int(t.Value)
+	}
+
 	serverId := idInt.Value
+
+	httpServersMu.Lock()
 	server, exists := httpServers[serverId]
+	if exists {
+		// Remove from map immediately to prevent double-stop
+		delete(httpServers, serverId)
+	}
+	httpServersMu.Unlock()
+
 	if !exists {
 		return newError("server with ID %d not found", serverId)
 	}
 
 	// Shutdown server gracefully
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
 		return newError("error shutting down server: %s", err.Error())
 	}
 
-	delete(httpServers, serverId)
 	return &Nil{}
 }
 
@@ -717,7 +781,11 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 		"httpSetTimeout":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
 		"httpServe":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
 		"httpServeAsync":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: typesystem.Int},
-		"httpServerStop":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+		"httpServerStop": typesystem.TFunc{
+			Params:       []typesystem.Type{typesystem.Int, typesystem.Int},
+			ReturnType:   typesystem.Nil,
+			DefaultCount: 1, // timeout has default
+		},
 	}
 
 	for name, typ := range types {
@@ -725,7 +793,7 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 			b.TypeInfo = typ
 		}
 	}
-	
+
 	// Set default arguments for httpRequest: body="" and timeout=0
 	if b, ok := builtins["httpRequest"]; ok {
 		b.DefaultArgs = []Object{
@@ -733,4 +801,24 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 			&Integer{Value: 0},  // timeout default = 0
 		}
 	}
+
+	// Set default argument for httpServerStop: timeout=5000
+	if b, ok := builtins["httpServerStop"]; ok {
+		b.DefaultArgs = []Object{
+			&Integer{Value: int64(DefaultServerStopTimeoutMs)},
+		}
+	}
+}
+
+// httpIsCallable checks if an object is callable (Function, Builtin, PartialApplication, or VM Closure)
+func httpIsCallable(obj Object) bool {
+	switch obj.(type) {
+	case *Function, *Builtin, *PartialApplication:
+		return true
+	}
+	// Check for VM closure by type string
+	if obj.Type() == "CLOSURE" || obj.Type() == "BUILTIN_CLOSURE" {
+		return true
+	}
+	return false
 }

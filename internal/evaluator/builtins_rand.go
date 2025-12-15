@@ -163,7 +163,7 @@ func builtinRandomShuffle(e *Evaluator, args ...Object) Object {
 
 	// Create a copy
 	shuffled := make([]Object, list.len())
-	copy(shuffled, list.toSlice())
+	copy(shuffled, list.ToSlice())
 
 	// Fisher-Yates shuffle
 	randMutex.Lock()
@@ -202,7 +202,7 @@ func builtinRandomSample(e *Evaluator, args ...Object) Object {
 	if n >= list.len() {
 		// Return shuffled copy of entire list
 		shuffled := make([]Object, list.len())
-		copy(shuffled, list.toSlice())
+		copy(shuffled, list.ToSlice())
 		randSource.Shuffle(len(shuffled), func(i, j int) {
 			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		})
@@ -211,7 +211,7 @@ func builtinRandomSample(e *Evaluator, args ...Object) Object {
 
 	// Reservoir sampling for efficiency
 	result := make([]Object, n)
-	copy(result, list.toSlice()[:n])
+	copy(result, list.ToSlice()[:n])
 
 	for i := n; i < list.len(); i++ {
 		j := randSource.Intn(i + 1)

@@ -1,25 +1,25 @@
 # Hello World
 
-Первая программа на Funxy.
+The first program in Funxy.
 
-## Вывод на экран
+## Screen Output
 
-Функция `print` выводит значения в stdout:
+The `print` function outputs values to stdout:
 
 ```rust
 print("Hello, World!")
 ```
 
-## Строковые литералы
+## String Literals
 
-**Обычные строки** — в двойных кавычках:
+**Regular strings** - in double quotes:
 
 ```rust
 message = "Hello, World!"
 print(message)
 ```
 
-**Многострочные строки** — в обратных кавычках:
+**Multi-line strings** - in backticks:
 
 ```rust
 text = `This is a
@@ -30,17 +30,17 @@ json = `{"name": "test", "value": 42}`
 print(json)
 ```
 
-Особенности raw-строк:
-- Могут содержать переносы строк
-- Не обрабатывают escape-последовательности
-- Удобны для JSON, SQL, шаблонов
+Features of raw strings:
+- Can contain line breaks
+- Don't process escape sequences
+- Convenient for JSON, SQL, templates
 
-## Запуск
+## Running
 
 ```bash
 ./funxy hello.lang
 ```
 
-## Тесты
+## Tests
 
-См. `tests/hello_world.lang`
+See `tests/hello_world.lang`

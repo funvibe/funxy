@@ -48,6 +48,18 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			Args:        []typesystem.Type{typesystem.TCon{Name: "Char"}},
 		}, typesystem.Subst{}, nil
 
+	case *ast.FormatStringLiteral:
+		// Format string literal creates a formatter function: ? -> List<Char>
+		// We use a type variable for the input since it can be anything that supports string conversion
+		paramType := ctx.FreshVar()
+		return typesystem.TFunc{
+			Params:     []typesystem.Type{paramType},
+			ReturnType: typesystem.TApp{
+				Constructor: typesystem.TCon{Name: config.ListTypeName},
+				Args:        []typesystem.Type{typesystem.TCon{Name: "Char"}},
+			},
+		}, typesystem.Subst{}, nil
+
 	case *ast.CharLiteral:
 		return typesystem.TCon{Name: "Char"}, typesystem.Subst{}, nil
 
@@ -90,10 +102,10 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			}
 			totalSubst = s.Compose(totalSubst)
 			spreadType = spreadType.Apply(totalSubst)
-			
+
 			// Resolve type alias to get underlying record type
 			spreadType = table.ResolveTypeAlias(spreadType)
-			
+
 			// Spread type must be a record
 			if rec, ok := spreadType.(typesystem.TRecord); ok {
 				// Copy fields from spread base
@@ -111,7 +123,7 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		
+
 		// Override/add fields from explicit field definitions
 		for _, k := range keys {
 			v := n.Fields[k]
@@ -122,7 +134,7 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			totalSubst = s.Compose(totalSubst)
 			fieldTypes[k] = t
 		}
-		
+
 		finalFields := make(map[string]typesystem.Type)
 		for k, t := range fieldTypes {
 			finalFields[k] = t.Apply(totalSubst)
@@ -182,7 +194,7 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 					return nil, nil, err
 				}
 				totalSubst = sNext.Compose(totalSubst)
-				
+
 				// Apply known substitution to current types before unification
 				elemType = elemType.Apply(totalSubst)
 				nextType = nextType.Apply(totalSubst)

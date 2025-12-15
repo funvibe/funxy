@@ -1,0 +1,245 @@
+import "lib/csv" (*)
+import "lib/test" (*)
+import "lib/string" (stringIndexOf)
+
+// Helper: check if string contains substring
+fun contains(s: String, sub: String) -> Bool {
+    match stringIndexOf(s, sub) {
+        Some(_) -> true
+        Zero -> false
+    }
+}
+
+// ============== csvParse ==============
+
+testRun("csvParse - basic", fun() {
+    csv = "name,age\nAlice,30\nBob,25"
+    match csvParse(csv) {
+        Ok(rows) -> {
+            assertEquals(2, len(rows))
+            assertEquals("Alice", rows[0].name)
+            assertEquals("30", rows[0].age)
+            assertEquals("Bob", rows[1].name)
+            assertEquals("25", rows[1].age)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("csvParse - empty", fun() {
+    csv = ""
+    match csvParse(csv) {
+        Ok(rows) -> assertEquals(0, len(rows))
+        Fail(_) -> ()
+    }
+})
+
+testRun("csvParse - header only", fun() {
+    csv = "a,b,c"
+    match csvParse(csv) {
+        Ok(rows) -> assertEquals(0, len(rows))
+        Fail(_) -> panic("Should parse header-only CSV")
+    }
+})
+
+testRun("csvParse - with semicolon delimiter", fun() {
+    csv = "name;age\nAlice;30"
+    match csvParse(csv, ';') {
+        Ok(rows) -> {
+            assertEquals(1, len(rows))
+            assertEquals("Alice", rows[0].name)
+            assertEquals("30", rows[0].age)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("csvParse - with tab delimiter", fun() {
+    csv = "name\tage\nBob\t25"
+    match csvParse(csv, '\t') {
+        Ok(rows) -> {
+            assertEquals(1, len(rows))
+            assertEquals("Bob", rows[0].name)
+            assertEquals("25", rows[0].age)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("csvParse - quoted values", fun() {
+    csv = "name,desc\nAlice,\"Hello, World\""
+    match csvParse(csv) {
+        Ok(rows) -> {
+            assertEquals(1, len(rows))
+            assertEquals("Alice", rows[0].name)
+            assertEquals("Hello, World", rows[0].desc)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("csvParse - newline in quoted value", fun() {
+    csv = "name,desc\nAlice,\"Line1\nLine2\""
+    match csvParse(csv) {
+        Ok(rows) -> {
+            assertEquals(1, len(rows))
+            assertEquals("Line1\nLine2", rows[0].desc)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+// ============== csvParseRaw ==============
+
+testRun("csvParseRaw - basic", fun() {
+    csv = "1,2,3\n4,5,6"
+    match csvParseRaw(csv) {
+        Ok(rows) -> {
+            assertEquals(2, len(rows))
+            assertEquals(["1", "2", "3"], rows[0])
+            assertEquals(["4", "5", "6"], rows[1])
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("csvParseRaw - with delimiter", fun() {
+    csv = "a;b\nc;d"
+    match csvParseRaw(csv, ';') {
+        Ok(rows) -> {
+            assertEquals(2, len(rows))
+            assertEquals(["a", "b"], rows[0])
+            assertEquals(["c", "d"], rows[1])
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+// ============== csvEncode ==============
+
+testRun("csvEncode - basic", fun() {
+    data = [
+        { name: "Alice", age: "30" },
+        { name: "Bob", age: "25" }
+    ]
+    result = csvEncode(data)
+    // Header order may vary, check contains
+    assert(contains(result, "Alice"))
+    assert(contains(result, "Bob"))
+    assert(contains(result, "30"))
+    assert(contains(result, "25"))
+})
+
+testRun("csvEncode - empty list", fun() {
+    data: List<{ name: String }> = []
+    result = csvEncode(data)
+    assertEquals("", result)
+})
+
+testRun("csvEncode - with delimiter", fun() {
+    data = [{ a: "1", b: "2" }]
+    result = csvEncode(data, ';')
+    assert(contains(result, ";"))
+    assert(!contains(result, ","))
+})
+
+testRun("csvEncode - with tab delimiter", fun() {
+    data = [{ x: "a", y: "b" }]
+    result = csvEncode(data, '\t')
+    assert(contains(result, "\t"))
+})
+
+// ============== csvEncodeRaw ==============
+
+testRun("csvEncodeRaw - basic", fun() {
+    data = [["a", "b"], ["c", "d"]]
+    result = csvEncodeRaw(data)
+    assert(contains(result, "a,b"))
+    assert(contains(result, "c,d"))
+})
+
+testRun("csvEncodeRaw - with delimiter", fun() {
+    data = [["1", "2"]]
+    result = csvEncodeRaw(data, ';')
+    assertEquals("1;2\n", result)
+})
+
+// ============== Round-trip ==============
+
+testRun("round-trip: encode then parse", fun() {
+    original = [
+        { name: "Alice", city: "NYC" },
+        { name: "Bob", city: "LA" }
+    ]
+    encoded = csvEncode(original)
+    match csvParse(encoded) {
+        Ok(parsed) -> {
+            assertEquals(2, len(parsed))
+            // Check all values present (order may differ)
+            names = [parsed[0].name, parsed[1].name]
+            assert(names == ["Alice", "Bob"] || names == ["Bob", "Alice"])
+        }
+        Fail(e) -> panic("Round-trip failed: " ++ e)
+    }
+})
+
+testRun("round-trip raw: encode then parse", fun() {
+    original = [["x", "y"], ["1", "2"]]
+    encoded = csvEncodeRaw(original)
+    match csvParseRaw(encoded) {
+        Ok(parsed) -> {
+            assertEquals(2, len(parsed))
+            assertEquals(["x", "y"], parsed[0])
+            assertEquals(["1", "2"], parsed[1])
+        }
+        Fail(e) -> panic("Round-trip failed: " ++ e)
+    }
+})
+
+// ============== Edge cases ==============
+
+testRun("csvParse - extra columns in row", fun() {
+    csv = "a,b\n1,2,3"
+    match csvParse(csv) {
+        Ok(rows) -> {
+            assertEquals(1, len(rows))
+            assertEquals("1", rows[0].a)
+            assertEquals("2", rows[0].b)
+        }
+        Fail(_) -> () // Some parsers may error
+    }
+})
+
+testRun("csvParse - missing columns in row", fun() {
+    csv = "a,b,c\n1,2"
+    match csvParse(csv) {
+        Ok(rows) -> assertEquals(1, len(rows))
+        Fail(_) -> () // Some parsers may error
+    }
+})
+
+testRun("csvParse - unicode", fun() {
+    csv = "name,city\nМаша,Москва\n日本,東京"
+    match csvParse(csv) {
+        Ok(rows) -> {
+            assertEquals(2, len(rows))
+            assertEquals("Маша", rows[0].name)
+            assertEquals("Москва", rows[0].city)
+            assertEquals("日本", rows[1].name)
+            assertEquals("東京", rows[1].city)
+        }
+        Fail(e) -> panic("Unicode failed: " ++ e)
+    }
+})
+
+testRun("csvParse - escaped quotes", fun() {
+    csv = "name,desc\nTest,\"Say \"\"hello\"\"\""
+    match csvParse(csv) {
+        Ok(rows) -> {
+            assertEquals(1, len(rows))
+            assertEquals("Say \"hello\"", rows[0].desc)
+        }
+        Fail(e) -> panic("Escaped quotes failed: " ++ e)
+    }
+})
+

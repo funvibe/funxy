@@ -1,0 +1,58 @@
+=== Bytes Literals ===
+@"hello"
+@"Hello"
+@"H"
+5
+5
+1
+=== Creation ===
+@""
+0
+@"world"
+@"ABC"
+=== Hex Parsing ===
+@x"deadbeef"
+=== Indexing ===
+Some(72)
+Some(111)
+Zero
+Some(111)
+=== Slicing ===
+@"Hello"
+@"World"
+=== Concatenation ===
+@"foobar"
+@"foobar"
+=== Comparison ===
+true
+true
+true
+true
+=== Conversion ===
+4869
+01000001
+[65, 66]
+hello
+=== Search ===
+true
+false
+Some(6)
+Zero
+true
+true
+=== Split/Join ===
+3
+@"a"
+@"b"
+@"c"
+@"a-b-c"
+=== Numeric Encoding ===
+2
+1234
+4660
+1234
+3412
+256
+-1
+4
+3.140000104904175

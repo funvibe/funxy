@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"math"
 	"math/big"
+	"strings"
+
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
@@ -54,8 +56,8 @@ func (e *Evaluator) evalRecordLiteral(node *ast.RecordLiteral, env *Environment)
 		// Spread value must be a record
 		if rec, ok := spreadVal.(*RecordInstance); ok {
 			// Copy all fields from the spread base
-			for k, v := range rec.Fields {
-				fields[k] = v
+			for _, f := range rec.Fields {
+				fields[f.Key] = f.Value
 			}
 			// Preserve TypeName from spread base
 			typeName = rec.TypeName
@@ -72,7 +74,10 @@ func (e *Evaluator) evalRecordLiteral(node *ast.RecordLiteral, env *Environment)
 		}
 		fields[k] = val
 	}
-	return &RecordInstance{Fields: fields, TypeName: typeName}
+
+	newRec := NewRecord(fields)
+	newRec.TypeName = typeName
+	return newRec
 }
 
 func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Environment) Object {
@@ -87,7 +92,7 @@ func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Enviro
 	}
 
 	if record, ok := left.(*RecordInstance); ok {
-		if val, ok := record.Fields[node.Member.Value]; ok {
+		if val := record.Get(node.Member.Value); val != nil {
 			return val
 		}
 	}
@@ -120,7 +125,7 @@ func (e *Evaluator) evalOptionalChain(left Object, node *ast.MemberExpression, e
 		return newError("type %s does not implement Optional trait (missing isEmpty)", typeName)
 	}
 
-	isEmpty := e.applyFunction(isEmptyMethod, []Object{left})
+	isEmpty := e.ApplyFunction(isEmptyMethod, []Object{left})
 	if isError(isEmpty) {
 		return isEmpty
 	}
@@ -136,7 +141,7 @@ func (e *Evaluator) evalOptionalChain(left Object, node *ast.MemberExpression, e
 		return newError("type %s does not implement Optional trait (missing unwrap)", typeName)
 	}
 
-	inner := e.applyFunction(unwrapMethod, []Object{left})
+	inner := e.ApplyFunction(unwrapMethod, []Object{left})
 	if isError(inner) {
 		return inner
 	}
@@ -153,13 +158,13 @@ func (e *Evaluator) evalOptionalChain(left Object, node *ast.MemberExpression, e
 		return newError("type %s does not implement Optional trait (missing wrap)", typeName)
 	}
 
-	return e.applyFunction(wrapMethod, []Object{result})
+	return e.ApplyFunction(wrapMethod, []Object{result})
 }
 
 // accessMember performs the actual member access on an object
 func (e *Evaluator) accessMember(obj Object, node *ast.MemberExpression, env *Environment) Object {
 	if record, ok := obj.(*RecordInstance); ok {
-		if val, ok := record.Fields[node.Member.Value]; ok {
+		if val := record.Get(node.Member.Value); val != nil {
 			return val
 		}
 		return newError("field '%s' not found in record", node.Member.Value)
@@ -206,7 +211,7 @@ func (e *Evaluator) evalIndexExpression(node *ast.IndexExpression, env *Environm
 	switch obj := left.(type) {
 	case *Bytes:
 		// Bytes indexing: b[i] -> Option<Int>
-		max := obj.len()
+		max := obj.Len()
 		if idx < 0 {
 			idx = max + idx
 		}
@@ -216,7 +221,7 @@ func (e *Evaluator) evalIndexExpression(node *ast.IndexExpression, env *Environm
 		return makeSome(&Integer{Value: int64(obj.get(idx))})
 
 	case *List:
-		max := obj.len()
+		max := obj.Len()
 		if idx < 0 {
 			idx = max + idx
 		}
@@ -249,6 +254,35 @@ func (e *Evaluator) evalStringLiteral(node *ast.StringLiteral, env *Environment)
 	return newListWithType(elements, "Char")
 }
 
+func (e *Evaluator) evalFormatStringLiteral(node *ast.FormatStringLiteral, env *Environment) Object {
+	// Prepend % if missing (for short form %".2f")
+	fmtStr := node.Value
+	if !strings.HasPrefix(fmtStr, "%") {
+		fmtStr = "%" + fmtStr
+	}
+
+	// Return a function that calls sprintf
+	return &Function{
+		Parameters: []*ast.Parameter{
+			{Name: &ast.Identifier{Value: "val"}},
+		},
+		Env: env,
+		Body: &ast.BlockStatement{
+			Statements: []ast.Statement{
+				&ast.ExpressionStatement{
+					Expression: &ast.CallExpression{
+						Function: &ast.Identifier{Value: "sprintf"},
+						Arguments: []ast.Expression{
+							&ast.StringLiteral{Value: fmtStr}, // Format string with %
+							&ast.Identifier{Value: "val"},     // Argument
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func (e *Evaluator) evalInterpolatedString(node *ast.InterpolatedString, env *Environment) Object {
 	var result []Object
 
@@ -274,7 +308,7 @@ func (e *Evaluator) objectToChars(obj Object) []Object {
 	case *List:
 		// If it's already a string (List<Char>), extract it
 		if o.ElementType == "Char" {
-			return o.toSlice()
+			return o.ToSlice()
 		}
 		// Otherwise use Inspect
 		str = o.Inspect()
@@ -454,7 +488,7 @@ func (e *Evaluator) matchPattern(pat ast.Pattern, val Object, env *Environment) 
 				// Convert List<Char> to string
 				runes := []rune{}
 				isString := true
-				for _, el := range listVal.toSlice() {
+				for _, el := range listVal.ToSlice() {
 					if charObj, ok := el.(*Char); ok {
 						runes = append(runes, rune(charObj.Value))
 					} else {
@@ -483,7 +517,7 @@ func (e *Evaluator) matchPattern(pat ast.Pattern, val Object, env *Environment) 
 		// Convert List<Char> to string
 		str := listToString(listVal)
 		// Build regex and match
-		matched, captures := matchStringPattern(p.Parts, str)
+		matched, captures := MatchStringPattern(p.Parts, str)
 		if !matched {
 			return false, bindings
 		}
@@ -547,7 +581,7 @@ func (e *Evaluator) matchPattern(pat ast.Pattern, val Object, env *Environment) 
 			}
 
 			spreadPat := p.Elements[fixedCount].(*ast.SpreadPattern)
-			restList := listVal.slice(fixedCount, listVal.len())
+			restList := listVal.Slice(fixedCount, listVal.len())
 
 			matched, subBindings := e.matchPattern(spreadPat.Pattern, restList, env)
 			if !matched {
@@ -603,7 +637,7 @@ func (e *Evaluator) matchPattern(pat ast.Pattern, val Object, env *Environment) 
 					}
 
 					spreadPat := p.Elements[fixedCount].(*ast.SpreadPattern)
-					restList := listVal.slice(fixedCount, listVal.len())
+					restList := listVal.Slice(fixedCount, listVal.len())
 
 					matched, subBindings := e.matchPattern(spreadPat.Pattern, restList, env)
 					if !matched {
@@ -692,8 +726,8 @@ func (e *Evaluator) matchPattern(pat ast.Pattern, val Object, env *Environment) 
 		}
 
 		for k, subPat := range p.Fields {
-			fieldVal, ok := recordVal.Fields[k]
-			if !ok {
+			fieldVal := recordVal.Get(k)
+			if fieldVal == nil {
 				return false, bindings // Field missing
 			}
 			matched, subBindings := e.matchPattern(subPat, fieldVal, env)
@@ -744,7 +778,7 @@ func (e *Evaluator) matchesType(val Object, astType ast.Type) bool {
 					return true
 				}
 				// Check if all elements are Char
-				for _, el := range list.toSlice() {
+				for _, el := range list.ToSlice() {
 					if _, ok := el.(*Char); !ok {
 						return false
 					}
@@ -795,7 +829,7 @@ func (e *Evaluator) matchesType(val Object, astType ast.Type) bool {
 						if tRec, ok := underlying.(typesystem.TRecord); ok {
 							// Check if all fields from type definition exist in record
 							for fieldName := range tRec.Fields {
-								if _, hasField := rec.Fields[fieldName]; !hasField {
+								if rec.Get(fieldName) == nil {
 									return false
 								}
 							}
@@ -836,7 +870,7 @@ func (e *Evaluator) evalIdentifier(node *ast.Identifier, env *Environment) Objec
 func (e *Evaluator) evalAssignExpression(node *ast.AssignExpression, env *Environment) Object {
 	// Set type context BEFORE evaluating value, so nullary ClassMethod calls can dispatch
 	oldCallNode := e.CurrentCallNode
-	if node.AnnotatedType != nil && e.TypeMap != nil {
+	if node.AnnotatedType != nil {
 		e.CurrentCallNode = node
 	}
 
@@ -853,10 +887,11 @@ func (e *Evaluator) evalAssignExpression(node *ast.AssignExpression, env *Enviro
 	// auto-call it with type context for proper dispatch
 	if node.AnnotatedType != nil {
 		if cm, ok := val.(*ClassMethod); ok && cm.Arity == 0 {
-			if e.TypeMap != nil {
-				e.CurrentCallNode = node
-			}
-			result := e.applyFunction(cm, []Object{})
+			// Ensure context is set for the call
+			prevCallNode := e.CurrentCallNode
+			e.CurrentCallNode = node
+			result := e.ApplyFunction(cm, []Object{})
+			e.CurrentCallNode = prevCallNode
 			if !isError(result) {
 				val = result
 			}
@@ -890,7 +925,7 @@ func (e *Evaluator) evalAssignExpression(node *ast.AssignExpression, env *Enviro
 		}
 
 		if record, ok := obj.(*RecordInstance); ok {
-			record.Fields[ma.Member.Value] = val
+			record.Set(ma.Member.Value, val)
 			return val
 		}
 		return newError("assignment to member expects Record, got %s", obj.Type())
@@ -912,7 +947,7 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		if !ok {
 			return newError("argument to default must be a Type, got %s", args[0].Type())
 		}
-		return e.getDefaultForType(typeObj.TypeVal)
+		return e.GetDefaultForType(typeObj.TypeVal)
 	}
 
 	if node.IsTail {
@@ -955,7 +990,7 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 	if oldCallNode == nil {
 		e.CurrentCallNode = node
 	}
-	result := e.applyFunction(function, args)
+	result := e.ApplyFunction(function, args)
 	e.CurrentCallNode = oldCallNode
 
 	// Add stack trace to errors if not already present
@@ -1052,7 +1087,8 @@ func (e *Evaluator) evalBangOperatorExpression(right Object) Object {
 	}
 }
 
-func (e *Evaluator) evalInfixExpression(operator string, left, right Object) Object {
+// EvalInfixExpression evaluates an infix expression (exported for VM)
+func (e *Evaluator) EvalInfixExpression(operator string, left, right Object) Object {
 	// First, try trait-based dispatch if we have operator traits configured
 	if e.OperatorTraits != nil {
 		if traitName, ok := e.OperatorTraits[operator]; ok {
@@ -1063,6 +1099,12 @@ func (e *Evaluator) evalInfixExpression(operator string, left, right Object) Obj
 			}
 			// If no implementation found, fall through to built-in logic
 		}
+	}
+
+	// Try user-defined operator dispatch (search all traits for this operator)
+	result := e.tryUserDefinedOperator(operator, left, right)
+	if result != nil {
+		return result
 	}
 
 	// Built-in operator implementations (fallback and for primitive types)
@@ -1134,6 +1176,28 @@ func (e *Evaluator) evalInfixExpression(operator string, left, right Object) Obj
 	return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
 }
 
+// tryUserDefinedOperator searches all traits for a user-defined operator implementation.
+// Returns nil if no implementation is found.
+func (e *Evaluator) tryUserDefinedOperator(operator string, left, right Object) Object {
+	typeName := getRuntimeTypeName(left)
+	methodName := "(" + operator + ")"
+
+	// Search all traits for this operator
+	for _, typesMap := range e.ClassImplementations {
+		if methodTableObj, ok := typesMap[typeName]; ok {
+			if methodTable, ok := methodTableObj.(*MethodTable); ok {
+				if method, ok := methodTable.Methods[methodName]; ok {
+					oldContainer := e.ContainerContext
+					e.ContainerContext = typeName
+					defer func() { e.ContainerContext = oldContainer }()
+					return e.ApplyFunction(method, []Object{left, right})
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // tryOperatorDispatch attempts to dispatch an operator through the trait system.
 // Returns nil if no implementation is found (allowing fallback to built-in).
 func (e *Evaluator) tryOperatorDispatch(traitName, operator string, left, right Object) Object {
@@ -1150,7 +1214,7 @@ func (e *Evaluator) tryOperatorDispatch(traitName, operator string, left, right 
 					oldContainer := e.ContainerContext
 					e.ContainerContext = typeName
 					defer func() { e.ContainerContext = oldContainer }()
-					return e.applyFunction(method, []Object{left, right})
+					return e.ApplyFunction(method, []Object{left, right})
 				}
 			}
 		}
@@ -1168,7 +1232,7 @@ func (e *Evaluator) tryOperatorDispatch(traitName, operator string, left, right 
 				Line:       fnStmt.Token.Line,
 				Column:     fnStmt.Token.Column,
 			}
-			return e.applyFunction(defaultFn, []Object{left, right})
+			return e.ApplyFunction(defaultFn, []Object{left, right})
 		}
 	}
 
@@ -1410,7 +1474,7 @@ func (e *Evaluator) evalBytesInfixExpression(operator string, left, right Object
 	switch operator {
 	case "++":
 		// Concatenation
-		return leftBytes.concat(rightBytes)
+		return leftBytes.Concat(rightBytes)
 	case "==":
 		return e.nativeBoolToBooleanObject(leftBytes.equals(rightBytes))
 	case "!=":
@@ -1440,7 +1504,7 @@ func (e *Evaluator) evalBitsInfixExpression(operator string, left, right Object)
 	switch operator {
 	case "++":
 		// Concatenation
-		return leftBits.concat(rightBits)
+		return leftBits.Concat(rightBits)
 	case "==":
 		return e.nativeBoolToBooleanObject(leftBits.equals(rightBits))
 	case "!=":
@@ -1457,7 +1521,7 @@ func (e *Evaluator) evalListInfixExpression(operator string, left, right Object)
 	switch operator {
 	case "++":
 		// Concatenation
-		return leftList.concat(rightList)
+		return leftList.Concat(rightList)
 	case "::":
 		// Cons - prepend left element to right list (even if left is also a List, e.g. String)
 		return rightList.prepend(leftList)

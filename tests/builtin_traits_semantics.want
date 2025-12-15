@@ -1,0 +1,91 @@
+true
+false
+true
+false
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+10
+20
+30
+15
+42
+25
+2
+-5
+true
+true
+true
+true
+true
+1024
+1024
+true
+15
+120
+1
+7
+6
+8
+2
+true
+true
+true
+true
+true
+true
+false
+true
+1
+4
+5
+5
+7
+5
+[1, 2, 3, 4]
+[1, 2, 3, 4]
+true
+Hello World
+Hello World
+[1, 2, 3, 4, 5]
+[1, 2, 3]
+true
+["a", "a", "a", "a", "a"]
+[1, 2, 3, 4, 5]
+0
+0
+true
+0
+0
+false
+false
+42
+0
+Some(42)
+Some(42)
+true
+Zero
+Zero
+[2, 4, 6]
+[2, 4, 6]
+true
+Ok(100)
+Ok(100)
+Fail("err")
+Fail("err")
+true
+true
+Some(12)
+Some(12)
+true
+[4, 6, 8]
+[4, 6, 8]
+true
+All built-in traits semantics tests passed!

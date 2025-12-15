@@ -1,0 +1,10 @@
+Some(42)
+[1, 2, 3]
+Ok("hello")
+Fail(404)
+Some(10)
+[5]
+[]
+[Some(1), Some(2), Zero]
+Some([1, 2, 3])
+Step 1 passed!

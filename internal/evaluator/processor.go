@@ -6,7 +6,12 @@ import (
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/token"
 	"path/filepath"
+	"strconv"
 )
+
+func formatInt(n int) string {
+	return strconv.Itoa(n)
+}
 
 type EvaluatorProcessor struct{}
 
@@ -43,15 +48,35 @@ func (ep *EvaluatorProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.P
 
 	result := eval.Eval(ctx.AstRoot, env)
 	if result != nil && result.Type() == ERROR_OBJ {
-		// Convert evaluator error to diagnostic error
-		// We don't have token info in result directly easily, unless we pass it.
-		// For now, use a dummy token or modify Evaluator to return Error with Token?
-		// Evaluator Errors are runtime errors, usually not attached to source code location unless we track it.
-		ctx.Errors = append(ctx.Errors, diagnostics.NewError(
-			diagnostics.ErrR001,
-			token.Token{}, // Missing token info
-			result.Inspect(),
-		))
+		// Convert evaluator error to diagnostic error with location and stack trace
+		if err, ok := result.(*Error); ok {
+			tok := token.Token{Line: err.Line, Column: err.Column}
+			errMsg := err.Message
+			
+			// Add stack trace if available
+			if len(err.StackTrace) > 0 {
+				errMsg += "\nStack trace:"
+				for _, frame := range err.StackTrace {
+					file := frame.File
+					if file == "" {
+						file = ctx.FilePath
+					}
+					errMsg += "\n  at " + file + ":" + formatInt(frame.Line) + " (called " + frame.Name + ")"
+				}
+			}
+			
+			ctx.Errors = append(ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrR001,
+				tok,
+				errMsg,
+			))
+		} else {
+			ctx.Errors = append(ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrR001,
+				token.Token{},
+				result.Inspect(),
+			))
+		}
 	}
 
 	return ctx

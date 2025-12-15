@@ -1,28 +1,28 @@
-# Словари (Map)
+# Maps
 
-## Представление
+## Representation
 
-Map в Funxy — это иммутабельный ассоциативный массив (хэш-таблица). Внутренне реализован как HAMT (Hash Array Mapped Trie) для эффективных операций над иммутабельными данными.
+Map in Funxy is an immutable associative array (hash table). Internally implemented as HAMT (Hash Array Mapped Trie) for efficient operations on immutable data.
 
 ```rust
 import "lib/map" (*)
 
 scores = %{ "Alice" => 100, "Bob" => 85, "Charlie" => 92 }
-// Тип: Map<String, Int>
+// Type: Map<String, Int>
 ```
 
-## Синтаксис
+## Syntax
 
-### Создание Map
+### Creating Map
 
 ```rust
 // Map literal
 m = %{ "key1" => 1, "key2" => 2 }
 
-// Пустой map (требует аннотации типа)
+// Empty map (requires type annotation)
 empty: Map<String, Int> = %{}
 
-// Multiline с trailing comma
+// Multiline with trailing comma
 config = %{
     "host" => "localhost",
     "port" => "8080",
@@ -30,7 +30,7 @@ config = %{
 }
 ```
 
-### Ключи разных типов
+### Different Key Types
 
 ```rust
 // String keys
@@ -39,76 +39,76 @@ stringMap = %{ "a" => 1, "b" => 2 }
 // Int keys  
 intMap = %{ 1 => "one", 2 => "two", 3 => "three" }
 
-// Любой тип с Eq
+// Any type with Eq
 tupleMap = %{ (0, 0) => "origin", (1, 0) => "x-axis" }
 ```
 
-## Модуль lib/map
+## lib/map Module
 
 ```rust
 import "lib/map" (*)
 ```
 
-### Доступ к значениям
+### Accessing Values
 
 ```rust
 import "lib/map" (*)
 
 scores = %{ "Alice" => 100, "Bob" => 85 }
 
-// Index access — возвращает Option<V>
+// Index access — returns Option<V>
 scores["Alice"]              // Some(100)
 scores["Unknown"]            // Zero
 
-// mapGet — то же самое
+// mapGet — same thing
 mapGet(scores, "Alice")      // Some(100)
 mapGet(scores, "Unknown")    // Zero
 
-// mapGetOr — с default значением
+// mapGetOr — with default value
 mapGetOr(scores, "Alice", 0)   // 100
 mapGetOr(scores, "Unknown", 0) // 0
 
-// mapContains — проверка наличия
+// mapContains — check presence
 mapContains(scores, "Alice")   // true
 mapContains(scores, "Dave")    // false
 ```
 
-### Размер
+### Size
 
 ```rust
 import "lib/map" (mapSize)
 
 scores = %{ "Alice" => 100, "Bob" => 85 }
 mapSize(scores)              // 2
-len(scores)                  // 2 (встроенный len тоже работает)
+len(scores)                  // 2 (built-in len also works)
 ```
 
-### Модификация (иммутабельная)
+### Modification (Immutable)
 
-Все операции модификации возвращают **новый** Map, оригинал не меняется:
+All modification operations return a **new** Map, original is unchanged:
 
 ```rust
 import "lib/map" (*)
 
 scores = %{ "Alice" => 100, "Bob" => 85 }
 
-// Добавить или обновить
+// Add or update
 scores2 = mapPut(scores, "Charlie", 92)
-mapSize(scores)              // 2 (оригинал не изменён)
+mapSize(scores)              // 2 (original unchanged)
 mapSize(scores2)             // 3
 
-// Обновить существующий
+// Update existing
 scores3 = mapPut(scores, "Alice", 110)
-mapGet(scores, "Alice")      // Some(100)  — оригинал
-mapGet(scores3, "Alice")     // Some(110)  — новый
+mapGet(scores, "Alice")      // Some(100)  — original
+mapGet(scores3, "Alice")     // Some(110)  — new
 
-// Удалить ключ
+// Remove key
 scores4 = mapRemove(scores, "Bob")
 mapSize(scores4)             // 1
 mapContains(scores4, "Bob")  // false
 ```
 
-### Слияние
+### Merging
 
 ```rust
 import "lib/map" (*)
@@ -116,33 +116,33 @@ import "lib/map" (*)
 m1 = %{ "a" => 1, "b" => 2 }
 m2 = %{ "b" => 20, "c" => 3 }
 
-// Merge — второй map "выигрывает" при конфликте
+// Merge — second map "wins" on conflict
 merged = mapMerge(m1, m2)
-mapGet(merged, "a")          // Some(1)   — из m1
-mapGet(merged, "b")          // Some(20)  — из m2 (перезаписал)
-mapGet(merged, "c")          // Some(3)   — из m2
+mapGet(merged, "a")          // Some(1)   — from m1
+mapGet(merged, "b")          // Some(20)  — from m2 (overwrote)
+mapGet(merged, "c")          // Some(3)   — from m2
 ```
 
-### Итерация
+### Iteration
 
 ```rust
 import "lib/map" (*)
 
 scores = %{ "Alice" => 100, "Bob" => 85, "Charlie" => 92 }
 
-// Получить все ключи
+// Get all keys
 keys = mapKeys(scores)       // ["Alice", "Bob", "Charlie"]
 
-// Получить все значения
+// Get all values
 vals = mapValues(scores)     // [100, 85, 92]
 
-// Получить пары (ключ, значение)
+// Get pairs (key, value)
 items = mapItems(scores)     // [("Alice", 100), ("Bob", 85), ...]
 ```
 
-## Pattern Matching с Option
+## Pattern Matching with Option
 
-Так как mapGet возвращает Option<V>, используйте pattern matching:
+Since mapGet returns Option<V>, use pattern matching:
 
 ```rust
 import "lib/map" (*)
@@ -154,18 +154,18 @@ fun getScore(scores: Map<String, Int>, name: String) -> String {
     }
 }
 
-// Пример использования
+// Usage example
 scores = %{ "Alice" => 100, "Bob" => 85 }
 print(getScore(scores, "Alice"))     // Score: 100
 print(getScore(scores, "Unknown"))   // Not found
 
-// Или с mapGetOr
+// Or with mapGetOr
 score = mapGetOr(scores, "Alice", 0)
 ```
 
-## Практические примеры
+## Practical Examples
 
-### Подсчёт частоты
+### Frequency Count
 
 ```rust
 import "lib/map" (*)
@@ -184,7 +184,7 @@ mapGet(freq, 'b')            // Some(2)
 mapGet(freq, 'c')            // Some(1)
 ```
 
-### Группировка по ключу
+### Grouping by Key
 
 ```rust
 import "lib/map" (*)
@@ -204,12 +204,12 @@ mapGet(byLen, 2)             // Some(["hi", "ok"])
 mapGet(byLen, 5)             // Some(["hello", "world"])
 ```
 
-### Конфигурация
+### Configuration
 
 ```rust
 import "lib/map" (*)
 
-// Загрузка конфигурации
+// Loading configuration
 defaultConfig = %{
     "host" => "localhost",
     "port" => "8080",
@@ -228,14 +228,14 @@ mapGet(config, "port")       // Some("3000")      — overridden
 mapGet(config, "debug")      // Some("true")      — user only
 ```
 
-### Инверсия Map
+### Map Inversion
 
 ```rust
 import "lib/map" (*)
 import "lib/list" (foldl)
 import "lib/tuple" (fst, snd)
 
-// Поменять ключи и значения местами
+// Swap keys and values
 fun invert(m: Map<String, Int>) -> Map<Int, String> {
     foldl(fun(acc, kv) -> {
         mapPut(acc, snd(kv), fst(kv))
@@ -248,46 +248,45 @@ mapGet(inv, 1)               // Some("a")
 mapGet(inv, 2)               // Some("b")
 ```
 
-## Когда использовать Map
+## When to Use Map
 
-**Используйте Map когда:**
-- Нужен быстрый поиск по ключу
-- Данные часто читаются, но редко модифицируются
-- Нужна иммутабельность (безопасность в многопоточном коде)
-- Ключи разнородны или динамичны
+**Use Map when:**
+- Need fast key lookup
+- Data is often read but rarely modified
+- Need immutability (thread safety)
+- Keys are heterogeneous or dynamic
 
-**Используйте Record когда:**
-- Фиксированный набор полей известен заранее
-- Нужна типизация каждого поля
-- Структура определена на этапе компиляции
+**Use Record when:**
+- Fixed set of fields known in advance
+- Need typing for each field
+- Structure is defined at compile time
 
 ```rust
 import "lib/map" (mapGet)
 
-// Record — статическая структура
+// Record — static structure
 type User = { name: String, age: Int, email: String }
 user: User = { name: "Alice", age: 30, email: "a@b.com" }
-user.name                    // Типизированный доступ
+user.name                    // Typed access
 
-// Map — динамическая структура
+// Map — dynamic structure
 userData = %{ "name" => "Alice", "age" => "30" }
 mapGet(userData, "name")     // Option<String>
 ```
 
-## Сводка lib/map
+## lib/map Summary
 
-| Функция | Тип | Описание |
+| Function | Type | Description |
 |---------|-----|----------|
-| mapGet | (Map K V, K) -> Option V | Получить значение |
-| mapGetOr | (Map K V, K, V) -> V | Получить или default |
-| mapContains | (Map K V, K) -> Bool | Проверить наличие |
-| mapSize | (Map K V) -> Int | Количество записей |
-| mapPut | (Map K V, K, V) -> Map K V | Добавить/обновить |
-| mapRemove | (Map K V, K) -> Map K V | Удалить ключ |
-| mapMerge | (Map K V, Map K V) -> Map K V | Объединить |
-| mapKeys | (Map K V) -> List K | Все ключи |
-| mapValues | (Map K V) -> List V | Все значения |
-| mapItems | (Map K V) -> List (K, V) | Все пары |
+| mapGet | (Map K V, K) -> Option V | Get value |
+| mapGetOr | (Map K V, K, V) -> V | Get or default |
+| mapContains | (Map K V, K) -> Bool | Check presence |
+| mapSize | (Map K V) -> Int | Number of entries |
+| mapPut | (Map K V, K, V) -> Map K V | Add/update |
+| mapRemove | (Map K V, K) -> Map K V | Remove key |
+| mapMerge | (Map K V, Map K V) -> Map K V | Merge |
+| mapKeys | (Map K V) -> List K | All keys |
+| mapValues | (Map K V) -> List V | All values |
+| mapItems | (Map K V) -> List (K, V) | All pairs |
 
-Также работает встроенный len(m) для размера и m[key] для доступа.
-
+Built-in len(m) also works for size and m[key] for access.

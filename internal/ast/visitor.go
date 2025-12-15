@@ -46,6 +46,7 @@ type Visitor interface {
 	VisitListLiteral(n *ListLiteral)
 	VisitIndexExpression(n *IndexExpression)
 	VisitStringLiteral(n *StringLiteral)
+	VisitFormatStringLiteral(n *FormatStringLiteral)
 	VisitInterpolatedString(n *InterpolatedString)
 	VisitCharLiteral(n *CharLiteral)
 	VisitBytesLiteral(n *BytesLiteral)

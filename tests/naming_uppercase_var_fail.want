@@ -1,0 +1,2 @@
+Processing failed with errors:
+- [analyzer] error at 2:3 [A008]: naming convention: value 'PI' must start with lowercase letter or underscore

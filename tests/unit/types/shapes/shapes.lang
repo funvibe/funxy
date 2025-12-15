@@ -20,4 +20,3 @@ type alias Distance = Float
 makeCircle = fun(r: Int) -> Shape { Circle(r) }
 makeRect = fun(w: Int, h: Int) -> Shape { Rectangle((w, h)) }
 makeConfig = fun(n: String, v: Int) -> Config { { name: n, value: v } }
-

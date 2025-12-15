@@ -128,6 +128,7 @@ const (
 	RATIONAL    TokenType = "RATIONAL" // 12.34r
 	STRING        TokenType = "STRING"
 	INTERP_STRING TokenType = "INTERP_STRING" // String with ${...} interpolations
+	FORMAT_STRING TokenType = "FORMAT_STRING" // %".2f" - Format string literal
 	CHAR          TokenType = "CHAR"
 
 	// Bytes literals

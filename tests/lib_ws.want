@@ -1,0 +1,25 @@
+=== WebSocket Tests ===
+
+1. Testing connection timeout...
+Expected failure on non-existent server: OK
+
+2. Testing invalid URL...
+Expected failure for invalid URL: OK
+
+3. Testing operations on non-existent connection...
+Invalid connection send: OK - connection not found
+Invalid connection recv: OK
+Invalid connection close: OK
+
+4. Testing invalid server stop...
+Invalid server stop: OK
+
+5. Testing async server with echo...
+Server started with ID: 1
+Connected with ID: 2
+Message sent
+Received: Hello WebSocket!
+Connection closed
+Server stopped
+
+=== All WebSocket Tests Complete ===

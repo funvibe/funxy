@@ -1,0 +1,12 @@
+Some(42)
+Zero
+Some("hello!")
+[10, 20, 30]
+[false, false, true, true]
+[1, 2, 3]
+Ok(100)
+Fail("error")
+Ok(5)
+[]
+Zero
+Step 2 passed!

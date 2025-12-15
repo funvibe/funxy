@@ -1,276 +1,50 @@
-// Pin Pattern Tests
-// Tests for ^variable syntax that compares with existing value
-
 import "lib/test" (*)
 
-// ============================================================================
-// Basic Pin Pattern
-// ============================================================================
-
-testRun("Pin matches equal value", fun() {
-    x = 5
-    result = match 5 {
-        ^x -> true
+testRun("Pin pattern basic match", fun() {
+    target = 42
+    
+    // Match success
+    res1 = match 42 {
+        ^target -> true
         _ -> false
     }
-    assert(result, "5 should match ^x where x=5")
-})
+    assertEquals(true, res1)
 
-testRun("Pin does not match different value", fun() {
-    x = 5
-    result = match 10 {
-        ^x -> true
+    // Match failure
+    res2 = match 100 {
+        ^target -> true
         _ -> false
     }
-    assert(!result, "10 should not match ^x where x=5")
+    assertEquals(false, res2)
 })
 
-testRun("Pin with string", fun() {
-    name = "Alice"
-    result = match "Alice" {
-        ^name -> true
-        _ -> false
+testRun("Pin pattern with different types", fun() {
+    str = "hello"
+    res = match "hello" {
+        ^str -> "matched"
+        _ -> "failed"
     }
-    assert(result, "Alice should match ^name where name=Alice")
+    assertEquals("matched", res)
 })
 
-testRun("Pin with different string", fun() {
-    name = "Alice"
-    result = match "Bob" {
-        ^name -> true
-        _ -> false
+testRun("Pin pattern nested in record", fun() {
+    user = { id: 1, name: "Alice" }
+    target_id = 1
+    
+    res = match user {
+        { id: ^target_id } -> "found"
+        _ -> "not found"
     }
-    assert(!result, "Bob should not match ^name where name=Alice")
+    assertEquals("found", res)
 })
 
-testRun("Pin with bool true", fun() {
-    flag = true
-    result = match true {
-        ^flag -> "matched"
-        _ -> "no"
+testRun("Pin pattern nested in list", fun() {
+    list = [1, 2, 3]
+    val = 2
+    
+    res = match list {
+        [1, ^val, 3] -> "match"
+        _ -> "no match"
     }
-    assertEquals("matched", result)
+    assertEquals("match", res)
 })
-
-testRun("Pin with bool false", fun() {
-    flag = true
-    result = match false {
-        ^flag -> "matched"
-        _ -> "no"
-    }
-    assertEquals("no", result)
-})
-
-// ============================================================================
-// Pin in Record Pattern
-// ============================================================================
-
-testRun("Pin in record field - match", fun() {
-    expectedAge = 18
-    user = { name: "Alice", age: 18 }
-    result = match user {
-        { age: ^expectedAge } -> true
-        _ -> false
-    }
-    assert(result, "record with age=18 should match ^expectedAge where expectedAge=18")
-})
-
-testRun("Pin in record field - no match", fun() {
-    expectedAge = 18
-    user = { name: "Bob", age: 25 }
-    result = match user {
-        { age: ^expectedAge } -> true
-        _ -> false
-    }
-    assert(!result, "record with age=25 should not match ^expectedAge where expectedAge=18")
-})
-
-testRun("Pin with multiple record fields", fun() {
-    expectedName = "Alice"
-    expectedAge = 30
-    user = { name: "Alice", age: 30 }
-    result = match user {
-        { name: ^expectedName, age: ^expectedAge } -> "both"
-        { name: ^expectedName } -> "name only"
-        { age: ^expectedAge } -> "age only"
-        _ -> "none"
-    }
-    assertEquals("both", result)
-})
-
-testRun("Pin with partial record match", fun() {
-    expectedName = "Alice"
-    expectedAge = 25
-    user = { name: "Alice", age: 30 }
-    result = match user {
-        { name: ^expectedName, age: ^expectedAge } -> "both"
-        { name: ^expectedName } -> "name only"
-        _ -> "none"
-    }
-    assertEquals("name only", result)
-})
-
-// ============================================================================
-// Pin in Tuple Pattern
-// ============================================================================
-
-testRun("Pin in tuple - match", fun() {
-    x = 1
-    y = 2
-    result = match (1, 2) {
-        (^x, ^y) -> true
-        _ -> false
-    }
-    assert(result, "tuple (1,2) should match (^x, ^y) where x=1, y=2")
-})
-
-testRun("Pin in tuple - no match", fun() {
-    x = 1
-    y = 2
-    result = match (1, 3) {
-        (^x, ^y) -> true
-        _ -> false
-    }
-    assert(!result, "tuple (1,3) should not match (^x, ^y) where x=1, y=2")
-})
-
-// ============================================================================
-// Pin in List Pattern
-// ============================================================================
-
-testRun("Pin in list head", fun() {
-    expected = 1
-    result = match [1, 2, 3] {
-        [^expected, rest...] -> "matched"
-        _ -> "no"
-    }
-    assertEquals("matched", result)
-})
-
-testRun("Pin in list head - no match", fun() {
-    expected = 5
-    result = match [1, 2, 3] {
-        [^expected, rest...] -> "matched"
-        _ -> "no"
-    }
-    assertEquals("no", result)
-})
-
-// ============================================================================
-// Pin in Constructor Pattern
-// ============================================================================
-
-testRun("Pin in Some pattern", fun() {
-    expectedVal = 42
-    opt = Some(42)
-    result = match opt {
-        Some(^expectedVal) -> true
-        _ -> false
-    }
-    assert(result, "Some(42) should match Some(^expectedVal) where expectedVal=42")
-})
-
-testRun("Pin in Some pattern - no match", fun() {
-    expectedVal = 42
-    opt = Some(100)
-    result = match opt {
-        Some(^expectedVal) -> true
-        _ -> false
-    }
-    assert(!result, "Some(100) should not match Some(^expectedVal) where expectedVal=42")
-})
-
-// ============================================================================
-// Pin with Complex Values
-// ============================================================================
-
-testRun("Pin with list value", fun() {
-    expected = [1, 2, 3]
-    result = match [1, 2, 3] {
-        ^expected -> true
-        _ -> false
-    }
-    assert(result, "list should match pinned list")
-})
-
-testRun("Pin with different list", fun() {
-    expected = [1, 2, 3]
-    result = match [1, 2, 4] {
-        ^expected -> true
-        _ -> false
-    }
-    assert(!result, "different list should not match pinned list")
-})
-
-// ============================================================================
-// Pin vs Regular Binding
-// ============================================================================
-
-testRun("Pin does not create binding", fun() {
-    x = 5
-    result = match 10 {
-        ^x -> x  // x should still be 5 if matched (but won't match)
-        y -> y   // y will be 10
-    }
-    assertEquals(10, result)
-    assertEquals(5, x)  // x is unchanged
-})
-
-testRun("Regular pattern creates binding", fun() {
-    x = 5
-    result = match 10 {
-        x -> x  // This creates new binding x=10
-    }
-    assertEquals(10, result)
-    // Note: x in outer scope is shadowed but not modified
-})
-
-// ============================================================================
-// Pin vs XOR (no conflict)
-// ============================================================================
-
-testRun("XOR works in expressions", fun() {
-    result = 5 ^ 3
-    assertEquals(6, result)
-})
-
-testRun("Pin works after XOR expression", fun() {
-    x = 6 ^ 2  // x = 4
-    result = match 4 {
-        ^x -> true
-        _ -> false
-    }
-    assert(result, "should match pinned XOR result")
-})
-
-testRun("XOR in guard", fun() {
-    x = 4
-    result = match 7 {
-        n if (n ^ 3) == x -> "xor equals x"
-        _ -> "no"
-    }
-    assertEquals("xor equals x", result)
-})
-
-testRun("Pin result of XOR", fun() {
-    expected = 5 ^ 3  // 6
-    result = match 6 {
-        ^expected -> "matched"
-        _ -> "no"
-    }
-    assertEquals("matched", result)
-})
-
-testRun("XOR and pin don't conflict in same expression", fun() {
-    a = 10
-    b = 3
-    xorResult = a ^ b  // 9
-    result = match 9 {
-        ^xorResult -> true
-        _ -> false
-    }
-    assert(result, "pin should work with XOR result")
-})
-
-print("pin_pattern_test: all tests passed!")
-

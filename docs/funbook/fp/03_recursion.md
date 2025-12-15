@@ -1,9 +1,9 @@
-# 03. Рекурсия и TCO
+# 03. Recursion and TCO
 
-## Задача
-Использовать рекурсию эффективно без переполнения стека.
+## Task
+Use recursion efficiently without stack overflow.
 
-## Простая рекурсия
+## Simple recursion
 
 ```rust
 fun factorial(n: Int) -> Int {
@@ -14,53 +14,53 @@ print(factorial(5))   // 120
 print(factorial(10))  // 3628800
 ```
 
-## Проблема: переполнение стека
+## Problem: stack overflow
 
 ```rust
-// Эта версия НЕ оптимизирована - создаёт n стек-фреймов
+// This version is NOT optimized - creates n stack frames
 fun badSum(n: Int) -> Int {
     if n == 0 { 0 } else { n + badSum(n - 1) }
 }
 
-// При больших n получим stack overflow!
+// With large n we'll get stack overflow!
 
 ```
 
 ## TCO (Tail Call Optimization)
 
-Funxy оптимизирует хвостовые вызовы — когда рекурсивный вызов является последней операцией.
+Funxy optimizes tail calls - when the recursive call is the last operation.
 
 ```rust
-// Хвостовая рекурсия с аккумулятором
+// Tail recursion with accumulator
 fun factorialTCO(n: Int, acc: Int) -> Int {
     if n <= 1 { acc } else { factorialTCO(n - 1, n * acc) }
 }
 
 fun factorial(n: Int) -> Int { factorialTCO(n, 1) }
 
-print(factorial(20))  // 2432902008176640000 - работает!
+print(factorial(20))  // 2432902008176640000 - works!
 ```
 
-## Объяснение TCO
+## TCO explanation
 
 ```rust
-// НЕ хвостовой вызов (после рекурсии есть операция *)
+// NOT tail call (there's operation * after recursion)
 fun bad(n: Int) -> Int {
     if n <= 1 { 1 } else { n * bad(n - 1) }
 }
-//                         ^^^ умножение ПОСЛЕ рекурсии
+//                         ^^^ multiplication AFTER recursion
 
-// Хвостовой вызов (рекурсия - последняя операция)
+// Tail call (recursion is the last operation)
 fun good(n: Int, acc: Int) -> Int {
     if n <= 1 { acc } else { good(n - 1, n * acc) }
 }
-//                          ^^^ ничего после рекурсии
+//                          ^^^ nothing after recursion
 
 ```
 
-## Примеры с TCO
+## TCO examples
 
-### Сумма списка
+### List sum
 
 ```rust
 fun sumList(xs, acc) {
@@ -74,7 +74,7 @@ total = sumList([1, 2, 3, 4, 5], 0)
 print(total)  // 15
 ```
 
-### Длина списка
+### List length
 
 ```rust
 fun listLength(xs, acc: Int) -> Int {
@@ -87,7 +87,7 @@ fun listLength(xs, acc: Int) -> Int {
 print(listLength([1, 2, 3, 4, 5], 0))  // 5
 ```
 
-### Reverse списка
+### List reverse
 
 ```rust
 fun myReverse(xs, acc) {
@@ -100,20 +100,20 @@ fun myReverse(xs, acc) {
 print(myReverse([1, 2, 3, 4, 5], []))  // [5, 4, 3, 2, 1]
 ```
 
-### Фибоначчи
+### Fibonacci
 
 ```rust
-// TCO версия - линейная сложность
+// TCO version - linear complexity
 fun fibTCO(n: Int, a: Int, b: Int) -> Int {
     if n == 0 { a } else { fibTCO(n - 1, b, a + b) }
 }
 
 fun fib(n: Int) -> Int { fibTCO(n, 0, 1) }
 
-print(fib(40))  // 102334155 - мгновенно!
+print(fib(40))  // 102334155 - instantly!
 ```
 
-## Pattern Matching + Рекурсия
+## Pattern Matching + Recursion
 
 ```rust
 type Tree = Leaf(Int) | Node((Tree, Tree))
@@ -132,7 +132,7 @@ tree = Node((
 print(treeSum(tree))  // 10
 ```
 
-## Взаимная рекурсия
+## Mutual recursion
 
 ```rust
 fun isEven(n: Int) -> Bool {
@@ -147,7 +147,7 @@ print(isEven(100))  // true
 print(isOdd(99))    // true
 ```
 
-## Практический пример: обход дерева
+## Practical example: tree traversal
 
 ```rust
 import "lib/list" (map, foldl, flatten)
@@ -180,4 +180,3 @@ fs = Dir(("root", [
 
 print(totalSize(fs))              // 850
 print(findLargeFiles(fs, 150))    // ["b.txt", "d.txt"]
-```

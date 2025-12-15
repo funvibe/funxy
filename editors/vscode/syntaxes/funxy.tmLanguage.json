@@ -24,6 +24,17 @@
     "strings": {
       "patterns": [
         {
+          "name": "string.quoted.other.format.funxy",
+          "begin": "%\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.funxy",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
           "name": "string.other.bits.funxy",
           "begin": "#b\"",
           "end": "\"",
@@ -265,7 +276,7 @@
         },
         {
           "name": "support.function.builtin.funxy",
-          "match": "\\b(print|panic|typeOf|getType|show|read|intToFloat|floatToInt)\\b"
+          "match": "\\b(print|panic|typeOf|getType|show|read|intToFloat|floatToInt|sprintf)\\b"
         }
       ]
     },

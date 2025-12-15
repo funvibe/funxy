@@ -1,9 +1,9 @@
 # 04. Pattern Matching
 
-## Задача
-Элегантно обрабатывать разные случаи без цепочек if-else.
+## Task
+Elegantly handle different cases without if-else chains.
 
-## Базовое решение
+## Basic Solution
 
 ```rust
 fun describe(x: Int) -> String {
@@ -22,14 +22,14 @@ print(describe(150))  // big
 print(describe(42))   // some number
 ```
 
-## Объяснение
+## Explanation
 
-- `match` проверяет значение по порядку
-- `_` — wildcard, ловит всё остальное
-- `n if condition` — guard pattern с условием
-- Возвращает значение (это выражение!)
+- `match` checks value in order
+- `_` — wildcard, catches everything else
+- `n if condition` — guard pattern with condition
+- Returns value (it's an expression!)
 
-## Деструктуризация кортежей
+## Tuple Destructuring
 
 ```rust
 fun process(pair: (Int, Int)) -> String {
@@ -46,7 +46,7 @@ print(process((0, 5)))   // on Y axis at 5
 print(process((3, 4)))   // point (3, 4)
 ```
 
-## Деструктуризация списков
+## List Destructuring
 
 ```rust
 import "lib/list" (length)
@@ -66,13 +66,13 @@ print(listInfo([1, 2]))       // two elements
 print(listInfo([1, 2, 3, 4])) // starts with something, 3 more
 ```
 
-Синтаксис spread: `tail...` (после переменной).
+Spread syntax: `tail...` (after variable).
 
 ## ADT (Algebraic Data Types)
 
 ```rust
-// Конструктор с одним аргументом: Circle(Float)
-// Конструктор с несколькими: Rectangle((Float, Float)) — кортеж
+// Constructor with one argument: Circle(Float)
+// Constructor with multiple: Rectangle((Float, Float)) — tuple
 type Shape = Circle(Float) | Rectangle((Float, Float))
 
 fun area(s: Shape) -> Float {
@@ -86,9 +86,9 @@ print(area(Circle(5.0)))             // 78.53975
 print(area(Rectangle((4.0, 3.0))))   // 12
 ```
 
-## Option (встроенный)
+## Option (Built-in)
 
-`Option<T>` — встроенный тип: `Some T | Zero`.
+`Option<T>` — built-in type: `Some T | Zero`.
 
 ```rust
 fun safeDivide(a: Int, b: Int) -> Option<Int> {
@@ -125,12 +125,12 @@ for i in range(1, 16) {
 }
 ```
 
-## Вложенный matching
+## Nested Matching
 
-`Result<E, A>` — встроенный тип: `Ok(A) | Fail(E)`.
+`Result<E, A>` — built-in type: `Ok(A) | Fail(E)`.
 
 ```rust
-// Result<E, A> = Ok(A) | Fail(E) — встроенный
+// Result<E, A> = Ok(A) | Fail(E) — built-in
 
 fun processResult(r: Result<String, Option<Int>>) -> String {
     match r {
@@ -145,7 +145,7 @@ print(processResult(Ok(Zero)))        // Ok but empty
 print(processResult(Fail("oops")))    // Error: oops
 ```
 
-## Guard Patterns (условия)
+## Guard Patterns (Conditions)
 
 ```rust
 fun grade(score: Int) -> String {
@@ -163,7 +163,7 @@ print(grade(72))  // C
 print(grade(55))  // F
 ```
 
-## Комбинация условий
+## Condition Combinations
 
 ```rust
 fun classify(x: Int) -> String {
@@ -181,15 +181,15 @@ print(classify(-5))  // negative
 print(classify(0))   // zero
 ```
 
-## Сводка синтаксиса
+## Syntax Summary
 
-| Паттерн | Пример | Описание |
+| Pattern | Example | Description |
 |---------|--------|----------|
-| Литерал | `0 ->` | Точное совпадение |
-| Переменная | `x ->` | Привязка к переменной |
-| Wildcard | `_ ->` | Любое значение |
-| Кортеж | `(x, y) ->` | Деструктуризация |
-| Список | `[x, y] ->` | Фиксированная длина |
-| Список spread | `[h, t...] ->` | Голова и хвост |
-| ADT | `Circle(r) ->` | Деструктуризация ADT |
-| Guard | `x if x > 0 ->` | С условием |
+| Literal | `0 ->` | Exact match |
+| Variable | `x ->` | Bind to variable |
+| Wildcard | `_ ->` | Any value |
+| Tuple | `(x, y) ->` | Destructuring |
+| List | `[x, y] ->` | Fixed length |
+| List spread | `[h, t...] ->` | Head and tail |
+| ADT | `Circle(r) ->` | ADT destructuring |
+| Guard | `x if x > 0 ->` | With condition |

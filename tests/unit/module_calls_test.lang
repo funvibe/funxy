@@ -1,0 +1,8 @@
+import "lib/list"
+import "lib/test" (*)
+
+testRun("module function call prioritizes field over extension", fun() {
+    nums = list.map(fun(x) -> x * 2, [1, 2, 3])
+    assertEquals([2, 4, 6], nums)
+})
+

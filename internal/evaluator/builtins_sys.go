@@ -98,7 +98,7 @@ func builtinExec(e *Evaluator, args ...Object) Object {
 	}
 
 	cmdArgs := make([]string, argsList.len())
-	for i, arg := range argsList.toSlice() {
+	for i, arg := range argsList.ToSlice() {
 		argList, ok := arg.(*List)
 		if !ok {
 			return newError("exec argument %d is not a string", i)
@@ -119,23 +119,19 @@ func builtinExec(e *Evaluator, args ...Object) Object {
 			exitCode = exitError.ExitCode()
 		} else {
 			// Command failed to start
-			return &RecordInstance{
-				Fields: map[string]Object{
-					"code":   &Integer{Value: -1},
-					"stdout": stringToList(""),
-					"stderr": stringToList(err.Error()),
-				},
-			}
+			return NewRecord(map[string]Object{
+				"code":   &Integer{Value: -1},
+				"stdout": stringToList(""),
+				"stderr": stringToList(err.Error()),
+			})
 		}
 	}
 
-	return &RecordInstance{
-		Fields: map[string]Object{
-			"code":   &Integer{Value: int64(exitCode)},
-			"stdout": stringToList(stdout.String()),
-			"stderr": stringToList(stderr.String()),
-		},
-	}
+	return NewRecord(map[string]Object{
+		"code":   &Integer{Value: int64(exitCode)},
+		"stdout": stringToList(stdout.String()),
+		"stderr": stringToList(stderr.String()),
+	})
 }
 
 // SetSysBuiltinTypes sets type info for sys builtins

@@ -1,65 +1,65 @@
-# Арифметика и числа
+# Arithmetic and Numbers
 
-Числовые типы и операции в Funxy.
+Numeric types and operations in Funxy.
 
-## Типы данных
+## Data Types
 
-| Тип | Описание |
+| Type | Description |
 |-----|----------|
-| `Int` | 64-битное целое число |
-| `Float` | Число с плавающей точкой |
-| `BigInt` | Целое произвольной точности |
-| `Rational` | Рациональное число |
-| `Bool` | Логическое значение |
+| `Int` | 64-bit integer |
+| `Float` | Floating point number |
+| `BigInt` | Arbitrary precision integer |
+| `Rational` | Rational number |
+| `Bool` | Boolean value |
 
-## Числовые литералы
+## Numeric Literals
 
-| Формат | Пример | Тип |
+| Format | Example | Type |
 |--------|--------|-----|
-| Десятичный | `123`, `-42` | `Int` |
-| Шестнадцатеричный | `0xFF` | `Int` |
-| Восьмеричный | `0o777` | `Int` |
-| Двоичный | `0b101` | `Int` |
+| Decimal | `123`, `-42` | `Int` |
+| Hexadecimal | `0xFF` | `Int` |
+| Octal | `0o777` | `Int` |
+| Binary | `0b101` | `Int` |
 | Float | `1.5`, `3.14` | `Float` |
 | BigInt | `100n`, `0xFFn` | `BigInt` |
 | Rational | `1.5r`, `10r` | `Rational` |
 
-## Операторы
+## Operators
 
-### Арифметические
+### Arithmetic
 
-| Операция | Синтаксис | Примечание |
+| Operation | Syntax | Note |
 |----------|-----------|------------|
-| Сложение | `a + b` | |
-| Вычитание | `a - b` | |
-| Умножение | `a * b` | |
-| Деление | `a / b` | Int — целочисленное |
-| Остаток | `a % b` | |
-| Степень | `a ** b` | |
+| Addition | `a + b` | |
+| Subtraction | `a - b` | |
+| Multiplication | `a * b` | |
+| Division | `a / b` | Int - integer |
+| Remainder | `a % b` | |
+| Power | `a ** b` | |
 
-### Сравнения
+### Comparisons
 
-| Операция | Синтаксис |
+| Operation | Syntax |
 |----------|-----------|
-| Равно | `a == b` |
-| Не равно | `a != b` |
-| Меньше | `a < b` |
-| Больше | `a > b` |
-| Меньше или равно | `a <= b` |
-| Больше или равно | `a >= b` |
+| Equal | `a == b` |
+| Not equal | `a != b` |
+| Less than | `a < b` |
+| Greater than | `a > b` |
+| Less than or equal | `a <= b` |
+| Greater than or equal | `a >= b` |
 
-### Битовые операции (только Int)
+### Bitwise Operations (Int only)
 
-| Операция | Синтаксис |
+| Operation | Syntax |
 |----------|-----------|
 | AND | `a & b` |
-| OR | `a \| b` |
+| OR | `a | b` |
 | XOR | `a ^ b` |
 | NOT | `~a` |
-| Сдвиг влево | `a << b` |
-| Сдвиг вправо | `a >> b` |
+| Left shift | `a << b` |
+| Right shift | `a >> b` |
 
-## Примеры
+## Examples
 
 ```rust
 print(1 + 2)      // 3
@@ -69,15 +69,15 @@ print(~0b101)     // -6
 print(7 % 3)      // 1
 ```
 
-## Встроенные функции
+## Built-in Functions
 
-| Функция | Описание |
+| Function | Description |
 |---------|----------|
-| `print(args...)` | Вывод на stdout |
-| `len(collection)` | Длина списка или кортежа |
-| `getType(val)` | Тип значения |
-| `typeOf(val, Type)` | Проверка типа |
-| `panic(msg)` | Прерывание с ошибкой |
+| `print(args...)` | Output to stdout |
+| `len(collection)` | Length of list or tuple |
+| `getType(val)` | Type of value |
+| `typeOf(val, Type)` | Type check |
+| `panic(msg)` | Abort with error |
 
 ```rust
 print(len([1, 2, 3]))     // 3
@@ -89,6 +89,6 @@ if typeOf(x, Int) {
 }
 ```
 
-## Тесты
+## Tests
 
-См. `tests/arithmetic.lang`
+See `tests/arithmetic.lang`

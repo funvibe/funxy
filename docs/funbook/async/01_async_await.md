@@ -1,36 +1,36 @@
 # 01. Async/Await
 
-## Задача
-Выполнять асинхронные операции (I/O, HTTP запросы) без блокировки.
+## Task
+Perform asynchronous operations (I/O, HTTP requests) without blocking.
 
 ---
 
-## Базовый синтаксис
+## Basic Syntax
 
 ```rust
 import "lib/task" (async, await)
 
-// Создать асинхронную задачу
+// Create an asynchronous task
 task = async(fun() -> {
-    // длительная операция
+    // long operation
     42
 })
 
-// Дождаться результата
+// Wait for result
 result = await(task)
 print(result)
 ```
 
 ---
 
-## Простой пример
+## Simple Example
 
 ```rust
 import "lib/task" (async, await)
 import "lib/time" (sleepMs)
 
 fun slowAdd(a: Int, b: Int) -> Int {
-    sleepMs(1000)  // 1 секунда
+    sleepMs(1000)  // 1 second
     a + b
 }
 
@@ -42,7 +42,7 @@ print("Result: " ++ show(result))  // Result: 5
 
 ---
 
-## Параллельное выполнение
+## Parallel Execution
 
 ```rust
 import "lib/task" (async, await)
@@ -53,17 +53,17 @@ fun fetchUser(id: Int) {
     { id: id, name: "User " ++ show(id) }
 }
 
-// Запускаем три запроса ПАРАЛЛЕЛЬНО
+// Run three requests IN PARALLEL
 task1 = async(fun() -> fetchUser(1))
 task2 = async(fun() -> fetchUser(2))
 task3 = async(fun() -> fetchUser(3))
 
-// Ждём все результаты
+// Wait for all results
 user1 = await(task1)
 user2 = await(task2)
 user3 = await(task3)
 
-// Общее время: ~500ms вместо ~1500ms!
+// Total time: ~500ms instead of ~1500ms!
 print(user1)
 print(user2)
 print(user3)
@@ -71,7 +71,7 @@ print(user3)
 
 ---
 
-## HTTP запросы параллельно
+## HTTP Requests in Parallel
 
 ```rust
 import "lib/task" (async, await)
@@ -88,7 +88,7 @@ fun fetchData(url: String) {
     }
 }
 
-// Параллельные запросы к разным API
+// Parallel requests to different APIs
 usersTask = async(fun() -> fetchData("https://api.example.com/users"))
 postsTask = async(fun() -> fetchData("https://api.example.com/posts"))
 
@@ -100,7 +100,7 @@ print("Got users and posts")
 
 ---
 
-## Пул задач
+## Task Pool
 
 ```rust
 import "lib/task" (async, await)
@@ -123,7 +123,7 @@ print(results)
 
 ---
 
-## Последовательность vs Параллельность
+## Sequential vs Parallel
 
 ```rust
 import "lib/task" (async, await)
@@ -134,7 +134,7 @@ fun slowTask(ms: Int) -> Int {
     ms
 }
 
-// Последовательно: 300ms
+// Sequential: 300ms
 start1 = timeNow()
 slowTask(100)
 slowTask(100)
@@ -142,7 +142,7 @@ slowTask(100)
 elapsed1 = timeNow() - start1
 print("Sequential: " ++ show(elapsed1) ++ "ms")
 
-// Параллельно: ~100ms
+// Parallel: ~100ms
 start2 = timeNow()
 t1 = async(fun() -> slowTask(100))
 t2 = async(fun() -> slowTask(100))
@@ -154,7 +154,7 @@ print("Parallel: " ++ show(elapsed2) ++ "ms")
 
 ---
 
-## Практический пример: Web Scraper
+## Practical Example: Web Scraper
 
 ```rust
 import "lib/task" (async, await)
@@ -181,7 +181,7 @@ urls = [
     "https://github.com"
 ]
 
-// Скрейпим все URL параллельно
+// Scrape all URLs in parallel
 tasks = map(fun(url) -> async(fun() -> scrapeUrl(url)), urls)
 results = map(fun(t) -> await(t), tasks)
 
@@ -195,11 +195,11 @@ for result in results {
 
 ---
 
-## Когда использовать async
+## When to Use Async
 
-- I/O операции (файлы, сеть)
-- HTTP запросы
-- Базы данных
-- Любые "ждущие" операции
+- I/O operations (files, network)
+- HTTP requests
+- Databases
+- Any "waiting" operations
 
-Async позволяет не блокировать выполнение программы пока ждём результат.
+Async allows not blocking program execution while waiting for results.

@@ -1,0 +1,25 @@
+42
+hello
+Alice
+Nil
+123
+world
+true
+Integer: 42
+String: test
+100
+Nil
+42
+forty-two
+Got int: 100
+Got string: abc
+Got nil
+42
+Nil
+[1, 2, 3]
+Nil
+zero
+50
+It's an integer
+It's a string
+All union type tests passed!

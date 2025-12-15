@@ -1,13 +1,13 @@
-# 23. CLI утилита
+# 23. CLI Utility
 
-## Задача
-Создать полноценную command-line утилиту с аргументами, опциями и красивым выводом.
+## Task
+Create a full-featured command-line utility with arguments, options, and beautiful output.
 
 ---
 
-## Полный пример: Todo CLI
+## Complete example: Todo CLI
 
-Создаём todo-менеджер с командами `add`, `list`, `done`, `remove`.
+Creating a todo manager with commands `add`, `list`, `done`, `remove`.
 
 ### todo.lang
 
@@ -18,12 +18,12 @@ import "lib/json" (jsonEncode, jsonDecode)
 import "lib/string" (stringPadRight, stringTrim)
 import "lib/list" (filter, map, foldl)
 
-// --- Типы ---
+// --- Types ---
 
 type Todo = { id: Int, text: String, done: Bool }
 type TodoList = List<Todo>
 
-// --- Хранение ---
+// --- Storage ---
 
 dataFile = "todos.json"
 
@@ -53,7 +53,7 @@ fun nextId(todos: TodoList) -> Int {
     foldl(fun(acc, t) -> if t.id > acc { t.id } else { acc }, 0, todos) + 1
 }
 
-// --- Команды ---
+// --- Commands ---
 
 fun cmdAdd(text: String) {
     todos = loadTodos()
@@ -161,15 +161,15 @@ fun main() {
 main()
 ```
 
-### Использование
+### Usage
 
 ```bash
-# Добавить задачи
+# Add tasks
 lang todo.lang add "Buy milk"
 lang todo.lang add "Write tests"
 lang todo.lang add "Deploy to prod"
 
-# Посмотреть список
+# View list
 lang todo.lang list
 #  Your Todos:
 #    1   Buy milk
@@ -177,7 +177,7 @@ lang todo.lang list
 #    3   Deploy to prod
 #   0/3 completed
 
-# Отметить выполненную
+# Mark as done
 lang todo.lang done 1
 lang todo.lang list
 #    1   Buy milk
@@ -185,18 +185,18 @@ lang todo.lang list
 #    3   Deploy to prod
 #   1/3 completed
 
-# Удалить
+# Remove
 lang todo.lang remove 2
 
-# Очистить всё
+# Clear all
 lang todo.lang clear
 ```
 
 ---
 
-## Разбор аргументов
+## Argument parsing
 
-### Простой способ
+### Simple way
 
 ```rust
 import "lib/sys" (sysArgs)
@@ -211,7 +211,7 @@ match args {
 }
 ```
 
-### Парсинг флагов
+### Flag parsing
 
 ```rust
 import "lib/sys" (sysArgs)
@@ -246,10 +246,10 @@ print("Files: " ++ show(opts.files))
 
 ---
 
-## Цветной вывод (ANSI)
+## Colored output (ANSI)
 
 ```rust
-// ANSI escape codes (в терминале поддерживающем ANSI)
+// ANSI escape codes (in ANSI-supporting terminal)
 red :- "\x1b[31m"
 green :- "\x1b[32m"
 yellow :- "\x1b[33m"
@@ -271,7 +271,7 @@ print(colorBold(colorBlue("Info")))
 
 ---
 
-## Progress индикатор
+## Progress indicator
 
 ```rust
 import "lib/time" (sleepMs)
@@ -285,7 +285,7 @@ fun progressBar(current: Int, total: Int, width: Int) -> String {
     "[" ++ bar ++ "] " ++ show(percent) ++ "%"
 }
 
-// Симуляция прогресса
+// Progress simulation
 for i in range(1, 101) {
     write("\r" ++ progressBar(i, 100, 30))
     sleepMs(50)
@@ -296,7 +296,7 @@ print("\nDone!")
 
 ---
 
-## Чтение ввода пользователя
+## Reading user input
 
 ```rust
 import "lib/io" (readLine)
@@ -314,7 +314,7 @@ fun confirm(message: String) -> Bool {
     answer == "y" || answer == "Y" || answer == "yes"
 }
 
-// Использование
+// Usage
 name = prompt("Enter your name: ")
 print("Hello, " ++ name ++ "!")
 
@@ -328,18 +328,18 @@ if confirm("Do you want to continue?") {
 
 ---
 
-## Environment переменные
+## Environment variables
 
 ```rust
 import "lib/sys" (sysEnv, sysExit)
 
-// Прочитать переменную окружения
+// Read environment variable
 match sysEnv("HOME") {
     Some(home) -> print("Home directory: " ++ home)
     Zero -> print("HOME not set")
 }
 
-// API ключ из окружения
+// API key from environment
 fun getApiKey() -> String {
     match sysEnv("API_KEY") {
         Some(key) -> key
@@ -375,7 +375,7 @@ fun main() -> Nil = {
 
 ---
 
-## Полный пример: файловый поиск (grep)
+## Complete example: file search (grep)
 
 ```rust
 import "lib/sys" (sysArgs, sysExit)
@@ -440,4 +440,3 @@ fun main() {
 main()
 // ...
 ```
-

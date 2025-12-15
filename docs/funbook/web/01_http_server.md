@@ -1,9 +1,9 @@
-# 01. HTTP сервер
+# 01. HTTP Server
 
-## Задача
-Создать веб-сервер для обработки HTTP запросов.
+## Task
+Create a web server to handle HTTP requests.
 
-## Минимальный сервер
+## Minimal server
 
 ```rust
 import "lib/http" (httpServe)
@@ -13,11 +13,11 @@ fun handler(req) {
 }
 
 // httpServe(8080, handler)
-// Запустите и откройте: http://localhost:8080
+// Run and open: http://localhost:8080
 
 ```
 
-## Роутинг
+## Routing
 
 ```rust
 import "lib/http" (httpServe)
@@ -35,7 +35,7 @@ fun handler(req) {
 
 ```
 
-## Обработка методов
+## Method handling
 
 ```rust
 import "lib/http" (httpServe)
@@ -88,7 +88,7 @@ fun handler(req) {
 
 ```
 
-## HTML страницы
+## HTML pages
 
 ```rust
 import "lib/http" (httpServe)
@@ -112,7 +112,7 @@ fun handler(req) {
 
 ```
 
-## Статические файлы
+## Static files
 
 ```rust
 import "lib/http" (httpServe)
@@ -148,7 +148,7 @@ fun handler(req) {
 
 ```
 
-## Query параметры
+## Query parameters
 
 ```rust
 import "lib/http" (httpServe)
@@ -169,7 +169,7 @@ fun handler(req) {
 // http://localhost:8080?name=Alice -> "Hello, Alice!"
 ```
 
-## Middleware паттерн
+## Middleware pattern
 
 ```rust
 import "lib/http" (httpServe)
@@ -193,7 +193,7 @@ fun app(req) {
 
 ```
 
-## Полный пример: REST API
+## Complete example: REST API
 
 ```rust
 import "lib/http" (httpServe)
@@ -240,5 +240,3 @@ fun handler(req) {
 }
 
 // httpServe(8080, handler)
-
-```

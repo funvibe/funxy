@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe" // Added unsafe for pointer hashing
 
 	"github.com/funvibe/funxy/internal/typesystem"
 )
@@ -46,6 +47,32 @@ func (t *Task) RuntimeType() typesystem.Type {
 		Args:        []typesystem.Type{typesystem.TVar{Name: "T"}},
 	}
 }
+func (t *Task) Hash() uint32 {
+	return uint32(uintptr(unsafe.Pointer(t)))
+}
+
+// NewTask creates a new Task (exported for VM)
+func NewTask() *Task {
+	return &Task{done: make(chan struct{})}
+}
+
+// Complete completes the task with a result or error (exported for VM)
+func (t *Task) Complete(result Object) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	defer close(t.done)
+
+	if t.cancelled.Load() {
+		t.err = "cancelled"
+		return
+	}
+
+	if isError(result) {
+		t.err = result.(*Error).Message
+	} else {
+		t.result = result
+	}
+}
 
 // ============================================================================
 // Global pool limiter
@@ -57,7 +84,7 @@ var (
 	poolCond          = sync.NewCond(&sync.Mutex{})
 )
 
-func acquirePoolSlot() {
+func AcquirePoolSlot() {
 	poolCond.L.Lock()
 	for atomic.LoadInt64(&poolCurrent) >= atomic.LoadInt64(&poolLimit) {
 		poolCond.Wait()
@@ -66,7 +93,7 @@ func acquirePoolSlot() {
 	poolCond.L.Unlock()
 }
 
-func releasePoolSlot() {
+func ReleasePoolSlot() {
 	atomic.AddInt64(&poolCurrent, -1)
 	poolCond.Signal()
 }
@@ -119,14 +146,20 @@ func builtinAsync(e *Evaluator, args ...Object) Object {
 	}
 
 	fn := args[0]
+
+	// Use custom async handler if provided (e.g. for VM)
+	if e.AsyncHandler != nil {
+		return e.AsyncHandler(fn, []Object{})
+	}
+
 	task := &Task{done: make(chan struct{})}
 
 	// Clone evaluator for goroutine
 	evalClone := e.Clone()
 
 	go func() {
-		acquirePoolSlot()
-		defer releasePoolSlot()
+		AcquirePoolSlot()
+		defer ReleasePoolSlot()
 		defer close(task.done)
 
 		// Check if cancelled before starting
@@ -137,7 +170,7 @@ func builtinAsync(e *Evaluator, args ...Object) Object {
 			return
 		}
 
-		result := evalClone.applyFunction(fn, []Object{})
+		result := evalClone.ApplyFunction(fn, []Object{})
 
 		task.mu.Lock()
 		if task.cancelled.Load() {
@@ -243,7 +276,7 @@ func builtinAwaitAll(e *Evaluator, args ...Object) Object {
 		return newError("awaitAll expects a List, got %s", args[0].Type())
 	}
 
-	tasks := list.toSlice()
+	tasks := list.ToSlice()
 	results := make([]Object, len(tasks))
 
 	for i, taskObj := range tasks {
@@ -282,7 +315,7 @@ func builtinAwaitAllTimeout(e *Evaluator, args ...Object) Object {
 		return newError("awaitAllTimeout expects Int for timeout, got %s", args[1].Type())
 	}
 
-	tasks := list.toSlice()
+	tasks := list.ToSlice()
 	results := make([]Object, len(tasks))
 	deadline := time.After(time.Duration(timeoutMs.Value) * time.Millisecond)
 
@@ -321,7 +354,7 @@ func builtinAwaitAny(e *Evaluator, args ...Object) Object {
 		return newError("awaitAny expects a List, got %s", args[0].Type())
 	}
 
-	tasks := list.toSlice()
+	tasks := list.ToSlice()
 	if len(tasks) == 0 {
 		return makeFailStr("awaitAny: empty list")
 	}
@@ -378,7 +411,7 @@ func builtinAwaitAnyTimeout(e *Evaluator, args ...Object) Object {
 		return newError("awaitAnyTimeout expects Int for timeout, got %s", args[1].Type())
 	}
 
-	tasks := list.toSlice()
+	tasks := list.ToSlice()
 	if len(tasks) == 0 {
 		return makeFailStr("awaitAnyTimeout: empty list")
 	}
@@ -436,7 +469,7 @@ func builtinAwaitFirst(e *Evaluator, args ...Object) Object {
 		return newError("awaitFirst expects a List, got %s", args[0].Type())
 	}
 
-	tasks := list.toSlice()
+	tasks := list.ToSlice()
 	if len(tasks) == 0 {
 		return makeFailStr("awaitFirst: empty list")
 	}
@@ -488,7 +521,7 @@ func builtinAwaitFirstTimeout(e *Evaluator, args ...Object) Object {
 		return newError("awaitFirstTimeout expects Int for timeout, got %s", args[1].Type())
 	}
 
-	tasks := list.toSlice()
+	tasks := list.ToSlice()
 	if len(tasks) == 0 {
 		return makeFailStr("awaitFirstTimeout: empty list")
 	}
@@ -632,8 +665,21 @@ func builtinTaskMap(e *Evaluator, args ...Object) Object {
 	}
 
 	fn := args[1]
+
+	// Capture closure state if needed (for VM)
+	if e.CaptureHandler != nil {
+		fn = e.CaptureHandler(fn)
+	}
+
 	newTask := &Task{done: make(chan struct{})}
-	evalClone := e.Clone()
+
+	// Use Fork if available (creates isolated VM), otherwise Clone (tree-walk)
+	var evalClone *Evaluator
+	if e.Fork != nil {
+		evalClone = e.Fork()
+	} else {
+		evalClone = e.Clone()
+	}
 
 	go func() {
 		defer close(newTask.done)
@@ -651,7 +697,25 @@ func builtinTaskMap(e *Evaluator, args ...Object) Object {
 		result := task.result
 		task.mu.Unlock()
 
-		mapped := evalClone.applyFunction(fn, []Object{result})
+		// Use AsyncHandler if available to execute in a safe VM context
+		var mapped Object
+		if evalClone.AsyncHandler != nil {
+			taskObj := evalClone.AsyncHandler(fn, []Object{result})
+			if t, ok := taskObj.(*Task); ok {
+				<-t.done
+				t.mu.Lock()
+				if t.err != "" {
+					mapped = &Error{Message: t.err}
+				} else {
+					mapped = t.result
+				}
+				t.mu.Unlock()
+			} else {
+				mapped = taskObj // Should be Error
+			}
+		} else {
+			mapped = evalClone.ApplyFunction(fn, []Object{result})
+		}
 
 		newTask.mu.Lock()
 		if isError(mapped) {
@@ -677,8 +741,21 @@ func builtinTaskFlatMap(e *Evaluator, args ...Object) Object {
 	}
 
 	fn := args[1]
+
+	// Capture closure state if needed (for VM)
+	if e.CaptureHandler != nil {
+		fn = e.CaptureHandler(fn)
+	}
+
 	newTask := &Task{done: make(chan struct{})}
-	evalClone := e.Clone()
+
+	// Use Fork if available (creates isolated VM), otherwise Clone (tree-walk)
+	var evalClone *Evaluator
+	if e.Fork != nil {
+		evalClone = e.Fork()
+	} else {
+		evalClone = e.Clone()
+	}
 
 	go func() {
 		defer close(newTask.done)
@@ -696,7 +773,25 @@ func builtinTaskFlatMap(e *Evaluator, args ...Object) Object {
 		result := task.result
 		task.mu.Unlock()
 
-		innerTaskObj := evalClone.applyFunction(fn, []Object{result})
+		var innerTaskObj Object
+		if evalClone.AsyncHandler != nil {
+			// Use AsyncHandler to execute fn safely
+			tObj := evalClone.AsyncHandler(fn, []Object{result})
+			if t, ok := tObj.(*Task); ok {
+				<-t.done
+				t.mu.Lock()
+				if t.err != "" {
+					innerTaskObj = &Error{Message: t.err}
+				} else {
+					innerTaskObj = t.result
+				}
+				t.mu.Unlock()
+			} else {
+				innerTaskObj = tObj
+			}
+		} else {
+			innerTaskObj = evalClone.ApplyFunction(fn, []Object{result})
+		}
 
 		if isError(innerTaskObj) {
 			newTask.mu.Lock()
@@ -741,8 +836,21 @@ func builtinTaskCatch(e *Evaluator, args ...Object) Object {
 	}
 
 	fn := args[1]
+
+	// Capture closure state if needed (for VM)
+	if e.CaptureHandler != nil {
+		fn = e.CaptureHandler(fn)
+	}
+
 	newTask := &Task{done: make(chan struct{})}
-	evalClone := e.Clone()
+
+	// Use Fork if available (creates isolated VM), otherwise Clone (tree-walk)
+	var evalClone *Evaluator
+	if e.Fork != nil {
+		evalClone = e.Fork()
+	} else {
+		evalClone = e.Clone()
+	}
 
 	go func() {
 		defer close(newTask.done)
@@ -762,7 +870,25 @@ func builtinTaskCatch(e *Evaluator, args ...Object) Object {
 
 		// Convert error string to Funxy string (List<Char>)
 		errList := stringToList(errStr)
-		recovered := evalClone.applyFunction(fn, []Object{errList})
+
+		var recovered Object
+		if evalClone.AsyncHandler != nil {
+			tObj := evalClone.AsyncHandler(fn, []Object{errList})
+			if t, ok := tObj.(*Task); ok {
+				<-t.done
+				t.mu.Lock()
+				if t.err != "" {
+					recovered = &Error{Message: t.err}
+				} else {
+					recovered = t.result
+				}
+				t.mu.Unlock()
+			} else {
+				recovered = tObj
+			}
+		} else {
+			recovered = evalClone.ApplyFunction(fn, []Object{errList})
+		}
 
 		newTask.mu.Lock()
 		if isError(recovered) {

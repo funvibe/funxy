@@ -1,0 +1,52 @@
+=== Bits Creation ===
+#b""
+0
+true
+#b"01000001"
+8
+#b"10101010"
+#b"11111111"
+=== Bits Literals ===
+#b"10101010"
+#b"101"
+#b"11111111"
+#b"10100101"
+=== Octal Literals ===
+#b"111"
+3
+#b"111111"
+6
+#b"011111111"
+9
+#b"011111111"
+=== Bits Conversion ===
+10101010
+@x"aa"
+@x"a0"
+@x"05"
+=== Bits Slicing ===
+#b"1111"
+#b"0000"
+=== Bits Concatenation ===
+#b"11110000"
+#b"10100101"
+=== Bits Padding ===
+#b"00000101"
+#b"10100000"
+=== Bits Numeric Operations ===
+#b"11111111"
+#b"0000000000000001"
+#b"11111111"
+#b"0000000000000001"
+#b"11111111"
+#b"11111111"
+=== Bits Equality ===
+true
+false
+true
+=== Pattern Matching ===
+Some(1)
+Some(5)
+Some(0)
+Some(256)
+=== Done ===

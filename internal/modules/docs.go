@@ -78,6 +78,19 @@ func SearchDocs(term string) []*DocEntry {
 			}
 		}
 	}
+
+	// Sort: exact matches first, then by name
+	sort.Slice(results, func(i, j int) bool {
+		nameI := strings.ToLower(results[i].Name)
+		nameJ := strings.ToLower(results[j].Name)
+		exactI := nameI == term
+		exactJ := nameJ == term
+		if exactI != exactJ {
+			return exactI // exact match comes first
+		}
+		return nameI < nameJ // alphabetical
+	})
+
 	return results
 }
 
@@ -170,7 +183,7 @@ func FormatDocPackage(pkg *DocPackage) string {
 // PrintHelp prints general help
 func PrintHelp() string {
 	var sb strings.Builder
-	sb.WriteString("Funxy - A Functional Programming Language\n")
+	sb.WriteString("Funxy - A Hybrid Programming Language\n")
 	sb.WriteString("=========================================\n\n")
 	sb.WriteString("Usage:\n")
 	sb.WriteString("  funxy <file>                Run a program\n")
@@ -180,13 +193,7 @@ func PrintHelp() string {
 	sb.WriteString("  funxy -help search <term>   Search documentation\n")
 	sb.WriteString("  funxy -help precedence      Show operator precedence\n")
 	sb.WriteString("\n")
-	sb.WriteString("File extensions: .lang, .funxy, .fx\n\n")
-	sb.WriteString("Available packages:\n")
-
-	for _, pkg := range GetAllDocPackages() {
-		sb.WriteString(fmt.Sprintf("  %-15s %s\n", pkg.Path, pkg.Description))
-	}
-
+	sb.WriteString("File extensions: .lang, .funxy, .fx\n")
 	return sb.String()
 }
 
@@ -290,6 +297,8 @@ func InitDocumentation() {
 	initUuidDocs()
 	initLogDocs()
 	initTaskDocs()
+	initCsvDocs()
+	initFlagDocs()
 
 	// Auto-generate docs for any packages that were registered but not documented
 	autoGenerateMissingDocs()
@@ -938,7 +947,7 @@ func initHttpDocs() {
 		"httpSetTimeout": {Description: "Set request timeout (milliseconds)", Category: "Config"},
 		"httpServe":      {Description: "Start HTTP server (blocking)", Category: "Server"},
 		"httpServeAsync": {Description: "Start HTTP server (non-blocking, returns server ID)", Category: "Server"},
-		"httpServerStop": {Description: "Stop a running server by ID", Category: "Server"},
+		"httpServerStop": {Description: "Stop a running server by ID (timeout? default 5000ms)", Category: "Server"},
 	}
 	types := []*DocEntry{
 		{Name: "HttpResponse", Signature: "{ status: Int, body: String, headers: List<(String, String)> }", Description: "HTTP response type"},
@@ -1340,5 +1349,48 @@ func initTaskDocs() {
 	}
 
 	pkg := generatePackageDocs("lib/task", "Asynchronous computations with Tasks (Futures/Promises)", meta, types)
+	RegisterDocPackage(pkg)
+}
+
+// ============================================================================
+// lib/csv Documentation
+// ============================================================================
+
+func initCsvDocs() {
+	meta := map[string]*DocMeta{
+		// Parse
+		"csvParse":    {Description: "Parse CSV with headers (delimiter? default ',')", Category: "Parse"},
+		"csvParseRaw": {Description: "Parse CSV without headers (delimiter?)", Category: "Parse"},
+
+		// Read
+		"csvRead":    {Description: "Read CSV file with headers (delimiter?)", Category: "Read"},
+		"csvReadRaw": {Description: "Read CSV file without headers (delimiter?)", Category: "Read"},
+
+		// Encode
+		"csvEncode":    {Description: "Encode records to CSV string (delimiter?)", Category: "Encode"},
+		"csvEncodeRaw": {Description: "Encode rows to CSV string (delimiter?)", Category: "Encode"},
+
+		// Write
+		"csvWrite":    {Description: "Write records to CSV file (delimiter?)", Category: "Write"},
+		"csvWriteRaw": {Description: "Write rows to CSV file (delimiter?)", Category: "Write"},
+	}
+
+	pkg := generatePackageDocs("lib/csv", "CSV parsing, encoding, and file I/O (optional delimiter, default ',')", meta, nil)
+	RegisterDocPackage(pkg)
+}
+
+// ============================================================================
+// lib/flag
+// ============================================================================
+
+func initFlagDocs() {
+	meta := map[string]*DocMeta{
+		"flagSet":   {Description: "Define a flag with default value and description", Category: "Definition"},
+		"flagParse": {Description: "Parse command line arguments. Supports -flag=val, -flag val, --flag val", Category: "Parsing"},
+		"flagGet":   {Description: "Get flag value (returns default if not set)", Category: "Access"},
+		"flagArgs":  {Description: "Get remaining non-flag arguments", Category: "Access"},
+		"flagUsage": {Description: "Print usage information", Category: "Help"},
+	}
+	pkg := generatePackageDocs("lib/flag", "Command line flag parsing. Supports both -flag=value and -flag value formats.", meta, nil)
 	RegisterDocPackage(pkg)
 }

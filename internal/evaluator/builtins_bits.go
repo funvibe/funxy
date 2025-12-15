@@ -68,11 +68,24 @@ func SetBitsBuiltinTypes(builtins map[string]*Builtin) {
 		Args:        []typesystem.Type{stringType, bitsType},
 	}
 
+	recordType := typesystem.TRecord{IsOpen: true, Fields: map[string]typesystem.Type{}}
+	specListType := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: config.ListTypeName},
+		Args:        []typesystem.Type{recordType},
+	}
+	resultMapType := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: config.ResultTypeName},
+		Args:        []typesystem.Type{stringType, typesystem.TCon{Name: "Map"}},
+	}
+
+	sizeType := typesystem.TUnion{Types: []typesystem.Type{intType, stringType}}
+
 	types := map[string]typesystem.Type{
 		"bitsNew":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: bitsType},
 		"bitsFromBytes":  typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: bitsType},
 		"bitsFromBinary": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBits},
 		"bitsFromHex":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBits},
+		"bitsFromOctal":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBits},
 
 		"bitsToBytes":  typesystem.TFunc{Params: []typesystem.Type{bitsType, stringType}, ReturnType: bytesType, DefaultCount: 1},
 		"bitsToBinary": typesystem.TFunc{Params: []typesystem.Type{bitsType}, ReturnType: stringType},
@@ -88,6 +101,11 @@ func SetBitsBuiltinTypes(builtins map[string]*Builtin) {
 
 		"bitsAddInt":   typesystem.TFunc{Params: []typesystem.Type{bitsType, intType, intType, stringType}, ReturnType: bitsType, DefaultCount: 1},
 		"bitsAddFloat": typesystem.TFunc{Params: []typesystem.Type{bitsType, typesystem.Float, intType}, ReturnType: bitsType},
+
+		"bitsExtract": typesystem.TFunc{Params: []typesystem.Type{bitsType, specListType}, ReturnType: resultMapType},
+		"bitsInt":     typesystem.TFunc{Params: []typesystem.Type{stringType, intType, stringType}, ReturnType: recordType, DefaultCount: 1},
+		"bitsBytes":   typesystem.TFunc{Params: []typesystem.Type{stringType, sizeType}, ReturnType: recordType},
+		"bitsRest":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: recordType},
 	}
 
 	for name, typ := range types {
@@ -228,7 +246,7 @@ func builtinBitsGet(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bitsGet expects Int as second argument, got %s", args[1].Type())
 	}
-	bit := bits.get(int(idx.Value))
+	bit := bits.Get(int(idx.Value))
 	if bit < 0 {
 		return makeZero()
 	}
@@ -249,7 +267,7 @@ func builtinBitsConcat(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bitsConcat expects Bits as second argument, got %s", args[1].Type())
 	}
-	return b1.concat(b2)
+	return b1.Concat(b2)
 }
 
 func builtinBitsSet(e *Evaluator, args ...Object) Object {
@@ -310,7 +328,7 @@ func builtinBitsPadLeft(e *Evaluator, args ...Object) Object {
 	padBits := target - bits.length
 	// Create zero bits to prepend
 	zeroBits := &Bits{data: make([]byte, (padBits+7)/8), length: padBits}
-	return zeroBits.concat(bits)
+	return zeroBits.Concat(bits)
 }
 
 func builtinBitsPadRight(e *Evaluator, args ...Object) Object {
@@ -334,7 +352,7 @@ func builtinBitsPadRight(e *Evaluator, args ...Object) Object {
 	padBits := target - bits.length
 	// Create zero bits to append
 	zeroBits := &Bits{data: make([]byte, (padBits+7)/8), length: padBits}
-	return bits.concat(zeroBits)
+	return bits.Concat(zeroBits)
 }
 
 // === Numeric operations ===
@@ -363,7 +381,7 @@ func builtinBitsAddInt(e *Evaluator, args ...Object) Object {
 
 	// Encode integer to bits
 	intBits := encodeIntToBits(n.Value, int(size.Value), spec)
-	return bits.concat(intBits)
+	return bits.Concat(intBits)
 }
 
 func builtinBitsAddFloat(e *Evaluator, args ...Object) Object {
@@ -385,7 +403,7 @@ func builtinBitsAddFloat(e *Evaluator, args ...Object) Object {
 
 	// Encode float to bits
 	floatBits := encodeFloatToBits(f.Value, int(size.Value))
-	return bits.concat(floatBits)
+	return bits.Concat(floatBits)
 }
 
 // isNativeLittleEndian returns true if the system is little-endian
@@ -472,14 +490,12 @@ func builtinBitsInt(e *Evaluator, args ...Object) Object {
 		spec = objectToString(args[2])
 	}
 
-	return &RecordInstance{
-		Fields: map[string]Object{
-			"_specKind": goStringToList("int"),
-			"name":      goStringToList(name),
-			"size":      &Integer{Value: size.Value},
-			"spec":      goStringToList(spec),
-		},
-	}
+	return NewRecord(map[string]Object{
+		"_specKind": goStringToList("int"),
+		"name":      goStringToList(name),
+		"size":      &Integer{Value: size.Value},
+		"spec":      goStringToList(spec),
+	})
 }
 
 func builtinBitsBytes(e *Evaluator, args ...Object) Object {
@@ -495,32 +511,26 @@ func builtinBitsBytes(e *Evaluator, args ...Object) Object {
 	case *List:
 		// Dynamic size from field name - store as string reference
 		sizeRefStr := objectToString(s)
-		return &RecordInstance{
-			Fields: map[string]Object{
-				"_specKind": goStringToList("bytes"),
-				"name":      goStringToList(name),
-				"sizeRef":   goStringToList(sizeRefStr),
-			},
-		}
+		return NewRecord(map[string]Object{
+			"_specKind": goStringToList("bytes"),
+			"name":      goStringToList(name),
+			"sizeRef":   goStringToList(sizeRefStr),
+		})
 	default:
 		// Try as List<Char> (string)
 		sizeStr := objectToString(args[1])
-		return &RecordInstance{
-			Fields: map[string]Object{
-				"_specKind": goStringToList("bytes"),
-				"name":      goStringToList(name),
-				"sizeRef":   goStringToList(sizeStr),
-			},
-		}
-	}
-
-	return &RecordInstance{
-		Fields: map[string]Object{
+		return NewRecord(map[string]Object{
 			"_specKind": goStringToList("bytes"),
 			"name":      goStringToList(name),
-			"size":      &Integer{Value: sizeVal},
-		},
+			"sizeRef":   goStringToList(sizeStr),
+		})
 	}
+
+	return NewRecord(map[string]Object{
+		"_specKind": goStringToList("bytes"),
+		"name":      goStringToList(name),
+		"size":      &Integer{Value: sizeVal},
+	})
 }
 
 func builtinBitsRest(e *Evaluator, args ...Object) Object {
@@ -529,12 +539,10 @@ func builtinBitsRest(e *Evaluator, args ...Object) Object {
 	}
 	name := objectToString(args[0])
 
-	return &RecordInstance{
-		Fields: map[string]Object{
-			"_specKind": goStringToList("rest"),
-			"name":      goStringToList(name),
-		},
-	}
+	return NewRecord(map[string]Object{
+		"_specKind": goStringToList("rest"),
+		"name":      goStringToList(name),
+	})
 }
 
 func builtinBitsExtract(e *Evaluator, args ...Object) Object {
@@ -560,22 +568,22 @@ func builtinBitsExtract(e *Evaluator, args ...Object) Object {
 			return makeFailStr(fmt.Sprintf("spec %d is not a valid spec record", i))
 		}
 
-		kindObj, ok := rec.Fields["_specKind"]
-		if !ok {
+		kindObj := rec.Get("_specKind")
+		if kindObj == nil {
 			return makeFailStr(fmt.Sprintf("spec %d missing _specKind", i))
 		}
 		kind := objectToString(kindObj)
 
-		nameObj, ok := rec.Fields["name"]
-		if !ok {
+		nameObj := rec.Get("name")
+		if nameObj == nil {
 			return makeFailStr(fmt.Sprintf("spec %d missing name", i))
 		}
 		name := objectToString(nameObj)
 
 		switch kind {
 		case "int":
-			sizeObj, ok := rec.Fields["size"]
-			if !ok {
+			sizeObj := rec.Get("size")
+			if sizeObj == nil {
 				return makeFailStr(fmt.Sprintf("spec %s missing size", name))
 			}
 			size := int(sizeObj.(*Integer).Value)
@@ -585,7 +593,7 @@ func builtinBitsExtract(e *Evaluator, args ...Object) Object {
 			}
 
 			specStr := "big"
-			if specObj, ok := rec.Fields["spec"]; ok {
+			if specObj := rec.Get("spec"); specObj != nil {
 				specStr = objectToString(specObj)
 			}
 
@@ -597,7 +605,7 @@ func builtinBitsExtract(e *Evaluator, args ...Object) Object {
 
 		case "bytes":
 			var numBytes int
-			if sizeRef, ok := rec.Fields["sizeRef"]; ok {
+			if sizeRef := rec.Get("sizeRef"); sizeRef != nil {
 				// Dynamic size from another field
 				refName := objectToString(sizeRef)
 				refVal := result.get(goStringToList(refName))
@@ -605,7 +613,7 @@ func builtinBitsExtract(e *Evaluator, args ...Object) Object {
 					return makeFailStr(fmt.Sprintf("referenced field %s not found for %s", refName, name))
 				}
 				numBytes = int(refVal.(*Integer).Value)
-			} else if sizeObj, ok := rec.Fields["size"]; ok {
+			} else if sizeObj := rec.Get("size"); sizeObj != nil {
 				numBytes = int(sizeObj.(*Integer).Value)
 			} else {
 				return makeFailStr(fmt.Sprintf("spec %s missing size or sizeRef", name))
@@ -655,12 +663,12 @@ func decodeBitsToInt(bits *Bits, spec string) int64 {
 	if littleEndian {
 		// Read LSB first
 		for i := bits.length - 1; i >= 0; i-- {
-			val = (val << 1) | uint64(bits.get(i))
+			val = (val << 1) | uint64(bits.Get(i))
 		}
 	} else {
 		// Read MSB first (big endian)
 		for i := 0; i < bits.length; i++ {
-			val = (val << 1) | uint64(bits.get(i))
+			val = (val << 1) | uint64(bits.Get(i))
 		}
 	}
 

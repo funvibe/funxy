@@ -60,31 +60,29 @@ func createUrlRecord(u *url.URL) *RecordInstance {
 		userinfo = u.User.String()
 	}
 
-	return &RecordInstance{
-		Fields: map[string]Object{
-			"scheme":   stringToList(u.Scheme),
-			"userinfo": stringToList(userinfo),
-			"host":     stringToList(u.Hostname()),
-			"port":     port,
-			"path":     stringToList(u.Path),
-			"query":    stringToList(u.RawQuery),
-			"fragment": stringToList(u.Fragment),
-		},
-	}
+	return NewRecord(map[string]Object{
+		"scheme":   stringToList(u.Scheme),
+		"userinfo": stringToList(userinfo),
+		"host":     stringToList(u.Hostname()),
+		"port":     port,
+		"path":     stringToList(u.Path),
+		"query":    stringToList(u.RawQuery),
+		"fragment": stringToList(u.Fragment),
+	})
 }
 
 // Helper to extract URL from record
 func recordToUrl(rec *RecordInstance) (*url.URL, error) {
-	scheme := listToString(rec.Fields["scheme"].(*List))
-	userinfo := listToString(rec.Fields["userinfo"].(*List))
-	host := listToString(rec.Fields["host"].(*List))
-	path := listToString(rec.Fields["path"].(*List))
-	query := listToString(rec.Fields["query"].(*List))
-	fragment := listToString(rec.Fields["fragment"].(*List))
+	scheme := listToString(rec.Get("scheme").(*List))
+	userinfo := listToString(rec.Get("userinfo").(*List))
+	host := listToString(rec.Get("host").(*List))
+	path := listToString(rec.Get("path").(*List))
+	query := listToString(rec.Get("query").(*List))
+	fragment := listToString(rec.Get("fragment").(*List))
 
 	// Get port
 	portStr := ""
-	if port, ok := rec.Fields["port"].(*DataInstance); ok && port.Name == "Some" {
+	if port, ok := rec.Get("port").(*DataInstance); ok && port.Name == "Some" {
 		if len(port.Fields) > 0 {
 			if portInt, ok := port.Fields[0].(*Integer); ok {
 				portStr = strconv.FormatInt(portInt.Value, 10)
@@ -168,7 +166,7 @@ func builtinUrlScheme(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("urlScheme expects a Url record, got %s", args[0].Type())
 	}
-	return rec.Fields["scheme"]
+	return rec.Get("scheme")
 }
 
 // urlUserinfo: Url -> String
@@ -180,7 +178,7 @@ func builtinUrlUserinfo(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("urlUserinfo expects a Url record, got %s", args[0].Type())
 	}
-	return rec.Fields["userinfo"]
+	return rec.Get("userinfo")
 }
 
 // urlHost: Url -> String
@@ -192,7 +190,7 @@ func builtinUrlHost(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("urlHost expects a Url record, got %s", args[0].Type())
 	}
-	return rec.Fields["host"]
+	return rec.Get("host")
 }
 
 // urlPort: Url -> Option<Int>
@@ -204,7 +202,7 @@ func builtinUrlPort(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("urlPort expects a Url record, got %s", args[0].Type())
 	}
-	return rec.Fields["port"]
+	return rec.Get("port")
 }
 
 // urlPath: Url -> String
@@ -216,7 +214,7 @@ func builtinUrlPath(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("urlPath expects a Url record, got %s", args[0].Type())
 	}
-	return rec.Fields["path"]
+	return rec.Get("path")
 }
 
 // urlQuery: Url -> String
@@ -228,7 +226,7 @@ func builtinUrlQuery(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("urlQuery expects a Url record, got %s", args[0].Type())
 	}
-	return rec.Fields["query"]
+	return rec.Get("query")
 }
 
 // urlFragment: Url -> String
@@ -240,7 +238,7 @@ func builtinUrlFragment(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("urlFragment expects a Url record, got %s", args[0].Type())
 	}
-	return rec.Fields["fragment"]
+	return rec.Get("fragment")
 }
 
 // urlQueryParams: Url -> Map<String, List<String>>
@@ -254,7 +252,7 @@ func builtinUrlQueryParams(e *Evaluator, args ...Object) Object {
 		return newError("urlQueryParams expects a Url record, got %s", args[0].Type())
 	}
 
-	queryStr := listToString(rec.Fields["query"].(*List))
+	queryStr := listToString(rec.Get("query").(*List))
 	values, err := url.ParseQuery(queryStr)
 	if err != nil {
 		return newMap()
@@ -289,7 +287,7 @@ func builtinUrlQueryParam(e *Evaluator, args ...Object) Object {
 		return newError("urlQueryParam expects a string key, got %s", args[1].Type())
 	}
 
-	queryStr := listToString(rec.Fields["query"].(*List))
+	queryStr := listToString(rec.Get("query").(*List))
 	values, err := url.ParseQuery(queryStr)
 	if err != nil {
 		return makeZero()
@@ -319,7 +317,7 @@ func builtinUrlQueryParamAll(e *Evaluator, args ...Object) Object {
 		return newError("urlQueryParamAll expects a string key, got %s", args[1].Type())
 	}
 
-	queryStr := listToString(rec.Fields["query"].(*List))
+	queryStr := listToString(rec.Get("query").(*List))
 	values, err := url.ParseQuery(queryStr)
 	if err != nil {
 		return newList([]Object{})
@@ -354,7 +352,7 @@ func builtinUrlWithScheme(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Fields["scheme"] = scheme
+	newRec.Set("scheme", scheme)
 	return newRec
 }
 
@@ -375,7 +373,7 @@ func builtinUrlWithUserinfo(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Fields["userinfo"] = userinfo
+	newRec.Set("userinfo", userinfo)
 	return newRec
 }
 
@@ -396,7 +394,7 @@ func builtinUrlWithHost(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Fields["host"] = host
+	newRec.Set("host", host)
 	return newRec
 }
 
@@ -417,7 +415,7 @@ func builtinUrlWithPort(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Fields["port"] = makeSome(port)
+	newRec.Set("port", makeSome(port))
 	return newRec
 }
 
@@ -438,7 +436,7 @@ func builtinUrlWithPath(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Fields["path"] = path
+	newRec.Set("path", path)
 	return newRec
 }
 
@@ -459,7 +457,7 @@ func builtinUrlWithQuery(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Fields["query"] = query
+	newRec.Set("query", query)
 	return newRec
 }
 
@@ -480,7 +478,7 @@ func builtinUrlWithFragment(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Fields["fragment"] = fragment
+	newRec.Set("fragment", fragment)
 	return newRec
 }
 
@@ -505,7 +503,7 @@ func builtinUrlAddQueryParam(e *Evaluator, args ...Object) Object {
 		return newError("urlAddQueryParam expects a string value, got %s", args[2].Type())
 	}
 
-	queryStr := listToString(rec.Fields["query"].(*List))
+	queryStr := listToString(rec.Get("query").(*List))
 	values, _ := url.ParseQuery(queryStr)
 	if values == nil {
 		values = url.Values{}
@@ -516,7 +514,7 @@ func builtinUrlAddQueryParam(e *Evaluator, args ...Object) Object {
 	values.Add(key, value)
 
 	newRec := copyRecord(rec)
-	newRec.Fields["query"] = stringToList(values.Encode())
+	newRec.Set("query", stringToList(values.Encode()))
 	return newRec
 }
 
@@ -587,10 +585,8 @@ func builtinUrlDecode(e *Evaluator, args ...Object) Object {
 
 // Helper to copy a record
 func copyRecord(rec *RecordInstance) *RecordInstance {
-	newFields := make(map[string]Object)
-	for k, v := range rec.Fields {
-		newFields[k] = v
-	}
+	newFields := make([]RecordField, len(rec.Fields))
+	copy(newFields, rec.Fields)
 	return &RecordInstance{Fields: newFields, TypeName: rec.TypeName}
 }
 

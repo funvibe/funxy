@@ -1,0 +1,5 @@
+before panic
+Processing failed with errors:
+- error [R001]: runtime error: ERROR at 2:6: crash boom bang
+Stack trace:
+  at panic:2 (called panic)

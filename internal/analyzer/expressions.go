@@ -246,6 +246,7 @@ func (w *walker) VisitRationalLiteral(lit *ast.RationalLiteral) {}
 func (w *walker) VisitBooleanLiteral(lit *ast.BooleanLiteral) {}
 func (w *walker) VisitNilLiteral(lit *ast.NilLiteral)         {}
 func (w *walker) VisitStringLiteral(n *ast.StringLiteral) {}
+func (w *walker) VisitFormatStringLiteral(n *ast.FormatStringLiteral) {}
 func (w *walker) VisitInterpolatedString(n *ast.InterpolatedString) {
 	for _, part := range n.Parts {
 		part.Accept(w)

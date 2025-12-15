@@ -36,6 +36,10 @@ type MethodTable struct {
 func (mt *MethodTable) Type() ObjectType             { return "METHOD_TABLE" }
 func (mt *MethodTable) Inspect() string              { return "MethodTable" }
 func (mt *MethodTable) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "MethodTable"} }
+func (mt *MethodTable) Hash() uint32 {
+	// Not hashable/useful to hash method tables
+	return 0
+}
 
 var (
 	TRUE  = &Boolean{Value: true}
@@ -294,7 +298,7 @@ func (e *Evaluator) areObjectsEqual(a, b Object) bool {
 		if a.len() != bList.len() {
 			return false
 		}
-		for i, el := range a.toSlice() {
+		for i, el := range a.ToSlice() {
 			if !e.areObjectsEqual(el, bList.get(i)) {
 				return false
 			}
@@ -316,12 +320,12 @@ func (e *Evaluator) areObjectsEqual(a, b Object) bool {
 		if len(a.Fields) != len(bRec.Fields) {
 			return false
 		}
-		for k, v := range a.Fields {
-			if bV, ok := bRec.Fields[k]; ok {
-				if !e.areObjectsEqual(v, bV) {
-					return false
-				}
-			} else {
+		for i, field := range a.Fields {
+			bField := bRec.Fields[i]
+			if field.Key != bField.Key {
+				return false
+			}
+			if !e.areObjectsEqual(field.Value, bField.Value) {
 				return false
 			}
 		}
@@ -376,7 +380,7 @@ func (e *Evaluator) evalExpressions(exps []ast.Expression, env *Environment) []O
 			if tuple, ok := val.(*Tuple); ok {
 				result = append(result, tuple.Elements...)
 			} else if listObj, ok := val.(*List); ok {
-				result = append(result, listObj.toSlice()...)
+				result = append(result, listObj.ToSlice()...)
 			} else {
 				return []Object{newError("cannot spread non-sequence type: %s", val.Type())}
 			}
@@ -392,7 +396,8 @@ func (e *Evaluator) evalExpressions(exps []ast.Expression, env *Environment) []O
 	return result
 }
 
-func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
+// ApplyFunction applies a function to arguments (exported for VM)
+func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 	switch fn := fn.(type) {
 	case *Function:
 		extendedEnv := NewEnclosedEnvironment(fn.Env)
@@ -542,7 +547,7 @@ func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
 					continue
 				} else {
 					// Tail call to builtin
-					res := e.applyFunction(nextFn, nextArgs)
+					res := e.ApplyFunction(nextFn, nextArgs)
 					if err, ok := res.(*Error); ok {
 						if err.Line == 0 && tc.Line > 0 {
 							err.Line = tc.Line
@@ -620,13 +625,13 @@ func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
 		allArgs := append(fn.AppliedArgs, args...)
 
 		if fn.Function != nil {
-			return e.applyFunction(fn.Function, allArgs)
+			return e.ApplyFunction(fn.Function, allArgs)
 		}
 		if fn.Builtin != nil {
-			return e.applyFunction(fn.Builtin, allArgs)
+			return e.ApplyFunction(fn.Builtin, allArgs)
 		}
 		if fn.Constructor != nil {
-			return e.applyFunction(fn.Constructor, allArgs)
+			return e.ApplyFunction(fn.Constructor, allArgs)
 		}
 		return newError("invalid partial application")
 	case *Constructor:
@@ -721,6 +726,13 @@ func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
 				}
 			}
 
+			// Fallback: check if CurrentCallNode is ConstantDeclaration with TypeAnnotation
+			if typeCtorName == "" {
+				if constant, ok := e.CurrentCallNode.(*ast.ConstantDeclaration); ok && constant.TypeAnnotation != nil {
+					typeCtorName = extractTypeNameFromAST(constant.TypeAnnotation)
+				}
+			}
+
 			if typeCtorName != "" {
 				if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
 					if methodTableObj, ok := typesMap[typeCtorName]; ok {
@@ -736,7 +748,7 @@ func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
 		}
 
 		if foundMethod != nil {
-			return e.applyFunction(foundMethod, args)
+			return e.ApplyFunction(foundMethod, args)
 		}
 
 		// Determine type name for error message
@@ -760,7 +772,7 @@ func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
 					Line:       fnStmt.Token.Line,
 					Column:     fnStmt.Token.Column,
 				}
-				return e.applyFunction(defaultFn, args)
+				return e.ApplyFunction(defaultFn, args)
 			}
 		}
 
@@ -768,14 +780,19 @@ func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
 
 	case *BoundMethod:
 		newArgs := append([]Object{fn.Receiver}, args...)
-		return e.applyFunction(fn.Function, newArgs)
+		return e.ApplyFunction(fn.Function, newArgs)
 
 	case *OperatorFunction:
 		// Operator as function: (+), (-), etc.
 		if len(args) != 2 {
 			return newError("operator function %s expects 2 arguments, got %d", fn.Inspect(), len(args))
 		}
-		return fn.Evaluator.evalInfixExpression(fn.Operator, args[0], args[1])
+		// Use fn.Evaluator if available, otherwise use current evaluator
+		eval := fn.Evaluator
+		if eval == nil {
+			eval = e
+		}
+		return eval.EvalInfixExpression(fn.Operator, args[0], args[1])
 
 	case *ComposedFunction:
 		// Composed function: (f ,, g)(x) = f(g(x))
@@ -783,18 +800,24 @@ func (e *Evaluator) applyFunction(fn Object, args []Object) Object {
 			return newError("composed function expects 1 argument, got %d", len(args))
 		}
 		// First apply g to the argument
-		gResult := fn.Evaluator.applyFunction(fn.G, args)
+		gResult := fn.Evaluator.ApplyFunction(fn.G, args)
 		if isError(gResult) {
 			return gResult
 		}
 		// Then apply f to the result
-		return fn.Evaluator.applyFunction(fn.F, []Object{gResult})
+		return fn.Evaluator.ApplyFunction(fn.F, []Object{gResult})
 
 	default:
+		// Try VM call handler for VM closures
+		if e.VMCallHandler != nil {
+			result := e.VMCallHandler(fn, args)
+			if result != nil {
+				return result
+			}
+		}
 		return newError("not a function: %s", fn.Type())
 	}
 }
-
 
 // lookupTraitMethodByName looks up a trait method by name across all traits.
 // Returns a ClassMethod wrapper if found, nil otherwise.
@@ -823,7 +846,8 @@ func (e *Evaluator) lookupTraitMethodByName(methodName string) Object {
 // matchStringPattern matches a string against a pattern with captures.
 // Pattern parts can be literals or capture groups like {name} or {path...} (greedy).
 // Returns (matched, captures) where captures maps variable names to captured values.
-func matchStringPattern(parts []ast.StringPatternPart, str string) (bool, map[string]string) {
+// MatchStringPattern matches a string against a pattern with captures (exported for VM)
+func MatchStringPattern(parts []ast.StringPatternPart, str string) (bool, map[string]string) {
 	captures := make(map[string]string)
 	pos := 0
 

@@ -1,0 +1,12 @@
+import "lib/test" (*)
+
+testRun("negation works for all number types", fun() {
+    bi = 10n
+    neg_bi = -bi
+    assertEquals(-10n, neg_bi)
+
+    rat = 1.5r
+    neg_rat = -rat
+    assertEquals(-1.5r, neg_rat)
+})
+

@@ -46,33 +46,53 @@ type TestRunner struct {
 }
 
 // Global test runner instance
-var testRunner *TestRunner
+var (
+	testRunner *TestRunner
+	testRunnerOnce sync.Once
+)
 
 // InitTestRunner creates or resets the test runner
 func InitTestRunner(e *Evaluator) {
-	testRunner = &TestRunner{
-		Evaluator:       e,
-		HttpMocks:       make(map[string]Object),
-		HttpMockErrors:  make(map[string]string),
-		HttpMocksActive: false,
-		FileMocks:       make(map[string]Object),
-		FileMocksActive: false,
-		EnvMocks:        make(map[string]string),
-		EnvMocksActive:  false,
+	testRunnerOnce.Do(func() {
+		testRunner = &TestRunner{
+			Evaluator:       e,
+			HttpMocks:       make(map[string]Object),
+			HttpMockErrors:  make(map[string]string),
+			HttpMocksActive: false,
+			FileMocks:       make(map[string]Object),
+			FileMocksActive: false,
+			EnvMocks:        make(map[string]string),
+			EnvMocksActive:  false,
+			Results:         make([]TestResult, 0),
+		}
+	})
+	// If already initialized, update evaluator and reset state completely
+	if testRunner != nil {
+		testRunner.Evaluator = e
+		testRunner.ResetMocks()
+		testRunner.ClearResults() // Fix: Clear previous results to avoid pollution
 	}
 }
 
 // GetTestRunner returns the global test runner (creates if needed)
 func GetTestRunner() *TestRunner {
-	if testRunner == nil {
+	testRunnerOnce.Do(func() {
 		testRunner = &TestRunner{
 			HttpMocks:      make(map[string]Object),
 			HttpMockErrors: make(map[string]string),
 			FileMocks:      make(map[string]Object),
 			EnvMocks:       make(map[string]string),
+			Results:        make([]TestResult, 0),
 		}
-	}
+	})
 	return testRunner
+}
+
+// ClearResults clears the accumulated test results
+func (tr *TestRunner) ClearResults() {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.Results = make([]TestResult, 0)
 }
 
 // ResetMocks clears all mocks (called after each test)
@@ -294,7 +314,7 @@ func builtinTestRun(e *Evaluator, args ...Object) Object {
 	tr.CurrentTest = testName
 
 	// Run the test body
-	result := e.applyFunction(body, []Object{})
+	result := e.ApplyFunction(body, []Object{})
 
 	// Record result
 	testResult := TestResult{Name: testName, Passed: true}
@@ -366,7 +386,7 @@ func builtinTestExpectFail(e *Evaluator, args ...Object) Object {
 	tr.CurrentTest = testName
 
 	// Run the test body
-	result := e.applyFunction(body, []Object{})
+	result := e.ApplyFunction(body, []Object{})
 
 	// Record result - opposite logic: pass if error, fail if success
 	testResult := TestResult{Name: testName, ExpectFail: true}
@@ -847,7 +867,7 @@ func PrintTestSummary() {
 	failed := 0
 	skipped := 0
 	expectFail := 0
-	
+
 	var skippedTests []TestResult
 	var expectFailTests []TestResult
 
@@ -870,7 +890,7 @@ func PrintTestSummary() {
 
 	total := len(tr.Results)
 	fmt.Printf("\n%d tests, %d passed, %d failed, %d skipped, %d expect-fail\n", total, passed, failed, skipped, expectFail)
-	
+
 	// Print lists if any
 	if len(skippedTests) > 0 {
 		fmt.Printf("\nSkipped tests:\n")
@@ -878,7 +898,7 @@ func PrintTestSummary() {
 			fmt.Printf("  ⊘ %s: %s\n", t.Name, t.Error)
 		}
 	}
-	
+
 	if len(expectFailTests) > 0 {
 		fmt.Printf("\nExpect-fail tests (known bugs):\n")
 		for _, t := range expectFailTests {

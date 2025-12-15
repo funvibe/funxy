@@ -1,0 +1,7 @@
+import "lib/list"
+
+// This tests the fix for OP_CALL_METHOD prioritizing module functions over extensions
+// list.map(...) should call the map function from lib/list, not try to call extension method
+nums = list.map(fun(x) -> x * 2, [1, 2, 3])
+print(nums)
+

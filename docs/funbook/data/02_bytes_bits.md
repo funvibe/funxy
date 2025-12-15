@@ -1,40 +1,40 @@
-# 02. Bytes и Bits
+# 02. Bytes and Bits
 
-## Задача
-Работать с бинарными данными: протоколы, файлы, сетевые пакеты.
+## Task
+Work with binary data: protocols, files, network packets.
 
 ---
 
-## Bits — произвольные последовательности битов
+## Bits — arbitrary bit sequences
 
-Уникальная фича: длина не обязана быть кратна 8! Идеально для протоколов с bit fields.
+Unique feature: length doesn't have to be a multiple of 8! Ideal for protocols with bit fields.
 
-### Литералы
+### Literals
 
 ```rust
-// Бинарные литералы (1 бит на символ)
-b1 = #b"10101010"    // 8 бит
-b2 = #b"101"         // 3 бита (не byte-aligned!)
-b3 = #b""            // пусто
+// Binary literals (1 bit per character)
+b1 = #b"10101010"    // 8 bits
+b2 = #b"101"         // 3 bits (not byte-aligned!)
+b3 = #b""            // empty
 
-// Hex литералы (4 бита на символ)
-b4 = #x"FF"          // 8 бит: 11111111
-b5 = #x"A5"          // 8 бит: 10100101
+// Hex literals (4 bits per character)
+b4 = #x"FF"          // 8 bits: 11111111
+b5 = #x"A5"          // 8 bits: 10100101
 
-// Octal литералы (3 бита на символ)
-b6 = #o"7"           // 3 бита: 111
-b7 = #o"377"         // 9 бит: 011111111
+// Octal literals (3 bits per character)
+b6 = #o"7"           // 3 bits: 111
+b7 = #o"377"         // 9 bits: 011111111
 
 print(b1)
 print(b4)
 ```
 
-### Создание и конвертация
+### Creation and conversion
 
 ```rust
 import "lib/bits" (bitsFromBytes, bitsToBinary, bitsFromBinary, bitsToHex, bitsFromHex, bitsToBytes)
 
-// Из строк
+// From strings
 match bitsFromBinary("10101010") {
     Ok(b) -> print(bitsToBinary(b))  // "10101010"
     Fail(e) -> print(e)
@@ -46,17 +46,17 @@ match bitsFromHex("DEADBEEF") {
 }
 ```
 
-### Операции
+### Operations
 
 ```rust
 import "lib/bits" (bitsGet, bitsSlice, bitsSet, bitsPadLeft, bitsPadRight)
 
 b = #b"10101010"
 
-// Длина
+// Length
 print(len(b))  // 8
 
-// Доступ по индексу
+// Index access
 match bitsGet(b, 0) {
     Some(bit) -> print(bit)  // 1
     Zero -> print("out of bounds")
@@ -66,11 +66,11 @@ match bitsGet(b, 0) {
 part = bitsSlice(b, 0, 4)
 print(part)  // #b"1010"
 
-// Конкатенация
+// Concatenation
 joined = #b"1111" ++ #b"0000"
 print(joined)  // #b"11110000"
 
-// Паддинг
+// Padding
 padL = bitsPadLeft(#b"101", 8)
 print(padL)  // #b"00000101"
 
@@ -78,16 +78,16 @@ padR = bitsPadRight(#b"101", 8)
 print(padR)  // #b"10100000"
 ```
 
-### Добавление числовых значений
+### Adding numeric values
 
 ```rust
 import "lib/bits" (bitsNew, bitsAddInt, bitsAddFloat)
 
 b = bitsNew()
 
-// Целые числа (value, size in bits, endianness)
+// Integers (value, size in bits, endianness)
 b = bitsAddInt(b, 255, 8)              // big endian (default)
-b = bitsAddInt(b, 255, 8, "big")       // явно big endian
+b = bitsAddInt(b, 255, 8, "big")       // explicitly big endian
 b = bitsAddInt(b, 1, 16, "little")     // little endian
 
 // Float (IEEE 754)
@@ -95,20 +95,20 @@ bf = bitsAddFloat(bitsNew(), 3.14, 32)  // 32 bits
 print(bf)
 ```
 
-### Pattern Matching — парсинг бинарных протоколов
+### Pattern Matching — parsing binary protocols
 
 ```rust
 import "lib/bits" (bitsExtract, bitsInt)
 import "lib/map" (mapGet)
 
-// Пакет с bit fields:
-// - version: 8 бит
-// - flags: 4 бита
-// - reserved: 4 бита
-// - length: 16 бит
+// Packet with bit fields:
+// - version: 8 bits
+// - flags: 4 bits
+// - reserved: 4 bits
+// - length: 16 bits
 packet = #b"00000001010100000000000100000000"
 
-// Спецификация полей
+// Field specifications
 specs = [
     bitsInt("version", 8, "big"),
     bitsInt("flags", 4, "big"),
@@ -116,7 +116,7 @@ specs = [
     bitsInt("length", 16, "big")
 ]
 
-// Извлечение!
+// Extraction!
 match bitsExtract(packet, specs) {
     Ok(fields) -> {
         version = mapGet(fields, "version")
@@ -130,27 +130,27 @@ match bitsExtract(packet, specs) {
 }
 ```
 
-### Spec-функции для парсинга
+### Spec functions for parsing
 
 ```rust
 import "lib/bits" (bitsInt, bitsBytes, bitsRest)
 
-// Целое число: bitsInt(name, size_in_bits, endianness)
+// Integer: bitsInt(name, size_in_bits, endianness)
 spec1 = bitsInt("count", 16, "big")
 spec2 = bitsInt("offset", 32, "little")
 
-// Байты: bitsBytes(name, size_in_bytes)
+// Bytes: bitsBytes(name, size_in_bytes)
 spec3 = bitsBytes("payload", 16)
 
-// Фиксированный размер
+// Fixed size
 spec4 = bitsBytes("data", 64)
 
-// Остаток битов
+// Rest of bits
 spec5 = bitsRest("tail")
 
 ```
 
-### Практический пример: проверка PNG
+### Practical example: PNG check
 
 ```rust
 import "lib/bits" (bitsExtract, bitsInt, bitsFromBytes)
@@ -176,25 +176,25 @@ fun isPNG(data) -> Bool {
 
 // PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
 print(isPNG(#x"89504E470D0A1A0A"))  // true
-print(isPNG(#x"FFD8FFE0"))          // false (это JPEG)
+print(isPNG(#x"FFD8FFE0"))          // false (this is JPEG)
 ```
 
 ---
 
-## Bytes — последовательности байтов
+## Bytes — byte sequences
 
-### Создание
+### Creation
 
 ```rust
 import "lib/bytes" (bytesFromString, bytesFromList, bytesFromHex, bytesToString)
 
-// Из строки
+// From string
 b = bytesFromString("Hello")
 
-// Из списка байтов
+// From list of bytes
 b2 = bytesFromList([0x48, 0x65, 0x6C, 0x6C, 0x6F])
 
-// Из hex строки
+// From hex string
 match bytesFromHex("48656C6C6F") {
     Ok(b) -> {
         match bytesToString(b) {
@@ -206,29 +206,29 @@ match bytesFromHex("48656C6C6F") {
 }
 ```
 
-### Конвертация
+### Conversion
 
 ```rust
 import "lib/bytes" (bytesFromString, bytesToString, bytesToList, bytesToHex)
 
 b = bytesFromString("Hello")
 
-// В строку
+// To string
 match bytesToString(b) {
     Ok(s) -> print(s)  // "Hello"
     Fail(e) -> print("Not valid UTF-8")
 }
 
-// В список байтов
+// To list of bytes
 list = bytesToList(b)
 print(list)  // [72, 101, 108, 108, 111]
 
-// В hex
+// To hex
 hex = bytesToHex(b)
 print(hex)  // "48656c6c6f"
 ```
 
-### Операции
+### Operations
 
 ```rust
 import "lib/bytes" (bytesFromString, bytesConcat, bytesSlice, bytesContains, bytesStartsWith, bytesEndsWith, bytesIndexOf, bytesSplit, bytesJoin)
@@ -236,13 +236,13 @@ import "lib/bytes" (bytesFromString, bytesConcat, bytesSlice, bytesContains, byt
 b1 = bytesFromString("Hello")
 b2 = bytesFromString(" World")
 
-// Конкатенация
+// Concatenation
 joined = bytesConcat(b1, b2)
 
 // Slice
 part = bytesSlice(b1, 0, 3)  // "Hel"
 
-// Поиск
+// Search
 print(bytesContains(b1, bytesFromString("ell")))     // true
 print(bytesStartsWith(b1, bytesFromString("He")))    // true
 print(bytesEndsWith(b1, bytesFromString("lo")))      // true
@@ -253,7 +253,7 @@ parts = bytesSplit(joined, bytesFromString(" "))
 back = bytesJoin(parts, bytesFromString("-"))
 ```
 
-### Числовое кодирование
+### Numeric encoding
 
 ```rust
 import "lib/bytes" (bytesEncodeInt, bytesDecodeInt, bytesEncodeFloat, bytesDecodeFloat)
@@ -274,30 +274,30 @@ print(f)  // 3.14...
 
 ---
 
-## Сравнение: Bits vs Bytes
+## Comparison: Bits vs Bytes
 
-| Аспект | Bits | Bytes |
+| Aspect | Bits | Bytes |
 |--------|------|-------|
-| Минимальная единица | 1 бит | 8 бит |
-| Литералы | `#b"101"`, `#x"FF"`, `#o"7"` | `bytesFromString("...")` |
-| Не кратно 8 | Да | Нет |
+| Minimum unit | 1 bit | 8 bits |
+| Literals | `#b"101"`, `#x"FF"`, `#o"7"` | `bytesFromString("...")` |
+| Not multiple of 8 | Yes | No |
 | Pattern matching | bitsExtract | — |
-| Работа с протоколами | Отлично | Хорошо |
-| Работа с файлами | Можно | Отлично |
+| Working with protocols | Excellent | Good |
+| Working with files | Possible | Excellent |
 
 ---
 
 ## Use Cases
 
 Bits:
-- TCP/IP headers с bit flags
-- Сжатие (Huffman codes)
-- Видео кодеки (H.264 NAL units)
-- Криптография
-- Embedded протоколы
+- TCP/IP headers with bit flags
+- Compression (Huffman codes)
+- Video codecs (H.264 NAL units)
+- Cryptography
+- Embedded protocols
 
 Bytes:
-- Файловый I/O
+- File I/O
 - HTTP bodies
-- JSON/XML данные
-- Изображения
+- JSON/XML data
+- Images

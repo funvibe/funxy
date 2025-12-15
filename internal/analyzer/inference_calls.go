@@ -15,7 +15,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 	}
 	totalSubst := s1
 	fnType = fnType.Apply(totalSubst)
-	
+
 	// Resolve type aliases (e.g., type Observer = (Int) -> Nil)
 	fnType = typesystem.UnwrapUnderlying(fnType)
 
@@ -28,7 +28,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 				return nil, nil, err
 			}
 			totalSubst = sArg.Compose(totalSubst)
-			
+
 			if tArg, ok := argType.(typesystem.TType); ok {
 				typeArgs = append(typeArgs, tArg.Type)
 			} else {
@@ -39,8 +39,8 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 	} else if tFunc, ok := fnType.(typesystem.TFunc); ok {
 		// Handle TFunc
 		paramIdx := 0
-		
-		
+
+
 		// Note: Function types from inferIdentifier are already instantiated.
 		// We don't instantiate again here to keep TypeMap entries consistent.
 
@@ -62,14 +62,41 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 			if isSpread {
 				if tTuple, ok := argType.(typesystem.TTuple); ok {
 					for _, elType := range tTuple.Elements {
-						if paramIdx >= len(tFunc.Params) {
+						// Determine if we are in the variadic part
+						threshold := len(tFunc.Params)
+						if tFunc.IsVariadic {
+							threshold--
+						}
+
+						if paramIdx >= threshold {
 							if tFunc.IsVariadic {
 								varType := tFunc.Params[len(tFunc.Params)-1].Apply(totalSubst)
-								subst, err := typesystem.Unify(varType, elType)
-								if err != nil {
-									return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, elType)
+
+								// Special case: isolated type variable logic (same as above)
+								isIsolated := false
+								if tvar, ok := varType.(typesystem.TVar); ok {
+									isUsed := false
+									retVars := tFunc.ReturnType.Apply(totalSubst).FreeTypeVariables()
+									for _, v := range retVars {
+										if v.Name == tvar.Name {
+											isUsed = true
+											break
+										}
+									}
+									if !isUsed {
+										isIsolated = true
+									}
 								}
-								totalSubst = subst.Compose(totalSubst)
+
+								if isIsolated {
+									// Skip unification
+								} else {
+									subst, err := typesystem.Unify(varType, elType)
+									if err != nil {
+										return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, elType)
+									}
+									totalSubst = subst.Compose(totalSubst)
+								}
 							} else {
 								return nil, nil, inferError(n, "too many arguments")
 							}
@@ -90,18 +117,18 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 					if paramIdx < len(tFunc.Params)-1 {
 						return nil, nil, inferError(arg, "cannot spread List into fixed parameters (ambiguous length)")
 					}
-					
+
 					listElemType := getListElementType(argType)
 					varType := tFunc.Params[len(tFunc.Params)-1].Apply(totalSubst)
-					
+
 					subst, err := typesystem.Unify(varType, listElemType)
 					if err != nil {
 						return nil, nil, inferErrorf(arg, "spread argument element type mismatch: %s vs %s", varType, listElemType)
 					}
 					totalSubst = subst.Compose(totalSubst)
-					
-					paramIdx = len(tFunc.Params) 
-					
+
+					paramIdx = len(tFunc.Params)
+
 				} else if _, ok := argType.(typesystem.TVar); ok {
 					if tFunc.IsVariadic && i == len(n.Arguments)-1 {
 						paramIdx = len(tFunc.Params)
@@ -112,14 +139,51 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 					return nil, nil, inferError(arg, "spread argument must be tuple or list")
 				}
 			} else {
-				if paramIdx >= len(tFunc.Params) {
+				// Determine if we are in the variadic part of arguments
+				// If IsVariadic is true, the last parameter (index len-1) handles all remaining arguments
+				threshold := len(tFunc.Params)
+				if tFunc.IsVariadic {
+					threshold--
+				}
+
+				if paramIdx >= threshold {
 					if tFunc.IsVariadic {
 						varType := tFunc.Params[len(tFunc.Params)-1].Apply(totalSubst)
-						subst, err := typesystem.Unify(varType, argType)
-						if err != nil {
-							return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, argType)
+
+						// Special case: if the variadic parameter type is a Type Variable
+						// that does NOT appear in the return type (and wasn't unified earlier),
+						// we can treat it as heterogeneous (instantiate fresh for each arg).
+						// This supports builtins like print(...) and sprintf(fmt, ...).
+						isIsolated := false
+						if tvar, ok := varType.(typesystem.TVar); ok {
+							// Check if this TVar is used in return type
+							isUsed := false
+							retVars := tFunc.ReturnType.Apply(totalSubst).FreeTypeVariables()
+							for _, v := range retVars {
+								if v.Name == tvar.Name {
+									isUsed = true
+									break
+								}
+							}
+							if !isUsed {
+								isIsolated = true
+							}
 						}
-						totalSubst = subst.Compose(totalSubst)
+
+						if isIsolated {
+							// Heterogeneous: don't unify with varType, just ensure it's a valid type
+							// But wait, we still need to infer the argument's type.
+							// And we don't need to update totalSubst with a binding for 'a' that constrains future args.
+							// Actually, we can just skip unification if it's isolated.
+							// But we should verify constraints if any?
+							// For now, simple skipping.
+						} else {
+							subst, err := typesystem.Unify(varType, argType)
+							if err != nil {
+								return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, argType)
+							}
+							totalSubst = subst.Compose(totalSubst)
+						}
 					} else {
 						return nil, nil, inferError(n, "too many arguments")
 					}
@@ -141,7 +205,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 		}
 		// Account for default parameters
 		requiredCount := fixedCount - tFunc.DefaultCount
-		
+
 		// Partial Application: if fewer arguments than required, return a function type
 		// representing the remaining parameters
 		if paramIdx < requiredCount {
@@ -150,7 +214,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 			for i := paramIdx; i < len(tFunc.Params); i++ {
 				remainingParams = append(remainingParams, tFunc.Params[i].Apply(totalSubst))
 			}
-			
+
 			// Return a new function type with remaining params
 			partialFuncType := typesystem.TFunc{
 				Params:       remainingParams,
@@ -167,12 +231,12 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 			// Apply substitution to get the concrete type for the type variable
 			tvar := typesystem.TVar{Name: c.TypeVar}
 			concreteType := tvar.Apply(totalSubst)
-			
+
 			// Skip if type variable is not yet resolved (still a TVar)
 			if _, stillVar := concreteType.(typesystem.TVar); stillVar {
 				continue
 			}
-			
+
 			// Check if the concrete type implements the required trait
 			// Also check if it's a constrained type param (TCon like "T" in recursive calls)
 			if !table.IsImplementationExists(c.Trait, concreteType) && !typeHasConstraint(ctx, concreteType, c.Trait) {
@@ -193,19 +257,19 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 			totalSubst = sArg.Compose(totalSubst)
 			paramTypes = append(paramTypes, argType.Apply(totalSubst))
 		}
-		
+
 		resultVar := ctx.FreshVar()
 		expectedFnType := typesystem.TFunc{
 			Params:     paramTypes,
 			ReturnType: resultVar,
 		}
-		
+
 		subst, err := typesystem.Unify(tVar, expectedFnType)
 		if err != nil {
 			return nil, nil, inferErrorf(n, "cannot call %s as a function with arguments %v", fnType, paramTypes)
 		}
 		totalSubst = subst.Compose(totalSubst)
-		
+
 		return resultVar.Apply(totalSubst), totalSubst, nil
 	} else {
 		return nil, nil, inferErrorf(n, "cannot call non-function type: %s", fnType)

@@ -1,16 +1,16 @@
 # 01. Unit Tests
 
-## Задача
-Писать и запускать тесты для проверки корректности кода.
+## Task
+Write and run tests to verify code correctness.
 
 ---
 
-## Базовый синтаксис
+## Basic syntax
 
 ```rust
 import "lib/test" (testRun, assertEquals)
 
-// Определение теста
+// Test definition
 testRun("addition works", fun() -> {
     assertEquals(2 + 2, 4)
 })
@@ -22,13 +22,13 @@ testRun("strings concatenate", fun() -> {
 
 ---
 
-## Запуск тестов
+## Running tests
 
 ```bash
-# Запуск всех тестов в файле
+# Run all tests in file
 lang tests/my_tests.lang
 
-# Вывод:
+# Output:
 #  PASS addition works
 #  PASS strings concatenate
 # 2 tests passed, 0 failed
@@ -62,14 +62,14 @@ testRun("custom conditions", fun() -> {
     assert(len("hello") == 5)
     assert(contains([1, 2, 3], 2))
     
-    // С кастомным сообщением
+    // With custom message
     assert(10 > 0, "10 should be positive")
 })
 ```
 
 ---
 
-## Тестирование Result
+## Testing Result
 
 ```rust
 import "lib/test" (testRun, assertOk, assertFail)
@@ -89,7 +89,7 @@ testRun("file not found", fun() -> {
 
 ---
 
-## Тестирование Option
+## Testing Option
 
 ```rust
 import "lib/test" (testRun, assertSome, assertZero)
@@ -109,7 +109,7 @@ testRun("element not found", fun() -> {
 
 ---
 
-## Группировка тестов
+## Grouping tests
 
 ```rust
 import "lib/test" (testRun, assertEquals)
@@ -130,17 +130,17 @@ testRun("math: multiplication", fun() -> {
 
 ---
 
-## Тестирование функций
+## Testing functions
 
 ```rust
 import "lib/test" (testRun, assertEquals)
 
-// Функция для тестирования
+// Function to test
 fun factorial(n: Int) -> Int {
     if n <= 1 { 1 } else { n * factorial(n - 1) }
 }
 
-// Тесты
+// Tests
 testRun("factorial of 0", fun() -> {
     assertEquals(factorial(0), 1)
 })
@@ -156,7 +156,7 @@ testRun("factorial of 10", fun() -> {
 
 ---
 
-## Тестирование ADT
+## Testing ADT
 
 ```rust
 import "lib/test" (testRun, assertEquals)
@@ -182,7 +182,7 @@ testRun("node sum", fun() -> {
 
 ---
 
-## Параметризованные тесты
+## Parameterized tests
 
 ```rust
 import "lib/test" (testRun, assertEquals)
@@ -203,7 +203,7 @@ fun factorial(n: Int) -> Int {
     if n <= 1 { 1 } else { n * factorial(n - 1) }
 }
 
-// Запуск тестов для каждого кейса
+// Run tests for each case
 testRun("factorial(0) = 1", fun() -> { assertEquals(factorial(0), 1) })
 testRun("factorial(1) = 1", fun() -> { assertEquals(factorial(1), 1) })
 testRun("factorial(2) = 2", fun() -> { assertEquals(factorial(2), 2) })
@@ -214,7 +214,7 @@ testRun("factorial(5) = 120", fun() -> { assertEquals(factorial(5), 120) })
 
 ---
 
-## Тестирование с записями
+## Testing with records
 
 ```rust
 import "lib/test" (testRun, assertEquals)
@@ -257,8 +257,8 @@ testRun("order with discount", fun() -> {
 
 ## Best Practices
 
-1. Один тест — одна проверка (по возможности)
-2. Понятные имена тестов
-3. Тестируйте edge cases (пустые списки, нули, граничные значения)
-4. Тесты должны быть независимы друг от друга
-5. Используйте параметризованные тесты для однотипных проверок
+1. One test - one check (when possible)
+2. Clear and descriptive test names
+3. Test edge cases (empty lists, zeros, boundary values)
+4. Tests should be independent of each other
+5. Use parameterized tests for similar checks

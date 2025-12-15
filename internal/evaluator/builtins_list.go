@@ -158,7 +158,7 @@ func builtinTail(e *Evaluator, args ...Object) Object {
 	if list.len() == 0 {
 		return newError("tail: empty list")
 	}
-	return list.slice(1, list.len())
+	return list.Slice(1, list.len())
 }
 
 // init: List<T> -> List<T> (panics if empty)
@@ -173,7 +173,7 @@ func builtinInit(e *Evaluator, args ...Object) Object {
 	if list.len() == 0 {
 		return newError("init: empty list")
 	}
-	return list.slice(0, list.len()-1)
+	return list.Slice(0, list.len()-1)
 }
 
 // take: (List<T>, Int) -> List<T>
@@ -196,7 +196,7 @@ func builtinTake(e *Evaluator, args ...Object) Object {
 	if count > list.len() {
 		count = list.len()
 	}
-	return list.slice(0, count)
+	return list.Slice(0, count)
 }
 
 // drop: (List<T>, Int) -> List<T>
@@ -219,7 +219,7 @@ func builtinDrop(e *Evaluator, args ...Object) Object {
 	if count > list.len() {
 		count = list.len()
 	}
-	return list.slice(count, list.len())
+	return list.Slice(count, list.len())
 }
 
 // slice: (List<T>, Int, Int) -> List<T> (panics if out of bounds)
@@ -246,7 +246,7 @@ func builtinSlice(e *Evaluator, args ...Object) Object {
 	if from < 0 || to > length || from > to {
 		return newError("slice: indices [%d, %d) out of bounds for list of length %d", from, to, length)
 	}
-	return list.slice(from, to)
+	return list.Slice(from, to)
 }
 
 // length: List<T> -> Int
@@ -271,7 +271,7 @@ func builtinContains(e *Evaluator, args ...Object) Object {
 		return newError("contains expects a list as first argument, got %s", args[0].Type())
 	}
 	elem := args[1]
-	for _, item := range list.toSlice() {
+	for _, item := range list.ToSlice() {
 		if objectsEqual(item, elem) {
 			return TRUE
 		}
@@ -291,8 +291,8 @@ func builtinFilter(e *Evaluator, args ...Object) Object {
 	}
 
 	var result []Object
-	for _, item := range list.toSlice() {
-		predicateResult := e.applyFunction(predFn, []Object{item})
+	for _, item := range list.ToSlice() {
+		predicateResult := e.ApplyFunction(predFn, []Object{item})
 		if isError(predicateResult) {
 			return predicateResult
 		}
@@ -315,8 +315,8 @@ func builtinMap(e *Evaluator, args ...Object) Object {
 	}
 
 	result := make([]Object, list.len())
-	for i, item := range list.toSlice() {
-		mapped := e.applyFunction(mapFn, []Object{item})
+	for i, item := range list.ToSlice() {
+		mapped := e.ApplyFunction(mapFn, []Object{item})
 		if isError(mapped) {
 			return mapped
 		}
@@ -338,8 +338,8 @@ func builtinFoldl(e *Evaluator, args ...Object) Object {
 		return newError("foldl expects a list as third argument, got %s", args[2].Type())
 	}
 
-	for _, item := range list.toSlice() {
-		result := e.applyFunction(foldFn, []Object{acc, item})
+	for _, item := range list.ToSlice() {
+		result := e.ApplyFunction(foldFn, []Object{acc, item})
 		if isError(result) {
 			return result
 		}
@@ -363,7 +363,7 @@ func builtinFoldr(e *Evaluator, args ...Object) Object {
 
 	// Iterate from right to left
 	for i := list.len() - 1; i >= 0; i-- {
-		result := e.applyFunction(foldFn, []Object{list.get(i), acc})
+		result := e.ApplyFunction(foldFn, []Object{list.get(i), acc})
 		if isError(result) {
 			return result
 		}
@@ -382,7 +382,7 @@ func builtinIndexOf(e *Evaluator, args ...Object) Object {
 		return newError("indexOf expects a list as first argument, got %s", args[0].Type())
 	}
 	elem := args[1]
-	for i, item := range list.toSlice() {
+	for i, item := range list.ToSlice() {
 		if objectsEqual(item, elem) {
 			// Return Some(index)
 			return &DataInstance{
@@ -411,7 +411,7 @@ func builtinReverse(e *Evaluator, args ...Object) Object {
 	}
 	n := list.len()
 	result := make([]Object, n)
-	for i, elem := range list.toSlice() {
+	for i, elem := range list.ToSlice() {
 		result[n-1-i] = elem
 	}
 	return newList(result)
@@ -431,8 +431,8 @@ func builtinConcat(e *Evaluator, args ...Object) Object {
 		return newError("concat expects a list as second argument, got %s", args[1].Type())
 	}
 	result := make([]Object, 0, list1.len()+list2.len())
-	result = append(result, list1.toSlice()...)
-	result = append(result, list2.toSlice()...)
+	result = append(result, list1.ToSlice()...)
+	result = append(result, list2.ToSlice()...)
 	return newList(result)
 }
 
@@ -446,12 +446,12 @@ func builtinFlatten(e *Evaluator, args ...Object) Object {
 		return newError("flatten expects a list, got %s", args[0].Type())
 	}
 	var result []Object
-	for _, item := range listOfLists.toSlice() {
+	for _, item := range listOfLists.ToSlice() {
 		innerList, ok := item.(*List)
 		if !ok {
 			return newError("flatten expects a list of lists, got list containing %s", item.Type())
 		}
-		result = append(result, innerList.toSlice()...)
+		result = append(result, innerList.ToSlice()...)
 	}
 	return newList(result)
 }
@@ -467,7 +467,7 @@ func builtinUnique(e *Evaluator, args ...Object) Object {
 	}
 	var result []Object
 	seen := make(map[string]bool)
-	for _, elem := range list.toSlice() {
+	for _, elem := range list.ToSlice() {
 		key := elem.Inspect()
 		if !seen[key] {
 			seen[key] = true
@@ -511,7 +511,7 @@ func builtinUnzip(e *Evaluator, args ...Object) Object {
 		return newError("unzip expects a list, got %s", args[0].Type())
 	}
 	var listA, listB []Object
-	for _, item := range list.toSlice() {
+	for _, item := range list.ToSlice() {
 		tuple, ok := item.(*Tuple)
 		if !ok || len(tuple.Elements) != 2 {
 			return newError("unzip expects a list of 2-tuples, got %s", item.Inspect())
@@ -537,7 +537,7 @@ func builtinSort(e *Evaluator, args ...Object) Object {
 
 	// Copy elements
 	result := make([]Object, list.len())
-	copy(result, list.toSlice())
+	copy(result, list.ToSlice())
 
 	// Sort using comparison
 	sort.SliceStable(result, func(i, j int) bool {
@@ -565,11 +565,11 @@ func builtinSortBy(e *Evaluator, args ...Object) Object {
 
 	// Copy elements
 	result := make([]Object, list.len())
-	copy(result, list.toSlice())
+	copy(result, list.ToSlice())
 
 	// Sort using custom comparator
 	sort.SliceStable(result, func(i, j int) bool {
-		cmpResult := e.applyFunction(cmpFn, []Object{result[i], result[j]})
+		cmpResult := e.ApplyFunction(cmpFn, []Object{result[i], result[j]})
 		if intResult, ok := cmpResult.(*Integer); ok {
 			return intResult.Value < 0
 		}
@@ -619,8 +619,8 @@ func builtinFind(e *Evaluator, args ...Object) Object {
 		return newError("find expects a list as second argument, got %s", args[1].Type())
 	}
 
-	for _, item := range list.toSlice() {
-		result := e.applyFunction(predFn, []Object{item})
+	for _, item := range list.ToSlice() {
+		result := e.ApplyFunction(predFn, []Object{item})
 		if isError(result) {
 			return result
 		}
@@ -650,8 +650,8 @@ func builtinFindIndex(e *Evaluator, args ...Object) Object {
 		return newError("findIndex expects a list as second argument, got %s", args[1].Type())
 	}
 
-	for i, item := range list.toSlice() {
-		result := e.applyFunction(predFn, []Object{item})
+	for i, item := range list.ToSlice() {
+		result := e.ApplyFunction(predFn, []Object{item})
 		if isError(result) {
 			return result
 		}
@@ -681,8 +681,8 @@ func builtinAny(e *Evaluator, args ...Object) Object {
 		return newError("any expects a list as second argument, got %s", args[1].Type())
 	}
 
-	for _, item := range list.toSlice() {
-		result := e.applyFunction(predFn, []Object{item})
+	for _, item := range list.ToSlice() {
+		result := e.ApplyFunction(predFn, []Object{item})
 		if isError(result) {
 			return result
 		}
@@ -704,8 +704,8 @@ func builtinAll(e *Evaluator, args ...Object) Object {
 		return newError("all expects a list as second argument, got %s", args[1].Type())
 	}
 
-	for _, item := range list.toSlice() {
-		result := e.applyFunction(predFn, []Object{item})
+	for _, item := range list.ToSlice() {
+		result := e.ApplyFunction(predFn, []Object{item})
 		if isError(result) {
 			return result
 		}
@@ -728,8 +728,8 @@ func builtinTakeWhile(e *Evaluator, args ...Object) Object {
 	}
 
 	var result []Object
-	for _, item := range list.toSlice() {
-		predResult := e.applyFunction(predFn, []Object{item})
+	for _, item := range list.ToSlice() {
+		predResult := e.ApplyFunction(predFn, []Object{item})
 		if isError(predResult) {
 			return predResult
 		}
@@ -754,8 +754,8 @@ func builtinDropWhile(e *Evaluator, args ...Object) Object {
 	}
 
 	startIdx := list.len()
-	for i, item := range list.toSlice() {
-		predResult := e.applyFunction(predFn, []Object{item})
+	for i, item := range list.ToSlice() {
+		predResult := e.ApplyFunction(predFn, []Object{item})
 		if isError(predResult) {
 			return predResult
 		}
@@ -764,7 +764,7 @@ func builtinDropWhile(e *Evaluator, args ...Object) Object {
 			break
 		}
 	}
-	return list.slice(startIdx, list.len())
+	return list.Slice(startIdx, list.len())
 }
 
 // partition: ((T) -> Bool, List<T>) -> (List<T>, List<T>)
@@ -779,8 +779,8 @@ func builtinPartition(e *Evaluator, args ...Object) Object {
 	}
 
 	var trueList, falseList []Object
-	for _, item := range list.toSlice() {
-		predResult := e.applyFunction(predFn, []Object{item})
+	for _, item := range list.ToSlice() {
+		predResult := e.ApplyFunction(predFn, []Object{item})
 		if isError(predResult) {
 			return predResult
 		}
@@ -804,8 +804,8 @@ func builtinForEach(e *Evaluator, args ...Object) Object {
 		return newError("forEach expects a list as second argument, got %s", args[1].Type())
 	}
 
-	for _, item := range list.toSlice() {
-		result := e.applyFunction(fn, []Object{item})
+	for _, item := range list.ToSlice() {
+		result := e.ApplyFunction(fn, []Object{item})
 		if isError(result) {
 			return result
 		}

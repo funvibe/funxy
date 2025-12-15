@@ -1,26 +1,26 @@
-# Строки
+# Strings
 
-## Представление строк
+## String Representation
 
-Строки в нашем языке представлены как `List<Char>` — список символов. Это позволяет использовать все операции со списками для работы со строками.
+Strings in our language are represented as `List<Char>` - a list of characters. This allows using all list operations for working with strings.
 
 ```rust
-s = "hello"        // Тип: String (алиас для List<Char>)
-print(s[0])        // 'h' - доступ к символу
+s = "hello"        // Type: String (alias for List<Char>)
+print(s[0])        // 'h' - access to character
 print(len(s))      // 5
 ```
 
-## Типы строковых литералов
+## String Literal Types
 
-### Обычные строки
+### Regular Strings
 
 ```rust
 s = "Hello, World!"
 ```
 
-### Raw строки (многострочные)
+### Raw Strings (multi-line)
 
-Используют обратные кавычки и сохраняют форматирование:
+Use backticks and preserve formatting:
 
 ```rust
 text = `This is
@@ -28,43 +28,44 @@ a multi-line
 string`
 ```
 
-### Интерполированные строки
+### Interpolated Strings
 
-Позволяют встраивать выражения прямо в строку с помощью `${...}`:
+Allow embedding expressions directly in the string using `${...}`:
 
 ```rust
 name = "Alice"
 age = 30
 
-// Простая интерполяция
+// Simple interpolation
 print("Hello, ${name}!")  // Hello, Alice!
 
-// Выражения в интерполяции
+// Expressions in interpolation
 x = 5
 y = 3
 print("${x} + ${y} = ${x + y}")  // 5 + 3 = 8
 
-// Доступ к полям
+// Field access
 person = { name: "Bob", age: 25 }
 print("${person.name} is ${person.age}")  // Bob is 25
 
-// Вызов функций
+// Function calls
 fun double(n) { n * 2 }
 print("Double: ${double(10)}")  // Double: 20
 ```
 
-### Что можно использовать в `${...}`
+### What can be used in `${...}`
 
-- Переменные: `${name}`
-- Арифметические выражения: `${a + b * 2}`
-- Доступ к полям: `${person.name}`
-- Индексация: `${list[0]}`
-- Вызовы функций: `${func(arg)}`
-- Вложенные строки: `${"inner"}`
+- Variables: `${name}`
+- Arithmetic expressions: `${a + b * 2}`
+- Field access: `${person.name}`
+- Indexing: `${list[0]}`
+- Function calls: `${func(arg)}`
+- Nested strings: `${"inner"}`
+```
 
-## Конкатенация строк
+## String Concatenation
 
-Оператор `++` (предпочтительно):
+The `++` operator (preferred):
 
 ```rust
 greeting = "Hello"
@@ -73,66 +74,66 @@ message = greeting ++ ", " ++ name ++ "!"
 print(message)  // Hello, World!
 ```
 
-Но интерполяция обычно удобнее и читабельнее.
+But interpolation is usually more convenient and readable.
 
 ## Unicode
 
-Строки корректно работают с Unicode:
+Strings work correctly with Unicode:
 
 ```rust
 import "lib/list" (reverse)
 
 s = "Привет"
-print(len(s))      // 6 (символов, не байтов)
+print(len(s))      // 6 (characters, not bytes)
 print(reverse(s))  // "тевирП"
 
 for c in "日本語" {
-    print(c)       // Печатает каждый символ
+    print(c)       // Prints each character
 }
 ```
 
-## lib/list функции на строках
+## lib/list functions on strings
 
-Поскольку `String = List<Char>`, все функции списков работают:
+Since `String = List<Char>`, all list functions work:
 
 ```rust
 import "lib/list" (head, last, tail, init, take, drop, reverse, filter, foldl, find)
 
 s = "hello"
 
-// Длина
+// Length
 print(len(s))                     // 5
 
-// Доступ
+// Access
 print(head(s))                    // Some('h')
 print(last(s))                    // Some('o')
 print(tail(s))                    // "ello"
 print(init(s))                    // "hell"
 
-// Срезы
+// Slices
 print(take(s, 3))                 // "hel"
 print(drop(s, 2))                 // "llo"
 
-// Поиск
+// Search
 print(find(fun(c) -> c == 'e', s)) // Some('e')
 
-// Трансформация
+// Transformation
 print(reverse(s))                 // "olleh"
 print(filter(fun(c) -> c != 'l', s)) // "heo"
 
-// Свёртка
+// Fold
 print(foldl(fun(acc, c) -> acc + 1, 0, s))  // 5
 ```
 
-## Модуль lib/string
+## lib/string module
 
-Модуль `lib/string` предоставляет специализированные строковые операции:
+The `lib/string` module provides specialized string operations:
 
 ```rust
 import "lib/string" (*)
 ```
 
-### Split и Join
+### Split and Join
 
 ```rust
 import "lib/string" (stringSplit, stringJoin, stringLines, stringWords)
@@ -146,11 +147,11 @@ print(stringJoin(["a", "b", "c"], ","))    // "a,b,c"
 print(stringJoin(["a", "b", "c"], ""))     // "abc"
 
 // stringWords: (String) -> List<String>
-// Разбивает по пробелам
+// Splits by spaces
 print(stringWords("hello   world  test"))  // ["hello", "world", "test"]
 ```
 
-### Обрезка пробелов
+### Whitespace Trimming
 
 ```rust
 // stringTrim: (String) -> String
@@ -163,7 +164,7 @@ stringTrimStart("  hello")          // "hello"
 stringTrimEnd("hello  ")            // "hello"
 ```
 
-### Регистр
+### Case
 
 ```rust
 // stringToUpper: (String) -> String
@@ -177,15 +178,15 @@ stringToLower("HELLO")              // "hello"
 stringCapitalize("hello")           // "Hello"
 ```
 
-### Поиск и замена
+### Search and Replace
 
 ```rust
 // stringReplace: (String, String, String) -> String
-// Заменяет первое вхождение
+// Replaces first occurrence
 stringReplace("hello", "l", "L")    // "heLlo"
 
 // stringReplaceAll: (String, String, String) -> String
-// Заменяет все вхождения
+// Replaces all occurrences
 stringReplaceAll("hello", "l", "L") // "heLLo"
 stringReplaceAll("banana", "a", "o") // "bonono"
 
@@ -202,7 +203,7 @@ stringIndexOf("hello", "ll")      // Some(2)
 stringIndexOf("hello", "x")       // Zero
 ```
 
-### Повтор и выравнивание
+### Repeat and Padding
 
 ```rust
 import "lib/string" (stringRepeat, stringPadLeft, stringPadRight)
@@ -213,15 +214,15 @@ print(stringRepeat("x", 5))                // "xxxxx"
 
 // stringPadLeft: (String, Int, Char) -> String
 print(stringPadLeft("42", 5, '0'))         // "00042"
-print(stringPadLeft("hello", 3, '-'))      // "hello" (без изменений если >= длины)
+print(stringPadLeft("hello", 3, '-'))      // "hello" (unchanged if >= length)
 
 // stringPadRight: (String, Int, Char) -> String
 print(stringPadRight("42", 5, '-'))        // "42---"
 ```
 
-## Pipe оператор
+## Pipe Operator
 
-Строковые функции отлично работают с pipe:
+String functions work great with pipe:
 
 ```rust
 import "lib/string" (*)
@@ -232,16 +233,16 @@ result = "  HELLO WORLD  "
     |> stringCapitalize
 print(result)  // "Hello world"
 
-// Обработка CSV
+// CSV processing
 csv = "a,b,c"
 parts = stringSplit(csv, ",")
 formatted = stringJoin(parts, " | ")
 print(formatted)  // "a | b | c"
 ```
 
-## Практические примеры
+## Practical Examples
 
-### Подсчёт слов
+### Word Count
 
 ```rust
 import "lib/string" (stringWords)
@@ -268,7 +269,7 @@ fun titleCase(s: String) -> String {
 print(titleCase("hello world"))  // "Hello World"
 ```
 
-### Форматирование чисел
+### Number Formatting
 
 ```rust
 import "lib/string" (stringPadLeft)
@@ -280,7 +281,7 @@ fun formatNumber(n: Int, width: Int) -> String {
 print(formatNumber(42, 5))  // "00042"
 ```
 
-### Парсинг CSV
+### CSV Parsing
 
 ```rust
 import "lib/string" (stringSplit, stringTrim)
@@ -293,7 +294,7 @@ parseCSVLine = fun(line: String) -> List<String> {
 parseCSVLine("  a , b , c  ") // ["a", "b", "c"]
 ```
 
-### Отладочный вывод
+### Debug Output
 
 ```rust
 fun debug(label, value) {
@@ -304,25 +305,25 @@ x = 100
 debug("x", x)  // [DEBUG] x = 100
 ```
 
-## Сводка lib/string
+## lib/string Summary
 
-| Функция | Тип | Описание |
+| Function | Type | Description |
 |---------|-----|----------|
-| `stringSplit` | `(String, String) -> List<String>` | Разбить по разделителю |
-| `stringJoin` | `(List<String>, String) -> String` | Соединить с разделителем |
-| `stringLines` | `(String) -> List<String>` | Разбить по строкам |
-| `stringWords` | `(String) -> List<String>` | Разбить по пробелам |
-| `stringTrim` | `(String) -> String` | Обрезать пробелы |
-| `stringTrimStart` | `(String) -> String` | Обрезать слева |
-| `stringTrimEnd` | `(String) -> String` | Обрезать справа |
-| `stringToUpper` | `(String) -> String` | В верхний регистр |
-| `stringToLower` | `(String) -> String` | В нижний регистр |
-| `stringCapitalize` | `(String) -> String` | Первую букву заглавной |
-| `stringReplace` | `(String, String, String) -> String` | Заменить первое |
-| `stringReplaceAll` | `(String, String, String) -> String` | Заменить все |
-| `stringStartsWith` | `(String, String) -> Bool` | Проверка префикса |
-| `stringEndsWith` | `(String, String) -> Bool` | Проверка суффикса |
-| `stringIndexOf` | `(String, String) -> Option<Int>` | Найти подстроку |
-| `stringRepeat` | `(String, Int) -> String` | Повторить N раз |
-| `stringPadLeft` | `(String, Int, Char) -> String` | Дополнить слева |
-| `stringPadRight` | `(String, Int, Char) -> String` | Дополнить справа |
+| `stringSplit` | `(String, String) -> List<String>` | Split by delimiter |
+| `stringJoin` | `(List<String>, String) -> String` | Join with delimiter |
+| `stringLines` | `(String) -> List<String>` | Split by lines |
+| `stringWords` | `(String) -> List<String>` | Split by spaces |
+| `stringTrim` | `(String) -> String` | Trim whitespace |
+| `stringTrimStart` | `(String) -> String` | Trim left |
+| `stringTrimEnd` | `(String) -> String` | Trim right |
+| `stringToUpper` | `(String) -> String` | Convert to uppercase |
+| `stringToLower` | `(String) -> String` | Convert to lowercase |
+| `stringCapitalize` | `(String) -> String` | Capitalize first letter |
+| `stringReplace` | `(String, String, String) -> String` | Replace first |
+| `stringReplaceAll` | `(String, String, String) -> String` | Replace all |
+| `stringStartsWith` | `(String, String) -> Bool` | Check prefix |
+| `stringEndsWith` | `(String, String) -> Bool` | Check suffix |
+| `stringIndexOf` | `(String, String) -> Option<Int>` | Find substring |
+| `stringRepeat` | `(String, Int) -> String` | Repeat N times |
+| `stringPadLeft` | `(String, Int, Char) -> String` | Pad left |
+| `stringPadRight` | `(String, Int, Char) -> String` | Pad right |

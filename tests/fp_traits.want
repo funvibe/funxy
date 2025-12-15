@@ -1,0 +1,56 @@
+=== Semigroup ===
+[1, 2, 3, 4, 5, 6]
+[1, 2, 3, 4, 5, 6]
+true
+Some(10)
+true
+Some(10)
+true
+Some(20)
+true
+Zero
+true
+true
+=== Monoid ===
+[]
+[1, 2, 3]
+[1, 2, 3]
+Zero
+Some(42)
+Some(42)
+true
+true
+=== Functor ===
+[2, 4, 6, 8, 10]
+true
+Some(20)
+true
+Zero
+true
+Ok(105)
+true
+Fail("error")
+true
+true
+true
+=== Applicative ===
+Some(11)
+true
+Zero
+Zero
+[11, 21, 20, 40]
+true
+=== Monad ===
+Some(11)
+true
+Zero
+Some(25)
+[1, 10, 2, 20, 3, 30]
+true
+true
+true
+true
+=== Practical Example ===
+Some(5)
+Zero
+=== FP traits tests passed! ===

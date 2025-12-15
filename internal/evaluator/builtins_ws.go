@@ -635,6 +635,11 @@ func builtinWsServe(e *Evaluator, args ...Object) Object {
 	}
 
 	handler := args[1]
+	// Capture handler if CaptureHandler is available
+	if e.CaptureHandler != nil {
+		handler = e.CaptureHandler(handler)
+	}
+
 	if !wsIsCallable(handler) {
 		return newError("wsServe: handler must be a function")
 	}
@@ -651,7 +656,15 @@ func builtinWsServe(e *Evaluator, args ...Object) Object {
 			continue
 		}
 
-		go handleWsConnection(conn, handler, e)
+		// Create a fresh evaluator/VM for each connection
+		var connEval *Evaluator
+		if e.Fork != nil {
+			connEval = e.Fork()
+		} else {
+			connEval = e.Clone()
+		}
+
+		go handleWsConnection(conn, handler, connEval)
 	}
 }
 
@@ -668,6 +681,12 @@ func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 	}
 
 	handler := args[1]
+	// Capture handler if CaptureHandler is available (VM mode)
+	// This ensures upvalues are closed and safe for async execution
+	if e.CaptureHandler != nil {
+		handler = e.CaptureHandler(handler)
+	}
+
 	if !wsIsCallable(handler) {
 		return newError("wsServeAsync: handler must be a function")
 	}
@@ -705,7 +724,16 @@ func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 					}
 					return
 				}
-				go handleWsConnection(conn, srv.handler, srv.eval)
+
+				// Create a fresh evaluator/VM for each connection to ensure thread safety
+				var connEval *Evaluator
+				if srv.eval.Fork != nil {
+					connEval = srv.eval.Fork()
+				} else {
+					connEval = srv.eval.Clone()
+				}
+
+				go handleWsConnection(conn, srv.handler, connEval)
 			}
 		}
 	}()
@@ -814,7 +842,7 @@ func handleWsConnection(conn net.Conn, handler Object, eval *Evaluator) {
 		}
 
 		// Call handler: (connId, message) -> response
-		resp := eval.applyFunction(handler, []Object{
+		resp := eval.ApplyFunction(handler, []Object{
 			&Integer{Value: connID},
 			stringToList(message),
 		})
@@ -834,6 +862,10 @@ func handleWsConnection(conn net.Conn, handler Object, eval *Evaluator) {
 func wsIsCallable(obj Object) bool {
 	switch obj.(type) {
 	case *Function, *Builtin, *PartialApplication:
+		return true
+	}
+	// Check for VM closure by type string
+	if obj.Type() == "CLOSURE" || obj.Type() == "BUILTIN_CLOSURE" {
 		return true
 	}
 	return false

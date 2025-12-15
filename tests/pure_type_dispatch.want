@@ -1,0 +1,6 @@
+Some(42)
+Some(7)
+[100]
+["hello"]
+["world"]
+pure type dispatch test passed!

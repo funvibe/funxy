@@ -31,7 +31,7 @@ func (p *Parser) parsePackageDeclaration() *ast.PackageDeclaration {
 			if spec == nil {
 				return nil
 			}
-			
+
 			// Check if it's a local wildcard export
 			if spec.Symbol != nil && spec.Symbol.Value == "*" {
 				pd.ExportAll = true
@@ -111,7 +111,7 @@ func (p *Parser) parseExportSpec() *ast.ExportSpec {
 				}
 				p.nextToken()
 				spec.Symbols = append(spec.Symbols, &ast.Identifier{
-					Token: p.curToken, 
+					Token: p.curToken,
 					Value: p.curToken.Literal.(string),
 				})
 
@@ -180,6 +180,7 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 			return nil
 		}
 		is.Exclude = p.parseIdentifierList()
+		// Note: ImportAll is NOT set here - the presence of Exclude implies import all except excluded
 		if !p.expectPeek(token.RPAREN) {
 			return nil
 		}
@@ -193,7 +194,7 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 			return nil
 		}
 		p.nextToken() // consume '('
-		
+
 		// Check for (*) - import all
 		if p.peekTokenIs(token.ASTERISK) {
 			p.nextToken() // consume '*'
@@ -386,24 +387,24 @@ func (p *Parser) parseTraitDeclaration() *ast.TraitDeclaration {
 		} else if p.curTokenIs(token.OPERATOR) {
 			// Parse operator method: operator (+)<A, B>(a: T, b: T) -> T
 			fn := &ast.FunctionStatement{Token: p.curToken}
-			
+
 			// Expect ( after operator
 			if !p.expectPeek(token.LPAREN) {
 				return nil
 			}
-			
+
 			// Get operator symbol: +, -, *, /, ==, !=, <, >, <=, >=
 			p.nextToken()
 			op := p.curToken.Lexeme
 			fn.Operator = op
 			// Create a synthetic name for the operator method
 			fn.Name = &ast.Identifier{Token: p.curToken, Value: "(" + op + ")"}
-			
+
 			// Expect closing )
 			if !p.expectPeek(token.RPAREN) {
 				return nil
 			}
-			
+
 			// Optional: generic type parameters <A, B>
 			if p.peekTokenIs(token.LT) {
 				p.nextToken() // move to current position
@@ -423,28 +424,28 @@ func (p *Parser) parseTraitDeclaration() *ast.TraitDeclaration {
 				}
 				// curToken is now GT
 			}
-			
+
 			// Expect ( for parameters
 			if !p.expectPeek(token.LPAREN) {
 				return nil
 			}
 			fn.Parameters = p.parseFunctionParameters()
-			
+
 			// Return type
 			if p.peekTokenIs(token.ARROW) {
 				p.nextToken() // consume previous token
 				p.nextToken() // consume ARROW, point to start of type
 				fn.ReturnType = p.parseType()
 			}
-			
+
 			// Optional: default implementation body
 			if p.peekTokenIs(token.LBRACE) {
 				p.nextToken() // move to LBRACE
 				fn.Body = p.parseBlockStatement()
 			}
-			
+
 			stmt.Signatures = append(stmt.Signatures, fn)
-			
+
 			if p.peekTokenIs(token.NEWLINE) {
 				p.nextToken()
 			}
@@ -475,7 +476,7 @@ func (p *Parser) parseInstanceDeclaration() *ast.InstanceDeclaration {
 		p.nextToken() // consume <
 		// Parse the type constructor as Target
 		stmt.Target = p.parseType()
-		
+
 		// Check for additional type parameters: <Result, E, F>
 		for p.peekTokenIs(token.COMMA) {
 			p.nextToken() // consume ,
@@ -487,7 +488,7 @@ func (p *Parser) parseInstanceDeclaration() *ast.InstanceDeclaration {
 				})
 			}
 		}
-		
+
 		if !p.expectPeek(token.GT) {
 			return nil
 		}
@@ -538,23 +539,23 @@ func (p *Parser) parseInstanceDeclaration() *ast.InstanceDeclaration {
 // Supports optional generic type params: operator (<~>)<A, B>(...)
 func (p *Parser) parseOperatorMethod() *ast.FunctionStatement {
 	fn := &ast.FunctionStatement{Token: p.curToken}
-	
+
 	// Expect ( after operator
 	if !p.expectPeek(token.LPAREN) {
 		return nil
 	}
-	
+
 	// Get operator symbol
 	p.nextToken()
 	op := p.curToken.Lexeme
 	fn.Operator = op
 	fn.Name = &ast.Identifier{Token: p.curToken, Value: "(" + op + ")"}
-	
+
 	// Expect closing )
 	if !p.expectPeek(token.RPAREN) {
 		return nil
 	}
-	
+
 	// Optional: generic type parameters <A, B>
 	if p.peekTokenIs(token.LT) {
 		p.nextToken() // move to current position
@@ -574,26 +575,26 @@ func (p *Parser) parseOperatorMethod() *ast.FunctionStatement {
 		}
 		// curToken is now GT
 	}
-	
+
 	// Expect ( for parameters
 	if !p.expectPeek(token.LPAREN) {
 		return nil
 	}
 	fn.Parameters = p.parseFunctionParameters()
-	
+
 	// Return type
 	if p.peekTokenIs(token.ARROW) {
 		p.nextToken()
 		p.nextToken()
 		fn.ReturnType = p.parseType()
 	}
-	
+
 	// Body is required for instance implementations
 	if !p.expectPeek(token.LBRACE) {
 		return nil
 	}
 	fn.Body = p.parseBlockStatement()
-	
+
 	return fn
 }
 
@@ -727,34 +728,34 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 	if p.peekTokenIs(token.WHERE) {
 		p.nextToken() // consume 'where'
 		p.nextToken() // move to first constraint
-		
+
 		for {
 			// Parse constraint: Trait<TypeVar> or Trait<TypeConstructor>
 			if !p.curTokenIs(token.IDENT_UPPER) {
 				break
 			}
 			traitName := p.curToken.Literal.(string)
-			
+
 			// Expect <
 			if !p.expectPeek(token.LT) {
 				break
 			}
 			p.nextToken() // move past <
-			
+
 			// Get type variable name
 			if !p.curTokenIs(token.IDENT_UPPER) {
 				break
 			}
 			typeVar := p.curToken.Literal.(string)
-			
+
 			// Expect >
 			if !p.expectPeek(token.GT) {
 				break
 			}
-			
+
 			constraint := &ast.TypeConstraint{TypeVar: typeVar, Trait: traitName}
 			stmt.Constraints = append(stmt.Constraints, constraint)
-			
+
 			// Check for comma (more constraints)
 			if p.peekTokenIs(token.COMMA) {
 				p.nextToken() // consume ,
@@ -783,7 +784,7 @@ func (p *Parser) parseFunctionParameters() []*ast.Parameter {
 	for p.peekTokenIs(token.NEWLINE) {
 		p.nextToken()
 	}
-	
+
 	if p.peekTokenIs(token.RPAREN) {
 		p.nextToken()
 		return params
@@ -946,7 +947,7 @@ func (p *Parser) parseTypeDeclarationStatement() *ast.TypeDeclarationStatement {
 			stmt.TargetType = p.parseType()
 			return stmt
 		}
-		
+
 		// Heuristic: If RHS starts with '(' it's likely a function type or tuple - treat as alias
 		// e.g. type Handler = (Int) -> Nil
 		if p.curTokenIs(token.LPAREN) {
@@ -967,7 +968,7 @@ func (p *Parser) parseTypeDeclarationStatement() *ast.TypeDeclarationStatement {
 			for p.peekTokenIs(token.NEWLINE) {
 				p.nextToken()
 			}
-			
+
 			if p.peekTokenIs(token.PIPE) {
 				p.nextToken() // consume current token
 				p.nextToken() // consume |

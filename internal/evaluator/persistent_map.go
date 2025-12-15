@@ -1,7 +1,9 @@
 package evaluator
 
 import (
-	"hash/fnv"
+	"fmt"
+	"github.com/funvibe/funxy/internal/typesystem"
+	"unsafe"
 )
 
 // Persistent Hash Array Mapped Trie (HAMT) implementation
@@ -49,6 +51,12 @@ func MapFrom(pairs []struct{ Key, Value Object }) *PersistentMap {
 	}
 	return m
 }
+
+// Implement Object interface for PersistentMap so it can be stored inside itself
+func (m *PersistentMap) Type() ObjectType             { return "PERSISTENT_MAP" }
+func (m *PersistentMap) Inspect() string              { return fmt.Sprintf("<persistent map %d>", m.count) }
+func (m *PersistentMap) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "PersistentMap"} }
+func (m *PersistentMap) Hash() uint32                 { return uint32(uintptr(unsafe.Pointer(m))) }
 
 // Len returns the number of entries
 func (m *PersistentMap) Len() int {
@@ -337,9 +345,7 @@ func (n *hamtNode) collectItems(items *[]struct{ Key, Value Object }) {
 
 // hashObject computes a hash for any Object
 func hashObject(obj Object) uint32 {
-	h := fnv.New32a()
-	h.Write([]byte(obj.Inspect()))
-	return h.Sum32()
+	return obj.Hash()
 }
 
 // objectsEqualForMap checks equality for map keys

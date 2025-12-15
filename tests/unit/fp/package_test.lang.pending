@@ -1,0 +1,169 @@
+import "lib/test" (*)
+import "./mylib" (*)
+
+// =============================================
+// COMPREHENSIVE PACKAGE TEST
+// 
+// Tests importing and using user-defined:
+// - Types (Text, Score, Item, Counter)
+// - Traits (Stringify, Showable, Printable, Summable)
+// - Operators (<>, <|>)
+// - Trait inheritance (Printable : Showable)
+// =============================================
+
+// =============================================
+// PART 1: Basic type usage
+// =============================================
+
+testRun("Package - Text type", fun() -> {
+    t = MkText("hello")
+    assertEquals(getText(t), "hello")
+})
+
+testRun("Package - Score type", fun() -> {
+    s = MkScore(100)
+    assertEquals(getScore(s), 100)
+})
+
+testRun("Package - Item type", fun() -> {
+    i = MkItem("apple", 5)
+    assertEquals(itemName(i), "apple")
+    assertEquals(itemValue(i), 5)
+})
+
+testRun("Package - Counter type", fun() -> {
+    c = MkCounter(42, "test")
+    assertEquals(counterValue(c), 42)
+    assertEquals(counterLabel(c), "test")
+})
+
+// =============================================
+// PART 2: Stringify trait
+// =============================================
+
+testRun("Package - Stringify Text", fun() -> {
+    t = MkText("world")
+    assertEquals(stringify(t), "Text(world)")
+})
+
+testRun("Package - Stringify Int", fun() -> {
+    assertEquals(stringify(123), "Int(123)")
+})
+
+testRun("Package - Stringify Counter", fun() -> {
+    c = MkCounter(50, "points")
+    assertEquals(stringify(c), "points=50")
+})
+
+// =============================================
+// PART 3: Trait inheritance (Showable -> Printable)
+// =============================================
+
+testRun("Package - Showable.display", fun() -> {
+    i = MkItem("banana", 3)
+    assertEquals(display(i), "banana:3")
+})
+
+testRun("Package - Printable.format (child trait)", fun() -> {
+    i = MkItem("orange", 7)
+    assertEquals(format(i), "[orange:7]")
+})
+
+// =============================================
+// PART 4: Semigroup via combine helper
+// Note: trait instances don't export across modules,
+// so we use helper functions that wrap the operators
+// =============================================
+
+testRun("Package - Text combine", fun() -> {
+    t1 = MkText("Hello")
+    t2 = MkText(" World")
+    result = combineText(t1, t2)
+    assertEquals(getText(result), "Hello World")
+})
+
+testRun("Package - Score combine", fun() -> {
+    s1 = MkScore(10)
+    s2 = MkScore(20)
+    result = combineScore(s1, s2)
+    assertEquals(getScore(result), 30)
+})
+
+// =============================================
+// PART 5: UserOpChoose via choose helper
+// =============================================
+
+testRun("Package - Score choose", fun() -> {
+    s1 = MkScore(30)
+    s2 = MkScore(50)
+    best = choose(s1, s2)
+    assertEquals(getScore(best), 50)
+})
+
+// =============================================
+// PART 6: Summable trait
+// =============================================
+
+testRun("Package - sumInts", fun() -> {
+    nums: List<Int> = [1, 2, 3, 4, 5]
+    assertEquals(sumInts(nums), 15)
+})
+
+testRun("Package - sumScores", fun() -> {
+    scores = [MkScore(10), MkScore(20), MkScore(30)]
+    result = sumScores(scores)
+    assertEquals(getScore(result), 60)
+})
+
+testRun("Package - sumCounters", fun() -> {
+    counters = [MkCounter(1, "x"), MkCounter(2, "y"), MkCounter(3, "z")]
+    result = sumCounters(counters)
+    assertEquals(counterValue(result), 6)
+})
+
+// =============================================
+// PART 7: Helper functions
+// =============================================
+
+testRun("Package - combineText helper", fun() -> {
+    t1 = MkText("A")
+    t2 = MkText("B")
+    result = combineText(t1, t2)
+    assertEquals(getText(result), "AB")
+})
+
+testRun("Package - choose helper", fun() -> {
+    s1 = MkScore(100)
+    s2 = MkScore(50)
+    result = choose(s1, s2)
+    assertEquals(getScore(result), 100)
+})
+
+// =============================================
+// PART 8: Complex interactions
+// =============================================
+
+testRun("Package - Complex Counter workflow", fun() -> {
+    // Create counters
+    c1 = MkCounter(10, "a")
+    c2 = MkCounter(20, "b")
+    c3 = MkCounter(30, "c")
+    
+    // Stringify
+    assertEquals(stringify(c1), "a=10")
+    
+    // Sum all (uses operators inside module)
+    all = [c1, c2, c3]
+    total = sumCounters(all)
+    assertEquals(counterValue(total), 60)
+})
+
+testRun("Package - combineText helper function", fun() -> {
+    t1 = MkText("X")
+    t2 = MkText("Y")
+    result = combineText(t1, t2)
+    assertEquals(getText(result), "XY")
+})
+
+print("=== Package Test Completed ===")
+

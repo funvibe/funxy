@@ -23,6 +23,9 @@ instance MyApplicative<List> {
 opt: Option<Int> = myPure(42)
 print(opt)  // Should print Some(42)
 
+kOpt: Option<Int> :- myPure(7)
+print(kOpt)  // Should print Some(7)
+
 lst: List<Int> = myPure(100)
 print(lst)  // Should print [100]
 

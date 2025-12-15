@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
+	"math"
 	"math/big"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"sort"
 	"strings"
+	"unsafe"
 )
 
 type ObjectType string
@@ -60,6 +63,14 @@ type Object interface {
 	Type() ObjectType
 	Inspect() string
 	RuntimeType() typesystem.Type // Returns the type system representation
+	Hash() uint32
+}
+
+// Helper for hashing strings
+func hashString(s string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(s))
+	return h.Sum32()
 }
 
 // TailCall represents a function call that should be executed via trampoline.
@@ -75,6 +86,7 @@ type TailCall struct {
 func (tc *TailCall) Type() ObjectType      { return TAIL_CALL_OBJ }
 func (tc *TailCall) Inspect() string       { return "TailCall" }
 func (tc *TailCall) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "TailCall"} }
+func (tc *TailCall) Hash() uint32          { return 0 }
 
 // Boolean
 type Boolean struct {
@@ -84,6 +96,12 @@ type Boolean struct {
 func (b *Boolean) Type() ObjectType        { return BOOLEAN_OBJ }
 func (b *Boolean) Inspect() string         { return fmt.Sprintf("%t", b.Value) }
 func (b *Boolean) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Bool"} }
+func (b *Boolean) Hash() uint32 {
+	if b.Value {
+		return 1
+	}
+	return 0
+}
 
 // Integer
 type Integer struct {
@@ -93,6 +111,9 @@ type Integer struct {
 func (i *Integer) Type() ObjectType        { return INTEGER_OBJ }
 func (i *Integer) Inspect() string         { return fmt.Sprintf("%d", i.Value) }
 func (i *Integer) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Int"} }
+func (i *Integer) Hash() uint32 {
+	return uint32(i.Value ^ (i.Value >> 32))
+}
 
 // Float
 type Float struct {
@@ -102,6 +123,10 @@ type Float struct {
 func (f *Float) Type() ObjectType        { return FLOAT_OBJ }
 func (f *Float) Inspect() string         { return fmt.Sprintf("%g", f.Value) }
 func (f *Float) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Float"} }
+func (f *Float) Hash() uint32 {
+	bits := math.Float64bits(f.Value)
+	return uint32(bits ^ (bits >> 32))
+}
 
 // BigInt
 type BigInt struct {
@@ -111,6 +136,9 @@ type BigInt struct {
 func (bi *BigInt) Type() ObjectType         { return BIG_INT_OBJ }
 func (bi *BigInt) Inspect() string          { return bi.Value.String() }
 func (bi *BigInt) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "BigInt"} }
+func (bi *BigInt) Hash() uint32 {
+	return hashString(bi.Value.String())
+}
 
 // Rational
 type Rational struct {
@@ -120,6 +148,9 @@ type Rational struct {
 func (r *Rational) Type() ObjectType         { return RATIONAL_OBJ }
 func (r *Rational) Inspect() string          { return r.Value.FloatString(10) }
 func (r *Rational) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Rational"} }
+func (r *Rational) Hash() uint32 {
+	return hashString(r.Value.String())
+}
 
 // Nil (e.g. for statements that don't return a value, or print)
 type Nil struct{}
@@ -127,6 +158,7 @@ type Nil struct{}
 func (n *Nil) Type() ObjectType        { return NIL_OBJ }
 func (n *Nil) Inspect() string         { return "Nil" }
 func (n *Nil) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Nil"} }
+func (n *Nil) Hash() uint32            { return 0 }
 
 // Error
 type Error struct {
@@ -152,7 +184,7 @@ func (e *Error) Inspect() string {
 	} else {
 		result = "ERROR: " + e.Message
 	}
-	
+
 	// Add stack trace if available
 	// Shows call chain from innermost (most recent) to outermost
 	// Format: at <caller>:<line> (called <callee>)
@@ -174,10 +206,13 @@ func (e *Error) Inspect() string {
 			result += fmt.Sprintf("\n  at %s:%d (called %s)", callerName, frame.Line, frame.Name)
 		}
 	}
-	
+
 	return result
 }
 func (e *Error) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Error"} }
+func (e *Error) Hash() uint32 {
+	return hashString(e.Message)
+}
 
 // ReturnValue wraps a value that is being returned prematurely
 type ReturnValue struct {
@@ -187,6 +222,7 @@ type ReturnValue struct {
 func (rv *ReturnValue) Type() ObjectType         { return RETURN_VALUE_OBJ }
 func (rv *ReturnValue) Inspect() string          { return rv.Value.Inspect() }
 func (rv *ReturnValue) RuntimeType() typesystem.Type { return rv.Value.RuntimeType() }
+func (rv *ReturnValue) Hash() uint32             { return rv.Value.Hash() }
 
 // BreakSignal is an internal object used to signal a break from a loop.
 type BreakSignal struct {
@@ -196,6 +232,7 @@ type BreakSignal struct {
 func (bs *BreakSignal) Type() ObjectType         { return BREAK_SIGNAL_OBJ }
 func (bs *BreakSignal) Inspect() string          { return "Break" }
 func (bs *BreakSignal) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Break"} }
+func (bs *BreakSignal) Hash() uint32             { return 0 }
 
 // ContinueSignal is an internal object used to signal a continue in a loop.
 type ContinueSignal struct{}
@@ -203,6 +240,7 @@ type ContinueSignal struct{}
 func (cs *ContinueSignal) Type() ObjectType         { return CONTINUE_SIGNAL_OBJ }
 func (cs *ContinueSignal) Inspect() string          { return "Continue" }
 func (cs *ContinueSignal) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Continue"} }
+func (cs *ContinueSignal) Hash() uint32             { return 0 }
 
 // Function (User defined)
 type Function struct {
@@ -238,6 +276,10 @@ func (f *Function) RuntimeType() typesystem.Type {
 	}
 	return typesystem.TFunc{Params: paramTypes, ReturnType: retType}
 }
+func (f *Function) Hash() uint32 {
+	// Use pointer address for function identity
+	return uint32(uintptr(unsafe.Pointer(f)))
+}
 
 // OperatorFunction represents an operator used as a function, e.g., (+)
 type OperatorFunction struct {
@@ -253,6 +295,9 @@ func (of *OperatorFunction) RuntimeType() typesystem.Type {
 		Params:     []typesystem.Type{typesystem.TVar{Name: "a"}, typesystem.TVar{Name: "b"}},
 		ReturnType: typesystem.TVar{Name: "c"},
 	}
+}
+func (of *OperatorFunction) Hash() uint32 {
+	return hashString(of.Operator)
 }
 
 // ComposedFunction represents f ,, g (right-to-left composition)
@@ -270,6 +315,9 @@ func (cf *ComposedFunction) RuntimeType() typesystem.Type {
 		Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
 		ReturnType: typesystem.TVar{Name: "c"},
 	}
+}
+func (cf *ComposedFunction) Hash() uint32 {
+	return cf.F.Hash() ^ cf.G.Hash()
 }
 
 // Builtin Function
@@ -290,12 +338,16 @@ func (b *Builtin) RuntimeType() typesystem.Type {
 	}
 	return typesystem.TCon{Name: "Builtin"}
 }
+func (b *Builtin) Hash() uint32 {
+	return hashString(b.Name)
+}
 
 // PartialApplication represents a function with some arguments already applied.
 type PartialApplication struct {
 	Function    *Function    // User-defined function (nil if builtin/constructor)
 	Builtin     *Builtin     // Builtin function (nil if user-defined/constructor)
 	Constructor *Constructor // Type constructor (nil if function/builtin)
+	VMClosure   Object       // VM closure (ObjClosure) for VM partial application
 	AppliedArgs []Object     // Already applied arguments
 	RemainingParams int      // Number of remaining required parameters
 }
@@ -339,6 +391,20 @@ func (p *PartialApplication) RuntimeType() typesystem.Type {
 	}
 	return typesystem.TCon{Name: "PartialApplication"}
 }
+func (p *PartialApplication) Hash() uint32 {
+	h := uint32(0)
+	if p.Function != nil {
+		h = p.Function.Hash()
+	} else if p.Builtin != nil {
+		h = p.Builtin.Hash()
+	} else if p.Constructor != nil {
+		h = p.Constructor.Hash()
+	}
+	for _, arg := range p.AppliedArgs {
+		h = 31*h + arg.Hash()
+	}
+	return h
+}
 
 // DataInstance represents an instance of an ADT case (e.g. Just(5), Empty).
 type DataInstance struct {
@@ -374,6 +440,13 @@ func (d *DataInstance) RuntimeType() typesystem.Type {
 	// Don't infer type args from fields - they are constructor arguments, not type parameters
 	return typesystem.TCon{Name: d.TypeName}
 }
+func (d *DataInstance) Hash() uint32 {
+	h := hashString(d.Name)
+	for _, field := range d.Fields {
+		h = 31*h + field.Hash()
+	}
+	return h
+}
 
 // Constructor represents a function that creates a DataInstance.
 type Constructor struct {
@@ -394,6 +467,9 @@ func (c *Constructor) RuntimeType() typesystem.Type {
 		Params:     paramTypes,
 		ReturnType: typesystem.TCon{Name: c.TypeName},
 	}
+}
+func (c *Constructor) Hash() uint32 {
+	return hashString(c.Name)
 }
 
 // Tuple represents a heterogeneous immutable collection of objects.
@@ -420,6 +496,13 @@ func (t *Tuple) RuntimeType() typesystem.Type {
 	}
 	return typesystem.TTuple{Elements: elemTypes}
 }
+func (t *Tuple) Hash() uint32 {
+	h := uint32(1)
+	for _, el := range t.Elements {
+		h = 31*h + el.Hash()
+	}
+	return h
+}
 
 // TypeObject represents a runtime type value.
 type TypeObject struct {
@@ -429,6 +512,7 @@ type TypeObject struct {
 func (t *TypeObject) Type() ObjectType          { return TYPE_OBJ }
 func (t *TypeObject) Inspect() string           { return "type(" + t.TypeVal.String() + ")" }
 func (t *TypeObject) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Type"} }
+func (t *TypeObject) Hash() uint32              { return hashString(t.TypeVal.String()) }
 
 // Char represents a character.
 type Char struct {
@@ -438,61 +522,196 @@ type Char struct {
 func (c *Char) Type() ObjectType          { return CHAR_OBJ }
 func (c *Char) Inspect() string           { return fmt.Sprintf("'%c'", c.Value) }
 func (c *Char) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Char"} }
+func (c *Char) Hash() uint32              { return uint32(c.Value) }
 
 // List represents a homogeneous (in principle, though runtime allows heterogenous) immutable collection.
-// Internally uses PersistentVector for efficient immutable operations.
+// It uses a hybrid representation:
+// - If vector is non-nil, it relies on PersistentVector (O(1) append, O(1) index).
+// - If vector is nil, it acts as a Cons list (head/tail) (O(1) prepend).
 type List struct {
 	vector      *PersistentVector
-	ElementType string // Optional: stores declared element type (e.g. "Int" for List<Int>)
+	head        Object
+	tail        *List
+	length      int    // Cached length for Cons lists (vector tracks its own length)
+	ElementType string // Optional: declared element type
 }
 
-// newList creates a new List from a slice of Objects
+// newList creates a new List from a slice of Objects (internal)
 func newList(elements []Object) *List {
-	return &List{vector: VectorFrom(elements)}
+	v := VectorFrom(elements)
+	return &List{vector: v}
+}
+
+// NewList creates a new List from a slice of Objects (exported for VM)
+func NewList(elements []Object) *List {
+	v := VectorFrom(elements)
+	return &List{vector: v}
 }
 
 // newListWithType creates a new List with a specified element type
 func newListWithType(elements []Object, elemType string) *List {
-	return &List{vector: VectorFrom(elements), ElementType: elemType}
+	v := VectorFrom(elements)
+	return &List{vector: v, ElementType: elemType}
 }
 
 func (l *List) Type() ObjectType { return LIST_OBJ }
 
 // len returns the number of elements in the list
 func (l *List) len() int {
+	if l.vector != nil {
 	return l.vector.Len()
+	}
+	return l.length
+}
+
+// Len returns the number of elements (exported for VM)
+func (l *List) Len() int {
+	return l.len()
 }
 
 // get returns the element at index i, or nil if out of bounds
 func (l *List) get(i int) Object {
+	if i < 0 || i >= l.len() {
+		return nil
+	}
+	// Fast path for vector
+	if l.vector != nil {
 	return l.vector.Get(i)
+	}
+
+	// Traversal for Cons
+	curr := l
+	idx := i
+	for curr != nil && curr.vector == nil {
+		if idx == 0 {
+			return curr.head
+		}
+		curr = curr.tail
+		idx--
+	}
+
+	if curr == nil {
+		return nil
+	}
+	// We reached a vector part of the list
+	return curr.vector.Get(idx)
+}
+
+// Get returns the element at index i (exported for VM)
+func (l *List) Get(i int) Object {
+	return l.get(i)
+}
+
+// Set returns a new List with the element at index i replaced with value
+func (l *List) Set(i int, value Object) *List {
+	// Create new slice with updated element
+	elements := l.ToSlice()
+	if i < 0 {
+		i = len(elements) + i
+	}
+	if i < 0 || i >= len(elements) {
+		return l // Out of bounds, return unchanged
+	}
+	newElements := make([]Object, len(elements))
+	copy(newElements, elements)
+	newElements[i] = value
+	return NewList(newElements)
 }
 
 // toSlice returns a copy of elements as a slice (for iteration)
-func (l *List) toSlice() []Object {
+func (l *List) ToSlice() []Object {
+	if l.vector != nil {
 	return l.vector.ToSlice()
+	}
+
+	result := make([]Object, 0, l.len())
+	curr := l
+	for curr != nil && curr.vector == nil {
+		result = append(result, curr.head)
+		curr = curr.tail
+	}
+	if curr != nil && curr.vector != nil {
+		result = append(result, curr.vector.ToSlice()...)
+	}
+	return result
 }
 
 // slice returns a new List with elements from start to end (exclusive)
-func (l *List) slice(start, end int) *List {
+func (l *List) Slice(start, end int) *List {
+	// If it's a vector, delegate
+	if l.vector != nil {
 	return &List{vector: l.vector.Slice(start, end), ElementType: l.ElementType}
+	}
+
+	length := l.len()
+	if start < 0 {
+		start = 0
+	}
+	if end > length {
+		end = length
+	}
+	if start >= end {
+		return NewList([]Object{})
+	}
+
+	// Optimization: tail slicing
+	if end == length {
+		curr := l
+		for i := 0; i < start; i++ {
+			if curr == nil { break }
+			curr = curr.tail
+		}
+		if curr != nil {
+			return curr
+		}
+	}
+
+	// General case: copy slice
+	slice := l.ToSlice()[start:end]
+	return NewList(slice)
 }
 
 // prepend returns a new List with element added at the beginning
 func (l *List) prepend(val Object) *List {
-	return &List{vector: l.vector.Prepend(val), ElementType: l.ElementType}
+	// Use Cons cell for O(1) prepend
+	return &List{
+		head:        val,
+		tail:        l,
+		length:      l.len() + 1,
+		ElementType: l.ElementType,
+		// vector is nil
+	}
+}
+
+// Prepend prepends element to list (exported for VM)
+func (l *List) Prepend(val Object) *List {
+	return l.prepend(val)
 }
 
 // concat returns a new List with another list appended
 func (l *List) concat(other *List) *List {
+	// If both are vectors, use vector concat
+	if l.vector != nil && other.vector != nil {
 	return &List{vector: l.vector.Concat(other.vector), ElementType: l.ElementType}
+	}
+
+	// Fallback: convert to slice and create new Vector-based list
+	result := make([]Object, 0, l.len()+other.len())
+	result = append(result, l.ToSlice()...)
+	result = append(result, other.ToSlice()...)
+	return NewList(result)
+}
+
+// Concat concatenates two lists (exported for VM)
+func (l *List) Concat(other *List) *List {
+	return l.concat(other)
 }
 
 func (l *List) Inspect() string {
 	// Heuristic: If all elements are chars, print as string
 	if l.len() > 0 {
 		allChars := true
-		for _, el := range l.toSlice() {
+		for _, el := range l.ToSlice() {
 			if _, ok := el.(*Char); !ok {
 				allChars = false
 				break
@@ -501,7 +720,7 @@ func (l *List) Inspect() string {
 		if allChars {
 			var out bytes.Buffer
 			out.WriteString("\"")
-			for _, el := range l.toSlice() {
+			for _, el := range l.ToSlice() {
 				out.WriteRune(rune(el.(*Char).Value))
 			}
 			out.WriteString("\"")
@@ -511,7 +730,7 @@ func (l *List) Inspect() string {
 
 	var out bytes.Buffer
 	out.WriteString("[")
-	for i, el := range l.toSlice() {
+	for i, el := range l.ToSlice() {
 		if i > 0 {
 			out.WriteString(", ")
 		}
@@ -529,7 +748,7 @@ func (l *List) RuntimeType() typesystem.Type {
 		}
 	}
 	if l.len() > 0 {
-		elemType := l.get(0).RuntimeType()
+		elemType := l.Get(0).RuntimeType()
 		return typesystem.TApp{
 			Constructor: typesystem.TCon{Name: "List"},
 			Args:        []typesystem.Type{elemType},
@@ -537,6 +756,14 @@ func (l *List) RuntimeType() typesystem.Type {
 	}
 	// Empty list without type annotation - return just List
 	return typesystem.TCon{Name: "List"}
+}
+
+func (l *List) Hash() uint32 {
+	h := uint32(1)
+	for _, obj := range l.ToSlice() {
+		h = 31*h + obj.Hash()
+	}
+	return h
 }
 
 // Map represents an immutable hash map (HAMT-based)
@@ -551,10 +778,20 @@ func newMap() *Map {
 	return &Map{hamt: EmptyMap()}
 }
 
+// NewMap creates a new empty Map (exported for VM)
+func NewMap() *Map {
+	return newMap()
+}
+
 func (m *Map) Type() ObjectType { return MAP_OBJ }
 
 // len returns the number of entries in the map
 func (m *Map) len() int {
+	return m.hamt.Len()
+}
+
+// Len returns the number of entries (exported for VM)
+func (m *Map) Len() int {
 	return m.hamt.Len()
 }
 
@@ -563,9 +800,20 @@ func (m *Map) get(key Object) Object {
 	return m.hamt.Get(key)
 }
 
+// Get returns value for key and whether it exists (exported for VM)
+func (m *Map) Get(key Object) (Object, bool) {
+	val := m.hamt.Get(key)
+	return val, val != nil
+}
+
 // put returns a new Map with the key-value pair added/updated
 func (m *Map) put(key, value Object) *Map {
 	return &Map{hamt: m.hamt.Put(key, value), KeyType: m.KeyType, ValType: m.ValType}
+}
+
+// Put adds key-value pair to map (exported for VM)
+func (m *Map) Put(key, value Object) *Map {
+	return m.put(key, value)
 }
 
 // remove returns a new Map with the key removed
@@ -595,8 +843,8 @@ func (m *Map) equals(other *Map, e *Evaluator) bool {
 	}
 	// Check that all keys in m exist in other with equal values
 	for _, kv := range m.hamt.Items() {
-		otherVal := other.get(kv.Key)
-		if otherVal == nil {
+		otherVal, ok := other.Get(kv.Key)
+		if !ok {
 			return false
 		}
 		if !e.areObjectsEqual(kv.Value, otherVal) {
@@ -660,6 +908,16 @@ func (m *Map) RuntimeType() typesystem.Type {
 	}
 }
 
+func (m *Map) Hash() uint32 {
+	h := uint32(0)
+	for _, item := range m.hamt.Items() {
+		// XOR key and value hash, then XOR to accumulator (commutative)
+		// Multiply value hash to distinguish key/value roles
+		h ^= (item.Key.Hash() ^ (item.Value.Hash() * 31))
+	}
+	return h
+}
+
 // Bytes represents an immutable byte sequence
 type Bytes struct {
 	data []byte
@@ -678,15 +936,25 @@ func bytesFromSlice(data []byte) *Bytes {
 	return &Bytes{data: copied}
 }
 
+// BytesFromSlice creates Bytes from slice (exported for VM)
+func BytesFromSlice(data []byte) *Bytes {
+	return bytesFromSlice(data)
+}
+
 // bytesFromString creates a Bytes from a string (UTF-8)
 func bytesFromString(s string) *Bytes {
 	return &Bytes{data: []byte(s)}
 }
 
+// BytesFromString creates Bytes from string (exported for VM)
+func BytesFromString(s string) *Bytes {
+	return bytesFromString(s)
+}
+
 func (b *Bytes) Type() ObjectType { return BYTES_OBJ }
 
 // len returns the number of bytes
-func (b *Bytes) len() int {
+func (b *Bytes) Len() int {
 	return len(b.data)
 }
 
@@ -712,8 +980,8 @@ func (b *Bytes) slice(start, end int) *Bytes {
 	return bytesFromSlice(b.data[start:end])
 }
 
-// concat returns a new Bytes with other appended
-func (b *Bytes) concat(other *Bytes) *Bytes {
+// Concat returns a new Bytes with other appended
+func (b *Bytes) Concat(other *Bytes) *Bytes {
 	result := make([]byte, len(b.data)+len(other.data))
 	copy(result, b.data)
 	copy(result[len(b.data):], other.data)
@@ -721,7 +989,7 @@ func (b *Bytes) concat(other *Bytes) *Bytes {
 }
 
 // toSlice returns the underlying byte slice (should not be mutated)
-func (b *Bytes) toSlice() []byte {
+func (b *Bytes) ToSlice() []byte {
 	return b.data
 }
 
@@ -762,9 +1030,11 @@ func (b *Bytes) Inspect() string {
 
 func (b *Bytes) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Bytes"} }
 
-// ============================================================================
-// Bits - Immutable bit sequence (not byte-aligned)
-// ============================================================================
+func (b *Bytes) Hash() uint32 {
+	h := fnv.New32a()
+	h.Write(b.data)
+	return h.Sum32()
+}
 
 // Bits represents an immutable sequence of bits.
 // Unlike Bytes, Bits can have any length (not necessarily multiple of 8).
@@ -854,6 +1124,24 @@ func bitsFromOctal(s string) (*Bits, error) {
 	return &Bits{data: data, length: numBits}, nil
 }
 
+// BitsFromBinary creates Bits from binary string (exported for VM)
+func BitsFromBinary(s string) *Bits {
+	bits, _ := bitsFromBinary(s)
+	return bits
+}
+
+// BitsFromHex creates Bits from hex string (exported for VM)
+func BitsFromHex(s string) *Bits {
+	bits, _ := bitsFromHex(s)
+	return bits
+}
+
+// BitsFromOctal creates Bits from octal string (exported for VM)
+func BitsFromOctal(s string) *Bits {
+	bits, _ := bitsFromOctal(s)
+	return bits
+}
+
 // bitsFromBytes creates Bits from Bytes
 func bitsFromBytes(b *Bytes) *Bits {
 	copied := make([]byte, len(b.data))
@@ -864,12 +1152,12 @@ func bitsFromBytes(b *Bytes) *Bits {
 func (b *Bits) Type() ObjectType { return BITS_OBJ }
 
 // len returns the number of bits
-func (b *Bits) len() int {
+func (b *Bits) Len() int {
 	return b.length
 }
 
 // get returns the bit at index i (0 or 1), or -1 if out of bounds
-func (b *Bits) get(i int) int {
+func (b *Bits) Get(i int) int {
 	if i < 0 || i >= b.length {
 		return -1
 	}
@@ -898,7 +1186,7 @@ func (b *Bits) slice(start, end int) *Bits {
 	newData := make([]byte, numBytes)
 
 	for i := 0; i < newLength; i++ {
-		srcBit := b.get(start + i)
+		srcBit := b.Get(start + i)
 		if srcBit == 1 {
 			byteIdx := i / 8
 			bitIdx := 7 - (i % 8)
@@ -909,8 +1197,8 @@ func (b *Bits) slice(start, end int) *Bits {
 	return &Bits{data: newData, length: newLength}
 }
 
-// concat returns a new Bits with other appended
-func (b *Bits) concat(other *Bits) *Bits {
+// Concat returns a new Bits with other appended
+func (b *Bits) Concat(other *Bits) *Bits {
 	if b.length == 0 {
 		return other
 	}
@@ -924,7 +1212,7 @@ func (b *Bits) concat(other *Bits) *Bits {
 
 	// Copy bits from b
 	for i := 0; i < b.length; i++ {
-		if b.get(i) == 1 {
+		if b.Get(i) == 1 {
 			byteIdx := i / 8
 			bitIdx := 7 - (i % 8)
 			newData[byteIdx] |= 1 << bitIdx
@@ -933,7 +1221,7 @@ func (b *Bits) concat(other *Bits) *Bits {
 
 	// Copy bits from other
 	for i := 0; i < other.length; i++ {
-		if other.get(i) == 1 {
+		if other.Get(i) == 1 {
 			pos := b.length + i
 			byteIdx := pos / 8
 			bitIdx := 7 - (pos % 8)
@@ -959,7 +1247,7 @@ func (b *Bits) toBytes(padding string) *Bytes {
 		// Pad at the beginning (shift bits right)
 		offset := numBytes*8 - b.length
 		for i := 0; i < b.length; i++ {
-			if b.get(i) == 1 {
+			if b.Get(i) == 1 {
 				pos := offset + i
 				byteIdx := pos / 8
 				bitIdx := 7 - (pos % 8)
@@ -978,7 +1266,7 @@ func (b *Bits) toBytes(padding string) *Bytes {
 func (b *Bits) toBinary() string {
 	var sb strings.Builder
 	for i := 0; i < b.length; i++ {
-		if b.get(i) == 1 {
+		if b.Get(i) == 1 {
 			sb.WriteByte('1')
 		} else {
 			sb.WriteByte('0')
@@ -993,7 +1281,7 @@ func (b *Bits) equals(other *Bits) bool {
 		return false
 	}
 	for i := 0; i < b.length; i++ {
-		if b.get(i) != other.get(i) {
+		if b.Get(i) != other.Get(i) {
 			return false
 		}
 	}
@@ -1002,6 +1290,13 @@ func (b *Bits) equals(other *Bits) bool {
 
 func (b *Bits) Inspect() string              { return "#b\"" + b.toBinary() + "\"" }
 func (b *Bits) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Bits"} }
+
+func (b *Bits) Hash() uint32 {
+	h := fnv.New32a()
+	h.Write(b.data)
+	// Mix in length to distinguish 00 (2 bits) from 000 (3 bits) if packed in same byte
+	return h.Sum32() ^ uint32(b.length)
+}
 
 // ClassMethod represents a method belonging to a type class.
 // When called, it dynamically dispatches to the correct implementation.
@@ -1014,31 +1309,103 @@ type ClassMethod struct {
 func (tm *ClassMethod) Type() ObjectType           { return CLASS_METHOD_OBJ }
 func (tm *ClassMethod) Inspect() string            { return fmt.Sprintf("class method %s.%s", tm.ClassName, tm.Name) }
 func (tm *ClassMethod) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "ClassMethod"} }
+func (tm *ClassMethod) Hash() uint32 {
+	return hashString(tm.ClassName + "." + tm.Name)
+}
+
+// RecordField represents a single field in a RecordInstance.
+type RecordField struct {
+	Key   string
+	Value Object
+}
 
 // RecordInstance represents an instance of a Record/Struct.
+// Uses a sorted slice of fields for compact memory and efficient access (O(log N)).
 type RecordInstance struct {
-	Fields   map[string]Object
-	TypeName string // Optional: nominal type name (e.g., "Point" for type Point = {x: Int, y: Int})
+	Fields   []RecordField // Sorted by Key
+	TypeName string        // Optional: nominal type name
+}
+
+// NewRecord creates a new RecordInstance from a map of fields.
+// It converts the map to a sorted slice.
+func NewRecord(fieldMap map[string]Object) *RecordInstance {
+	fields := make([]RecordField, 0, len(fieldMap))
+	for k, v := range fieldMap {
+		fields = append(fields, RecordField{Key: k, Value: v})
+	}
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].Key < fields[j].Key
+	})
+	return &RecordInstance{Fields: fields}
+}
+
+// Get returns the value for a key, or nil if not found.
+func (r *RecordInstance) Get(key string) Object {
+	idx := sort.Search(len(r.Fields), func(i int) bool {
+		return r.Fields[i].Key >= key
+	})
+	if idx < len(r.Fields) && r.Fields[idx].Key == key {
+		return r.Fields[idx].Value
+	}
+	return nil
+}
+
+// Put returns a new RecordInstance with the key set to val.
+// Since records are immutable, this creates a copy.
+func (r *RecordInstance) Put(key string, val Object) *RecordInstance {
+	// Check if key exists
+	idx := sort.Search(len(r.Fields), func(i int) bool {
+		return r.Fields[i].Key >= key
+	})
+
+	newFields := make([]RecordField, len(r.Fields)+1)
+
+	if idx < len(r.Fields) && r.Fields[idx].Key == key {
+		// Update existing: copy all, replace at idx
+		copy(newFields, r.Fields)
+		newFields[idx] = RecordField{Key: key, Value: val}
+		// Slice length was +1, truncate back to original length
+		return &RecordInstance{Fields: newFields[:len(r.Fields)], TypeName: r.TypeName}
+	}
+
+	// Insert new: copy up to idx, insert, copy rest
+	copy(newFields, r.Fields[:idx])
+	newFields[idx] = RecordField{Key: key, Value: val}
+	copy(newFields[idx+1:], r.Fields[idx:])
+
+	return &RecordInstance{Fields: newFields, TypeName: r.TypeName}
+}
+
+// Set updates the value for a key in place, or adds it if not found.
+// This supports mutable assignment for records.
+func (r *RecordInstance) Set(key string, val Object) {
+	idx := sort.Search(len(r.Fields), func(i int) bool {
+		return r.Fields[i].Key >= key
+	})
+
+	if idx < len(r.Fields) && r.Fields[idx].Key == key {
+		r.Fields[idx].Value = val
+		return
+	}
+
+	// Insert new
+	r.Fields = append(r.Fields, RecordField{})
+	copy(r.Fields[idx+1:], r.Fields[idx:])
+	r.Fields[idx] = RecordField{Key: key, Value: val}
 }
 
 func (r *RecordInstance) Type() ObjectType { return RECORD_OBJ }
 func (r *RecordInstance) Inspect() string {
 	var out bytes.Buffer
 	out.WriteString("{")
-	
-	keys := make([]string, 0, len(r.Fields))
-	for k := range r.Fields {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
 
-	for i, k := range keys {
+	for i, field := range r.Fields {
 		if i > 0 {
 			out.WriteString(", ")
 		}
-		out.WriteString(k)
+		out.WriteString(field.Key)
 		out.WriteString(": ")
-		out.WriteString(r.Fields[k].Inspect())
+		out.WriteString(field.Value.Inspect())
 	}
 	out.WriteString("}")
 	return out.String()
@@ -1049,10 +1416,23 @@ func (r *RecordInstance) RuntimeType() typesystem.Type {
 		return typesystem.TCon{Name: r.TypeName}
 	}
 	fields := make(map[string]typesystem.Type)
-	for k, v := range r.Fields {
-		fields[k] = v.RuntimeType()
+	for _, f := range r.Fields {
+		fields[f.Key] = f.Value.RuntimeType()
 	}
 	return typesystem.TRecord{Fields: fields}
+}
+
+func (r *RecordInstance) Hash() uint32 {
+	h := uint32(0)
+	if r.TypeName != "" {
+		h = hashString(r.TypeName)
+	}
+	for _, field := range r.Fields {
+		// Commutative mix for map fields? No, records are ordered now (sorted)
+		// So we can use ordered hash mixing, which is stronger.
+		h = 31*h + (hashString(field.Key) ^ (field.Value.Hash() * 31))
+	}
+	return h
 }
 
 // BoundMethod represents a method bound to a receiver object (Extension Method or similar).
@@ -1064,3 +1444,6 @@ type BoundMethod struct {
 func (bm *BoundMethod) Type() ObjectType           { return BOUND_METHOD_OBJ }
 func (bm *BoundMethod) Inspect() string            { return fmt.Sprintf("bound method %s", bm.Function.Inspect()) }
 func (bm *BoundMethod) RuntimeType() typesystem.Type { return bm.Function.RuntimeType() }
+func (bm *BoundMethod) Hash() uint32 {
+	return bm.Receiver.Hash() ^ bm.Function.Hash()
+}

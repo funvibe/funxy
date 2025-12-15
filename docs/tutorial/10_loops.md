@@ -91,37 +91,37 @@ for i in [1, 2, 3, 4, 5] {
 
 Loops in this language are expressions. A `for` loop returns a value:
 
-### Обычное завершение
+### Normal Completion
 
-Возвращается значение последней итерации:
+Returns the value of the last iteration:
 
 ```rust
 res = for x in [1, 2, 3] {
     x * 2
 }
-print(res)  // 6 (последняя итерация: 3 * 2)
+print(res)  // 6 (last iteration: 3 * 2)
 ```
 
-### break с значением
+### break with Value
 
 ```rust
 found = for x in [1, 3, 4, 5] {
     if x % 2 == 0 {
-        break x  // возвращает 4
+        break x  // returns 4
     }
     x
 }
 print(found)  // 4
 ```
 
-### break без значения
+### break without Value
 
-Возвращает `Nil`:
+Returns `Nil`:
 
 ```rust
 res = for x in [1, 2, 3] {
     if x == 2 {
-        break  // без значения
+        break  // without value
     }
 }
 print(res)  // Nil
@@ -129,30 +129,30 @@ print(res)  // Nil
 
 ### continue
 
-Пропускает текущую итерацию, не влияет на возвращаемое значение:
+Skips the current iteration, doesn't affect the return value:
 
 ```rust
 sum = 0
 for x in [1, 2, 3, 4, 5] {
     if x == 3 {
-        continue  // пропустить 3
+        continue  // skip 3
     }
     sum = sum + x
 }
 print(sum)  // 1 + 2 + 4 + 5 = 12
 ```
 
-### Согласование типов
+### Type Consistency
 
-Если `break` возвращает значение определённого типа, тело цикла должно возвращать тот же тип:
+If `break` returns a value of a specific type, the loop body must return the same type:
 
 ```rust
-// Правильно: break и тело возвращают Option<Int>
+// Correct: break and body return Option<Int>
 res = for x in [1, 2, 3] {
     if x == 2 {
         break Some(x)
     }
-    Some(0)  // тот же тип
+    Some(0)  // same type
 }
 ```
 

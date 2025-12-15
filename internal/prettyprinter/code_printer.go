@@ -490,6 +490,10 @@ func (p *CodePrinter) VisitStringLiteral(n *ast.StringLiteral) {
 	p.write("\"" + n.Value + "\"")
 }
 
+func (p *CodePrinter) VisitFormatStringLiteral(n *ast.FormatStringLiteral) {
+	p.write("%\"" + n.Value + "\"")
+}
+
 func (p *CodePrinter) VisitInterpolatedString(n *ast.InterpolatedString) {
 	p.write("\"")
 	for _, part := range n.Parts {

@@ -1,18 +1,18 @@
-# 04. ADT и деревья
+# 04. ADT and Trees
 
-## Задача
-Моделировать сложные структуры данных с помощью алгебраических типов.
+## Task
+Model complex data structures using algebraic types.
 
-## Что такое ADT?
+## What is ADT?
 
-Algebraic Data Types — типы, составленные из:
-- Sum types (OR): `A | B | C` — значение может быть A или B или C
-- Product types (AND): `(A, B, C)` или `{ a: A, b: B }` — содержит A и B и C
+Algebraic Data Types - types composed of:
+- Sum types (OR): `A | B | C` - value can be A or B or C
+- Product types (AND): `(A, B, C)` or `{ a: A, b: B }` - contains A and B and C
 
-## Простые Sum Types
+## Simple Sum Types
 
 ```rust
-// Светофор: одно из трёх состояний
+// Traffic light: one of three states
 type Light = Red | Yellow | Green
 
 fun nextLight(l: Light) -> Light {
@@ -26,10 +26,10 @@ fun nextLight(l: Light) -> Light {
 print(nextLight(Red))  // Green
 ```
 
-## Sum Types с данными
+## Sum Types with data
 
 ```rust
-// Фигура может быть разной формы с разными параметрами
+// Shape can be different form with different parameters
 type Shape = Circle(Float) | Rectangle((Float, Float))
 
 fun area(s: Shape) -> Float {
@@ -43,10 +43,10 @@ print(area(Circle(5.0)))              // 78.53975
 print(area(Rectangle((4.0, 3.0))))    // 12.0
 ```
 
-## Рекурсивные типы: Связный список
+## Recursive types: Linked list
 
 ```rust
-// Свой тип списка
+// Own list type
 type IntList = ListEnd | ListCons((Int, IntList))
 
 fun listLength(xs: IntList) -> Int {
@@ -68,7 +68,7 @@ print(listLength(myList))  // 3
 print(listSum(myList))     // 6
 ```
 
-## Бинарное дерево
+## Binary tree
 
 ```rust
 type Tree = Leaf(Int) | Node((Tree, Tree))
@@ -142,7 +142,7 @@ fun bstInOrder(tree: BST) -> List<Int> {
     }
 }
 
-// Использование
+// Usage
 bst = BSTEmpty
     |> fun(t) -> bstInsert(t, 5)
     |> fun(t) -> bstInsert(t, 3)
@@ -155,7 +155,7 @@ print(bstContains(bst, 7))  // true
 print(bstContains(bst, 4))  // false
 ```
 
-## Выражения (Expression Tree)
+## Expressions (Expression Tree)
 
 ```rust
 import "lib/map" (mapGetOr)
@@ -191,7 +191,7 @@ print(showExpr(expr))      // ((2 + x) * 3)
 print(eval(expr, env))     // 21
 ```
 
-## Файловая система
+## File system
 
 ```rust
 import "lib/list" (map, foldl, flatten)
@@ -242,4 +242,3 @@ print("Total size: " ++ show(totalSize(fs)))  // 2300
 
 largeFiles = findFiles(fs, fun(name, size) -> size > 300)
 print(largeFiles)  // ["main.lang", "api.md"]
-```

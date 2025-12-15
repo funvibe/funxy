@@ -1,0 +1,39 @@
+import "lib/http" (httpServeAsync, httpGet, httpServerStop)
+import "lib/task" (awaitAll, async)
+import "lib/time" (sleepMs)
+
+fun handler(req) {
+    // Return a simple response
+    { status: 200, body: "ok", headers: [] }
+}
+
+print("Starting server...")
+serverId = httpServeAsync(18080, handler)
+print("Server started: " ++ show(serverId))
+
+sleepMs(100) // Give server time to start
+
+// Function to make a request
+fun makeReq() {
+   httpGet("http://localhost:18080/")
+}
+
+print("Sending concurrent requests...")
+
+// Helper to create list of n tasks
+fun createTasks(n) {
+    if n <= 0 {
+        []
+    } else {
+        [async(makeReq)] ++ createTasks(n - 1)
+    }
+}
+
+tasks = createTasks(50)
+
+// While requests are happening, the main thread is here waiting
+results = awaitAll(tasks)
+
+print("Requests complete")
+httpServerStop(serverId, 30000)
+print("Server stopped")

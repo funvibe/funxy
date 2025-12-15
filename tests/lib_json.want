@@ -1,0 +1,28 @@
+42
+3.14
+true
+false
+"hello"
+null
+[1,2,3]
+[]
+[[1,2],[3,4]]
+{"age":30,"name":"Alice"}
+{"active":true,"user":{"name":"Bob"}}
+[1,"two",true]
+42
+null
+42
+3.14
+true
+Nil
+[1, 2, 3]
+Expected error
+Array with 3 items
+Bool: true
+Num: 42
+Null
+jsonFromValue created JObj
+a = 1
+Keys count: 2
+All JSON tests passed!

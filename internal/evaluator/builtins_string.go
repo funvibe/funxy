@@ -89,7 +89,7 @@ func listToGoString(obj Object) (string, bool) {
 	}
 
 	var sb strings.Builder
-	for _, elem := range list.toSlice() {
+	for _, elem := range list.ToSlice() {
 		if ch, ok := elem.(*Char); ok {
 			sb.WriteRune(rune(ch.Value))
 		} else {
@@ -97,6 +97,24 @@ func listToGoString(obj Object) (string, bool) {
 		}
 	}
 	return sb.String(), true
+}
+
+// StringToList converts Go string to List<Char> (exported for VM)
+func StringToList(s string) *List {
+	return goStringToList(s)
+}
+
+// IsStringList checks if a list contains only Char elements (is a string)
+func IsStringList(l *List) bool {
+	if l.Len() == 0 {
+		return false // Empty list is not considered a string
+	}
+	for i := 0; i < l.Len(); i++ {
+		if _, ok := l.Get(i).(*Char); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func goStringToList(s string) *List {
@@ -122,7 +140,7 @@ func listToGoStrings(obj Object) ([]string, bool) {
 	}
 
 	result := make([]string, list.len())
-	for i, elem := range list.toSlice() {
+	for i, elem := range list.ToSlice() {
 		s, ok := listToGoString(elem)
 		if !ok {
 			return nil, false

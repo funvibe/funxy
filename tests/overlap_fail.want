@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 9:14 [A004]: redefinition of symbol: 'overlapping instances for trait Show: Int and Int'

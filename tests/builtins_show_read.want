@@ -1,0 +1,61 @@
+=== show ===
+42
+-100
+3.14
+true
+false
+'A'
+'
+'
+hello
+[1, 2, 3]
+[]
+Some(42)
+Zero
+Ok("yes")
+Fail(404)
+(1, 2)
+(1, "a", true)
+123
+1000000000000000000
+=== read Int ===
+Some(42)
+Some(-100)
+Some(0)
+Some(42)
+Zero
+Zero
+Zero
+Zero
+=== read Float ===
+Some(3.14)
+Some(42)
+Some(-0.5)
+Zero
+=== read Bool ===
+Some(true)
+Some(false)
+Some(true)
+Zero
+Zero
+Zero
+=== read Char ===
+Some('A')
+Some('я')
+Zero
+Zero
+=== read BigInt ===
+Some(123)
+Some(12345678901234567890)
+Some(-999)
+Zero
+=== read Rational ===
+Some(0.7500000000)
+Some(0.3333333333)
+Some(0.5000000000)
+Zero
+=== read String ===
+Some("hello")
+Some([])
+Some("  spaces  ")
+=== builtins_show_read tests passed! ===

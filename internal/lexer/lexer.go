@@ -112,7 +112,11 @@ func (l *Lexer) NextToken() token.Token {
 			tok = newToken(token.ASTERISK, l.ch, l.line, l.column)
 		}
 	case '%':
-		if l.peekChar() == '{' {
+		if l.peekChar() == '"' {
+			l.readChar() // consume %, now at "
+			content := l.readString()
+			tok = token.Token{Type: token.FORMAT_STRING, Lexeme: fmt.Sprintf("%%%q", content), Literal: content, Line: l.line, Column: l.column}
+		} else if l.peekChar() == '{' {
 			l.readChar()
 			tok = token.Token{Type: token.PERCENT_LBRACE, Lexeme: "%{", Literal: "%{", Line: l.line, Column: l.column}
 		} else if l.peekChar() == '=' {
@@ -428,7 +432,7 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 		if l.ch == '"' && braceDepth == 0 {
 			break
 		}
-		
+
 		// Inside interpolation ${...} - don't process escapes, keep raw
 		if braceDepth > 0 {
 			if l.ch == '{' {
@@ -439,7 +443,7 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 			result = append(result, l.ch)
 			continue
 		}
-		
+
 		// Detect ${
 		if l.ch == '$' && l.peekChar() == '{' {
 			hasInterp = true
@@ -449,7 +453,7 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 			braceDepth++
 			continue
 		}
-		
+
 		// Handle escape sequences
 		if l.ch == '\\' {
 			l.readChar() // consume backslash
@@ -474,7 +478,7 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 			}
 			continue
 		}
-		
+
 		result = append(result, l.ch)
 	}
 	return string(result), hasInterp

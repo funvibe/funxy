@@ -72,11 +72,11 @@ list = MyCons((1, MyCons((2, MyEmpty))))
 print(list)
 ```
 
-## Проверка типов во время выполнения
+## Runtime Type Checking
 
 ### typeOf
 
-Функция `typeOf(value, Type) -> Bool` проверяет тип значения:
+The function `typeOf(value, Type) -> Bool` checks the type of a value:
 
 ```rust
 x = 10
@@ -87,36 +87,36 @@ name = "Alice"
 typeOf(name, String)  // true
 ```
 
-### Параметризованные типы
+### Parameterized Types
 
-Для проверки параметризованных типов используйте **круглые скобки** (не угловые!):
+For checking parameterized types, use **parentheses** (not angle brackets!):
 
 ```rust
 type MyOption<T> = Yes T | NoVal
 
 o = Yes(42)
 
-// Проверка без параметра — любой MyOption
+// Check without parameter - any MyOption
 typeOf(o, MyOption)       // true
 
-// Проверка с параметром — конкретный MyOption<Int>
+// Check with parameter - specific MyOption<Int>
 typeOf(o, MyOption(Int))  // true
 typeOf(o, MyOption(String))  // false
 ```
 
-**Важно:** В выражениях `Type(Param)`, а не `Type<Param>`:
+**Important:** In expressions use `Type(Param)`, not `Type<Param>`:
 ```rust
-// Правильно:
+// Correct:
 typeOf(list, List)
 typeOf(opt, Option(Int))
 
-// Ошибка синтаксиса:
-typeOf(list, List<Int>)  // угловые скобки не работают!
+// Syntax error:
+typeOf(list, List<Int>)  // angle brackets don't work!
 ```
 
 ### getType
 
-Функция `getType(value) -> Type` возвращает тип значения:
+The function `getType(value) -> Type` returns the type of a value:
 
 ```rust
 x = 42

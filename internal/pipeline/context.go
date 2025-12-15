@@ -29,6 +29,9 @@ type PipelineContext struct {
 	// Module loader - shared between analyzer and evaluator
 	// Using interface{} to avoid import cycle with modules package
 	Loader interface{}
+
+	// IsTestMode indicates if we are running in test mode (enables test builtins)
+	IsTestMode bool
 }
 
 // NewPipelineContext creates and initializes a new PipelineContext.

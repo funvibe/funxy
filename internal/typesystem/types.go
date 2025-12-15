@@ -2,6 +2,7 @@ package typesystem
 
 import (
 	"fmt"
+	"github.com/funvibe/funxy/internal/config"
 	"sort"
 	"strings"
 )
@@ -183,6 +184,13 @@ type TApp struct {
 }
 
 func (t TApp) String() string {
+	// Special case: List<Char> is displayed as String
+	if tCon, ok := t.Constructor.(TCon); ok && tCon.Name == config.ListTypeName && len(t.Args) == 1 {
+		if argCon, ok := t.Args[0].(TCon); ok && argCon.Name == "Char" {
+			return "String"
+		}
+	}
+
 	args := []string{}
 	for _, arg := range t.Args {
 		args = append(args, arg.String())
@@ -353,8 +361,17 @@ type TFunc struct {
 
 func (t TFunc) String() string {
 	params := []string{}
-	for _, p := range t.Params {
-		params = append(params, p.String())
+	defaultStart := len(t.Params) - t.DefaultCount
+	if defaultStart < 0 {
+		defaultStart = 0
+	}
+
+	for i, p := range t.Params {
+		s := p.String()
+		if i >= defaultStart {
+			s += "?"
+		}
+		params = append(params, s)
 	}
 	if t.IsVariadic {
 		if len(params) > 0 {

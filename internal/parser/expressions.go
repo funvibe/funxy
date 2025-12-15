@@ -28,11 +28,11 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 				p.nextToken()
 			}
 		}
-		
+
 		if precedence >= p.peekPrecedence() {
 			break
 		}
-		
+
 		infix := p.infixParseFns[p.peekToken.Type]
 		if infix == nil {
 			return leftExp
@@ -345,6 +345,10 @@ func (p *Parser) parseStringLiteral() ast.Expression {
 	return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal.(string)}
 }
 
+func (p *Parser) parseFormatStringLiteral() ast.Expression {
+	return &ast.FormatStringLiteral{Token: p.curToken, Value: p.curToken.Literal.(string)}
+}
+
 func (p *Parser) parseInterpolatedString() ast.Expression {
 	tok := p.curToken
 	raw := p.curToken.Literal.(string)
@@ -489,15 +493,15 @@ func (p *Parser) parseMapLiteral() ast.Expression {
 	for p.curTokenIs(token.NEWLINE) {
 		p.nextToken()
 	}
-	
+
 	// Use PIPE_PREC to stop before => (which has PIPE_PREC precedence)
 	key := p.parseExpression(PIPE_PREC)
-	
+
 	// Skip newlines before =>
 	for p.peekTokenIs(token.NEWLINE) {
 		p.nextToken()
 	}
-	
+
 	if !p.expectPeek(token.USER_OP_IMPLY) { // =>
 		return nil
 	}
@@ -506,7 +510,7 @@ func (p *Parser) parseMapLiteral() ast.Expression {
 	for p.curTokenIs(token.NEWLINE) {
 		p.nextToken()
 	}
-	
+
 	// Value uses PIPE_PREC to stop before , or }
 	value := p.parseExpression(PIPE_PREC)
 	mapLit.Pairs = append(mapLit.Pairs, struct{ Key, Value ast.Expression }{key, value})
@@ -532,15 +536,15 @@ func (p *Parser) parseMapLiteral() ast.Expression {
 		for p.curTokenIs(token.NEWLINE) {
 			p.nextToken()
 		}
-		
+
 		// Use PIPE_PREC to stop before =>
 		key := p.parseExpression(PIPE_PREC)
-		
+
 		// Skip newlines before =>
 		for p.peekTokenIs(token.NEWLINE) {
 			p.nextToken()
 		}
-		
+
 		if !p.expectPeek(token.USER_OP_IMPLY) { // =>
 			return nil
 		}
@@ -549,7 +553,7 @@ func (p *Parser) parseMapLiteral() ast.Expression {
 		for p.curTokenIs(token.NEWLINE) {
 			p.nextToken()
 		}
-		
+
 		// Value uses PIPE_PREC to stop before , or }
 		value := p.parseExpression(PIPE_PREC)
 		mapLit.Pairs = append(mapLit.Pairs, struct{ Key, Value ast.Expression }{key, value})
@@ -743,13 +747,13 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	// 2. Lookahead.
 	// If we see `IDENT <`, we can check if what follows is a Type and then `>`.
 	// But types can be expressions too (identifiers).
-	
+
 	// Simplification: Explicitly applied types are rare in expressions if inference works.
 	// But `makeBox<Int>(5)` might be needed.
 	// If we treat it as function call `f(...)`.
-	
+
 	// Maybe `f(Type, arg)`? No, syntax is `f<T>(a)`.
-	
+
 	// If we parse `id < Int` as infix expression `(id < Int)`.
 	// Then `(id < Int) > (5)`? No `id<Int>(5)`.
 	// `(id < Int) > (5)` would be `((id < Int) > 5)`.
@@ -757,11 +761,11 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	// So `id<Int>(5)` parses as `((id < Int) > (5))`? No `(5)` is not expression start? `(5)` is tuple/group.
 	// `id < Int > (5)` -> `((id < Int) > 5)` (assuming `(5)` is group `5`).
 	// Boolean > Integer? Type error.
-	
+
 	// We need to parse `id<Int>` as a single unit (CallTarget).
 	// This usually requires unbounded lookahead or specific context.
 	// Or we can restrict generic args in calls?
-	
+
 	// In `parser/parser.go`, we registered `LT` as Infix `LESSGREATER`.
 	// We can change `parseInfixExpression` for `LT`.
 	// Check if `left` is Identifier.
@@ -769,12 +773,12 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	// If so, try to parse as TypeApplicationExpression (new AST node?).
 	// But `TypeApplication` usually wraps the identifier.
 	// `TApp(id, [Int])`.
-	
+
 	// Let's add `parseTypeApplicationExpression` for `LT` token in `infixParseFns`.
 	// But `LT` is also Less Than.
 	// `a < b`. `b` is expression.
 	// `f < T > (a)`.
-	
+
 	// Heuristic: If `parseType` succeeds and is followed by `>`, it's likely type args.
 	// But `a < b` where `b` is Identifier (which is also a Type).
 	// `a < b > c` -> `(a < b) > c`.
@@ -784,7 +788,7 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	// Our convention: Types are PascalCase. Variables are camelCase/snake_case.
 	// So if we see `<` followed by Uppercase Ident, it's likely Type Application.
 	// If we see `<` followed by Lowercase Ident, it's likely Less Than.
-	
+
 	// What about `f<T>(x)`? `T` is uppercase.
 	// `a < B`? Comparison with Constant?
 	// `a < B` is valid comparison if B is constant.
@@ -795,20 +799,20 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	// `(f < T) > (x)`.
 	// If `f` is function, `f < T` is invalid.
 	// So semantically we can distinguish, but syntax wise...
-	
+
 	// Many languages (Rust, C#) struggle with this.
 	// Rust uses `::` (turbofish) `f::<T>(x)` to disambiguate.
 	// Typescript uses `f<T>(x)` but has issues with JSX `<div...`.
 	// Java `f<T>(x)` ok.
-	
+
 	// Let's try the Uppercase rule first.
 	// If `LT` is followed by `IDENT_UPPER`, parse as Type Application.
 	// Else, parse as Less Than.
 	// This prevents `x < Y` comparison (Y as constant). User must use `x < (Y)`.
-	
+
 	// Modify `parser/parser.go` to register a specific function for `LT`.
 	// That function decides.
-	
+
 	exp.Arguments = p.parseExpressionList(token.RPAREN)
 	return exp
 }
@@ -1009,12 +1013,12 @@ func (p *Parser) parseRecordLiteral() *ast.RecordLiteral {
 	if p.curTokenIs(token.ELLIPSIS) {
 		p.nextToken() // consume ...
 		rl.Spread = p.parseExpression(LOWEST)
-		
+
 		// Skip newlines after spread expression
 		for p.peekTokenIs(token.NEWLINE) {
 			p.nextToken()
 		}
-		
+
 		// After spread, expect comma or }
 		if p.peekTokenIs(token.COMMA) {
 			p.nextToken() // consume comma
@@ -1025,7 +1029,7 @@ func (p *Parser) parseRecordLiteral() *ast.RecordLiteral {
 		} else {
 			p.nextToken() // move forward
 		}
-		
+
 		// Skip newlines
 		for p.curTokenIs(token.NEWLINE) {
 			p.nextToken()
@@ -1096,17 +1100,17 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 		// Check if it's a return type or expression body
 		// Heuristic: If `->` is followed by Type-like tokens and then `{`, it's a return type.
 		// Otherwise, it's an expression body.
-		
+
 		isReturnType := false
-		
+
 		// After nextToken(), stream is at position AFTER peekToken.
 		// So Peek(n) returns n tokens starting from token AFTER peekToken.
 		// peekToken is ARROW, so Peek(1)[0] is the token after ARROW.
-		
+
 		lookahead := p.stream.Peek(50)
 		if len(lookahead) >= 1 {
 			tokenAfterArrow := lookahead[0] // Token after ARROW
-			
+
 			if tokenAfterArrow.Type == token.IDENT_UPPER {
 				// Case: -> Int { ... } or -> Result<T> { ... }
 				if len(lookahead) >= 2 {
@@ -1156,7 +1160,7 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 				}
 			}
 		}
-		
+
 		if isReturnType {
 			p.nextToken() // consume ARROW, curToken becomes ARROW
 			p.nextToken() // move to Start of Type
@@ -1172,7 +1176,7 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 	if p.peekTokenIs(token.ARROW) {
 		p.nextToken() // consume '->'
 		p.nextToken() // start of expression
-		
+
 		// If body starts with { and it's a block (not a record literal),
 		// parse as block to enable IIFE: fun(x) -> { body }(args)
 		// Record literal: { key: value, ... } - has IDENT followed by COLON
@@ -1182,11 +1186,11 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 			// Look ahead to distinguish block from record, skipping newlines
 			// Lookahead: peekToken, then stream.Peek(n) for tokens after peekToken
 			lookahead := p.stream.Peek(10) // get enough tokens to skip newlines
-			
+
 			// Find first non-newline token after {
 			firstTokenType := p.peekToken.Type
 			firstIdx := -1 // index in lookahead for second token
-			
+
 			if firstTokenType == token.NEWLINE {
 				// Skip newlines in peekToken position
 				for i, t := range lookahead {
@@ -1199,7 +1203,7 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 			} else {
 				firstIdx = 0 // second token is at index 0 in lookahead
 			}
-			
+
 			// Find second token (after first non-newline), skipping newlines
 			secondTokenType := token.EOF
 			if firstIdx >= 0 && firstIdx < len(lookahead) {
@@ -1210,7 +1214,7 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 					}
 				}
 			}
-			
+
 			// If { is followed by IDENT_LOWER and then COLON, it's a record
 			// If { is followed by ELLIPSIS, it's a spread record
 			// If { is followed by }, it could be empty block or empty record
@@ -1225,7 +1229,7 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 				isBlock = true // block with statements
 			}
 		}
-		
+
 		if isBlock && p.curTokenIs(token.LBRACE) {
 			lit.Body = p.parseBlockStatement()
 		} else {
@@ -1254,10 +1258,10 @@ func (p *Parser) parseLessThanOrTypeApp(left ast.Expression) ast.Expression {
 	// We need to decide if this is 'Left < Right' or 'Left<Type>'.
 	// Heuristic: If the token following '<' looks like a Type (Uppercase Identifier), we try to parse it as Type Application.
 	// But we need to distinguish `List<Int>` (type app) from `Zero < Some(1)` (comparison).
-	
+
 	isTypeApp := false
-	
-	// Check next token. 
+
+	// Check next token.
 	// PascalCase usually means Type.
 	if p.peekTokenIs(token.IDENT_UPPER) {
 		// Look ahead further: if the uppercase identifier is followed by '(' or another operator,
@@ -1266,14 +1270,14 @@ func (p *Parser) parseLessThanOrTypeApp(left ast.Expression) ast.Expression {
 		// E.g., `List<Int>` - Int is followed by >
 		// E.g., `Zero < Some(1)` - Some is followed by (
 		// E.g., `Map<String, Int>` - String is followed by ,
-		
+
 		// Save current position info
 		peekLit := p.peekToken.Literal
-		
+
 		// Speculatively check: parse `< UPPER ...` and see what follows
 		// We need to look 2 tokens ahead: after '<' and after the UPPER identifier
 		// Unfortunately our parser doesn't have easy lookahead beyond peek.
-		// 
+		//
 		// Simple heuristic: if left is a known value constructor, treat < as comparison
 		if ident, ok := left.(*ast.Identifier); ok {
 			identName := ident.Value
@@ -1297,13 +1301,13 @@ func (p *Parser) parseLessThanOrTypeApp(left ast.Expression) ast.Expression {
 			// so `<` is comparison
 			isTypeApp = false
 		}
-		
+
 		_ = peekLit // suppress unused warning
 	} else if p.peekTokenIs(token.LBRACKET) || p.peekTokenIs(token.LPAREN) {
 		// [Int] or (Int, Int) or () -> Int are types.
 		// But [1, 2] or (1 + 2) are expressions.
 		// Simplification: Only support TApp if it starts with IDENT_UPPER.
-		
+
 		if _, ok := left.(*ast.Identifier); ok {
 			if p.peekTokenIs(token.IDENT_UPPER) {
 				isTypeApp = true
@@ -1328,18 +1332,18 @@ func (p *Parser) parseTypeApplicationExpression(left ast.Expression) ast.Express
 		Token:      p.curToken, // The '<' token
 		Expression: left,
 	}
-	
-	p.nextToken() // consume '<'? 
+
+	p.nextToken() // consume '<'?
 	// parseLessThanOrTypeApp is called with curToken = '<'.
 	// so we need to consume it to start parsing types?
 	// In Pratt, infix functions are called with curToken = Operator.
 	// The Loop in parseExpression calls `nextToken` THEN `infix(leftExp)`.
 	// So curToken IS `<`.
-	
+
 	// We need to parse types.
 	// Since we are at `<`, we advance.
 	p.nextToken() // Move to first Type
-	
+
 	for {
 		t := p.parseType()
 		if t == nil {
@@ -1347,7 +1351,7 @@ func (p *Parser) parseTypeApplicationExpression(left ast.Expression) ast.Express
 			return nil
 		}
 		expr.TypeArguments = append(expr.TypeArguments, t)
-		
+
 		if p.peekTokenIs(token.COMMA) {
 			p.nextToken() // comma
 			p.nextToken() // next type
@@ -1355,11 +1359,11 @@ func (p *Parser) parseTypeApplicationExpression(left ast.Expression) ast.Express
 			break
 		}
 	}
-	
+
 	if !p.expectPeek(token.GT) {
 		return nil
 	}
-	
+
 	return expr
 }
 

@@ -1,0 +1,16 @@
+42
+hello
+true
+123
+world
+42
+Alice
+42
+test
+int:100
+str:hi
+Nil
+100
+[1, 2, 3]
+Nil
+Union types work!

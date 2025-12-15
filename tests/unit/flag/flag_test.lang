@@ -1,0 +1,64 @@
+import "lib/flag" (*)
+import "lib/test" (*)
+
+testRun("flag definition and defaults", fun() {
+    // Define flags
+    flagSet("port", 8080, "server port")
+    flagSet("host", "localhost", "server host")
+    flagSet("verbose", false, "enable verbose logging")
+    flagSet("ratio", 1.5, "scaling ratio")
+
+    // Before parsing, should return defaults
+    assertEquals(flagGet("port"), 8080)
+    assertEquals(flagGet("host"), "localhost")
+    assertEquals(flagGet("verbose"), false)
+    assertEquals(flagGet("ratio"), 1.5)
+})
+
+testRun("flag parsing - mixed formats", fun() {
+    // Reset state implicitly by redefining or just parsing new args
+    // Note: In real app, flagSet should be done once. Here we reuse the global state.
+    
+    // Simulate args: -port 9090 --host=127.0.0.1 -verbose --ratio 2.0 remaining arg
+    args = ["-port", "9090", "--host=127.0.0.1", "-verbose", "--ratio", "2.0", "remaining", "arg"]
+    
+    flagParse(args)
+
+    assertEquals(flagGet("port"), 9090)
+    assertEquals(flagGet("host"), "127.0.0.1")
+    assertEquals(flagGet("verbose"), true)
+    assertEquals(flagGet("ratio"), 2.0)
+    
+    remaining = flagArgs()
+    assertEquals(len(remaining), 2)
+    assertEquals(remaining[0], "remaining")
+    assertEquals(remaining[1], "arg")
+})
+
+testRun("flag parsing - boolean formats", fun() {
+    // Test -bool, -bool=true, -bool=false
+    flagSet("b1", false, "bool 1")
+    flagSet("b2", true, "bool 2")
+    flagSet("b3", false, "bool 3")
+
+    args = ["-b1", "--b2=false", "-b3=true"]
+    flagParse(args)
+
+    assertEquals(flagGet("b1"), true)  // -b1 implies true
+    assertEquals(flagGet("b2"), false) // explicit false
+    assertEquals(flagGet("b3"), true)  // explicit true
+})
+
+testRun("flag types", fun() {
+    // Ensure types are preserved
+    flagSet("int_flag", 100, "int")
+    flagSet("float_flag", 10.5, "float")
+    flagSet("str_flag", "default", "string")
+
+    flagParse([]) // Use defaults
+
+    // Check types
+    assertEquals(show(getType(flagGet("int_flag"))), "type(Int)")
+    assertEquals(show(getType(flagGet("float_flag"))), "type(Float)")
+    assertEquals(show(getType(flagGet("str_flag"))), "type(String)")
+})

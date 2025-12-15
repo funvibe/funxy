@@ -298,6 +298,10 @@ func (p *TreePrinter) VisitStringLiteral(n *ast.StringLiteral) {
 	p.write("StringLiteral(\"" + n.Value + "\")")
 }
 
+func (p *TreePrinter) VisitFormatStringLiteral(n *ast.FormatStringLiteral) {
+	p.write("FormatStringLiteral(%\"" + n.Value + "\")")
+}
+
 func (p *TreePrinter) VisitInterpolatedString(n *ast.InterpolatedString) {
 	p.write("InterpolatedString(")
 	for i, part := range n.Parts {

@@ -60,7 +60,7 @@ print(intToFloat(42))       // 42.0
 print(intToFloat(-10))      // -10.0
 ```
 
-### `show(value)` → `String`
+### `show<T>(value: T)` → `String`
 
 Converts a value to a string:
 
@@ -69,6 +69,28 @@ print(show(42))         // 42
 print(show(true))       // true
 print(show([1, 2]))     // [1, 2]
 ```
+
+### `sprintf(format: String, ...args: Any)` → `String`
+
+Formats a value according to a format string (like printf).
+
+```rust
+// Explicit call
+s = sprintf("Values: %d, %.2f", 42, 3.14159)  // "Values: 42, 3.14"
+
+// Literal syntax (creates a formatter function for single argument)
+fmt = %".2f"
+s2 = 3.14159 |> fmt           // "3.14"
+
+// Inside interpolation
+print("Pi is ${3.14159 |> %".2f"}")
+```
+
+Supported formats:
+- `%f`: Floating point (e.g. `%.2f`)
+- `%d`: Integer (e.g. `%05d` for zero padding)
+- `%x`: Hexadecimal
+- `%s`: String
 
 ### `charFromCode(int)` → `Char`
 
@@ -94,7 +116,7 @@ print(charToCode('a'))      // 97
 
 ## Parsing
 
-### `read(string, Type)` → `Option<Type>`
+### `read<T>(string: String, type: Type<T>)` → `Option<T>`
 
 Parses a string into the specified type. Returns `Some(value)` on success, `Zero` on failure.
 
@@ -119,7 +141,7 @@ print(match z { Some v -> v; Zero -> false })  // true
 
 ## Introspection
 
-### `getType(value)` → `String`
+### `getType<T>(value: T)` → `String`
 
 Returns the type of a value as a string:
 
@@ -131,7 +153,18 @@ print(getType([1, 2, 3]))   // List<Int>
 print(getType(Some(1)))     // Option<Int>
 ```
 
-### `show(value)` → `String`
+### `typeOf<T>(value: T, type: Type)` → `Bool`
+
+Checks if a value matches a given type:
+
+```rust
+print(typeOf(42, Int))          // true
+print(typeOf(42, Float))        // false
+print(typeOf("hi", String))     // true
+print(typeOf(Some(1), Option))  // true
+```
+
+### `show<T>(value: T)` → `String`
 
 Converts any value to its string representation:
 
@@ -143,7 +176,7 @@ print(show(Some("hi")))     // Some(hi)
 
 ## Default Values
 
-### `default(Type)` → `Type`
+### `default<T>(type: Type<T>)` → `T`
 
 Returns the default value for a type:
 
@@ -398,10 +431,12 @@ print(range(5, 5))   // [] (empty when start >= end)
 | `const` | `(A, B) -> A` | Return first argument |
 | `len` | `(collection) -> Int` | Length (chars for strings) |
 | `lenBytes` | `(String) -> Int` | Byte length |
-| `read` | `(String, Type) -> Option<Type>` | Parse string |
+| `read` | `(String, Type<T>) -> Option<T>` | Parse string |
 | `getType` | `(value) -> Type<T>` | Runtime type |
+| `typeOf` | `(value, Type) -> Bool` | Check type match |
 | `show` | `(value) -> String` | String representation |
-| `default` | `(Type) -> Type` | Default value |
+| `sprintf` | `(fmt, value) -> String` | Format string |
+| `default` | `(Type<T>) -> T` | Default value |
 | `panic` | `(String) -> a` | Abort with message |
 
 ---

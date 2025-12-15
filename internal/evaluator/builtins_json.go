@@ -45,7 +45,7 @@ func objectToGo(obj Object) (interface{}, error) {
 		}
 		// Regular list -> JSON array
 		arr := make([]interface{}, v.len())
-		for i, el := range v.toSlice() {
+		for i, el := range v.ToSlice() {
 			val, err := objectToGo(el)
 			if err != nil {
 				return nil, err
@@ -67,12 +67,12 @@ func objectToGo(obj Object) (interface{}, error) {
 	case *RecordInstance:
 		// Record -> JSON object
 		obj := make(map[string]interface{})
-		for k, val := range v.Fields {
-			goVal, err := objectToGo(val)
+		for _, f := range v.Fields {
+			goVal, err := objectToGo(f.Value)
 			if err != nil {
 				return nil, err
 			}
-			obj[k] = goVal
+			obj[f.Key] = goVal
 		}
 		return obj, nil
 	case *DataInstance:
@@ -154,7 +154,7 @@ func inferFromJson(data interface{}, e *Evaluator) (Object, error) {
 			}
 			fields[k] = obj
 		}
-		return &RecordInstance{Fields: fields}, nil
+		return NewRecord(fields), nil
 	default:
 		return nil, fmt.Errorf("unknown JSON value type: %T", data)
 	}
@@ -165,7 +165,7 @@ func isStringListJson(l *List) bool {
 	if l.ElementType == "Char" {
 		return true
 	}
-	for _, el := range l.toSlice() {
+	for _, el := range l.ToSlice() {
 		if _, ok := el.(*Char); !ok {
 			return false
 		}
@@ -176,7 +176,7 @@ func isStringListJson(l *List) bool {
 // listToStringJson converts List<Char> to Go string
 func listToStringJson(l *List) string {
 	var sb strings.Builder
-	for _, el := range l.toSlice() {
+	for _, el := range l.ToSlice() {
 		if c, ok := el.(*Char); ok {
 			sb.WriteRune(rune(c.Value))
 		}
@@ -361,7 +361,7 @@ func builtinJsonGet(e *Evaluator, args ...Object) Object {
 	if di, ok := json.(*DataInstance); ok && di.Name == "JObj" {
 		if len(di.Fields) > 0 {
 			if pairList, ok := di.Fields[0].(*List); ok {
-				for _, elem := range pairList.toSlice() {
+				for _, elem := range pairList.ToSlice() {
 					if tuple, ok := elem.(*Tuple); ok && len(tuple.Elements) >= 2 {
 						if keyStr, ok := tuple.Elements[0].(*List); ok && isStringListJson(keyStr) {
 							if listToStringJson(keyStr) == key {
@@ -388,7 +388,7 @@ func builtinJsonKeys(e *Evaluator, args ...Object) Object {
 	if di, ok := json.(*DataInstance); ok && di.Name == "JObj" {
 		if len(di.Fields) > 0 {
 			if pairList, ok := di.Fields[0].(*List); ok {
-				for _, elem := range pairList.toSlice() {
+				for _, elem := range pairList.ToSlice() {
 					if tuple, ok := elem.(*Tuple); ok && len(tuple.Elements) >= 2 {
 						keys = append(keys, tuple.Elements[0])
 					}
@@ -449,7 +449,7 @@ func objectToJsonADT(obj Object) Object {
 			return &DataInstance{Name: "JStr", Fields: []Object{v}, TypeName: "Json"}
 		}
 		elements := make([]Object, v.len())
-		for i, item := range v.toSlice() {
+		for i, item := range v.ToSlice() {
 			elements[i] = objectToJsonADT(item)
 		}
 		arr := newList(elements)
@@ -463,8 +463,8 @@ func objectToJsonADT(obj Object) Object {
 		return &DataInstance{Name: "JArr", Fields: []Object{arr}, TypeName: "Json"}
 	case *RecordInstance:
 		pairs := make([]Object, 0, len(v.Fields))
-		for key, val := range v.Fields {
-			pair := &Tuple{Elements: []Object{stringToListJson(key), objectToJsonADT(val)}}
+		for _, f := range v.Fields {
+			pair := &Tuple{Elements: []Object{stringToListJson(f.Key), objectToJsonADT(f.Value)}}
 			pairs = append(pairs, pair)
 		}
 		pairList := newList(pairs)

@@ -1,21 +1,21 @@
-# 02. JSON обработка
+# 02. JSON Processing
 
-## Задача
-Парсить, создавать и трансформировать JSON данные.
+## Task
+Parse, create and transform JSON data.
 
 ---
 
-## Парсинг JSON строки
+## Parsing JSON string
 
 ```rust
 import "lib/json" (jsonDecode, jsonEncode)
 
-// JSON строка с экранированием
+// JSON string with escaping
 jsonStr = "{\"name\": \"Alice\", \"age\": 30, \"active\": true}"
 
 match jsonDecode(jsonStr) {
     Ok(data) -> {
-        // Доступ к полям через точку
+        // Access fields through dot notation
         print(data.name)    // Alice
         print(data.age)     // 30
         print(data.active)  // true
@@ -26,17 +26,17 @@ match jsonDecode(jsonStr) {
 
 ---
 
-## Создание JSON из записей
+## Creating JSON from records
 
 ```rust
 import "lib/json" (jsonEncode)
 
-// Записи автоматически сериализуются
+// Records are automatically serialized
 user = { name: "Bob", age: 25 }
 print(jsonEncode(user))
 // {"name":"Bob","age":25}
 
-// Вложенные записи
+// Nested records
 profile = {
     user: { name: "Alice", age: 30 },
     settings: { theme: "dark", notifications: true }
@@ -46,13 +46,13 @@ print(jsonEncode(profile))
 
 ---
 
-## Создание JSON из Map
+## Creating JSON from Map
 
 ```rust
 import "lib/json" (jsonEncode)
 import "lib/map" (*)
 
-// Map с динамическими ключами
+// Map with dynamic keys
 scores = %{ "Alice" => 100, "Bob" => 85, "Carol" => 92 }
 print(jsonEncode(scores))
 // {"Alice":100,"Bob":85,"Carol":92}
@@ -60,7 +60,7 @@ print(jsonEncode(scores))
 
 ---
 
-## Работа с массивами
+## Working with arrays
 
 ```rust
 import "lib/json" (jsonEncode)
@@ -72,12 +72,12 @@ users = [
     { id: 3, name: "Carol", role: "admin" }
 ]
 
-// Фильтрация
+// Filtering
 admins = filter(fun(u) -> u.role == "admin", users)
 print(jsonEncode(admins))
 // [{"id":1,"name":"Alice","role":"admin"},{"id":3,"name":"Carol","role":"admin"}]
 
-// Трансформация
+// Transformation
 names = map(fun(u) -> u.name, users)
 print(jsonEncode(names))
 // ["Alice","Bob","Carol"]
@@ -85,7 +85,7 @@ print(jsonEncode(names))
 
 ---
 
-## Вложенные структуры
+## Nested structures
 
 ```rust
 import "lib/json" (jsonEncode)
@@ -113,7 +113,7 @@ company = {
 
 print(jsonEncode(company))
 
-// Доступ к вложенным данным
+// Access to nested data
 for dept in company.departments {
     print(dept.name ++ " (floor " ++ show(dept.floor) ++ "):")
     for emp in dept.employees {
@@ -124,13 +124,13 @@ for dept in company.departments {
 
 ---
 
-## Чтение JSON из файла
+## Reading JSON from file
 
 ```rust
 import "lib/io" (fileRead)
 import "lib/json" (jsonDecode)
 
-// fileRead возвращает Result
+// fileRead returns Result
 match fileRead("config.json") {
     Ok(content) -> match jsonDecode(content) {
         Ok(config) -> {
@@ -145,7 +145,7 @@ match fileRead("config.json") {
 
 ---
 
-## Запись JSON в файл
+## Writing JSON to file
 
 ```rust
 import "lib/io" (fileWrite)
@@ -168,20 +168,20 @@ match fileWrite("config.json", jsonEncode(config)) {
 
 ---
 
-## Трансформация данных
+## Data transformation
 
 ```rust
 import "lib/json" (jsonEncode)
 import "lib/list" (map)
 
-// Входные данные
+// Input data
 people = [
     { firstName: "Alice", lastName: "Smith", birthYear: 1990 },
     { firstName: "Bob", lastName: "Jones", birthYear: 1985 },
     { firstName: "Carol", lastName: "Wilson", birthYear: 1992 }
 ]
 
-// Трансформация: создать новую структуру
+// Transformation: create new structure
 transformed = map(fun(p) -> {
     fullName: p.firstName ++ " " ++ p.lastName,
     initial: p.firstName[0],
@@ -194,7 +194,7 @@ print(jsonEncode(transformed))
 
 ---
 
-## Фильтрация и агрегация
+## Filtering and aggregation
 
 ```rust
 import "lib/json" (jsonEncode)
@@ -207,14 +207,14 @@ orders = [
     { id: 4, customer: "Carol", total: 45.0, status: "completed" }
 ]
 
-// Только завершённые заказы
+// Only completed orders
 completed = filter(fun(o) -> o.status == "completed", orders)
 
-// Общая сумма
+// Total sum
 totalRevenue = foldl(fun(acc, o) -> acc + o.total, 0.0, completed)
 print("Total revenue: $" ++ show(totalRevenue))  // $415.0
 
-// Заказы по клиенту
+// Orders by customer
 aliceOrders = filter(fun(o) -> o.customer == "Alice", orders)
 aliceTotal = foldl(fun(acc, o) -> acc + o.total, 0.0, aliceOrders)
 print("Alice total: $" ++ show(aliceTotal))  // $370.0
@@ -222,13 +222,13 @@ print("Alice total: $" ++ show(aliceTotal))  // $370.0
 
 ---
 
-## API Response обработка
+## API Response processing
 
 ```rust
 import "lib/json" (jsonEncode)
 import "lib/list" (map, filter, foldl)
 
-// Симуляция ответа API
+// API response simulation
 apiResponse = {
     status: "success",
     data: {
@@ -241,10 +241,10 @@ apiResponse = {
     }
 }
 
-// Извлечение только активных пользователей
+// Extract only active users
 activeUsers = filter(fun(u) -> u.active, apiResponse.data.users)
 
-// Создание ответа для фронтенда
+// Create response for frontend
 frontendResponse = {
     users: map(fun(u) -> { id: u.id, name: u.name }, activeUsers),
     meta: {
@@ -258,7 +258,7 @@ print(jsonEncode(frontendResponse))
 
 ---
 
-## Сравнение: императивный vs функциональный
+## Comparison: imperative vs functional
 
 ```rust
 import "lib/list" (filter, map, foldl)
@@ -270,9 +270,9 @@ products = [
     { name: "Desk", price: 200.0, category: "furniture" }
 ]
 
-// Задача: найти среднюю цену электроники
+// Task: find average price of electronics
 
-// Императивный стиль
+// Imperative style
 electronics1 = []
 for p in products {
     if p.category == "electronics" {
@@ -286,7 +286,7 @@ for e in electronics1 {
 avg1 = sum1 / intToFloat(len(electronics1))
 print("Imperative avg: " ++ show(avg1))
 
-// Функциональный стиль (одна цепочка!)
+// Functional style (one chain!)
 electronics2 = filter(fun(p) -> p.category == "electronics", products)
 sum2 = foldl(fun(acc, p) -> acc + p.price, 0.0, electronics2)
 avg2 = sum2 / intToFloat(len(electronics2))
@@ -295,12 +295,12 @@ print("Functional avg: " ++ show(avg2))
 
 ---
 
-## Построение JSON для API
+## Building JSON for API
 
 ```rust
 import "lib/json" (jsonEncode)
 
-// Функция для создания стандартного API ответа
+// Function to create standard API response
 fun apiSuccess(data) {
     {
         status: "success",
@@ -317,10 +317,9 @@ fun apiError(message: String, code: Int) {
     }
 }
 
-// Использование
+// Usage
 print(jsonEncode(apiSuccess({ user: { id: 1, name: "Alice" } })))
 // {"status":"success","data":{"user":{"id":1,"name":"Alice"}},"error":null}
 
 print(jsonEncode(apiError("Not found", 404)))
 // {"status":"error","data":null,"error":{"message":"Not found","code":404}}
-```

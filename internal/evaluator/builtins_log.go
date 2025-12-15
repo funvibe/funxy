@@ -67,6 +67,9 @@ func (l *Logger) Type() ObjectType             { return "LOGGER" }
 func (l *Logger) TypeName() string             { return "Logger" }
 func (l *Logger) Inspect() string              { return fmt.Sprintf("Logger{prefix=%q}", l.prefix) }
 func (l *Logger) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Logger"} }
+func (l *Logger) Hash() uint32 {
+	return hashString(l.prefix)
+}
 
 // ANSI colors
 const (

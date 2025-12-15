@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe" // Added unsafe for pointer hashing
 
 	"github.com/funvibe/funxy/internal/typesystem"
 
@@ -22,6 +23,9 @@ type SqlDB struct {
 func (s *SqlDB) Type() ObjectType             { return "SqlDB" }
 func (s *SqlDB) Inspect() string              { return fmt.Sprintf("<SqlDB:%s>", s.driver) }
 func (s *SqlDB) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "SqlDB"} }
+func (s *SqlDB) Hash() uint32 {
+	return uint32(uintptr(unsafe.Pointer(s)))
+}
 
 type SqlTx struct {
 	tx     *sql.Tx
@@ -31,6 +35,9 @@ type SqlTx struct {
 func (s *SqlTx) Type() ObjectType             { return "SqlTx" }
 func (s *SqlTx) Inspect() string              { return fmt.Sprintf("<SqlTx:%s>", s.driver) }
 func (s *SqlTx) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "SqlTx"} }
+func (s *SqlTx) Hash() uint32 {
+	return uint32(uintptr(unsafe.Pointer(s)))
+}
 
 // SqlValue ADT constructors
 var (
@@ -87,17 +94,15 @@ func goValueToSqlValue(val interface{}) Object {
 		// Convert to our Date record
 		_, offset := v.Zone()
 		offsetMinutes := offset / 60
-		dateRecord := &RecordInstance{
-			Fields: map[string]Object{
-				"year":   &Integer{Value: int64(v.Year())},
-				"month":  &Integer{Value: int64(v.Month())},
-				"day":    &Integer{Value: int64(v.Day())},
-				"hour":   &Integer{Value: int64(v.Hour())},
-				"minute": &Integer{Value: int64(v.Minute())},
-				"second": &Integer{Value: int64(v.Second())},
-				"offset": &Integer{Value: int64(offsetMinutes)},
-			},
-		}
+		dateRecord := NewRecord(map[string]Object{
+			"year":   &Integer{Value: int64(v.Year())},
+			"month":  &Integer{Value: int64(v.Month())},
+			"day":    &Integer{Value: int64(v.Day())},
+			"hour":   &Integer{Value: int64(v.Hour())},
+			"minute": &Integer{Value: int64(v.Minute())},
+			"second": &Integer{Value: int64(v.Second())},
+			"offset": &Integer{Value: int64(offsetMinutes)},
+		})
 		return &DataInstance{Name: sqlTimeCtor, TypeName: "SqlValue", Fields: []Object{dateRecord}}
 	default:
 		// Try to handle as string
@@ -139,20 +144,20 @@ func sqlObjectToGoValue(obj Object) interface{} {
 		}
 	case *RecordInstance:
 		// Could be a Date
-		if year, ok := o.Fields["year"]; ok {
+		if year := o.Get("year"); year != nil {
 			if yearInt, ok := year.(*Integer); ok {
-				month := o.Fields["month"].(*Integer).Value
-				day := o.Fields["day"].(*Integer).Value
+				month := o.Get("month").(*Integer).Value
+				day := o.Get("day").(*Integer).Value
 				hour := int64(0)
 				minute := int64(0)
 				second := int64(0)
-				if h, ok := o.Fields["hour"]; ok {
+				if h := o.Get("hour"); h != nil {
 					hour = h.(*Integer).Value
 				}
-				if m, ok := o.Fields["minute"]; ok {
+				if m := o.Get("minute"); m != nil {
 					minute = m.(*Integer).Value
 				}
-				if s, ok := o.Fields["second"]; ok {
+				if s := o.Get("second"); s != nil {
 					second = s.(*Integer).Value
 				}
 				return time.Date(int(yearInt.Value), time.Month(month), int(day),
@@ -170,7 +175,7 @@ func sqlObjectToGoValue(obj Object) interface{} {
 // sqlListToString converts List<Char> to Go string
 func sqlListToString(list *List) string {
 	var sb strings.Builder
-	for _, elem := range list.toSlice() {
+	for _, elem := range list.ToSlice() {
 		if ch, ok := elem.(*Char); ok {
 			sb.WriteRune(rune(ch.Value))
 		}
@@ -181,7 +186,7 @@ func sqlListToString(list *List) string {
 // paramsListToGoValues converts List of params to []interface{}
 func paramsListToGoValues(list *List) []interface{} {
 	var result []interface{}
-	for _, elem := range list.toSlice() {
+	for _, elem := range list.ToSlice() {
 		result = append(result, sqlObjectToGoValue(elem))
 	}
 	return result

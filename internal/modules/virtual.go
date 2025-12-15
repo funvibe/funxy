@@ -157,6 +157,8 @@ func InitVirtualPackages() {
 	initUuidPackage()
 	initLogPackage()
 	initTaskPackage()
+	initCsvPackage()
+	initFlagPackage()
 
 	// Register "lib" meta-package (import "lib" imports all lib/*)
 	initLibMetaPackage()
@@ -1279,11 +1281,12 @@ func initHttpPackage() {
 				ReturnType: typesystem.Int,
 			},
 
-			// httpServerStop: (Int) -> Nil
-			// Stops a running server by ID
+			// httpServerStop: (Int, Int) -> Nil
+			// Stops a running server by ID. Optional timeout.
 			"httpServerStop": typesystem.TFunc{
-				Params:     []typesystem.Type{typesystem.Int},
-				ReturnType: typesystem.Nil,
+				Params:       []typesystem.Type{typesystem.Int, typesystem.Int},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 		},
 	}
@@ -2113,4 +2116,134 @@ func initTaskPackage() {
 	}
 
 	RegisterVirtualPackage("lib/task", pkg)
+}
+
+// initCsvPackage registers the lib/csv virtual package
+func initCsvPackage() {
+	// String = List<Char>
+	stringType := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "List"},
+		Args:        []typesystem.Type{typesystem.Char},
+	}
+
+	// Result<String, T>
+	resultType := func(t typesystem.Type) typesystem.Type {
+		return typesystem.TApp{
+			Constructor: typesystem.TCon{Name: "Result"},
+			Args:        []typesystem.Type{stringType, t},
+		}
+	}
+
+	// Generic record type (open record)
+	recordType := typesystem.TRecord{Fields: map[string]typesystem.Type{}, IsOpen: true}
+
+	// List<Record>
+	listRecordType := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "List"},
+		Args:        []typesystem.Type{recordType},
+	}
+
+	// List<List<String>>
+	listStringType := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "List"},
+		Args:        []typesystem.Type{stringType},
+	}
+	listListStringType := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "List"},
+		Args:        []typesystem.Type{listStringType},
+	}
+
+	pkg := &VirtualPackage{
+		Name: "csv",
+		Symbols: map[string]typesystem.Type{
+			"csvParse": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, typesystem.Char},
+				ReturnType:   resultType(listRecordType),
+				DefaultCount: 1,
+			},
+			"csvParseRaw": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, typesystem.Char},
+				ReturnType:   resultType(listListStringType),
+				DefaultCount: 1,
+			},
+			"csvRead": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, typesystem.Char},
+				ReturnType:   resultType(listRecordType),
+				DefaultCount: 1,
+			},
+			"csvReadRaw": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, typesystem.Char},
+				ReturnType:   resultType(listListStringType),
+				DefaultCount: 1,
+			},
+			"csvEncode": typesystem.TFunc{
+				Params:       []typesystem.Type{listRecordType, typesystem.Char},
+				ReturnType:   stringType,
+				DefaultCount: 1,
+			},
+			"csvEncodeRaw": typesystem.TFunc{
+				Params:       []typesystem.Type{listListStringType, typesystem.Char},
+				ReturnType:   stringType,
+				DefaultCount: 1,
+			},
+			"csvWrite": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, listRecordType, typesystem.Char},
+				ReturnType:   resultType(typesystem.Nil),
+				DefaultCount: 1,
+			},
+			"csvWriteRaw": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, listListStringType, typesystem.Char},
+				ReturnType:   resultType(typesystem.Nil),
+				DefaultCount: 1,
+			},
+		},
+	}
+
+	RegisterVirtualPackage("lib/csv", pkg)
+}
+
+// initFlagPackage registers the lib/flag virtual package
+func initFlagPackage() {
+	// String = List<Char>
+	stringType := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "List"},
+		Args:        []typesystem.Type{typesystem.Char},
+	}
+	// List<String>
+	listString := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "List"},
+		Args:        []typesystem.Type{stringType},
+	}
+
+	// Generic T
+	T := typesystem.TVar{Name: "T"}
+
+	pkg := &VirtualPackage{
+		Name: "flag",
+		Symbols: map[string]typesystem.Type{
+			"flagSet": typesystem.TFunc{
+				Params:     []typesystem.Type{stringType, T, stringType},
+				ReturnType: typesystem.Nil,
+			},
+			"flagParse": typesystem.TFunc{
+				Params:       []typesystem.Type{listString},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1, // args is optional
+			},
+			"flagGet": typesystem.TFunc{
+				Params:     []typesystem.Type{stringType},
+				ReturnType: T,
+			},
+			"flagArgs": typesystem.TFunc{
+				Params:     []typesystem.Type{},
+				ReturnType: listString,
+			},
+			"flagUsage": typesystem.TFunc{
+				Params:     []typesystem.Type{},
+				ReturnType: typesystem.Nil,
+			},
+		},
+	}
+
+	RegisterVirtualPackage("lib/flag", pkg)
 }

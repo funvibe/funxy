@@ -1,0 +1,30 @@
+=== SQL Connection ===
+Connected to SQLite
+Table created
+=== SQL Insert ===
+Inserted: 1
+Inserted: 1
+Inserted: 1
+=== SQL Query ===
+Rows: 3
+=== SQL Query with params ===
+Users over 26: 2
+=== SQL QueryRow ===
+Found Alice
+Alice age: 30
+Not found: Nobody
+=== SQL Update ===
+Updated: 1
+=== SQL Delete ===
+Deleted: 1
+Count query returned: 1 rows
+=== SQL Transaction ===
+Transaction committed
+After tx: 1 rows returned
+=== SQL Utility ===
+SqlNull is null: true
+SqlInt is null: false
+Unwrapped: 42
+Was null
+Connection closed
+=== Done ===

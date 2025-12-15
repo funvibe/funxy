@@ -1,0 +1,15 @@
+Some("Alice")
+Some(30)
+Zero
+Zero
+Alice
+Unknown
+Ok("alice@example.com")
+Fail("User not found")
+alice@example.com
+no-email
+Some("Moscow")
+Zero
+Moscow
+Unknown
+Optional chaining test passed!

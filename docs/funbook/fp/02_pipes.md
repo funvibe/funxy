@@ -1,35 +1,35 @@
-# 02. Pipes и композиция
+# 02. Pipes and Composition
 
-## Задача
-Создавать читаемые цепочки трансформаций данных.
+## Task
+Create readable chains of data transformations.
 
-## Pipe оператор `|>`
+## Pipe operator `|>`
 
 ```rust
 import "lib/math" (absInt)
 
-// Без pipe (вложенные вызовы, читать изнутри наружу)
+// Without pipe (nested calls, read from inside out)
 result = show(absInt(-42))
 
-// С pipe (линейно, читать слева направо)
+// With pipe (linear, read left to right)
 result = -42 |> absInt |> show
 print(result)  // "42"
 ```
 
-## Объяснение
+## Explanation
 
-`x |> f` эквивалентно `f(x)`
+`x |> f` is equivalent to `f(x)`
 
-Pipe передаёт левый операнд как первый аргумент правой функции.
+Pipe passes the left operand as the first argument to the right function.
 
-## Трансформация списков
+## List transformations
 
 ```rust
 import "lib/list" (filter, map)
 
 numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-// Императивно (многословно)
+// Imperatively (verbose)
 result1 = []
 for n in numbers {
     if n % 2 == 0 {
@@ -37,7 +37,7 @@ for n in numbers {
     }
 }
 
-// Функционально с pipe (элегантно!)
+// Functionally with pipe (elegant!)
 result2 = numbers
     |> filter(fun(n) -> n % 2 == 0)  // [2, 4, 6, 8, 10]
     |> map(fun(n) -> n * n)           // [4, 16, 36, 64, 100]
@@ -45,7 +45,7 @@ result2 = numbers
 print(result2)  // [4, 16, 36, 64, 100]
 ```
 
-## Агрегация
+## Aggregation
 
 ```rust
 import "lib/list" (foldl)
@@ -59,13 +59,13 @@ average = total / len(sales)
 print(average)  // 188
 ```
 
-## Реальный пример: обработка данных
+## Real example: data processing
 
 ```rust
 import "lib/string" (stringSplit)
 import "lib/list" (map, filter)
 
-// Простой парсер (без обработки ошибок для наглядности)
+// Simple parser (without error handling for clarity)
 fun parseAge(s: String) -> Int {
     match read(s, Int) {
         Some(n) -> n
@@ -90,40 +90,40 @@ employees = stringSplit(csv, "\n")
 print(employees)  // ["Alice", "Carol"]
 ```
 
-## Композиция функций
+## Function composition
 
 ```rust
-// Создаём новые функции из существующих
+// Create new functions from existing ones
 fun double(x: Int) -> Int { x * 2 }
 fun increment(x: Int) -> Int { x + 1 }
 fun square(x: Int) -> Int { x * x }
 
-// Применяем цепочку
+// Apply chain
 result = 3 |> double |> increment |> square
 print(result)  // ((3 * 2) + 1)² = 49
 ```
 
-## Частичное применение с лямбдами
+## Partial application with lambdas
 
 ```rust
 import "lib/list" (map, filter, all)
 
 numbers = [1, 2, 3, 4, 5]
 
-// Умножить все на 10
+// Multiply all by 10
 tens = numbers |> map(fun(x) -> x * 10)
 print(tens)  // [10, 20, 30, 40, 50]
 
-// Отфильтровать больше 3
+// Filter greater than 3
 big = numbers |> filter(fun(x) -> x > 3)
 print(big)  // [4, 5]
 
-// Проверить все ли положительные
+// Check if all are positive
 allPositive = all(fun(x) -> x > 0, numbers)
 print(allPositive)  // true
 ```
 
-## Получение полей из списка объектов
+## Getting fields from a list of objects
 
 ```rust
 import "lib/list" (map)
@@ -133,7 +133,7 @@ users = [
     { name: "Bob", age: 25 }
 ]
 
-// Извлечение полей
+// Extract fields
 names = users |> map(fun(u) -> u.name)
 print(names)  // ["Alice", "Bob"]
 
@@ -141,7 +141,7 @@ ages = users |> map(fun(u) -> u.age)
 print(ages)  // [30, 25]
 ```
 
-## Комбинирование операций
+## Combining operations
 
 ```rust
 import "lib/string" (stringToUpper)
@@ -157,10 +157,10 @@ result = words
 print(result)  // "HELLO, WORLD, FUNXY, ROCKS"
 ```
 
-## Работа с Option
+## Working with Option
 
 ```rust
-// Option встроен: Some T | Zero
+// Option is built-in: Some T | Zero
 
 fun mapOption(opt, f) {
     match opt {
@@ -176,7 +176,7 @@ fun flatMapOption(opt, f) {
     }
 }
 
-// Цепочка безопасных операций
+// Chain of safe operations
 result = Some(10)
     |> fun(o) -> mapOption(o, fun(x) -> x * 2)
     |> fun(o) -> flatMapOption(o, fun(x) -> if x > 15 { Some(x) } else { Zero })
@@ -185,14 +185,14 @@ result = Some(10)
 print(result)  // Some("Result: 20")
 ```
 
-## Сравнение стилей
+## Style comparison
 
 ```rust
 import "lib/list" (range, filter, map, foldl)
 
-// Задача: найти сумму квадратов чётных чисел от 1 до 10
+// Task: find sum of squares of even numbers from 1 to 10
 
-// Императивно
+// Imperatively
 sum1 = 0
 for i in range(1, 11) {
     if i % 2 == 0 {
@@ -201,10 +201,9 @@ for i in range(1, 11) {
 }
 print(sum1)  // 220
 
-// Функционально
+// Functionally
 sum2 = range(1, 11)
     |> filter(fun(x) -> x % 2 == 0)
     |> map(fun(x) -> x * x)
     |> foldl(fun(a, b) -> a + b, 0)
 print(sum2)  // 220
-```

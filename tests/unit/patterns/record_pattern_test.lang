@@ -1,0 +1,60 @@
+// Test record pattern matching and destructuring
+import "lib/test" (*)
+
+// 1. Basic destructuring assignment
+testRun("record pattern assignment", fun() {
+    p = { x: 10, y: 20 }
+    { x: a, y: b } = p
+    assertEquals(a, 10, "a should be 10")
+    assertEquals(b, 20, "b should be 20")
+})
+
+// 2. Destructuring (explicit syntax required)
+testRun("record pattern explicit assignment", fun() {
+    p = { x: 30, y: 40 }
+    { x: x, y: y } = p  // Shorthand { x, y } not supported
+    assertEquals(x, 30, "x should be 30")
+    assertEquals(y, 40, "y should be 40")
+})
+
+// 3. Destructuring in function parameters (if supported via same mechanism)
+// Note: Function params usually use IdentifierPattern, but full patterns might be supported
+// Funxy supports patterns in params? Let's test if it works.
+// fun f({x: a}) { a } -- parser supports this?
+// Parser.parseParameter -> expect IDENT. So no, function params are identifiers only currently.
+// Checking parser/parser.go:373 type Parameter struct { Name *Identifier ... }
+// So only assignment and match/case support patterns.
+
+// 4. Nested patterns
+testRun("nested record pattern assignment", fun() {
+    p = { a: { b: 50 }, c: 60 }
+    { a: { b: val }, c: c } = p
+    assertEquals(val, 50, "val should be 50")
+    assertEquals(c, 60, "c should be 60")
+})
+
+// 5. Match expression with record pattern
+testRun("record pattern match", fun() {
+    res = match { x: 1, y: 2 } {
+        { x: 1, y: 2 } -> "exact",
+        { x: 1, y: _ } -> "partial",
+        _ -> "none"
+    }
+    assertEquals(res, "exact", "match exact")
+
+    res2 = match { x: 1, y: 3 } {
+        { x: 1, y: 2 } -> "exact",
+        { x: 1, y: val } -> "partial " ++ show(val),
+        _ -> "none"
+    }
+    assertEquals(res2, "partial 3", "match bind")
+})
+
+// 6. Match with explicit syntax
+testRun("record pattern match explicit", fun() {
+    res = match { a: 100, b: 200 } {
+        { a: a, b: b } -> a + b
+    }
+    assertEquals(res, 300, "match explicit")
+})
+

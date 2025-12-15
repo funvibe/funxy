@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 1:47 [A006]: undefined symbol: 'cannot re-export from 'nonexistent': module not imported'

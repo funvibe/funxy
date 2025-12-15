@@ -1,0 +1,50 @@
+import "lib/test" (*)
+import "lib/list" (map)
+
+// =============================================
+// FORMAT STRING LITERALS
+// Tests: %"fmt" syntax and formatting behavior
+// =============================================
+
+testRun("Format: basic float formatting", fun() -> {
+    pi = 3.14159
+    formatted = pi |> %".2f"
+    assert(formatted == "3.14")
+})
+
+testRun("Format: integer padding", fun() -> {
+    num = 42
+    padded = num |> %"05d"
+    assert(padded == "00042")
+})
+
+testRun("Format: hex formatting", fun() -> {
+    hexVal = 255 |> %"x"
+    assert(hexVal == "ff")
+})
+
+testRun("Format: inside interpolation", fun() -> {
+    pi = 3.14159
+    res = "Pi: ${pi |> %".3f"}"
+    assert(res == "Pi: 3.142")
+})
+
+testRun("Format: with map", fun() -> {
+    list = [1, 2, 3] |> map(%"02d")
+    assert(list == ["01", "02", "03"])
+})
+
+testRun("Format: as function assignment", fun() -> {
+    toHex = %"02x"
+    assert(toHex(255) == "ff")
+})
+
+testRun("Format: sprintf explicit call", fun() -> {
+    // sprintf works like: sprintf(format_string, ...args)
+    res = sprintf("%s: %.2f", "Hello", 1.2345)
+    assert(res == "Hello: 1.23")
+
+    // Single arg
+    res2 = sprintf("%.2f", 1.2345)
+    assert(res2 == "1.23")
+})

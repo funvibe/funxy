@@ -140,8 +140,8 @@ func registerSemigroupInstances(e *Evaluator) {
 						return newError("(<>) for List expects two lists")
 					}
 					result := make([]Object, 0, left.len()+right.len())
-					result = append(result, left.toSlice()...)
-					result = append(result, right.toSlice()...)
+					result = append(result, left.ToSlice()...)
+					result = append(result, right.ToSlice()...)
 					return newList(result)
 				},
 			},
@@ -218,8 +218,8 @@ func registerFunctorInstances(e *Evaluator) {
 						return newError("fmap for List expects a list as second argument")
 					}
 					result := make([]Object, list.len())
-					for i, elem := range list.toSlice() {
-						mapped := eval.applyFunction(fn, []Object{elem})
+					for i, elem := range list.ToSlice() {
+						mapped := eval.ApplyFunction(fn, []Object{elem})
 						if isError(mapped) {
 							return mapped
 						}
@@ -247,7 +247,7 @@ func registerFunctorInstances(e *Evaluator) {
 					}
 					// Extract value from Some
 					if di, ok := opt.(*DataInstance); ok && di.Name == "Some" && len(di.Fields) == 1 {
-						mapped := eval.applyFunction(fn, []Object{di.Fields[0]})
+						mapped := eval.ApplyFunction(fn, []Object{di.Fields[0]})
 						if isError(mapped) {
 							return mapped
 						}
@@ -272,7 +272,7 @@ func registerFunctorInstances(e *Evaluator) {
 					result := args[1]
 					if di, ok := result.(*DataInstance); ok {
 						if di.Name == "Ok" && len(di.Fields) == 1 {
-							mapped := eval.applyFunction(fn, []Object{di.Fields[0]})
+							mapped := eval.ApplyFunction(fn, []Object{di.Fields[0]})
 							if isError(mapped) {
 								return mapped
 							}
@@ -319,9 +319,9 @@ func registerApplicativeInstances(e *Evaluator) {
 					}
 					// Cartesian product: [f, g] <*> [x, y] = [f(x), f(y), g(x), g(y)]
 					result := make([]Object, 0, fns.len()*vals.len())
-					for _, fn := range fns.toSlice() {
-						for _, val := range vals.toSlice() {
-							applied := eval.applyFunction(fn, []Object{val})
+					for _, fn := range fns.ToSlice() {
+						for _, val := range vals.ToSlice() {
+							applied := eval.ApplyFunction(fn, []Object{val})
 							if isError(applied) {
 								return applied
 							}
@@ -367,7 +367,7 @@ func registerApplicativeInstances(e *Evaluator) {
 					if len(fnDi.Fields) != 1 || len(valDi.Fields) != 1 {
 						return newError("(<*>) for Option: malformed Some")
 					}
-					applied := eval.applyFunction(fnDi.Fields[0], []Object{valDi.Fields[0]})
+					applied := eval.ApplyFunction(fnDi.Fields[0], []Object{valDi.Fields[0]})
 					if isError(applied) {
 						return applied
 					}
@@ -412,7 +412,7 @@ func registerApplicativeInstances(e *Evaluator) {
 					}
 					// Both Ok
 					if fnDi.Name == "Ok" && valDi.Name == "Ok" && len(fnDi.Fields) == 1 && len(valDi.Fields) == 1 {
-						applied := eval.applyFunction(fnDi.Fields[0], []Object{valDi.Fields[0]})
+						applied := eval.ApplyFunction(fnDi.Fields[0], []Object{valDi.Fields[0]})
 						if isError(applied) {
 							return applied
 						}
@@ -450,13 +450,13 @@ func registerMonadInstances(e *Evaluator) {
 					eval.ContainerContext = getRuntimeTypeName(args[0])
 					defer func() { eval.ContainerContext = oldContainer }()
 
-					for _, elem := range list.toSlice() {
-						mapped := eval.applyFunction(fn, []Object{elem})
+					for _, elem := range list.ToSlice() {
+						mapped := eval.ApplyFunction(fn, []Object{elem})
 						if isError(mapped) {
 							return mapped
 						}
 						if mappedList, ok := mapped.(*List); ok {
-							result = append(result, mappedList.toSlice()...)
+							result = append(result, mappedList.ToSlice()...)
 						} else {
 							return newError("(>>=) for List: function must return a List")
 						}
@@ -486,7 +486,7 @@ func registerMonadInstances(e *Evaluator) {
 						oldContainer := eval.ContainerContext
 						eval.ContainerContext = getRuntimeTypeName(opt)
 						defer func() { eval.ContainerContext = oldContainer }()
-						return eval.applyFunction(fn, []Object{di.Fields[0]})
+						return eval.ApplyFunction(fn, []Object{di.Fields[0]})
 					}
 					return newError("(>>=) for Option: expected Some or Zero")
 				},
@@ -514,7 +514,7 @@ func registerMonadInstances(e *Evaluator) {
 							oldContainer := eval.ContainerContext
 							eval.ContainerContext = getRuntimeTypeName(result)
 							defer func() { eval.ContainerContext = oldContainer }()
-							return eval.applyFunction(fn, []Object{di.Fields[0]})
+							return eval.ApplyFunction(fn, []Object{di.Fields[0]})
 						}
 					}
 					return newError("(>>=) for Result: expected Ok or Fail")

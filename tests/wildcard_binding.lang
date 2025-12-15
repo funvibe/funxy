@@ -1,0 +1,15 @@
+// Test wildcard binding at top level
+_ = 10
+print("Wildcard binding works")
+
+// Test wildcard in variable declaration (shadowing implicit?)
+_ = 20
+print("Reassign wildcard works")
+
+// Test wildcard in tuple
+(a, _) = (1, 2)
+print("Tuple wildcard: " ++ show(a))
+
+// Test list pattern with wildcard
+[x, _, z] = [10, 20, 30]
+print("List wildcard: " ++ show(x) ++ ", " ++ show(z))

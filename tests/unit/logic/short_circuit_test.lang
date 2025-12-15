@@ -1,0 +1,88 @@
+import "lib/test" (*)
+
+sideEffect = 0
+
+fun reset() {
+    sideEffect = 0
+}
+
+fun triggerTrue() {
+    sideEffect = sideEffect + 1
+    true
+}
+
+fun triggerFalse() {
+    sideEffect = sideEffect + 1
+    false
+}
+
+// =============================================
+// Logical OR (||)
+// =============================================
+
+testRun("OR short-circuit on true", fun() {
+    reset()
+    // Left is true, Right should NOT execute
+    res = true || triggerTrue()
+    assert(res == true, "result should be true")
+    assert(sideEffect == 0, "should not evaluate right operand")
+})
+
+testRun("OR evaluate right on false", fun() {
+    reset()
+    // Left is false, Right SHOULD execute
+    res = false || triggerTrue()
+    assert(res == true, "result should be true (from right)")
+    assert(sideEffect == 1, "should evaluate right operand")
+})
+
+testRun("OR evaluate right on false (result false)", fun() {
+    reset()
+    // Left is false, Right is false
+    res = false || triggerFalse()
+    assert(res == false, "result should be false")
+    assert(sideEffect == 1, "should evaluate right operand")
+})
+
+// =============================================
+// Logical AND (&&)
+// =============================================
+
+testRun("AND short-circuit on false", fun() {
+    reset()
+    // Left is false, Right should NOT execute
+    res = false && triggerTrue()
+    assert(res == false, "result should be false")
+    assert(sideEffect == 0, "should not evaluate right operand")
+})
+
+testRun("AND evaluate right on true", fun() {
+    reset()
+    // Left is true, Right SHOULD execute
+    res = true && triggerTrue()
+    assert(res == true, "result should be true")
+    assert(sideEffect == 1, "should evaluate right operand")
+})
+
+testRun("AND evaluate right on true (result false)", fun() {
+    reset()
+    // Left is true, Right is false
+    res = true && triggerFalse()
+    assert(res == false, "result should be false")
+    assert(sideEffect == 1, "should evaluate right operand")
+})
+
+// =============================================
+// Nested Expressions
+// =============================================
+
+testRun("Nested short-circuit", fun() {
+    reset()
+    // (true || trigger()) && trigger()
+    // true || ... -> true (no trigger)
+    // true && trigger() -> trigger runs -> true
+    res = (true || triggerTrue()) && triggerTrue()
+    assert(res == true)
+    assert(sideEffect == 1, "should evaluate only second trigger")
+})
+

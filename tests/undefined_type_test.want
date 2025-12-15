@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 4:16 [A006]: undefined symbol: 'type 'Uuid' requires import "lib/uuid"'

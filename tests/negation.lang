@@ -1,0 +1,17 @@
+// Test negation of different types
+// This tests the fix for OP_NEG supporting BigInt and Rational
+
+// BigInt
+bi = 10n
+neg_bi = -bi
+print("Negated BigInt: " ++ show(neg_bi))
+
+// Rational
+rat = 1.5r
+neg_rat = -rat
+print("Negated Rational: " ++ show(neg_rat))
+
+// Check original value wasn't mutated
+print("Original BigInt: " ++ show(bi))
+print("Original Rational: " ++ show(rat))
+

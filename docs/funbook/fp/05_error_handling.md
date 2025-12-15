@@ -1,23 +1,23 @@
 # 05. Error Handling
 
-## Задача
-Обрабатывать ошибки и отсутствующие значения типобезопасно, без exceptions.
+## Task
+Handle errors and missing values in a type-safe way, without exceptions.
 
 ---
 
-## Три подхода к ошибкам
+## Three approaches to errors
 
-| Тип | Когда использовать | Пример |
+| Type | When to use | Example |
 |-----|-------------------|--------|
-| `Option<T>` | Значение может отсутствовать | `find(predicate, list)` |
-| `T?` (Nullable) | Быстрая проверка на null | `user.email?` |
-| `Result<E, A>` | Нужна информация об ошибке | `fileRead(path)` |
+| `Option<T>` | Value may be missing | `find(predicate, list)` |
+| `T?` (Nullable) | Quick null check | `user.email?` |
+| `Result<E, A>` | Need error information | `fileRead(path)` |
 
 ---
 
-## Option<T>: есть или нет
+## Option<T>: exists or not
 
-Option — встроенный тип: `Some T | Zero`.
+Option is a built-in type: `Some T | Zero`.
 
 ```rust
 fun safeDivide(a: Int, b: Int) -> Option<Int> {
@@ -28,7 +28,7 @@ print(safeDivide(10, 2))  // Some(5)
 print(safeDivide(10, 0))  // Zero
 ```
 
-### Pattern Matching с Option
+### Pattern Matching with Option
 
 ```rust
 fun showResult(opt: Option<Int>) -> String {
@@ -42,10 +42,10 @@ print(showResult(Some(42)))  // Got: 42
 print(showResult(Zero))      // Nothing
 ```
 
-### Функции для работы с Option
+### Functions for working with Option
 
 ```rust
-// map — применить функцию к значению внутри
+// map - apply function to value inside
 fun mapOption(opt, f) {
     match opt {
         Some(x) -> Some(f(x))
@@ -53,7 +53,7 @@ fun mapOption(opt, f) {
     }
 }
 
-// flatMap — для цепочек операций
+// flatMap - for chains of operations
 fun flatMapOption(opt, f) {
     match opt {
         Some(x) -> f(x)
@@ -61,7 +61,7 @@ fun flatMapOption(opt, f) {
     }
 }
 
-// getOrElse — значение по умолчанию
+// getOrElse - default value
 fun getOrElse(opt, default) {
     match opt {
         Some(x) -> x
@@ -69,7 +69,7 @@ fun getOrElse(opt, default) {
     }
 }
 
-// orElse — альтернативный Option
+// orElse - alternative Option
 fun orElse(opt, alternative) {
     match opt {
         Some(x) -> Some(x)
@@ -77,7 +77,7 @@ fun orElse(opt, alternative) {
     }
 }
 
-// Примеры использования
+// Usage examples
 x = Some(10)
 doubled = mapOption(x, fun(n) -> n * 2)
 print(doubled)  // Some(20)
@@ -91,28 +91,28 @@ print(backup)  // Some(100)
 
 ---
 
-## T? (Nullable): быстрый null-check
+## T? (Nullable): quick null-check
 
-`T?` — это синтаксический сахар для `T | Nil`.
+`T?` is syntactic sugar for `T | Nil`.
 
 ```rust
 type User = { name: String, id: Int }
 
-// Функция может вернуть Nil
+// Function can return Nil
 fun findUser(id: Int) -> User? {
     if id > 0 { { name: "Alice", id: id } } else { Nil }
 }
 
 user = findUser(1)
 
-// Pattern matching с типами
+// Pattern matching with types
 match user {
     _: Nil -> print("Not found")
     u: User -> print("Found: " ++ u.name)
 }
 ```
 
-### Nullable поля в записях
+### Nullable fields in records
 
 ```rust
 type Profile = {
@@ -142,9 +142,9 @@ showProfile(profile)
 
 ---
 
-## Result<E, A>: успех или ошибка с информацией
+## Result<E, A>: success or error with information
 
-Result — встроенный тип: `Ok A | Fail E`.
+Result is a built-in type: `Ok A | Fail E`.
 
 ```rust
 fun parseNumber(s: String) -> Result<String, Int> {
@@ -158,7 +158,7 @@ print(parseNumber("42"))     // Ok(42)
 print(parseNumber("hello"))  // Fail("Cannot parse 'hello' as number")
 ```
 
-### Pattern Matching с Result
+### Pattern Matching with Result
 
 ```rust
 fun handleResult(r: Result<String, Int>) -> String {
@@ -172,10 +172,10 @@ print(handleResult(Ok(100)))        // Success: 100
 print(handleResult(Fail("oops")))   // Error: oops
 ```
 
-### Функции для работы с Result
+### Functions for working with Result
 
 ```rust
-// map — применить функцию к успешному значению
+// map - apply function to successful value
 fun mapResult(r, f) {
     match r {
         Ok(a) -> Ok(f(a))
@@ -183,7 +183,7 @@ fun mapResult(r, f) {
     }
 }
 
-// flatMap — для цепочек
+// flatMap - for chains
 fun flatMapResult(r, f) {
     match r {
         Ok(a) -> f(a)
@@ -191,7 +191,7 @@ fun flatMapResult(r, f) {
     }
 }
 
-// mapError — преобразовать ошибку
+// mapError - transform error
 fun mapError(r, f) {
     match r {
         Ok(a) -> Ok(a)
@@ -207,7 +207,7 @@ fun getOrElseResult(r, default) {
     }
 }
 
-// Примеры
+// Examples
 doubled = mapResult(Ok(5), fun(x) -> x * 2)
 print(doubled)  // Ok(10)
 
@@ -217,9 +217,9 @@ print(withDefault)  // 0
 
 ---
 
-## Реальные примеры из lib/*
+## Real examples from lib/*
 
-### Чтение файла
+### Reading file
 
 ```rust
 import "lib/io" (fileRead, fileWrite)
@@ -241,7 +241,7 @@ config = loadConfig("config.json")
 
 ```
 
-### HTTP запросы
+### HTTP requests
 
 ```rust
 import "lib/http" (httpGet)
@@ -266,12 +266,12 @@ fun fetchUser(id: Int) {
 
 ---
 
-## Цепочки операций
+## Chains of operations
 
-### Проблема: вложенные match
+### Problem: nested match
 
 ```rust
-// Пример: mock функции
+// Example: mock functions
 fun getUser(id: Int) -> Result<String, { id: Int, name: String }> {
     if id > 0 { Ok({ id: id, name: "Alice" }) } else { Fail("User not found") }
 }
@@ -284,7 +284,7 @@ fun validateEmail(email: String) -> Result<String, String> {
     Ok(email)
 }
 
-// Глубокая вложенность - работает, но трудно читать
+// Deep nesting - works, but hard to read
 fun processUserBad(id: Int) {
     match getUser(id) {
         Fail(e) -> Fail(e)
@@ -302,10 +302,10 @@ result = processUserBad(1)
 print(result)
 ```
 
-### Решение: flatMap chain
+### Solution: flatMap chain
 
 ```rust
-// Вспомогательные функции для Result
+// Helper functions for Result
 fun mapResult(r, f) {
     match r { Ok(v) -> Ok(f(v)), Fail(e) -> Fail(e) }
 }
@@ -314,12 +314,12 @@ fun flatMapResult(r, f) {
     match r { Ok(v) -> f(v), Fail(e) -> Fail(e) }
 }
 
-// Mock функции
+// Mock functions
 fun getUser(id: Int) { if id > 0 { Ok({ id: id, name: "Alice" }) } else { Fail("Not found") } }
 fun getEmail(user) { Ok(user.name ++ "@example.com") }
 fun validateEmail(email: String) { Ok(email) }
 
-// Линейная цепочка - чище
+// Linear chain - cleaner
 fun processUserGood(id: Int) {
     result = getUser(id)
     result = flatMapResult(result, fun(user) -> mapResult(getEmail(user), fun(email) -> { user: user, email: email }))
@@ -333,17 +333,17 @@ print(result)
 
 ---
 
-## Кастомные типы ошибок
+## Custom error types
 
 ```rust
 import "lib/list" (contains)
 
-// ADT для ошибок валидации
+// ADT for validation errors
 type ValidationError = EmptyField(String)
                      | TooShort(String)
                      | InvalidFormat(String)
 
-// Функции валидации
+// Validation functions
 fun validateUsername(name: String) -> Result<ValidationError, String> {
     if len(name) == 0 { 
         Fail(EmptyField("username")) 
@@ -364,7 +364,7 @@ fun validateEmail(email: String) -> Result<ValidationError, String> {
     }
 }
 
-// Красивый вывод ошибок
+// Beautiful error output
 fun showValidationError(e: ValidationError) -> String {
     match e {
         EmptyField(field) -> "Field '" ++ field ++ "' is required"
@@ -373,7 +373,7 @@ fun showValidationError(e: ValidationError) -> String {
     }
 }
 
-// Использование
+// Usage
 match validateUsername("ab") {
     Ok(name) -> print("Valid username: " ++ name)
     Fail(err) -> print("Validation error: " ++ showValidationError(err))
@@ -383,11 +383,11 @@ match validateUsername("ab") {
 
 ---
 
-## Комбинирование нескольких Result
+## Combining multiple Results
 
 ```rust
-// Если все Ok — вернуть список значений
-// Если хоть один Fail — вернуть первую ошибку
+// If all Ok - return list of values
+// If at least one Fail - return first error
 fun sequence(results) {
     match results {
         [] -> Ok([])
@@ -399,7 +399,7 @@ fun sequence(results) {
     }
 }
 
-// Примеры
+// Examples
 allOk = [Ok(1), Ok(2), Ok(3)]
 print(sequence(allOk))  // Ok([1, 2, 3])
 
@@ -407,12 +407,12 @@ withError = [Ok(1), Fail("oops"), Ok(3)]
 print(sequence(withError))  // Fail("oops")
 ```
 
-### Собрать все ошибки (не только первую)
+### Collect all errors (not just first)
 
 ```rust
 import "lib/list" (foldl)
 
-// Собирает все Ok значения или все Fail ошибки
+// Collects all Ok values or all Fail errors
 fun sequenceAll(results) {
     foldl(fun(acc, r) -> {
         match (acc, r) {
@@ -424,7 +424,7 @@ fun sequenceAll(results) {
     }, Ok([]), results)
 }
 
-// Пример
+// Example
 results = [Ok(1), Ok(2), Ok(3)]
 match sequenceAll(results) {
     Ok(values) -> print("All valid: " ++ show(values))
@@ -441,7 +441,7 @@ match sequenceAll(resultsWithErrors) {
 
 ---
 
-## Преобразование между типами
+## Converting between types
 
 ```rust
 // Option -> Result
@@ -452,7 +452,7 @@ fun optionToResult(opt, errorMsg) {
     }
 }
 
-// Result -> Option (теряем информацию об ошибке)
+// Result -> Option (lose error information)
 fun resultToOption(res) {
     match res {
         Ok(x) -> Some(x)
@@ -460,7 +460,7 @@ fun resultToOption(res) {
     }
 }
 
-// Примеры
+// Examples
 print(optionToResult(Some(42), "missing"))  // Ok(42)
 print(optionToResult(Zero, "missing"))      // Fail("missing")
 
@@ -470,12 +470,12 @@ print(resultToOption(Fail("err")))  // Zero
 
 ---
 
-## Когда использовать что?
+## When to use what?
 
-| Ситуация | Используйте | Пример |
+| Situation | Use | Example |
 |----------|------------|--------|
-| Значение может отсутствовать, причина не важна | `Option<T>` | `find()`, `head()` |
-| Быстрый null-check для полей | `T?` | `user.middleName?` |
-| Операция может не удаться, нужна причина | `Result<String, T>` | `fileRead()`, `httpGet()` |
-| Валидация с детальными ошибками | `Result<CustomError, T>` | Form validation |
-| Может быть несколько ошибок | `Result<List<E>, T>` | Batch validation |
+| Value may be missing, reason not important | `Option<T>` | `find()`, `head()` |
+| Quick null-check for fields | `T?` | `user.middleName?` |
+| Operation might fail, need reason | `Result<String, T>` | `fileRead()`, `httpGet()` |
+| Validation with detailed errors | `Result<CustomError, T>` | Form validation |
+| Might be multiple errors | `Result<List<E>, T>` | Batch validation |

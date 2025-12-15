@@ -13,6 +13,8 @@ contexts:
     - include: strings
     - include: chars
     - include: bytes
+    - include: bits
+    - include: format_strings
     - include: numbers
     - include: keywords
     - include: types
@@ -55,6 +57,14 @@ contexts:
     - match: '@[xb]?"[^"]*"'
       scope: string.quoted.other.bytes.funxy
 
+  bits:
+    - match: '#[xbo]?"[^"]*"'
+      scope: string.quoted.other.bits.funxy
+
+  format_strings:
+    - match: '%"[^"]*"'
+      scope: string.quoted.other.format.funxy
+
   numbers:
     - match: \b0x[0-9a-fA-F]+\b
       scope: constant.numeric.hex.funxy
@@ -78,7 +88,7 @@ contexts:
       scope: entity.name.type.funxy
 
   builtins:
-    - match: \b(print|show|len|read|getType|default|panic|id|const|fst|snd|map|filter|foldl|foldr|head|tail|range|intToFloat|floatToInt|charToCode|charFromCode)\b
+    - match: \b(print|show|len|read|getType|default|panic|id|const|fst|snd|map|filter|foldl|foldr|head|tail|range|intToFloat|floatToInt|charToCode|charFromCode|sprintf)\b
       scope: support.function.builtin.funxy
 
   operators:

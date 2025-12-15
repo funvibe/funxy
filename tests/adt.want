@@ -1,0 +1,4 @@
+Circle(10)
+Rectangle(20, 30)
+Cons(1, End)
+Cons(2, Cons(1, End))

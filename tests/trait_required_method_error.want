@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 11:9 [A003]: type error: instance Cmp for Int is missing required method 'cmp'

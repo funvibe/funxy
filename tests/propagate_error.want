@@ -1,0 +1,4 @@
+Ok(15)
+Fail("division by zero")
+Some(10)
+Zero

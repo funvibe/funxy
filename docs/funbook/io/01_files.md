@@ -1,11 +1,11 @@
-# 01. Чтение и запись файлов
+# 01. Reading and Writing Files
 
-## Задача
-Читать, писать и обрабатывать файлы.
+## Task
+Read, write and process files.
 
 ---
 
-## Чтение файла целиком
+## Reading entire file
 
 ```rust
 import "lib/io" (fileRead)
@@ -19,7 +19,7 @@ match fileRead("data.txt") {
 
 ---
 
-## Запись в файл
+## Writing to file
 
 ```rust
 import "lib/io" (fileWrite)
@@ -33,7 +33,7 @@ match fileWrite("output.txt", "Hello, World!") {
 
 ---
 
-## Добавление в файл
+## Appending to file
 
 ```rust
 import "lib/io" (fileAppend)
@@ -47,7 +47,7 @@ match fileAppend("log.txt", "New log entry\n") {
 
 ---
 
-## Проверка существования
+## Checking existence
 
 ```rust
 import "lib/io" (fileExists)
@@ -61,7 +61,7 @@ if fileExists("config.json") {
 
 ---
 
-## Чтение построчно
+## Reading line by line
 
 ```rust
 import "lib/io" (fileRead)
@@ -81,7 +81,7 @@ match fileRead("data.txt") {
 
 ---
 
-## Подсчёт слов в файле
+## Counting words in file
 
 ```rust
 import "lib/io" (fileRead)
@@ -101,7 +101,7 @@ match fileRead("book.txt") {
 
 ---
 
-## Подсчёт строк
+## Counting lines
 
 ```rust
 import "lib/io" (fileRead)
@@ -119,7 +119,7 @@ match fileRead("code.lang") {
 
 ---
 
-## Копирование файла
+## Copying file
 
 ```rust
 import "lib/io" (fileRead, fileWrite)
@@ -142,7 +142,7 @@ copyFile("original.txt", "backup.txt")
 
 ---
 
-## Обработка CSV
+## Processing CSV
 
 ```rust
 import "lib/io" (fileRead, fileWrite)
@@ -155,11 +155,11 @@ match fileRead("data.csv") {
         rows = filter(fun(line) -> len(line) > 0, allLines)
         parsed = map(fun(line) -> stringSplit(line, ","), rows)
 
-        // Первая строка - заголовки
+        // First line - headers
         headers = head(parsed)
         data = tail(parsed)
 
-        // Обработка
+        // Processing
         for row in data {
             print("Name: " ++ row[0] ++ ", Age: " ++ row[1])
         }
@@ -171,7 +171,7 @@ match fileRead("data.csv") {
 
 ---
 
-## Запись CSV
+## Writing CSV
 
 ```rust
 import "lib/io" (fileWrite)
@@ -194,7 +194,7 @@ match fileWrite("output.csv", csvContent) {
 
 ---
 
-## Работа с конфигурацией
+## Working with configuration
 
 ```rust
 import "lib/io" (fileRead, fileWrite, fileExists)
@@ -231,7 +231,7 @@ print("Server port: " ++ show(config.port))
 
 ---
 
-## Логирование
+## Logging
 
 ```rust
 import "lib/io" (fileAppend)
@@ -250,7 +250,7 @@ log("ERROR", "Something went wrong")
 
 ---
 
-## Обход директории
+## Directory traversal
 
 ```rust
 import "lib/io" (dirList, isDir)
@@ -279,7 +279,7 @@ processDir("./src")
 
 ---
 
-## Поиск в файлах
+## Searching in files
 
 ```rust
 import "lib/io" (dirList, fileRead, isDir)
@@ -326,7 +326,7 @@ for m in matches {
 
 ---
 
-## Безопасное чтение
+## Safe reading
 
 ```rust
 import "lib/io" (fileRead, fileExists)
@@ -351,7 +351,7 @@ match safeRead("maybe.txt") {
 
 ---
 
-## Временные файлы
+## Temporary files
 
 ```rust
 import "lib/io" (fileWrite, fileRead, fileDelete)
@@ -381,5 +381,3 @@ result = withTempFile("test data", fun(path) -> {
     }
 })
 print(show(result))  // 9
-
-```

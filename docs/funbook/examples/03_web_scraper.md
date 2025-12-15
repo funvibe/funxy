@@ -1,23 +1,23 @@
 # 03. Web Scraper
 
-## Задача
-Загружать веб-страницы, парсить HTML, извлекать данные.
+## Task
+Download web pages, parse HTML, extract data.
 
 ---
 
-## Простой scraper
+## Simple scraper
 
 ```rust
 import "lib/http" (httpGet)
 import "lib/regex" (regexFindAll, regexCapture, regexReplaceAll)
 import "lib/string" (stringTrim)
 
-// Извлечь все ссылки со страницы
+// Extract all links from a page
 fun extractLinks(html: String) -> List<String> {
     regexFindAll("<a[^>]+href=\"([^\"]+)\"", html)
 }
 
-// Извлечь заголовок
+// Extract title
 fun extractTitle(html: String) -> String {
     match regexCapture("<title>([^<]+)</title>", html) {
         Some(groups) -> stringTrim(groups[1])
@@ -25,7 +25,7 @@ fun extractTitle(html: String) -> String {
     }
 }
 
-// Извлечь весь текст (убрать теги)
+// Extract all text (remove tags)
 fun stripTags(html: String) -> String {
     h1 = regexReplaceAll("<[^>]+>", "", html)
     h2 = regexReplaceAll("\\s+", " ", h1)
@@ -49,9 +49,9 @@ main()
 
 ---
 
-## Парсинг структурированных данных
+## Parsing structured data
 
-### Извлечение списка товаров
+### Extracting product list
 
 ```rust
 import "lib/http" (httpGet)
@@ -66,7 +66,7 @@ type Product = {
 }
 
 fun parseProducts(html: String) -> List<Product> {
-    // Находим все блоки товаров
+    // Find all product blocks
     productPattern = "<div class=\"product\">(.*?)</div>"
     blocks = regexFindAll(productPattern, html)
     
@@ -148,7 +148,7 @@ main()
 import "lib/time" (sleepMs)
 import "lib/http" (httpGet)
 
-// Ограничение: N запросов в секунду
+// Limit: N requests per second
 fun rateLimitedFetch(urls: List<String>, requestsPerSecond: Int) -> List<Result<String, String>> {
     delay = 1000 / requestsPerSecond
     results = []
@@ -168,7 +168,7 @@ fun rateLimitedFetch(urls: List<String>, requestsPerSecond: Int) -> List<Result<
 
 ---
 
-## Сохранение результатов
+## Saving results
 
 ```rust
 import "lib/io" (fileWrite)
@@ -181,7 +181,7 @@ type CrawlResult = {
     status: Int
 }
 
-// Экспорт в JSON
+// Export to JSON
 fun exportResults(results: List<CrawlResult>, filename: String) {
     json = jsonEncode(results)
     match fileWrite(filename, json) {
@@ -194,7 +194,7 @@ fun exportResults(results: List<CrawlResult>, filename: String) {
 
 ---
 
-## Обработка ошибок и retry
+## Error handling and retry
 
 ```rust
 import "lib/http" (httpGet)
@@ -231,9 +231,9 @@ fun fetchWithRetry(url: String, maxRetries: Int, delayMs: Int) -> Result<String,
 
 ## Best Practices
 
-1. Rate limiting — не перегружайте сервер
-2. User-Agent — устанавливайте корректный User-Agent
-3. Robots.txt — уважайте правила сайта
-4. Кэширование — не загружайте одну страницу дважды
-5. Error handling — graceful обработка ошибок
-6. Timeout — устанавливайте таймауты на запросы
+1. Rate limiting - don't overload the server
+2. User-Agent - set correct User-Agent
+3. Robots.txt - respect site rules
+4. Caching - don't download the same page twice
+5. Error handling - graceful error handling
+6. Timeout - set timeouts for requests

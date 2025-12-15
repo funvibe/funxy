@@ -1,0 +1,8 @@
+[DEBUG lib_debug.lang:6] 42 : Int
+[DEBUG lib_debug.lang:9] [1, 2, 3] : List<Int>
+[DEBUG lib_debug.lang:12] {age: 30, name: "Alice"} : 
+[TRACE lib_debug.lang:16] [1, 2, 3, 4, 5] : List<Int>
+[TRACE lib_debug.lang:18] [3, 4, 5] : List<Int>
+[TRACE lib_debug.lang:20] [6, 8, 10] : List<Int>
+[6, 8, 10]
+=== debug/trace tests passed! ===

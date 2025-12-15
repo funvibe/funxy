@@ -1,13 +1,13 @@
-# 25. Парсер логов
+# 25. Log Parser
 
-## Задача
-Парсить лог-файлы, извлекать структурированные данные, анализировать и агрегировать.
+## Task
+Parse log files, extract structured data, analyze and aggregate.
 
 ---
 
-## Пример: парсинг Apache/Nginx access log
+## Example: parsing Apache/Nginx access log
 
-### Формат лога
+### Log format
 
 ```
 192.168.1.1 - - [10/Dec/2024:10:15:30 +0000] "GET /api/users HTTP/1.1" 200 1234 "-" "Mozilla/5.0"
@@ -25,7 +25,7 @@ import "lib/map" (mapGet, mapItems, mapSize, mapPut)
 import "lib/tuple" (fst, snd)
 import "lib/math" (round)
 
-// --- Типы ---
+// --- Types ---
 
 type LogEntry = {
     ip: String,
@@ -46,10 +46,10 @@ type Stats = {
     avgResponseSize: Float
 }
 
-// --- Парсинг ---
+// --- Parsing ---
 
 fun parseLine(line: String) -> Option<LogEntry> {
-    // Regex для Apache Combined Log Format
+    // Regex for Apache Combined Log Format
     pattern = "^([\\d.]+) - - \\[([^\\]]+)\\] \"(\\w+) ([^\"]+) HTTP/[^\"]+\" (\\d+) (\\d+) \"[^\"]*\" \"([^\"]*)\""
     
     match regexCapture(pattern, line) {
@@ -82,7 +82,7 @@ fun parseLog(content: String) -> List<LogEntry> {
     |> map(fun(opt) -> match opt { Some(e) -> e, Zero -> { ip: "", timestamp: "", method: "", path: "", status: 0, size: 0, userAgent: "" } })
 }
 
-// --- Анализ ---
+// --- Analysis ---
 
 fun countBy(items, keyFn) {
     foldl(fun(acc, item) -> {
@@ -116,7 +116,7 @@ fun analyze(entries: List<LogEntry>) -> Stats {
     }
 }
 
-// --- Фильтры ---
+// --- Filters ---
 
 fun filterByStatus(entries: List<LogEntry>, status: Int) -> List<LogEntry> {
     filter(fun(e) -> e.status == status, entries)
@@ -134,7 +134,7 @@ fun filterErrors(entries: List<LogEntry>) -> List<LogEntry> {
     filter(fun(e) -> e.status >= 400, entries)
 }
 
-// --- Отчёт ---
+// --- Report ---
 
 fun printStats(stats: Stats) {
     print("\nLog Analysis Report\n")
@@ -177,7 +177,7 @@ fun main() {
                     stats = analyze(entries)
                     printStats(stats)
                     
-                    // Показать ошибки
+                    // Show errors
                     errors = filterErrors(entries)
                     if len(errors) > 0 {
                         print("\nRecent Errors:")
@@ -196,9 +196,9 @@ main()
 
 ---
 
-## Пример: JSON логи (structured logging)
+## Example: JSON logs (structured logging)
 
-### Формат
+### Format
 
 ```json
 {"timestamp":"2024-12-10T10:15:30Z","level":"info","msg":"User logged in","user_id":123}
@@ -272,7 +272,7 @@ main()
 
 ---
 
-## Агрегация по времени
+## Time aggregation
 
 ```rust
 import "lib/regex" (regexCapture)
@@ -281,7 +281,7 @@ import "lib/list" (foldl, range)
 import "lib/map" (mapGet, mapItems)
 import "lib/math" (round)
 
-// Группировка по часам
+// Group by hour
 fun extractHour(timestamp: String) -> String {
     match regexCapture(":([0-9]{2}):", timestamp) {
         Some(groups) -> groups[1]
@@ -289,7 +289,7 @@ fun extractHour(timestamp: String) -> String {
     }
 }
 
-// Вывод гистограммы
+// Print histogram
 fun printHistogram(counts, maxCount: Int) {
     scale = 50.0 / intToFloat(maxCount)
     
@@ -306,16 +306,16 @@ fun printHistogram(counts, maxCount: Int) {
 
 ---
 
-## Обнаружение аномалий
+## Anomaly detection
 
 ```rust
 fun detectSpikes(entries, windowMinutes: Int, threshold: Int) -> List<String> {
-    // Упрощённая версия - считаем по минутам
-    // В реальном коде нужен sliding window
+    // Simplified version - count by minutes
+    // In real code, need sliding window
     
     print("Analyzing " ++ show(len(entries)) ++ " entries...")
     print("Window: " ++ show(windowMinutes) ++ " minutes, threshold: " ++ show(threshold))
-    []  // возвращаем пустой список для примера
+    []  // return empty list for example
 }
 // ...
     |> filter(fun(minute, count) -> count > threshold)
@@ -334,7 +334,7 @@ fun detect404Paths(entries, minCount: Int) {
 
 ---
 
-## Экспорт в CSV
+## Export to CSV
 
 ```rust
 import "lib/io" (fileWrite)
@@ -349,11 +349,10 @@ fun toCSV(entries: List<LogEntry>) -> String {
     header ++ "\n" ++ stringJoin(rows, "\n")
 }
 
-// Пример использования
+// Usage example
 entries = [{ ip: "127.0.0.1", timestamp: "2024-01-01", method: "GET", path: "/", status: 200, size: 1024 }]
 match fileWrite("report.csv", toCSV(entries)) {
     Ok(_) -> print("Saved to report.csv")
     Fail e -> print("Error: " ++ e)
 }
 ```
-

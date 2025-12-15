@@ -1,0 +1,28 @@
+=== async and await ===
+42
+=== taskResolve ===
+100
+=== taskReject ===
+error message
+=== awaitTimeout ===
+1
+=== taskIsDone / taskIsCancelled ===
+true
+false
+=== taskCancel ===
+true
+=== awaitAll ===
+[1, 2, 3]
+=== awaitAny ===
+42
+=== awaitFirst ===
+true
+=== taskMap ===
+20
+=== taskFlatMap ===
+15
+=== taskCatch ===
+999
+=== pool ===
+500
+=== lib/task tests passed! ===

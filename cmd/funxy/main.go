@@ -6,6 +6,7 @@ import (
 	"os"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/ast"
+	"github.com/funvibe/funxy/internal/backend"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/lexer"
@@ -15,6 +16,11 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+// BackendType determines the execution backend.
+// Can be set at build time using: -ldflags "-X main.BackendType=tree"
+// Default is "vm".
+var BackendType = "vm"
 
 var moduleCache = make(map[string]evaluator.Object)
 
@@ -97,7 +103,7 @@ func evaluateModule(mod *modules.Module, loader *modules.Loader) (evaluator.Obje
 		}
 	}
 
-	modObj := &evaluator.RecordInstance{Fields: exports}
+	modObj := evaluator.NewRecord(exports)
 	moduleCache[mod.Dir] = modObj
 	return modObj, nil
 }
@@ -141,30 +147,35 @@ func handleTest() bool {
 	if len(os.Args) < 2 {
 		return false
 	}
-	
+
 	if os.Args[1] != "test" {
 		return false
 	}
-	
+
 	// Initialize virtual packages
 	modules.InitVirtualPackages()
-	
+
 	// Collect test files
 	var testFiles []string
-	
+
 	if len(os.Args) == 2 {
 		// No files specified - error
 		fmt.Fprintf(os.Stderr, "Usage: %s test <file> [file2...]\n", os.Args[0])
 		os.Exit(1)
 	}
-	
+
 	for _, arg := range os.Args[2:] {
+		// Skip flags
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+
 		fileInfo, err := os.Stat(arg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			os.Exit(1)
 		}
-		
+
 		if fileInfo.IsDir() {
 			// Find all source files in directory
 			entries, err := os.ReadDir(arg)
@@ -181,25 +192,33 @@ func handleTest() bool {
 			testFiles = append(testFiles, arg)
 		}
 	}
-	
+
 	if len(testFiles) == 0 {
 		fmt.Println("No test files found")
 		return true
 	}
-	
+
+	useTreeWalk := isTreeWalkMode()
+
 	// Initialize test runner
-	eval := evaluator.New()
+	// Note: We pass nil to InitTestRunner if using VM, as VM handles execution internally
+	// But InitTestRunner expects an evaluator reference.
+	// For Tree-walk, we pass 'eval'. For VM, we pass nil (and VM will use its own).
+	var eval *evaluator.Evaluator
+	if useTreeWalk {
+		eval = evaluator.New()
+	}
 	evaluator.InitTestRunner(eval)
-	
+
 	// Run each test file
 	for _, testFile := range testFiles {
 		fmt.Printf("\n=== %s ===\n", testFile)
-		runTestFile(testFile)
+		runTestFile(testFile, useTreeWalk)
 	}
-	
+
 	// Print summary
 	evaluator.PrintTestSummary()
-	
+
 	// Exit with error if any tests failed
 	results := evaluator.GetTestResults()
 	for _, r := range results {
@@ -207,65 +226,47 @@ func handleTest() bool {
 			os.Exit(1)
 		}
 	}
-	
+
 	return true
 }
 
-func runTestFile(path string) {
+func runTestFile(path string, useTreeWalk bool) {
 	sourceCode, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading file: %s\n", err)
 		return
 	}
-	
+
 	// Use absolute path for proper module resolution
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		absPath = path
 	}
-	
-	// Create pipeline context
-	ctx := pipeline.NewPipelineContext(string(sourceCode))
-	ctx.FilePath = absPath
-	
-	// Run through pipeline
-	processingPipeline := pipeline.New(
-		&lexer.LexerProcessor{},
-		&parser.ParserProcessor{},
-		&analyzer.SemanticAnalyzerProcessor{},
-		&evaluator.EvaluatorProcessor{},
-	)
-	
-	finalContext := processingPipeline.Run(ctx)
-	
-	if len(finalContext.Errors) > 0 {
-		fmt.Fprintln(os.Stderr, "Errors:")
-		for _, err := range finalContext.Errors {
-			fmt.Fprintf(os.Stderr, "- %s\n", err.Error())
-		}
-	}
+
+	// Use unified pipeline logic with test mode enabled
+	runPipeline(string(sourceCode), absPath, useTreeWalk, true)
 }
 
 func handleHelp() bool {
 	if len(os.Args) < 2 {
 		return false
 	}
-	
+
 	if os.Args[1] != "-help" && os.Args[1] != "--help" && os.Args[1] != "help" {
 		return false
 	}
-	
+
 	// Initialize virtual packages and documentation
 	modules.InitVirtualPackages()
-	
+
 	if len(os.Args) == 2 {
 		// General help
 		fmt.Print(modules.PrintHelp())
 		return true
 	}
-	
+
 	arg := os.Args[2]
-	
+
 	if arg == "packages" {
 		// List all packages
 		fmt.Println("Available packages:")
@@ -275,12 +276,12 @@ func handleHelp() bool {
 		}
 		return true
 	}
-	
+
 	if arg == "precedence" {
 		fmt.Print(modules.PrintPrecedence())
 		return true
 	}
-	
+
 	if arg == "search" && len(os.Args) > 3 {
 		// Search documentation
 		term := os.Args[3]
@@ -295,24 +296,74 @@ func handleHelp() bool {
 		}
 		return true
 	}
-	
+
 	// Try to find package documentation
 	pkg := modules.GetDocPackage(arg)
 	if pkg != nil {
 		fmt.Print(modules.FormatDocPackage(pkg))
 		return true
 	}
-	
+
 	// Try with "lib/" prefix
 	pkg = modules.GetDocPackage("lib/" + arg)
 	if pkg != nil {
 		fmt.Print(modules.FormatDocPackage(pkg))
 		return true
 	}
-	
+
 	fmt.Printf("Unknown topic: %s\n", arg)
 	fmt.Println("Use '-help packages' to see available packages")
 	return true
+}
+
+// isTreeWalkMode returns true if the backend is configured to use Tree-Walk interpreter.
+// This is now determined at build time via BackendType variable.
+func isTreeWalkMode() bool {
+	return BackendType == "tree"
+}
+
+// Get args - simply returns os.Args as we don't strip flags anymore
+func getArgs() []string {
+	return os.Args
+}
+
+// Run code using the unified pipeline
+func runPipeline(sourceCode string, filePath string, useTreeWalk bool, isTestMode bool) {
+	// 1. Create the initial pipeline context
+	initialContext := pipeline.NewPipelineContext(sourceCode)
+	initialContext.FilePath = filePath
+	initialContext.IsTestMode = isTestMode
+
+	// 2. Select backend based on flag
+	var execBackend backend.Backend
+	if useTreeWalk {
+		execBackend = backend.NewTreeWalk()
+	} else {
+		execBackend = backend.NewVM()
+	}
+
+	// 3. Create and configure the processing pipeline
+	processingPipeline := pipeline.New(
+		&lexer.LexerProcessor{},
+		&parser.ParserProcessor{},
+		&analyzer.SemanticAnalyzerProcessor{},
+		backend.NewExecutionProcessor(execBackend),
+	)
+
+	// 4. Run the pipeline
+	finalContext := processingPipeline.Run(initialContext)
+
+	// 5. Check the results and print errors
+	if len(finalContext.Errors) > 0 {
+		fmt.Fprintln(os.Stderr, "Processing failed with errors:")
+		for _, err := range finalContext.Errors {
+			fmt.Fprintf(os.Stderr, "- %s\n", err.Error())
+		}
+		// If running a script (not test), exit with error code
+		if !isTestMode {
+		os.Exit(1)
+	}
+	}
 }
 
 func main() {
@@ -333,22 +384,29 @@ func main() {
 	if handleHelp() {
 		return
 	}
-	
+
 	// Handle test command
 	if handleTest() {
 		return
 	}
-	
-	if len(os.Args) == 2 {
-		path := os.Args[1]
+
+	useTreeWalk := isTreeWalkMode()
+	args := getArgs()
+
+	if len(args) == 2 {
+		path := args[1]
 		fileInfo, err := os.Stat(path)
 		if err == nil && fileInfo.IsDir() {
+			if !useTreeWalk {
+				fmt.Fprintln(os.Stderr, "VM mode not supported for modules yet, please rebuild with -ldflags \"-X main.BackendType=tree\"")
+				os.Exit(1)
+			}
 			runModule(path)
 			return
 		}
 	}
 
-	sourceCode, err := readInput()
+	sourceCode, err := readInputFromArgs(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
@@ -357,57 +415,31 @@ func main() {
 		return // Nothing to do
 	}
 
-	// 1. Create the initial pipeline context
-	initialContext := pipeline.NewPipelineContext(sourceCode)
-	if len(os.Args) == 2 {
-		// Use absolute path for proper module resolution
-		absPath, err := filepath.Abs(os.Args[1])
-		if err != nil {
-			initialContext.FilePath = os.Args[1]
-		} else {
-			initialContext.FilePath = absPath
-		}
+	filePath := ""
+	if len(args) == 2 {
+		filePath, _ = filepath.Abs(args[1])
 	}
 
-	// 2. Create and configure the processing pipeline
-	processingPipeline := pipeline.New(
-		&lexer.LexerProcessor{},
-		&parser.ParserProcessor{},
-		&analyzer.SemanticAnalyzerProcessor{},
-		&evaluator.EvaluatorProcessor{},
-	)
-
-	// 3. Run the pipeline
-	finalContext := processingPipeline.Run(initialContext)
-
-	// 4. Check the results
-	if len(finalContext.Errors) > 0 {
-		fmt.Fprintln(os.Stderr, "Processing failed with errors:")
-		for _, err := range finalContext.Errors {
-			fmt.Fprintf(os.Stderr, "- %s\n", err.Error())
-		}
-		os.Exit(1)
-	}
-
-	// Evaluation is done within EvaluatorProcessor which prints to stdout
+	// Use unified pipeline execution
+	runPipeline(sourceCode, filePath, useTreeWalk, false)
 }
 
-func readInput() (string, error) {
+func readInputFromArgs(args []string) (string, error) {
 	var input []byte
 	var err error
 
-	switch len(os.Args) {
+	switch len(args) {
 	case 1:
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) != 0 {
-			return "", fmt.Errorf("Usage: %s <file> or pipe from stdin", os.Args[0])
+			return "", fmt.Errorf("Usage: %s <file> or pipe from stdin", args[0])
 		}
 		input, err = io.ReadAll(os.Stdin)
 	case 2:
-		filepath := os.Args[1]
+		filepath := args[1]
 		input, err = os.ReadFile(filepath)
 	default:
-		return "", fmt.Errorf("Usage: %s <file> or pipe from stdin", os.Args[0])
+		return "", fmt.Errorf("Usage: %s <file> or pipe from stdin", args[0])
 	}
 
 	if err != nil {

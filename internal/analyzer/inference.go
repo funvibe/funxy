@@ -148,7 +148,7 @@ func InferWithContext(ctx *InferenceContext, node ast.Node, table *symbols.Symbo
 		resultType, subst, err = inferAnnotatedExpression(ctx, n, table, recursiveInfer)
 
 	case *ast.IntegerLiteral, *ast.FloatLiteral, *ast.BigIntLiteral, *ast.RationalLiteral,
-		*ast.TupleLiteral, *ast.RecordLiteral, *ast.ListLiteral, *ast.MapLiteral, *ast.StringLiteral, *ast.InterpolatedString, *ast.CharLiteral, *ast.BytesLiteral, *ast.BitsLiteral, *ast.BooleanLiteral, *ast.NilLiteral:
+		*ast.TupleLiteral, *ast.RecordLiteral, *ast.ListLiteral, *ast.MapLiteral, *ast.StringLiteral, *ast.FormatStringLiteral, *ast.InterpolatedString, *ast.CharLiteral, *ast.BytesLiteral, *ast.BitsLiteral, *ast.BooleanLiteral, *ast.NilLiteral:
 		resultType, subst, err = inferLiteral(ctx, n, table, recursiveInfer)
 
 	case *ast.Identifier:

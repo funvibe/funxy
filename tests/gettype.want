@@ -1,0 +1,68 @@
+=== Primitives ===
+type(Int)
+type(Float)
+type(Bool)
+type(Bool)
+type(Char)
+type(BigInt)
+type(Rational)
+=== String ===
+type(String)
+type(String)
+=== List ===
+type((List Int))
+type((List Float))
+type((List Bool))
+type((List (List Int)))
+type((List Int))
+type((List Float))
+=== Tuple ===
+type((Int, Int))
+type((Int, String, Bool, Float))
+type(((Int, Int), (Int, Int)))
+type(())
+=== Record ===
+type({ x: Int })
+type({ active: Bool, age: Int, name: String })
+type({ label: String, point: { x: Int, y: Int } })
+type({  })
+=== User ADT ===
+type(Color)
+type(Color)
+type(Shape)
+type(Shape)
+type(Container)
+type(Container)
+type(MyList)
+type(MyList)
+=== Option ===
+type(Option)
+type(Option)
+type(Option)
+=== Result ===
+type(Result)
+type(Result)
+=== Function ===
+type((Int, Int) -> Int)
+type((Int) -> Int)
+type(() -> Int)
+type((Int) -> ?)
+type((?) -> ?)
+type(((List Int), (List Int)) -> (List Int))
+=== Type ===
+type(Type)
+type(Type)
+type(Type)
+=== Edge Cases ===
+side effect
+type(Nil)
+type((List { a: Int }))
+type({ items: (List Int) })
+type((List (List (List (List Int)))))
+type((List (Int, Int)))
+type((List Int))
+42 is Int: true
+hi is String: true
+type(Type)
+type(Nil)
+type(Type)

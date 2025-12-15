@@ -1,0 +1,88 @@
+import "lib/test" (*)
+
+// Regression test for VM bug: Recursive closure returning result of nested call
+// incorrectly terminating the parent call prematurely.
+
+// --- Test 1: Recursive closure with state ---
+// This test ensures that a recursive closure call that returns a value (Some(val))
+// does not cause the outer closure call to return that value immediately,
+// skipping subsequent logic in the outer closure.
+
+testRun("Recursive closure with state", fun() -> {
+    fun range_lazy(start, end) {
+        curr = start
+        fun range_next() {
+            if curr < end {
+                val = curr
+                curr = curr + 1
+                Some(val)
+            } else {
+                Zero
+            }
+        }
+        range_next
+    }
+
+    // Mocking Iter trait behavior with explicit closure passing to avoid dependency on imports
+    fun filter_lazy(pred, iterator) {
+        fun filter_next() {
+            fun find() {
+                opt = iterator()
+                if opt == Zero {
+                    Zero
+                } else {
+                    // Unwrap manually for test stability
+                    val = match opt {
+                        Some(v) -> v
+                        _ -> panic("Expected Some")
+                    }
+
+                    if pred(val) {
+                        opt
+                    } else {
+                        // Recursive call here!
+                        // VM Bug caused this return to terminate filter_next immediately
+                        find()
+                    }
+                }
+            }
+            find()
+        }
+        filter_next
+    }
+
+    // 1, 2, 3, 4, 5 -> Filter even -> 2, 4
+    r = range_lazy(1, 6)
+    f = filter_lazy(fun(x) { x % 2 == 0 }, r)
+
+    v1 = f()
+    assertEquals(v1, Some(2), "First element should be 2")
+
+    v2 = f()
+    assertEquals(v2, Some(4), "Second element should be 4")
+
+    v3 = f()
+    assertEquals(v3, Zero, "Third element should be Zero")
+})
+
+// --- Test 2: Nested function calls returning values ---
+// Simpler case verifying nested returns don't break stack unwinding
+
+testRun("Nested function calls returning values", fun() -> {
+    fun nested_caller() {
+        fun inner() {
+            100
+        }
+
+        // Call inner, ignore result, continue execution
+        res = inner()
+
+        // If VM bug exists, we might return 100 here immediately
+        // or lose stack frame context
+
+        200
+    }
+
+    val = nested_caller()
+    assertEquals(val, 200, "Nested function return should not terminate parent")
+})

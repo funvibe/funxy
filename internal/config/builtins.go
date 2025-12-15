@@ -126,8 +126,8 @@ type FunctionInfo struct {
 
 var BuiltinFunctions = []FunctionInfo{
 	// IO
-	{Name: "print", Signature: "(...Any) -> Nil", Description: "Print values to stdout with newline", Category: "IO"},
-	{Name: "write", Signature: "(...Any) -> Nil", Description: "Print values to stdout without newline", Category: "IO"},
+	{Name: "print", Signature: "(...T) -> Nil", Description: "Print values to stdout with newline", Category: "IO"},
+	{Name: "write", Signature: "(...T) -> Nil", Description: "Print values to stdout without newline", Category: "IO"},
 
 	// Error
 	{Name: "panic", Signature: "(String) -> !", Description: "Terminate with error message", Category: "Error"},
@@ -137,7 +137,7 @@ var BuiltinFunctions = []FunctionInfo{
 	{Name: "trace", Signature: "(T) -> T", Description: "Print value with type and location, return value (for pipes)", Category: "Debug"},
 
 	// Collection
-	{Name: "len", Signature: "(List<T>) -> Int", Description: "Length of list or tuple", Category: "Collection"},
+	{Name: "len", Signature: "(a) -> Int", Description: "Length of List, Tuple, Map, Bytes or Bits", Category: "Collection"},
 	{Name: "lenBytes", Signature: "(String) -> Int", Description: "Byte length of string (UTF-8)", Category: "String"},
 
 	// Conversion
@@ -146,9 +146,11 @@ var BuiltinFunctions = []FunctionInfo{
 		Example: "read(\"42\", Int)", Category: "Conversion"},
 	{Name: "intToFloat", Signature: "(Int) -> Float", Description: "Convert Int to Float", Category: "Conversion"},
 	{Name: "floatToInt", Signature: "(Float) -> Int", Description: "Convert Float to Int (truncate)", Category: "Conversion"},
+	{Name: "sprintf", Signature: "(String, ...T) -> String", Description: "Format string (printf style)", Category: "String"},
 
 	// Reflection
 	{Name: "getType", Signature: "(T) -> String", Description: "Get type name of value", Category: "Reflection"},
+	{Name: "typeOf", Signature: "(T, Type) -> Bool", Description: "Check if value matches type", Category: "Reflection"},
 
 	// Function combinators
 	{Name: "id", Signature: "(T) -> T", Description: "Identity function", Category: "Function"},
@@ -163,6 +165,20 @@ var BuiltinFunctions = []FunctionInfo{
 		Category: "Trait", Constraint: "Applicative<F>"},
 	{Name: "mempty", Signature: "() -> T", Description: "Identity element",
 		Category: "Trait", Constraint: "Monoid<T>"},
+
+	// Option
+	{Name: "isSome", Signature: "(Option<T>) -> Bool", Description: "Check if Option is Some", Category: "Option"},
+	{Name: "isZero", Signature: "(Option<T>) -> Bool", Description: "Check if Option is Zero", Category: "Option"},
+	{Name: "unwrap", Signature: "(Option<T>) -> T", Description: "Extract value from Some (panics on Zero)", Category: "Option"},
+	{Name: "unwrapOr", Signature: "(Option<T>, T) -> T", Description: "Extract value or return default", Category: "Option"},
+	{Name: "unwrapOrElse", Signature: "(Option<T>, () -> T) -> T", Description: "Extract value or compute default", Category: "Option"},
+
+	// Result
+	{Name: "isOk", Signature: "(Result<E, T>) -> Bool", Description: "Check if Result is Ok", Category: "Result"},
+	{Name: "isFail", Signature: "(Result<E, T>) -> Bool", Description: "Check if Result is Fail", Category: "Result"},
+	{Name: "unwrapResult", Signature: "(Result<E, T>) -> T", Description: "Extract value from Ok (panics on Fail)", Category: "Result"},
+	{Name: "unwrapError", Signature: "(Result<E, T>) -> E", Description: "Extract error from Fail (panics on Ok)", Category: "Result"},
+	{Name: "unwrapResultOr", Signature: "(Result<E, T>, T) -> T", Description: "Extract value or return default", Category: "Result"},
 }
 
 // GetFunctionInfo returns function info by name

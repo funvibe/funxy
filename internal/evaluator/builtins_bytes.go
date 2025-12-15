@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -193,7 +194,7 @@ func builtinBytesToString(e *Evaluator, args ...Object) Object {
 		return newError("bytesToString expects Bytes, got %s", args[0].Type())
 	}
 	// Check if valid UTF-8
-	if !utf8.Valid(b.toSlice()) {
+	if !utf8.Valid(b.ToSlice()) {
 		return makeFail(stringToList("bytes are not valid UTF-8"))
 	}
 	return makeOk(stringToList(b.toString()))
@@ -207,8 +208,8 @@ func builtinBytesToList(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesToList expects Bytes, got %s", args[0].Type())
 	}
-	elements := make([]Object, b.len())
-	for i, byteVal := range b.toSlice() {
+	elements := make([]Object, b.Len())
+	for i, byteVal := range b.ToSlice() {
 		elements[i] = &Integer{Value: int64(byteVal)}
 	}
 	return newList(elements)
@@ -234,7 +235,7 @@ func builtinBytesToBin(e *Evaluator, args ...Object) Object {
 		return newError("bytesToBin expects Bytes, got %s", args[0].Type())
 	}
 	var sb strings.Builder
-	for _, byteVal := range b.toSlice() {
+	for _, byteVal := range b.ToSlice() {
 		sb.WriteString(fmt.Sprintf("%08b", byteVal))
 	}
 	return stringToList(sb.String())
@@ -249,7 +250,7 @@ func builtinBytesToOct(e *Evaluator, args ...Object) Object {
 		return newError("bytesToOct expects Bytes, got %s", args[0].Type())
 	}
 	var sb strings.Builder
-	for _, byteVal := range b.toSlice() {
+	for _, byteVal := range b.ToSlice() {
 		sb.WriteString(fmt.Sprintf("%03o", byteVal))
 	}
 	return stringToList(sb.String())
@@ -269,7 +270,7 @@ func builtinBytesConcat(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesConcat expects Bytes as second argument, got %s", args[1].Type())
 	}
-	return b1.concat(b2)
+	return b1.Concat(b2)
 }
 
 // === Numeric encoding/decoding ===
@@ -354,7 +355,7 @@ func builtinBytesDecodeInt(e *Evaluator, args ...Object) Object {
 		isLittle = isNativeLittleEndian()
 	}
 
-	data := b.toSlice()
+	data := b.ToSlice()
 	var result int64
 	switch len(data) {
 	case 1:
@@ -442,7 +443,7 @@ func builtinBytesDecodeFloat(e *Evaluator, args ...Object) Object {
 		return newError("bytesDecodeFloat expects Int as second argument, got %s", args[1].Type())
 	}
 
-	data := b.toSlice()
+	data := b.ToSlice()
 	if int64(len(data)) != size.Value {
 		return newError("bytesDecodeFloat: bytes length %d doesn't match size %d", len(data), size.Value)
 	}
@@ -473,7 +474,7 @@ func builtinBytesContains(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesContains expects Bytes as second argument, got %s", args[1].Type())
 	}
-	return &Boolean{Value: bytes.Contains(haystack.toSlice(), needle.toSlice())}
+	return &Boolean{Value: bytes.Contains(haystack.ToSlice(), needle.ToSlice())}
 }
 
 func builtinBytesIndexOf(e *Evaluator, args ...Object) Object {
@@ -488,7 +489,7 @@ func builtinBytesIndexOf(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesIndexOf expects Bytes as second argument, got %s", args[1].Type())
 	}
-	idx := bytes.Index(haystack.toSlice(), needle.toSlice())
+	idx := bytes.Index(haystack.ToSlice(), needle.ToSlice())
 	if idx < 0 {
 		return makeZero()
 	}
@@ -507,7 +508,7 @@ func builtinBytesStartsWith(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesStartsWith expects Bytes as second argument, got %s", args[1].Type())
 	}
-	return &Boolean{Value: bytes.HasPrefix(b.toSlice(), prefix.toSlice())}
+	return &Boolean{Value: bytes.HasPrefix(b.ToSlice(), prefix.ToSlice())}
 }
 
 func builtinBytesEndsWith(e *Evaluator, args ...Object) Object {
@@ -522,7 +523,7 @@ func builtinBytesEndsWith(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesEndsWith expects Bytes as second argument, got %s", args[1].Type())
 	}
-	return &Boolean{Value: bytes.HasSuffix(b.toSlice(), suffix.toSlice())}
+	return &Boolean{Value: bytes.HasSuffix(b.ToSlice(), suffix.ToSlice())}
 }
 
 // === Split/Join ===
@@ -539,7 +540,7 @@ func builtinBytesSplit(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesSplit expects Bytes as second argument, got %s", args[1].Type())
 	}
-	parts := bytes.Split(b.toSlice(), sep.toSlice())
+	parts := bytes.Split(b.ToSlice(), sep.ToSlice())
 	elements := make([]Object, len(parts))
 	for i, part := range parts {
 		elements[i] = bytesFromSlice(part)
@@ -567,8 +568,68 @@ func builtinBytesJoin(e *Evaluator, args ...Object) Object {
 		if !ok {
 			return newError("bytesJoin: element %d is not Bytes, got %s", i, elem.Type())
 		}
-		parts[i] = b.toSlice()
+		parts[i] = b.ToSlice()
 	}
-	return bytesFromSlice(bytes.Join(parts, sep.toSlice()))
+	return bytesFromSlice(bytes.Join(parts, sep.ToSlice()))
 }
 
+func SetBytesBuiltinTypes(builtins map[string]*Builtin) {
+	bytesType := typesystem.TCon{Name: "Bytes"}
+	stringType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}}
+	intType := typesystem.TCon{Name: "Int"}
+	boolType := typesystem.TCon{Name: "Bool"}
+	floatType := typesystem.TCon{Name: "Float"}
+	listIntType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{intType}}
+	listBytesType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{bytesType}}
+
+	// Result types
+	resultBytesType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, bytesType}}
+	resultStringType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, stringType}}
+	resultFloatType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, floatType}}
+
+	// Option types
+	optionIntType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{intType}}
+
+	types := map[string]typesystem.Type{
+		"bytesNew":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: bytesType},
+		"bytesFromString": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: bytesType},
+		"bytesFromList":   typesystem.TFunc{Params: []typesystem.Type{listIntType}, ReturnType: bytesType},
+		"bytesFromHex":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
+		"bytesFromBin":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
+		"bytesFromOct":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
+
+		"bytesSlice":      typesystem.TFunc{Params: []typesystem.Type{bytesType, intType, intType}, ReturnType: bytesType},
+
+		"bytesToString":   typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: resultStringType},
+		"bytesToList":     typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: listIntType},
+		"bytesToHex":      typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
+		"bytesToBin":      typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
+		"bytesToOct":      typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
+
+		"bytesConcat":     typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: bytesType},
+
+		"bytesEncodeInt":   typesystem.TFunc{Params: []typesystem.Type{intType, intType, stringType}, ReturnType: bytesType, DefaultCount: 1}, // endianness optional
+		"bytesDecodeInt":   typesystem.TFunc{Params: []typesystem.Type{bytesType, stringType}, ReturnType: intType, DefaultCount: 1}, // endianness optional
+		"bytesEncodeFloat": typesystem.TFunc{Params: []typesystem.Type{floatType, intType}, ReturnType: bytesType},
+		"bytesDecodeFloat": typesystem.TFunc{Params: []typesystem.Type{bytesType, intType}, ReturnType: resultFloatType},
+
+		"bytesContains":   typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: boolType},
+		"bytesIndexOf":    typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: optionIntType},
+		"bytesStartsWith": typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: boolType},
+		"bytesEndsWith":   typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: boolType},
+
+		"bytesSplit": typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: listBytesType},
+		"bytesJoin":  typesystem.TFunc{Params: []typesystem.Type{listBytesType, bytesType}, ReturnType: bytesType},
+	}
+
+	// Override decodeFloat return type if needed based on my analysis
+	types["bytesDecodeFloat"] = typesystem.TFunc{Params: []typesystem.Type{bytesType, intType}, ReturnType: floatType}
+	// Same for decodeInt
+	types["bytesDecodeInt"] = typesystem.TFunc{Params: []typesystem.Type{bytesType, stringType}, ReturnType: intType, DefaultCount: 1}
+
+	for name, typ := range types {
+		if b, ok := builtins[name]; ok {
+			b.TypeInfo = typ
+		}
+	}
+}

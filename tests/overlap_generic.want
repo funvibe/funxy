@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 14:15 [A004]: redefinition of symbol: 'overlapping instances for trait MyCmp: A and Int'

@@ -182,6 +182,17 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 	}
 	table.Define("floatToInt", floatToIntType, prelude)
 
+	// sprintf: (format: String, args: ...Any) -> String
+	sprintfType := typesystem.TFunc{
+		Params: []typesystem.Type{
+			stringType,
+			typesystem.TVar{Name: "a"},
+		},
+		ReturnType: stringType,
+		IsVariadic: true,
+	}
+	table.Define("sprintf", sprintfType, prelude)
+
 	// read: (String, Type<T>) -> Option<T>
 	// Parses a string into a typed value, returns Zero on failure
 	readType := typesystem.TFunc{

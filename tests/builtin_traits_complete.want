@@ -1,0 +1,47 @@
+=== Equal ===
+true
+true
+true
+true
+true
+true
+true
+true
+true
+=== Order ===
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+true
+=== Default ===
+0
+0
+false
+true
+[]
+Zero
+=== Semigroup (<>) ===
+[1, 2, 3, 4]
+hello world
+Some(5)
+Some(42)
+=== Monoid (mempty via Semigroup identity) ===
+[1, 2, 3]
+=== Functor (fmap) ===
+[2, 4, 6]
+Some(10)
+Ok(10)
+=== Applicative (<*>) ===
+Some(11)
+[2, 4, 6]
+=== Monad (>>=) ===
+Some(10)
+[1, 10, 2, 20]
+=== All trait tests passed! ===

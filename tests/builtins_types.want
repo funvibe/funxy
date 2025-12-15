@@ -1,0 +1,10 @@
+Ok(10)
+Fail("failed")
+10
+failed
+Some(100)
+Zero
+100
+-3
+1
+2

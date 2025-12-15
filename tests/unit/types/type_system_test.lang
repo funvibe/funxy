@@ -181,7 +181,7 @@ testRun("getType for empty list", fun() {
 testRun("getType for String", fun() {
     s = "hello"
     t = getType(s)
-    assertEquals("type((List Char))", show(t))
+    assertEquals("type(String)", show(t))
 })
 
 // ============================================================================

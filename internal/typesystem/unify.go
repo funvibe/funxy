@@ -57,7 +57,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 				//   A1 = B(n-m+1), ..., Am = Bn
 				if len(t1.Args) <= len(t2.Args) {
 					numExtra := len(t2.Args) - len(t1.Args)
-					
+
 					// Build the partial type for F
 					var partialType Type
 					if numExtra == 0 {
@@ -70,13 +70,13 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 							Args:        t2.Args[:numExtra],
 						}
 					}
-					
+
 					// Bind F to the partial type
 					s1, err := Bind(t1Var, partialType)
 					if err != nil {
 						return nil, err
 					}
-					
+
 					// Unify remaining arguments: A1..Am with B(n-m+1)..Bn
 					for i := 0; i < len(t1.Args); i++ {
 						arg1 := t1.Args[i].Apply(s1)
@@ -90,12 +90,12 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 					return s1, nil
 				}
 			}
-			
+
 			// Case 2: Concrete<A> unified with F<B> (TVar constructor in t2)
 			if t2Var, ok := t2.Constructor.(TVar); ok {
 				if len(t2.Args) <= len(t1.Args) {
 					numExtra := len(t1.Args) - len(t2.Args)
-					
+
 					var partialType Type
 					if numExtra == 0 {
 						partialType = t1.Constructor
@@ -105,12 +105,12 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 							Args:        t1.Args[:numExtra],
 						}
 					}
-					
+
 					s1, err := Bind(t2Var, partialType)
 					if err != nil {
 						return nil, err
 					}
-					
+
 					for i := 0; i < len(t2.Args); i++ {
 						arg1 := t1.Args[numExtra+i].Apply(s1)
 						arg2 := t2.Args[i].Apply(s1)
@@ -123,7 +123,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 					return s1, nil
 				}
 			}
-			
+
 			// Case 3: Standard unification (same constructor, same arity)
 			// Unify constructors
 			s1, err := unifyInternal(t1.Constructor, t2.Constructor, false)
@@ -230,18 +230,18 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
-			
+
 			for _, k := range keys {
 				v1 := t1.Fields[k]
 				v2, ok := t2.Fields[k]
 				if !ok {
 					return nil, errMismatch(fmt.Sprintf("record missing field: %s", k))
 				}
-				
+
 				// Apply current substitution
 				v1Applied := v1.Apply(s1)
 				v2Applied := v2.Apply(s1)
-				
+
 				// Recursively unify fields
 				// If we allow extra at top, do we allow extra deep?
 				// NO. Records are mutable. Depth subtyping is unsafe for mutable fields.
@@ -310,7 +310,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 				}
 				s1 = s1.Compose(s2)
 			}
-			
+
 			ret1 := t1.ReturnType.Apply(s1)
 			ret2 := t2.ReturnType.Apply(s1)
 			// Return type is Covariant.

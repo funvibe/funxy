@@ -1,8 +1,8 @@
-# 05. ООП паттерны в Funxy
+# 05. OOP Patterns in Funxy
 
-## Для тех, кто привык к классам и объектам
+## For those accustomed to classes and objects
 
-Funxy не имеет классов в традиционном смысле, но все привычные паттерны легко реализуются — часто проще и безопаснее.
+Funxy doesn't have classes in the traditional sense, but all familiar patterns are easily implemented - often simpler and safer.
 
 ---
 
@@ -15,20 +15,20 @@ Funxy не имеет классов в традиционном смысле, �
 // Funxy:
 type User = { name: String, age: Int, email: String }
 
-// Создание "объекта"
+// Creating an "object"
 user = { name: "Alice", age: 30, email: "alice@example.com" }
 
-// Доступ к полям
+// Accessing fields
 print(user.name)  // Alice
 
-// Иммутабельное обновление (как copy() в Kotlin)
+// Immutable update (like copy() in Kotlin)
 older = { ...user, age: user.age + 1 }
 print(older.age)  // 31
 ```
 
 ---
 
-## Traits = Интерфейсы
+## Traits = Interfaces
 
 ```rust
 // Java: interface Formatter { String format(); }
@@ -37,17 +37,17 @@ trait Formatter<T> {
     fun format(self: T) -> String
 }
 
-// "Класс" User
+// "Class" User
 type User = { name: String, age: Int }
 
-// Реализация интерфейса
+// Interface implementation
 instance Formatter User {
     fun format(self: User) -> String {
         "User(" ++ self.name ++ ", " ++ show(self.age) ++ ")"
     }
 }
 
-// "Класс" Product
+// "Class" Product
 type Product = { name: String, price: Float }
 
 instance Formatter Product {
@@ -56,7 +56,7 @@ instance Formatter Product {
     }
 }
 
-// Полиморфизм!
+// Polymorphism!
 fun printItem<T: Formatter>(item: T) -> Nil { print(format(item)) }
 
 u: User = { name: "Alice", age: 30 }
@@ -67,12 +67,12 @@ printItem(p)  // Book: $19.99
 
 ---
 
-## Методы на типах
+## Methods on types
 
 ```rust
 // Java: class User { String greet() { return "Hi, " + name; } }
 
-// Funxy — функции, принимающие тип первым аргументом
+// Funxy - functions that take the type as the first argument
 type User = { name: String, age: Int }
 
 fun greet(user: User) -> String { "Hi, I'm " ++ user.name }
@@ -81,7 +81,7 @@ fun isAdult(user: User) -> Bool { user.age >= 18 }
 
 fun haveBirthday(user: User) -> User { { ...user, age: user.age + 1 } }
 
-// Использование (как методы через pipe)
+// Usage (like methods through pipe)
 alice = { name: "Alice", age: 30 }
 
 print(alice |> greet)       // Hi, I'm Alice
@@ -93,22 +93,22 @@ print(older.age)            // 31
 
 ---
 
-## Инкапсуляция через модули
+## Encapsulation through modules
 
-Funxy использует модули для инкапсуляции. Экспортируются только нужные символы.
+Funxy uses modules for encapsulation. Only needed symbols are exported.
 
 **counter.lang:**
 ```rust
-// Модуль counter
+// Module counter
 module counter
 
-// Приватный тип (не экспортируется)
+// Private type (not exported)
 type CounterState = { value: Int }
 
-// Публичный "конструктор"
+// Public "constructor"
 export fun newCounter(initial: Int) -> CounterState { { value: initial } }
 
-// Публичные "методы"  
+// Public "methods"  
 export fun increment(c: CounterState) -> CounterState { { value: c.value + 1 } }
 export fun decrement(c: CounterState) -> CounterState { { value: c.value - 1 } }
 export fun getValue(c: CounterState) -> Int { c.value }
@@ -127,7 +127,7 @@ print(getValue(c2))  // 3
 
 ---
 
-## ADT = Sealed Classes / Enums с данными
+## ADT = Sealed Classes / Enums with data
 
 ```rust
 // Kotlin: sealed class Shape
@@ -136,7 +136,7 @@ print(getValue(c2))  // 3
 // Funxy:
 type Shape = Circle(Float) | Rectangle((Float, Float))
 
-// Паттерн "visitor" встроен в язык!
+// The "visitor" pattern is built into the language!
 fun area(shape: Shape) -> Float {
     match shape {
         Circle(r) -> 3.14159 * r * r
@@ -151,7 +151,7 @@ fun describe(shape: Shape) -> String {
     }
 }
 
-// Использование
+// Usage
 shapes = [Circle(5.0), Rectangle((4.0, 3.0))]
 
 for s in shapes {
@@ -163,15 +163,15 @@ for s in shapes {
 
 ---
 
-## Builder паттерн
+## Builder pattern
 
 ```rust
 // Java: new UserBuilder().name("Alice").age(30).build()
 
-// Funxy — просто обновление записей
+// Funxy - just record updates
 type User = { name: String, age: Int, email: String, role: String }
 
-// "Builder" — просто дефолты + обновление
+// "Builder" - just defaults + update
 defaultUser :- { name: "", age: 0, email: "", role: "user" }
 
 fun withName(u: User, name: String) -> User { { ...u, name: name } }
@@ -179,7 +179,7 @@ fun withAge(u: User, age: Int) -> User { { ...u, age: age } }
 fun withEmail(u: User, email: String) -> User { { ...u, email: email } }
 fun withRole(u: User, role: String) -> User { { ...u, role: role } }
 
-// Fluent API через pipe
+// Fluent API through pipe
 admin = defaultUser
     |> fun(u) -> withName(u, "Alice")
     |> fun(u) -> withAge(u, 30)
@@ -192,17 +192,17 @@ print(admin.role)   // admin
 
 ---
 
-## Factory паттерн
+## Factory pattern
 
 ```rust
 type Shape = Circle(Float) | Rectangle((Float, Float))
 
-// Factory функции
+// Factory functions
 fun createCircle(radius: Float) -> Shape { Circle(radius) }
 fun createSquare(side: Float) -> Shape { Rectangle((side, side)) }
 fun createRectangle(w: Float, h: Float) -> Shape { Rectangle((w, h)) }
 
-// Factory с валидацией
+// Factory with validation
 fun createValidCircle(radius: Float) -> Result<String, Shape> {
     if radius <= 0.0 { Fail("Radius must be positive") }
     else { Ok(Circle(radius)) }
@@ -214,12 +214,12 @@ print(createValidCircle(-1.0))  // Fail("Radius must be positive")
 
 ---
 
-## Strategy паттерн
+## Strategy pattern
 
 ```rust
 // Java: interface Strategy { int execute(int a, int b); }
 
-// Funxy — просто функции!
+// Funxy - just functions!
 type Strategy = (Int, Int) -> Int
 
 fun add(a: Int, b: Int) -> Int { a + b }
@@ -231,23 +231,23 @@ fun executeStrategy(strategy: Strategy, a: Int, b: Int) -> Int {
     strategy(a, b)
 }
 
-// Использование
+// Usage
 print(executeStrategy(add, 5, 3))       // 8
 print(executeStrategy(multiply, 5, 3))  // 15
 print(executeStrategy(power, 5, 3))     // 125
 
-// Или даже проще — передать лямбду
+// Or even simpler - pass a lambda
 print(executeStrategy(fun(a, b) -> a - b, 5, 3))  // 2
 ```
 
 ---
 
-## Observer паттерн
+## Observer pattern
 
 ```rust
 import "lib/list" (forEach)
 
-// Type alias для функционального типа
+// Type alias for function type
 type Observer = (Int) -> Nil
 type Subject = { observers: List<Observer>, value: Int }
 
@@ -269,7 +269,7 @@ fun setValue(subject: Subject, value: Int) -> Subject {
     updated
 }
 
-// Использование
+// Usage
 subject = createSubject(0)
 s1 = subscribe(subject, fun(v) -> print("Observer 1: " ++ show(v)))
 s2 = subscribe(s1, fun(v) -> print("Observer 2: " ++ show(v)))
@@ -281,10 +281,10 @@ _ = setValue(s2, 42)
 
 ---
 
-## State через замыкания
+## State through closures
 
 ```rust
-// Инкапсулированное мутабельное состояние
+// Encapsulated mutable state
 fun createCounter() {
     count = 0
     {
@@ -305,28 +305,28 @@ print(counter.get())  // 2
 
 ---
 
-## Наследование? Композиция!
+## Inheritance? Composition!
 
 ```rust
 import "lib/list" (contains)
 
-// ООП: class Admin extends User
-// Funxy: композиция вместо наследования
+// OOP: class Admin extends User
+// Funxy: composition instead of inheritance
 
 type User = { name: String, email: String }
 type Admin = { user: User, permissions: List<String> }
 
-// Функции для User
+// Functions for User
 fun greetUser(u: User) -> String { "Hello, " ++ u.name }
 
-// Admin может использовать функции User
+// Admin can use User functions
 fun greetAdmin(a: Admin) -> String { greetUser(a.user) ++ " (Admin)" }
 
 fun hasPermission(a: Admin, perm: String) -> Bool {
     contains(a.permissions, perm)
 }
 
-// Создание
+// Creation
 admin = {
     user: { name: "Alice", email: "alice@example.com" },
     permissions: ["read", "write", "delete"]
@@ -338,27 +338,27 @@ print(hasPermission(admin, "delete"))       // true
 
 ---
 
-## Сравнение парадигм
+## Paradigm comparison
 
-| ООП концепт | Funxy эквивалент |
+| OOP concept | Funxy equivalent |
 |-------------|-----------------|
 | Class | `type` (record) |
 | Interface | `trait` |
-| Method | Функция с типом как первый аргумент |
-| Inheritance | Композиция записей |
-| Private fields | Модули (export только нужное) |
+| Method | Function with type as first argument |
+| Inheritance | Record composition |
+| Private fields | Modules (export only needed) |
 | Sealed class | ADT (sum types) |
-| Factory | Функция-конструктор |
-| Builder | Pipe + функции обновления |
-| Strategy | Функции первого класса |
-| Singleton | Константа в модуле |
+| Factory | Constructor function |
+| Builder | Pipe + update functions |
+| Strategy | First-class functions |
+| Singleton | Constant in module |
 
 ---
 
-## Преимущества подхода Funxy
+## Advantages of the Funxy approach
 
-1. Иммутабельность по умолчанию — нет "случайных" мутаций
-2. Exhaustive matching — компилятор проверит все случаи ADT
-3. Нет null pointer exceptions — Option/Result типы
-4. Простота — меньше boilerplate, больше сути
-5. Композиция > наследование — гибче и понятнее
+1. Immutability by default - no "accidental" mutations
+2. Exhaustive matching - compiler checks all ADT cases
+3. No null pointer exceptions - Option/Result types
+4. Simplicity - less boilerplate, more essence
+5. Composition > inheritance - more flexible and clearer

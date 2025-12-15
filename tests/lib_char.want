@@ -1,0 +1,51 @@
+=== charToCode ===
+65
+90
+97
+122
+48
+57
+32
+10
+9
+0
+92
+=== charFromCode ===
+'A'
+'a'
+'0'
+' '
+'Я'
+'あ'
+=== charIsUpper ===
+true
+true
+false
+false
+false
+false
+true
+=== charIsLower ===
+true
+true
+false
+false
+false
+true
+=== charToUpper ===
+'A'
+'Z'
+'A'
+'5'
+'Я'
+=== charToLower ===
+'a'
+'z'
+'a'
+'5'
+'я'
+=== Practical Examples ===
+true
+'W'
+true
+=== lib/char tests passed! ===

@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	
+
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
@@ -84,7 +84,7 @@ var Builtins = map[string]*Builtin{
 					// If it's explicitly marked as a Char list (string), print as string
 					if list.ElementType == "Char" {
 						var s string
-						for _, el := range list.toSlice() {
+						for _, el := range list.ToSlice() {
 							if c, ok := el.(*Char); ok {
 								s += string(rune(c.Value))
 							}
@@ -92,12 +92,12 @@ var Builtins = map[string]*Builtin{
 						_, _ = fmt.Fprint(e.Out, s)
 						continue
 					}
-					
+
 					// For non-empty lists, check if all elements are chars
 					if list.len() > 0 {
 						isString := true
 						var s string
-						for _, el := range list.toSlice() {
+						for _, el := range list.ToSlice() {
 							if c, ok := el.(*Char); ok {
 								s += string(rune(c.Value))
 							} else {
@@ -135,7 +135,7 @@ var Builtins = map[string]*Builtin{
 				if list, ok := arg.(*List); ok {
 					if list.ElementType == "Char" {
 						var s string
-						for _, el := range list.toSlice() {
+						for _, el := range list.ToSlice() {
 							if c, ok := el.(*Char); ok {
 								s += string(rune(c.Value))
 							}
@@ -143,11 +143,11 @@ var Builtins = map[string]*Builtin{
 						_, _ = fmt.Fprint(e.Out, s)
 						continue
 					}
-					
+
 					if list.len() > 0 {
 						isString := true
 						var s string
-						for _, el := range list.toSlice() {
+						for _, el := range list.ToSlice() {
 							if c, ok := el.(*Char); ok {
 								s += string(rune(c.Value))
 							} else {
@@ -247,13 +247,13 @@ var Builtins = map[string]*Builtin{
 					return makeZero()
 				}
 			}
-			
+
 			// Get target type from second argument
 			typeObj, ok := args[1].(*TypeObject)
 			if !ok {
 				return newError("second argument to read must be a Type")
 			}
-			
+
 			// Parse based on type
 			return parseStringToType(str, typeObj.TypeVal)
 		},
@@ -292,6 +292,59 @@ var Builtins = map[string]*Builtin{
 			return &Integer{Value: int64(f.Value)}
 		},
 	},
+	"sprintf": {
+		Name: "sprintf",
+		TypeInfo: typesystem.TFunc{
+			Params: []typesystem.Type{
+				typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}},
+				typesystem.TVar{Name: "a"},
+			},
+			ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}},
+			IsVariadic: true,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) < 1 {
+				return newError("sprintf expects at least 1 argument (format string)")
+			}
+
+			// 1. Get format string
+			fmtStr := listToString(args[0])
+
+			// 2. Unwrap values
+			var goArgs []interface{}
+			for _, arg := range args[1:] {
+				var goVal interface{}
+				switch v := arg.(type) {
+				case *Integer:
+					goVal = v.Value
+				case *Float:
+					goVal = v.Value
+				case *Boolean:
+					goVal = v.Value
+				case *Char:
+					goVal = v.Value
+				case *BigInt:
+					goVal = v.Value
+				case *Rational:
+					goVal = v.Value
+				case *List:
+					// If string, convert to string
+					if s := listToString(v); s != "" || v.len() == 0 {
+						goVal = s
+					} else {
+						goVal = v.Inspect()
+					}
+				default:
+					goVal = v.Inspect()
+				}
+				goArgs = append(goArgs, goVal)
+			}
+
+			// 3. Sprintf
+			res := fmt.Sprintf(fmtStr, goArgs...)
+			return stringToList(res)
+		},
+	},
 	config.PanicFuncName: {
 		Name: config.PanicFuncName,
 		TypeInfo: typesystem.TFunc{
@@ -309,7 +362,7 @@ var Builtins = map[string]*Builtin{
 				// Check if elements are chars
 				isString := true
 				var s string
-				for _, el := range list.toSlice() {
+				for _, el := range list.ToSlice() {
 					if c, ok := el.(*Char); ok {
 						s += string(rune(c.Value))
 					} else {
@@ -386,15 +439,15 @@ var Builtins = map[string]*Builtin{
 
 			switch obj := args[0].(type) {
 			case *List:
-				return &Integer{Value: int64(obj.len())}
+				return &Integer{Value: int64(obj.Len())}
 			case *Tuple:
 				return &Integer{Value: int64(len(obj.Elements))}
 			case *Map:
-				return &Integer{Value: int64(obj.len())}
+				return &Integer{Value: int64(obj.Len())}
 			case *Bytes:
-				return &Integer{Value: int64(obj.len())}
+				return &Integer{Value: int64(obj.Len())}
 			case *Bits:
-				return &Integer{Value: int64(obj.len())}
+				return &Integer{Value: int64(obj.Len())}
 			default:
 				return newError("argument to `len` must be List, Tuple, Map, Bytes or Bits, got %s", args[0].Type())
 			}
@@ -440,7 +493,7 @@ func objectToString(obj Object) string {
 	if list, ok := obj.(*List); ok && list.len() > 0 {
 		isString := true
 		var s string
-		for _, el := range list.toSlice() {
+		for _, el := range list.ToSlice() {
 			if c, ok := el.(*Char); ok {
 				s += string(rune(c.Value))
 			} else {
@@ -509,7 +562,7 @@ func getDefaultValue(t typesystem.Type) Object {
 			}
 			fields[name] = fieldDefault
 		}
-		return &RecordInstance{Fields: fields}
+		return NewRecord(fields)
 	}
 	return newError("no default value for type %s", t)
 }
@@ -609,6 +662,46 @@ func checkType(val Object, expected typesystem.Type) bool {
 	}
 }
 
+// GetBuiltinsList returns a map of all builtin names to their objects
+// This is used by the VM to register builtins
+func GetBuiltinsList() map[string]Object {
+	env := NewEnvironment()
+	RegisterBuiltins(env)
+
+	// Add list builtins (head, tail, map, filter, etc.)
+	for name, builtin := range ListBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Add math builtins (abs, sqrt, sin, cos, etc.)
+	for name, builtin := range MathBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Add string builtins
+	for name, builtin := range StringBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Add option builtins (isSome, isZero, unwrap, unwrapOr, etc.)
+	for name, builtin := range OptionBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Add result builtins (isOk, isFail, unwrapResult, etc.)
+	for name, builtin := range ResultBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Add flag builtins
+	for name, builtin := range FlagBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Return the internal store
+	return env.GetStore()
+}
+
 // RegisterBuiltins registers built-in functions and types into the environment.
 func RegisterBuiltins(env *Environment) {
 	// Built-in types
@@ -665,6 +758,11 @@ func RegisterBuiltins(env *Environment) {
 
 	// Map type
 	env.Set("Map", &TypeObject{TypeVal: typesystem.TCon{Name: "Map"}})
+
+	// Register all builtin functions from the Builtins map
+	for name, builtin := range Builtins {
+		env.Set(name, builtin)
+	}
 }
 
 // listToString extracts a Go string from a List<Char> object
@@ -673,8 +771,13 @@ func listToString(obj Object) string {
 	if !ok {
 		return ""
 	}
+	return ListToString(list)
+}
+
+// ListToString converts List<Char> to Go string (exported for VM)
+func ListToString(list *List) string {
 	var result string
-	for _, el := range list.toSlice() {
+	for _, el := range list.ToSlice() {
 		if c, ok := el.(*Char); ok {
 			result += string(rune(c.Value))
 		} else {

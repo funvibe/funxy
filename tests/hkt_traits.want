@@ -1,0 +1,11 @@
+int
+string
+42
+10
+Ok(42)
+Fail("err!")
+Some(42)
+[2, 4, 6]
+Ok(100)
+Fail("err")
+HKT traits test passed!

@@ -16,6 +16,12 @@ type CallFrame struct {
 	Column int    // Column number
 }
 
+// VMCallHandler is a callback for calling VM closures from builtins
+type VMCallHandler func(closure Object, args []Object) Object
+
+// AsyncHandler is a callback for handling async function execution
+type AsyncHandler func(fn Object, args []Object) Object
+
 type Evaluator struct {
 	Out io.Writer
 	// Registry for class implementations.
@@ -52,6 +58,15 @@ type Evaluator struct {
 	// e.g., "Point" -> TRecord{Fields: {x: Int, y: Int}}
 	// Used by default() to create default values for alias types
 	TypeAliases map[string]typesystem.Type
+	// VMCallHandler is set by VM to allow builtins to call VM closures
+	VMCallHandler VMCallHandler
+	// AsyncHandler is a callback for handling async function execution (used by VM)
+	AsyncHandler AsyncHandler
+	// CaptureHandler is a callback for safe capturing of closures for async execution
+	CaptureHandler func(Object) Object
+
+	// Fork creates a thread-safe copy of the evaluator for background execution
+	Fork func() *Evaluator
 }
 
 // ModuleLoader interface (same as in Analyzer, should probably be in a common package)
@@ -156,7 +171,9 @@ func (e *Evaluator) Clone() *Evaluator {
 		CallStack:            make([]CallFrame, 0), // new per goroutine
 		CurrentFile:          e.CurrentFile,
 		ContainerContext:     "",
-		TypeAliases:          e.TypeAliases, // shared, read-only
+		TypeAliases:          e.TypeAliases,   // shared, read-only
+		VMCallHandler:        e.VMCallHandler, // shared, for calling VM closures from builtins
+		CaptureHandler:       e.CaptureHandler, // shared
 	}
 }
 
@@ -241,6 +258,8 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		return e.evalIndexExpression(node, env)
 	case *ast.StringLiteral:
 		return e.evalStringLiteral(node, env)
+	case *ast.FormatStringLiteral:
+		return e.evalFormatStringLiteral(node, env)
 	case *ast.InterpolatedString:
 		return e.evalInterpolatedString(node, env)
 	case *ast.CharLiteral:
@@ -305,7 +324,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			// Find isEmpty (in Optional or its super trait Empty)
 			isEmptyMethod, hasIsEmpty := e.lookupTraitMethod("Optional", typeName, "isEmpty")
 			if hasIsEmpty {
-				isEmpty := e.applyFunction(isEmptyMethod, []Object{left})
+				isEmpty := e.ApplyFunction(isEmptyMethod, []Object{left})
 				if isError(isEmpty) {
 					return isEmpty
 				}
@@ -317,7 +336,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 
 			// Not empty: call unwrap
 			if unwrapMethod, hasUnwrap := e.lookupTraitMethod("Optional", typeName, "unwrap"); hasUnwrap {
-				return e.applyFunction(unwrapMethod, []Object{left})
+				return e.ApplyFunction(unwrapMethod, []Object{left})
 			}
 
 			// No Optional instance: return left as-is
@@ -338,7 +357,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			funcName := getFunctionName(fn)
 			tok := node.GetToken()
 			e.PushCall(funcName, e.CurrentFile, tok.Line, tok.Column)
-			result := e.applyFunction(fn, []Object{left})
+			result := e.ApplyFunction(fn, []Object{left})
 			e.PopCall()
 			return result
 		}
@@ -366,7 +385,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			if isError(arg) {
 				return arg
 			}
-			return e.applyFunction(fn, []Object{arg})
+			return e.ApplyFunction(fn, []Object{arg})
 		}
 
 		// Standard evaluation for other operators
@@ -378,7 +397,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		if isError(right) {
 			return right
 		}
-		return e.evalInfixExpression(node.Operator, left, right)
+		return e.EvalInfixExpression(node.Operator, left, right)
 	case *ast.PostfixExpression:
 		left := e.Eval(node.Left, env)
 		if isError(left) {
@@ -405,9 +424,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		// AnnotatedExpression is a wrapper for type checking
 		// Set type context BEFORE evaluating, so ClassMethod calls can dispatch by annotation type
 		oldCallNode := e.CurrentCallNode
-		if e.TypeMap != nil {
-			e.CurrentCallNode = node
-		}
+		e.CurrentCallNode = node
 
 		val := e.Eval(node.Expression, env)
 
@@ -420,10 +437,8 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 
 		// If value is a nullary ClassMethod (Arity == 0), auto-call with type context
 		if cm, ok := val.(*ClassMethod); ok && cm.Arity == 0 {
-			if e.TypeMap != nil {
-				e.CurrentCallNode = node
-			}
-			result := e.applyFunction(cm, []Object{})
+			e.CurrentCallNode = node
+			result := e.ApplyFunction(cm, []Object{})
 			if !isError(result) {
 				val = result
 			}
@@ -464,7 +479,8 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 
 // getDefaultForType returns the default value for a type
 // First tries built-in defaults (fast path for primitives), then user-defined getDefault
-func (e *Evaluator) getDefaultForType(t typesystem.Type) Object {
+// GetDefaultForType returns the default value for a type (exported for VM)
+func (e *Evaluator) GetDefaultForType(t typesystem.Type) Object {
 	// For type aliases, resolve to underlying type first
 	if tcon, ok := t.(typesystem.TCon); ok {
 		if e.TypeAliases != nil {
@@ -518,10 +534,15 @@ func (e *Evaluator) tryDefaultMethod(typeName string) Object {
 			if methodTable, ok := methodTableObj.(*MethodTable); ok {
 				if method, ok := methodTable.Methods["getDefault"]; ok {
 					// getDefault needs a dummy argument - create nil as placeholder
-					return e.applyFunction(method, []Object{&Nil{}})
+					return e.ApplyFunction(method, []Object{&Nil{}})
 				}
 			}
 		}
 	}
 	return nil
+}
+
+// CompareValues compares two values using the given operator (exported for VM)
+func (e *Evaluator) CompareValues(a, b Object, operator string) Object {
+	return e.EvalInfixExpression(operator, a, b)
 }

@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 3:2 [A004]: redefinition of symbol: 'a'

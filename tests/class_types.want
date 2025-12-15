@@ -1,0 +1,8 @@
+Integer
+List[Int]
+Tuple(Int, Int)
+Record{x, y}
+Integer
+List[Int]
+Tuple(Int, Int)
+Record{x, y}

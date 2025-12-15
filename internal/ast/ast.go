@@ -265,6 +265,17 @@ func (sl *StringLiteral) expressionNode()       {}
 func (sl *StringLiteral) TokenLiteral() string  { return sl.Token.Lexeme }
 func (sl *StringLiteral) GetToken() token.Token { return sl.Token }
 
+// FormatStringLiteral represents a format string, e.g. %".2f"
+type FormatStringLiteral struct {
+	Token token.Token // The FORMAT_STRING token
+	Value string      // The format string (without quotes), e.g. ".2f"
+}
+
+func (fl *FormatStringLiteral) Accept(v Visitor)      { v.VisitFormatStringLiteral(fl) }
+func (fl *FormatStringLiteral) expressionNode()       {}
+func (fl *FormatStringLiteral) TokenLiteral() string  { return fl.Token.Lexeme }
+func (fl *FormatStringLiteral) GetToken() token.Token { return fl.Token }
+
 // InterpolatedString represents a string with embedded expressions, e.g. "Hello, ${name}!"
 // Parts is a list of expressions - StringLiteral for text parts, other expressions for ${...}
 type InterpolatedString struct {

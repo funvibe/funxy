@@ -1,0 +1,62 @@
+=== Split/Join ===
+["a", "b", "c"]
+["h", "e", "l", "l", "o"]
+["one", "two", "three"]
+["no-match"]
+a,b,c
+abc
+hello
+
+["line1", "line2", "line3"]
+["hello", "world", "test"]
+["spaces"]
+["single"]
+=== Trimming ===
+hello
+hello
+
+hello
+hello  
+hello
+  hello
+=== Case Conversion ===
+HELLO
+HELLO WORLD
+123
+hello
+hello world
+Hello
+HELLO
+
+=== Search/Replace ===
+heLlo
+heLLo
+hello
+heLLo
+bonono
+true
+false
+true
+false
+true
+false
+true
+false
+Some(2)
+Some(4)
+Zero
+Some(0)
+=== Other ===
+ababab
+xxxxx
+
+00042
+hello
+xxx
+42---
+hello
+xxx
+=== Composition ===
+Hello world
+a | b | c
+=== lib/string tests passed! ===

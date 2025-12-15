@@ -40,12 +40,12 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 		if mod.IsVirtual {
 			return e.importVirtualModule(node, mod, env)
 		}
-		
+
 		// Handle package groups (import "dir" imports all sub-packages)
 		if mod.IsPackageGroup {
 			return e.importPackageGroup(node, mod, env)
 		}
-		
+
 		modObj, err := e.EvaluateModule(mod)
 		if err != nil {
 			return newError("failed to evaluate module %s: %s", mod.Name, err.Error())
@@ -71,8 +71,8 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 		// Handle import specifications
 		if node.ImportAll {
 			// import "path" (*) - import all symbols into current scope
-			for name, val := range record.Fields {
-				env.Set(name, val)
+			for _, f := range record.Fields {
+				env.Set(f.Key, f.Value)
 			}
 			return &Nil{}
 		}
@@ -80,7 +80,7 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 		if len(node.Symbols) > 0 {
 			// import "path" (a, b, c) - import only specified symbols
 			for _, sym := range node.Symbols {
-				if val, ok := record.Fields[sym.Value]; ok {
+				if val := record.Get(sym.Value); val != nil {
 					env.Set(sym.Value, val)
 				} else {
 					return newError("symbol '%s' not found in module %s", sym.Value, mod.Name)
@@ -95,9 +95,9 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 			for _, sym := range node.Exclude {
 				excludeSet[sym.Value] = true
 			}
-			for name, val := range record.Fields {
-				if !excludeSet[name] {
-					env.Set(name, val)
+			for _, f := range record.Fields {
+				if !excludeSet[f.Key] {
+					env.Set(f.Key, f.Value)
 				}
 			}
 			return &Nil{}
@@ -124,13 +124,13 @@ func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.
 	if mod.Name == "lib" {
 		return e.importAllLibPackages(node, env)
 	}
-	
+
 	// Get builtins for this virtual module
 	builtins := e.getVirtualModuleBuiltins(mod.Name)
 	if builtins == nil {
 		return newError("unknown virtual module: %s", mod.Name)
 	}
-	
+
 	// Handle import specifications
 	if node.ImportAll {
 		for name, fn := range builtins {
@@ -138,7 +138,7 @@ func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.
 		}
 		return &Nil{}
 	}
-	
+
 	if len(node.Symbols) > 0 {
 		for _, sym := range node.Symbols {
 			if fn, ok := builtins[sym.Value]; ok {
@@ -149,7 +149,7 @@ func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.
 		}
 		return &Nil{}
 	}
-	
+
 	if len(node.Exclude) > 0 {
 		excludeSet := make(map[string]bool)
 		for _, sym := range node.Exclude {
@@ -162,29 +162,34 @@ func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.
 		}
 		return &Nil{}
 	}
-	
+
 	// Default: import as module object
 	fields := make(map[string]Object)
 	for name, fn := range builtins {
 		fields[name] = fn
 	}
-	modObj := &RecordInstance{Fields: fields}
-	
+	modObj := NewRecord(fields)
+
 	name := ""
 	if node.Alias != nil {
 		name = node.Alias.Value
 	} else {
 		name = mod.Name
 	}
-	
+
 	env.Set(name, modObj)
 	return &Nil{}
 }
 
 // getVirtualModuleBuiltins returns builtins for a virtual module by name
 func (e *Evaluator) getVirtualModuleBuiltins(name string) map[string]*Builtin {
+	return GetVirtualModuleBuiltins(name)
+}
+
+// GetVirtualModuleBuiltins returns builtins for a virtual module by name (exported for VM use)
+func GetVirtualModuleBuiltins(name string) map[string]*Builtin {
 	var builtins map[string]*Builtin
-	
+
 	switch name {
 	case "list":
 		builtins = ListBuiltins()
@@ -194,6 +199,7 @@ func (e *Evaluator) getVirtualModuleBuiltins(name string) map[string]*Builtin {
 		SetMapBuiltinTypes(builtins)
 	case "bytes":
 		builtins = BytesBuiltins()
+		SetBytesBuiltinTypes(builtins)
 	case "bits":
 		builtins = BitsBuiltins()
 		SetBitsBuiltinTypes(builtins)
@@ -263,6 +269,16 @@ func (e *Evaluator) getVirtualModuleBuiltins(name string) map[string]*Builtin {
 	case "task":
 		builtins = TaskBuiltins()
 		SetTaskBuiltinTypes(builtins)
+	case "csv":
+		builtins = CsvBuiltins()
+		SetCsvBuiltinTypes(builtins)
+	case "flag":
+		builtins = FlagBuiltins()
+		SetFlagBuiltinTypes(builtins)
+	case "option":
+		builtins = OptionBuiltins()
+	case "result":
+		builtins = ResultBuiltins()
 	default:
 		return nil
 	}
@@ -273,16 +289,14 @@ func (e *Evaluator) getVirtualModuleBuiltins(name string) map[string]*Builtin {
 func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environment) Object {
 	// Collect all builtins from all lib/* packages
 	allBuiltins := make(map[string]*Builtin)
-	
+
 	for _, pkgName := range modules.GetLibSubPackages() {
 		builtins := e.getVirtualModuleBuiltins(pkgName)
-		if builtins != nil {
-			for name, fn := range builtins {
-				allBuiltins[name] = fn
-			}
+		for name, fn := range builtins {
+			allBuiltins[name] = fn
 		}
 	}
-	
+
 	// Handle import specifications
 	if node.ImportAll {
 		// import "lib" (*) - import all symbols from all packages
@@ -291,7 +305,7 @@ func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environ
 		}
 		return &Nil{}
 	}
-	
+
 	if len(node.Symbols) > 0 {
 		// import "lib" (symbol1, symbol2) - import specific symbols
 		for _, sym := range node.Symbols {
@@ -303,7 +317,7 @@ func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environ
 		}
 		return &Nil{}
 	}
-	
+
 	if len(node.Exclude) > 0 {
 		// import "lib" !(symbol1, symbol2) - import all except specified
 		excludeSet := make(map[string]bool)
@@ -317,7 +331,7 @@ func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environ
 		}
 		return &Nil{}
 	}
-	
+
 	// Default: import "lib" as module object containing subpackages
 	libFields := make(map[string]Object)
 	for _, pkgName := range modules.GetLibSubPackages() {
@@ -327,17 +341,17 @@ func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environ
 			for name, fn := range builtins {
 				pkgFields[name] = fn
 			}
-			libFields[pkgName] = &RecordInstance{Fields: pkgFields}
+			libFields[pkgName] = NewRecord(pkgFields)
 		}
 	}
-	
-	libObj := &RecordInstance{Fields: libFields}
-	
+
+	libObj := NewRecord(libFields)
+
 	name := "lib"
 	if node.Alias != nil {
 		name = node.Alias.Value
 	}
-	
+
 	env.Set(name, libObj)
 	return &Nil{}
 }
@@ -346,7 +360,7 @@ func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environ
 func (e *Evaluator) importPackageGroup(node *ast.ImportStatement, mod *modules.Module, env *Environment) Object {
 	// Collect all exported symbols from all sub-packages
 	allFields := make(map[string]Object)
-	
+
 	for _, subMod := range mod.Imports {
 		// Evaluate each sub-package
 		subModObj, err := e.EvaluateModule(subMod)
@@ -370,15 +384,15 @@ func (e *Evaluator) importPackageGroup(node *ast.ImportStatement, mod *modules.M
 		if !ok {
 			return newError("sub-package %s is not a record", subMod.Name)
 		}
-		
+
 		// Collect exported fields
-		for name, val := range subRecord.Fields {
-			if subMod.Exports[name] {
-				allFields[name] = val
+		for _, f := range subRecord.Fields {
+			if subMod.Exports[f.Key] {
+				allFields[f.Key] = f.Value
 			}
 		}
 	}
-	
+
 	// Handle import specifications
 	if node.ImportAll {
 		for name, val := range allFields {
@@ -386,7 +400,7 @@ func (e *Evaluator) importPackageGroup(node *ast.ImportStatement, mod *modules.M
 		}
 		return &Nil{}
 	}
-	
+
 	if len(node.Symbols) > 0 {
 		for _, sym := range node.Symbols {
 			if val, ok := allFields[sym.Value]; ok {
@@ -397,7 +411,7 @@ func (e *Evaluator) importPackageGroup(node *ast.ImportStatement, mod *modules.M
 		}
 		return &Nil{}
 	}
-	
+
 	if len(node.Exclude) > 0 {
 		excludeSet := make(map[string]bool)
 		for _, sym := range node.Exclude {
@@ -410,17 +424,17 @@ func (e *Evaluator) importPackageGroup(node *ast.ImportStatement, mod *modules.M
 		}
 		return &Nil{}
 	}
-	
+
 	// Default: import as module object containing all sub-packages
-	modObj := &RecordInstance{Fields: allFields}
-	
+	modObj := NewRecord(allFields)
+
 	name := ""
 	if node.Alias != nil {
 		name = node.Alias.Value
 	} else {
 		name = mod.Name
 	}
-	
+
 	env.Set(name, modObj)
 	return &Nil{}
 }
@@ -443,9 +457,8 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 	RegisterBuiltins(env)
 	RegisterFPTraits(e, env) // Register FP traits for this module
 
-	// Pre-create exports map and module object to handle cycles
-	exports := make(map[string]Object)
-	modObj := &RecordInstance{Fields: exports}
+	// Pre-create module object to handle cycles (empty for now)
+	modObj := NewRecord(nil)
 	e.ModuleCache[mod.Dir] = modObj
 
 	oldBaseDir := e.BaseDir
@@ -460,11 +473,17 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 	}
 
 	// Populate exports from environment
+	exports := make(map[string]Object)
 	for name := range mod.Exports {
 		if val, ok := env.Get(name); ok {
 			exports[name] = val
 		}
 	}
+
+	// Update the existing modObj fields (in-place to preserve reference for cycles)
+	// Create a temporary record to get sorted fields, then copy to modObj
+	tempRec := NewRecord(exports)
+	modObj.Fields = tempRec.Fields
 
 	// Copy newly added ClassImplementations to module
 	mod.ClassImplementations = make(map[string]map[string]interface{})
@@ -596,16 +615,27 @@ func (e *Evaluator) evalInstanceDeclaration(node *ast.InstanceDeclaration, env *
 }
 
 func (e *Evaluator) evalConstantDeclaration(node *ast.ConstantDeclaration, env *Environment) Object {
+	// Set type context BEFORE evaluating value, so nullary ClassMethod calls can dispatch
+	// This mirrors evalAssignExpression behavior
+	oldCallNode := e.CurrentCallNode
+	if node.TypeAnnotation != nil {
+		e.CurrentCallNode = node
+	}
+
 	val := e.Eval(node.Value, env)
+
+	// Restore previous call node
+	e.CurrentCallNode = oldCallNode
+
 	if isError(val) {
 		return val
 	}
-	
+
 	// Handle pattern destructuring
 	if node.Pattern != nil {
 		return e.bindPatternToValue(node.Pattern, val, env)
 	}
-	
+
 	// Simple binding
 	env.Set(node.Name.Value, val)
 	return &Nil{}
@@ -625,7 +655,7 @@ func (e *Evaluator) bindPatternToValue(pat ast.Pattern, val Object, env *Environ
 	case *ast.IdentifierPattern:
 		env.Set(p.Value, val)
 		return &Nil{}
-		
+
 	case *ast.TuplePattern:
 		tuple, ok := val.(*Tuple)
 		if !ok {
@@ -641,7 +671,7 @@ func (e *Evaluator) bindPatternToValue(pat ast.Pattern, val Object, env *Environ
 			}
 		}
 		return &Nil{}
-		
+
 	case *ast.ListPattern:
 		list, ok := val.(*List)
 		if !ok {
@@ -657,19 +687,19 @@ func (e *Evaluator) bindPatternToValue(pat ast.Pattern, val Object, env *Environ
 			}
 		}
 		return &Nil{}
-		
+
 	case *ast.WildcardPattern:
 		// Ignore - don't bind anything
 		return &Nil{}
-		
+
 	case *ast.RecordPattern:
 		record, ok := val.(*RecordInstance)
 		if !ok {
 			return newError("cannot destructure non-record value with record pattern")
 		}
 		for fieldName, fieldPat := range p.Fields {
-			fieldVal, ok := record.Fields[fieldName]
-			if !ok {
+			fieldVal := record.Get(fieldName)
+			if fieldVal == nil {
 				return newError("record does not have field '%s'", fieldName)
 			}
 			result := e.bindPatternToValue(fieldPat, fieldVal, env)
@@ -678,7 +708,7 @@ func (e *Evaluator) bindPatternToValue(pat ast.Pattern, val Object, env *Environ
 			}
 		}
 		return &Nil{}
-		
+
 	default:
 		return newError("unsupported pattern in destructuring")
 	}
@@ -750,16 +780,16 @@ func (e *Evaluator) evalForExpression(node *ast.ForExpression, env *Environment)
 		// Look up iter method from Iter trait implementation for this type
 		iterableTypeName := getRuntimeTypeName(iterable)
 		if iterMethod, found := e.lookupTraitMethod(config.IterTraitName, iterableTypeName, config.IterMethodName); found {
-			res := e.applyFunction(iterMethod, []Object{iterable})
+			res := e.ApplyFunction(iterMethod, []Object{iterable})
 			if !isError(res) {
 				iteratorFn = res
 			}
 		}
-		
+
 		// Fallback: try direct environment lookup (for backward compatibility)
 		if iteratorFn == nil {
 			if iterSym, ok := env.Get(config.IterMethodName); ok {
-				res := e.applyFunction(iterSym, []Object{iterable})
+				res := e.ApplyFunction(iterSym, []Object{iterable})
 				if !isError(res) {
 					iteratorFn = res
 				}
@@ -770,7 +800,7 @@ func (e *Evaluator) evalForExpression(node *ast.ForExpression, env *Environment)
 			itemName := node.ItemName.Value
 
 			for {
-				stepRes := e.applyFunction(iteratorFn, []Object{})
+				stepRes := e.ApplyFunction(iteratorFn, []Object{})
 				if isError(stepRes) {
 					return stepRes
 				}
@@ -803,9 +833,9 @@ func (e *Evaluator) evalForExpression(node *ast.ForExpression, env *Environment)
 		} else {
 			var items []Object
 			if list, ok := iterable.(*List); ok {
-				items = list.toSlice()
+				items = list.ToSlice()
 			} else if str, ok := iterable.(*List); ok {
-				items = str.toSlice()
+				items = str.ToSlice()
 			} else {
 				return newError("iterable must be List or implement Iter trait, got %s", iterable.Type())
 			}

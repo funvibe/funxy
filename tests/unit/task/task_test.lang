@@ -6,8 +6,11 @@ import "lib/test" (*)
 // =============================================
 
 testRun("async creates Task", fun() {
+    // This test is non-deterministic because async execution happens in a goroutine.
+    // taskIsDone might be true or false depending on scheduler.
+    // Instead of checking state, we just verify we can create it and await it.
     task = async(fun() { 1 })
-    assert(taskIsDone(task) || !taskIsDone(task), "task exists")
+    assertOk(await(task))
 })
 
 testRun("taskResolve creates completed Task", fun() {

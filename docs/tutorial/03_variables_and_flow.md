@@ -1,34 +1,34 @@
-# Переменные и управление потоком
+# Variables and Flow Control
 
-Переменные, блоки и условные выражения.
+Variables, blocks, and conditional expressions.
 
-## Переменные
+## Variables
 
-Переменные создаются с помощью `=`:
+Variables are created using `=`:
 
 ```rust
 x = 10
-x = x + 1    // Обновление
+x = x + 1    // Update
 print(x)     // 11
 ```
 
-## Области видимости
+## Scopes
 
-Блоки `{ }` создают новую область видимости:
+Blocks `{ }` create a new scope:
 
 ```rust
 x = 1
 {
     y = 2
-    x = 3    // Обновляет внешний x
+    x = 3    // Updates outer x
 }
 print(x)     // 3
-// y здесь не доступен
+// y is not available here
 ```
 
-## Условные выражения (if/else)
+## Conditional Expressions (if/else)
 
-`if` — это выражение, возвращает значение:
+`if` is an expression, returns a value:
 
 ```rust
 x = 5
@@ -39,26 +39,26 @@ if x > 0 {
 }
 ```
 
-### if как выражение
+### if as expression
 
 ```rust
 x = 5
 val = if x > 0 { 1 } else { -1 }
 print(val)  // 1
 
-// В аргументах
+// In arguments
 print(if true { "Yes" } else { "No" })
 ```
 
-Типы в ветках `if` и `else` должны совпадать.
+Types in `if` and `else` branches must match.
 
-## Встроенные литералы
+## Built-in Literals
 
-| Литерал | Тип | Описание |
+| Literal | Type | Description |
 |---------|-----|----------|
-| `true` | `Bool` | Истина |
-| `false` | `Bool` | Ложь |
-| `nil` | `Nil` | Отсутствие значения |
+| `true` | `Bool` | True |
+| `false` | `Bool` | False |
+| `nil` | `Nil` | Absence of value |
 
 ```rust
 x = true
@@ -70,6 +70,6 @@ if z == nil {
 }
 ```
 
-## Тесты
+## Tests
 
-См. `tests/flow.lang`
+See `tests/flow.lang`

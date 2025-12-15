@@ -58,17 +58,15 @@ func DateBuiltins() map[string]*Builtin {
 // Date record type: { year, month, day, hour, minute, second, offset }
 // offset is in minutes from UTC (e.g., 180 = UTC+3, -300 = UTC-5)
 func makeDateWithOffset(t time.Time, offsetMinutes int64) *RecordInstance {
-	return &RecordInstance{
-		Fields: map[string]Object{
-			"year":   &Integer{Value: int64(t.Year())},
-			"month":  &Integer{Value: int64(t.Month())},
-			"day":    &Integer{Value: int64(t.Day())},
-			"hour":   &Integer{Value: int64(t.Hour())},
-			"minute": &Integer{Value: int64(t.Minute())},
-			"second": &Integer{Value: int64(t.Second())},
-			"offset": &Integer{Value: offsetMinutes},
-		},
-	}
+	return NewRecord(map[string]Object{
+		"year":   &Integer{Value: int64(t.Year())},
+		"month":  &Integer{Value: int64(t.Month())},
+		"day":    &Integer{Value: int64(t.Day())},
+		"hour":   &Integer{Value: int64(t.Hour())},
+		"minute": &Integer{Value: int64(t.Minute())},
+		"second": &Integer{Value: int64(t.Second())},
+		"offset": &Integer{Value: offsetMinutes},
+	})
 }
 
 // makeDate creates a date with the time's own offset
@@ -79,8 +77,8 @@ func makeDate(t time.Time) *RecordInstance {
 
 // dateToTime converts a Date record to time.Time using its offset
 func dateToTime(date *RecordInstance) (time.Time, bool) {
-	yearObj, ok := date.Fields["year"]
-	if !ok {
+	yearObj := date.Get("year")
+	if yearObj == nil {
 		return time.Time{}, false
 	}
 	year, ok := yearObj.(*Integer)
@@ -88,8 +86,8 @@ func dateToTime(date *RecordInstance) (time.Time, bool) {
 		return time.Time{}, false
 	}
 
-	monthObj, ok := date.Fields["month"]
-	if !ok {
+	monthObj := date.Get("month")
+	if monthObj == nil {
 		return time.Time{}, false
 	}
 	month, ok := monthObj.(*Integer)
@@ -97,8 +95,8 @@ func dateToTime(date *RecordInstance) (time.Time, bool) {
 		return time.Time{}, false
 	}
 
-	dayObj, ok := date.Fields["day"]
-	if !ok {
+	dayObj := date.Get("day")
+	if dayObj == nil {
 		return time.Time{}, false
 	}
 	day, ok := dayObj.(*Integer)
@@ -106,8 +104,8 @@ func dateToTime(date *RecordInstance) (time.Time, bool) {
 		return time.Time{}, false
 	}
 
-	hourObj, ok := date.Fields["hour"]
-	if !ok {
+	hourObj := date.Get("hour")
+	if hourObj == nil {
 		return time.Time{}, false
 	}
 	hour, ok := hourObj.(*Integer)
@@ -115,8 +113,8 @@ func dateToTime(date *RecordInstance) (time.Time, bool) {
 		return time.Time{}, false
 	}
 
-	minuteObj, ok := date.Fields["minute"]
-	if !ok {
+	minuteObj := date.Get("minute")
+	if minuteObj == nil {
 		return time.Time{}, false
 	}
 	minute, ok := minuteObj.(*Integer)
@@ -124,8 +122,8 @@ func dateToTime(date *RecordInstance) (time.Time, bool) {
 		return time.Time{}, false
 	}
 
-	secondObj, ok := date.Fields["second"]
-	if !ok {
+	secondObj := date.Get("second")
+	if secondObj == nil {
 		return time.Time{}, false
 	}
 	second, ok := secondObj.(*Integer)
@@ -135,7 +133,7 @@ func dateToTime(date *RecordInstance) (time.Time, bool) {
 
 	// Get offset (default to local if not present for backward compatibility)
 	offsetMinutes := getLocalOffset()
-	if offsetObj, ok := date.Fields["offset"]; ok {
+	if offsetObj := date.Get("offset"); offsetObj != nil {
 		if offset, ok := offsetObj.(*Integer); ok {
 			offsetMinutes = offset.Value
 		}
@@ -157,7 +155,7 @@ func dateToTime(date *RecordInstance) (time.Time, bool) {
 
 // getDateOffset extracts offset from date record
 func getDateOffset(date *RecordInstance) int64 {
-	if offsetObj, ok := date.Fields["offset"]; ok {
+	if offsetObj := date.Get("offset"); offsetObj != nil {
 		if offset, ok := offsetObj.(*Integer); ok {
 			return offset.Value
 		}
@@ -481,7 +479,7 @@ func builtinDateYear(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dateYear expects a Date record, got %s", args[0].Type())
 	}
-	if yearObj, ok := date.Fields["year"]; ok {
+	if yearObj := date.Get("year"); yearObj != nil {
 		return yearObj
 	}
 	return newError("dateYear: invalid Date record")
@@ -495,7 +493,7 @@ func builtinDateMonth(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dateMonth expects a Date record, got %s", args[0].Type())
 	}
-	if monthObj, ok := date.Fields["month"]; ok {
+	if monthObj := date.Get("month"); monthObj != nil {
 		return monthObj
 	}
 	return newError("dateMonth: invalid Date record")
@@ -509,7 +507,7 @@ func builtinDateDay(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dateDay expects a Date record, got %s", args[0].Type())
 	}
-	if dayObj, ok := date.Fields["day"]; ok {
+	if dayObj := date.Get("day"); dayObj != nil {
 		return dayObj
 	}
 	return newError("dateDay: invalid Date record")
@@ -538,7 +536,7 @@ func builtinDateHour(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dateHour expects a Date record, got %s", args[0].Type())
 	}
-	if hourObj, ok := date.Fields["hour"]; ok {
+	if hourObj := date.Get("hour"); hourObj != nil {
 		return hourObj
 	}
 	return newError("dateHour: invalid Date record")
@@ -552,7 +550,7 @@ func builtinDateMinute(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dateMinute expects a Date record, got %s", args[0].Type())
 	}
-	if minuteObj, ok := date.Fields["minute"]; ok {
+	if minuteObj := date.Get("minute"); minuteObj != nil {
 		return minuteObj
 	}
 	return newError("dateMinute: invalid Date record")
@@ -566,7 +564,7 @@ func builtinDateSecond(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dateSecond expects a Date record, got %s", args[0].Type())
 	}
-	if secondObj, ok := date.Fields["second"]; ok {
+	if secondObj := date.Get("second"); secondObj != nil {
 		return secondObj
 	}
 	return newError("dateSecond: invalid Date record")

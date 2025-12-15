@@ -1,51 +1,51 @@
-# 01. Hello World и вывод
+# 01. Hello World and Output
 
-## Задача
-Вывести текст на экран.
+## Task
+Display text on screen.
 
-## Решение
+## Solution
 
 ```rust
-// Простой вывод
+// Simple output
 print("Hello, Funxy!")
 
-// Вывод с переменными
+// Output with variables
 name = "World"
 print("Hello, " ++ name ++ "!")
 
-// Интерполяция строк
+// String interpolation
 print("Hello, ${name}!")
 
-// Многострочный вывод
+// Multi-line output
 print("Line 1\nLine 2\nLine 3")
 ```
 
-## Объяснение
+## Explanation
 
-- `print()` — выводит с переносом строки
-- `write()` — выводит без переноса строки
-- `++` — конкатенация строк
-- `${...}` — интерполяция внутри строк
-- `\n` — перенос строки
+- `print()` — outputs with newline
+- `write()` — outputs without newline
+- `++` — string concatenation
+- `${...}` — interpolation inside strings
+- `\n` — newline
 
-## Вариации
+## Variations
 
 ```rust
-// Вывод без переноса строки
+// Output without newline
 write("Loading")
 write(".")
 write(".")
 write(".\n")
 
-// Вывод типа значения
+// Output value type
 x = 42
 print(getType(x))  // Int
 
-// Вывод списка
+// Output list
 print([1, 2, 3])  // [1, 2, 3]
 ```
 
-## Форматирование чисел
+## Number Formatting
 
 ```rust
 import "lib/string" (stringPadLeft)
@@ -53,5 +53,3 @@ import "lib/string" (stringPadLeft)
 price = 42
 print("Price: $" ++ stringPadLeft(show(price), 5, '0'))
 // Price: $00042
-```
-
