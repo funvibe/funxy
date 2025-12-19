@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/modules"
+	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"path/filepath"
 )
@@ -259,6 +260,23 @@ func isConstructorForType(val evaluator.Object, typeName string) bool {
 
 // applyModuleImport applies the import specification to globals
 func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInstance) error {
+	// Try to get the module for trait checking
+	var mod *modules.Module
+	if vm.loader != nil {
+		importPath := imp.Path
+		if len(importPath) > 0 && importPath[0] == '.' {
+			importPath = filepath.Join(vm.baseDir, importPath)
+		}
+		absPath, err := filepath.Abs(importPath)
+		if err == nil {
+			if modInterface, err := vm.loader.GetModule(absPath); err == nil {
+				if m, ok := modInterface.(*modules.Module); ok {
+					mod = m
+				}
+			}
+		}
+	}
+
 	if imp.Alias != "" {
 		vm.globals = vm.globals.Put(imp.Alias, modObj)
 	} else if imp.ImportAll {
@@ -312,6 +330,20 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 					}
 				}
 			} else {
+				// Check if it's a trait - traits don't have runtime values but should be importable
+				if mod != nil && mod.SymbolTable != nil {
+					if symbolVal, ok := mod.SymbolTable.Find(sym); ok && symbolVal.Kind == symbols.TraitSymbol {
+						// Trait found - now import all its methods
+						traitMethodNames := mod.SymbolTable.GetTraitAllMethods(sym)
+						for _, methodName := range traitMethodNames {
+							// Try to get the method from modObj
+							if methodVal := modObj.Get(methodName); methodVal != nil {
+								vm.globals = vm.globals.Put(methodName, methodVal)
+							}
+						}
+						continue
+					}
+				}
 				return fmt.Errorf("symbol '%s' not found in module", sym)
 			}
 		}

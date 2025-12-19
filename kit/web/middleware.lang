@@ -1,57 +1,61 @@
 package web
 
-import "lib/list" (map, foldl)
-import "lib/tuple" (fst, snd)
+import "lib/time" (clockMs)
 
-// --- Recover Middleware ---
+// --- Middleware ---
+
+fun logger(next) {
+    fun(ctx) {
+        start = clockMs()
+        result = next(ctx)
+        duration = clockMs() - start
+        req = ctx.req
+        match result {
+            Ok(res) -> {
+                msg = sprintf("%s %s -> %d (%d ms)", req.method, req.path, res.status, duration)
+                print(msg)
+            }
+            Fail(err) -> {
+                msg = sprintf("%s %s -> ERROR (%d ms)", req.method, req.path, duration)
+                print(msg)
+            }
+        }
+        result
+    }
+}
 
 fun recover(next) {
     fun(ctx) {
-        // В Funxy пока нет try/catch в явном виде для паник рантайма,
-        // но мы можем перехватывать Fail от хендлеров.
-        // Если хендлер возвращает Fail, мы превращаем его в 500 ответ.
         match next(ctx) {
             Ok(res) -> Ok(res)
             Fail(err) -> {
-                // Логируем ошибку (можно добавить зависимость от логгера)
-                // Используем встроенный print или logger если доступен
-                // print("Recovered from error: " ++ show(err)) -- show может быть недоступен
-
-                Ok({
-                    status: 500,
-                    headers: [("Content-Type", "text/plain")],
-                    body: "Internal Server Error"
-                })
+                Ok({ status: 500, headers: [("Content-Type", "text/plain")], body: BodyString("Internal Server Error") })
             }
         }
     }
 }
 
-// --- CORS Middleware ---
-
 fun cors(next) {
-    // Default permissive CORS
     fun(ctx) {
-        // Обработка Preflight OPTIONS
         if ctx.req.method == "OPTIONS" {
-            Ok({
+             Ok({
                 status: 204,
                 headers: [
                     ("Access-Control-Allow-Origin", "*"),
                     ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
-                    ("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+                    ("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 ],
-                body: ""
-            })
+                body: BodyEmpty
+             })
         } else {
             match next(ctx) {
                 Ok(res) -> {
-                    headers = res.headers ++ [
+                     newHeaders = res.headers ++ [
                         ("Access-Control-Allow-Origin", "*"),
                         ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
-                        ("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-                    ]
-                    Ok({ status: res.status, headers: headers, body: res.body })
+                        ("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                     ]
+                     Ok({ status: res.status, headers: newHeaders, body: res.body })
                 }
                 Fail(e) -> Fail(e)
             }

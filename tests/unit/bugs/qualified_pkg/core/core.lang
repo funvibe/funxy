@@ -1,0 +1,34 @@
+package core (*)
+
+import "lib/string" (*)
+
+// Base types
+type Entity = MkEntity { id: Int, name: String, version: Int }
+type Status = Active | Inactive | Pending { reason: String }
+
+// Core trait
+trait Validator<T> {
+    fun validate(val: T) -> Bool
+    fun getMessage(val: T) -> String
+    fun getErrors(val: T) -> List<String>
+}
+
+// Core trait with default methods
+trait Auditable<T> {
+    fun audit(val: T) -> String
+    fun timestamp(val: T) -> Int { 0 }
+}
+
+// Extension method
+fun (e: Entity) display() {
+    match e {
+        MkEntity(r) -> "Entity(id=" ++ show(r.id) ++ ", name=" ++ r.name ++ ", v=" ++ show(r.version) ++ ")"
+    }
+}
+
+fun (e: Entity) incrementVersion() {
+    match e {
+        MkEntity(r) -> MkEntity $ { id: r.id, name: r.name, version: r.version + 1 }
+    }
+}
+

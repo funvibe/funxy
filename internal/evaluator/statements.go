@@ -6,6 +6,7 @@ import (
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/modules"
+	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"github.com/funvibe/funxy/internal/utils"
 )
@@ -77,29 +78,40 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 			return &Nil{}
 		}
 
-		if len(node.Symbols) > 0 {
-			// import "path" (a, b, c) - import only specified symbols
-			for _, sym := range node.Symbols {
-				if val := record.Get(sym.Value); val != nil {
-					env.Set(sym.Value, val)
+	if len(node.Symbols) > 0 {
+		// import "path" (a, b, c) - import only specified symbols
+		for _, sym := range node.Symbols {
+			if val := record.Get(sym.Value); val != nil {
+				env.Set(sym.Value, val)
 
-					// Auto-import ADT constructors if present
-					if mod.SymbolTable != nil {
-						if variants, ok := mod.SymbolTable.GetVariants(sym.Value); ok {
-							for _, variantName := range variants {
-								// Only import if the variant is actually exported by the module
-								if variantVal := record.Get(variantName); variantVal != nil {
-									env.Set(variantName, variantVal)
-								}
+				// Auto-import ADT constructors if present
+				if mod.SymbolTable != nil {
+					if variants, ok := mod.SymbolTable.GetVariants(sym.Value); ok {
+						for _, variantName := range variants {
+							// Only import if the variant is actually exported by the module
+							if variantVal := record.Get(variantName); variantVal != nil {
+								env.Set(variantName, variantVal)
 							}
 						}
 					}
-				} else {
-					return newError("symbol '%s' not found in module %s", sym.Value, mod.Name)
 				}
+			} else {
+				// Check if it's a trait - traits don't have runtime values but should be importable
+				if mod.SymbolTable != nil {
+					if symbolVal, ok := mod.SymbolTable.Find(sym.Value); ok && symbolVal.Kind == symbols.TraitSymbol {
+						// Trait found - it's OK to import even though there's no runtime value
+						// The trait definition will be available in the SymbolTable
+						continue
+					}
+				}
+				// Extension methods might not be in the record yet but could be in exports
+				// Try to look them up directly from the record using a fallback path
+				// This happens when module is evaluated but extension methods aren't in the main record
+				return newError("symbol '%s' not found in module %s", sym.Value, mod.Name)
 			}
-			return &Nil{}
 		}
+		return &Nil{}
+	}
 
 		if len(node.Exclude) > 0 {
 			// import "path" !(a, b, c) - import all except specified
@@ -520,6 +532,17 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 	for name := range mod.Exports {
 		if val, ok := env.Get(name); ok {
 			exports[name] = val
+		} else {
+			// Check if it's an extension method
+			// Extension methods are stored in e.ExtensionMethods[typeName][methodName]
+			// We need to find them and export them as regular functions
+			for _, methods := range e.ExtensionMethods {
+				if fn, ok := methods[name]; ok {
+					// Found the extension method, export it as a regular function
+					exports[name] = fn
+					break
+				}
+			}
 		}
 	}
 

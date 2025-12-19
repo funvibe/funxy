@@ -142,6 +142,34 @@ print(area(Circle(5.0)))        // 78.5
 print(area(Rectangle(3.0, 4.0))) // 12.0
 ```
 
+### Argument Shorthand Sugar
+
+Convenient syntax for record arguments in function calls:
+
+```rust
+type Config = { host: String, port: Int }
+
+fun connect(config: Config) {
+    print("Connecting to ${config.host}:${config.port}")
+}
+
+// Call with shorthand - no braces needed!
+connect(host: "localhost", port: 8080)
+
+// Equivalent to: connect({ host: "localhost", port: 8080 })
+```
+
+The record argument must be the last parameter, and you can mix regular arguments with named record fields.
+
+```rust
+fun createUser(name, options: { age: Int, active: Bool }) {
+    // ...
+}
+
+// Usage
+createUser("Alice", age: 25, active: true)
+```
+
 ### Tail Call Optimization
 
 ```rust
@@ -177,6 +205,9 @@ fun makeB() -> BType { { val: 1 } }
 | `lib/list` | map, filter, foldl, sort, zip, range |
 | `lib/string` | split, trim, replace, contains |
 | `lib/map` | Key-value operations |
+| `lib/tuple` | Tuple manipulation |
+| `lib/option` | Option type utilities |
+| `lib/result` | Result type utilities |
 | `lib/json` | jsonEncode, jsonDecode |
 | `lib/http` | HTTP client and server |
 | `lib/ws` | WebSocket client and server |
@@ -192,8 +223,11 @@ fun makeB() -> BType { { val: 1 } }
 | `lib/uuid` | UUID generation |
 | `lib/math` | Math functions |
 | `lib/bignum` | BigInt, Rational |
+| `lib/char` | Character functions |
 | `lib/test` | Unit testing |
 | `lib/log` | Structured logging |
+| `lib/csv` | CSV parsing and encoding |
+| `lib/flag` | Command line flags |
 
 Run `./funxy -help lib/<name>` for documentation.
 

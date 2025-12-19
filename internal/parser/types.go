@@ -129,16 +129,16 @@ func (p *Parser) parseTypeApplication() ast.Type {
 				p.nextToken()
 				continue
 			}
-			
+
 			arg := p.parseType()
 			if arg == nil {
 				return nil
 			}
-			
+
 			if nt, ok := base.(*ast.NamedType); ok {
 				nt.Args = append(nt.Args, arg)
 			}
-			
+
 			// After parseType(), check where we are
 			// Case 1: Recursive call consumed >> and left splitRshift=true
 			// curToken is synthetic > from the split
@@ -146,7 +146,7 @@ func (p *Parser) parseTypeApplication() ast.Type {
 				// We're done with this generic (either normal > or split >)
 				break
 			}
-			
+
 			// Case 2: Normal case - check peek for what's next
 			if p.peekTokenIs(token.COMMA) {
 				p.nextToken() // move curToken to comma
@@ -167,7 +167,7 @@ func (p *Parser) parseTypeApplication() ast.Type {
 				return nil
 			}
 		}
-		
+
 		if !p.curTokenIs(token.GT) {
 			return nil
 		}
@@ -226,18 +226,18 @@ func (p *Parser) parseAtomicType() ast.Type {
 	if p.curTokenIs(token.IDENT_UPPER) || p.curTokenIs(token.IDENT_LOWER) {
 		nameVal := p.curToken.Literal.(string)
 		startToken := p.curToken
-		
-		// Check for DOT (Qualified Type)
-		if p.peekTokenIs(token.DOT) {
+
+		// Check for DOT (Qualified Type) - support multi-level qualification like kit.sql.Model
+		for p.peekTokenIs(token.DOT) {
 			p.nextToken() // consume ident
 			p.nextToken() // consume dot
-			
+
 			if !p.curTokenIs(token.IDENT_UPPER) && !p.curTokenIs(token.IDENT_LOWER) {
 				return nil // Error: expected identifier after dot
 			}
 			nameVal += "." + p.curToken.Literal.(string)
 		}
-		
+
 		return &ast.NamedType{Token: startToken, Name: &ast.Identifier{Token: startToken, Value: nameVal}}
 	}
 	return nil

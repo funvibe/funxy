@@ -1,0 +1,20 @@
+package db (*)
+
+// Storage trait - будет коллизия с cache/storage!
+trait Storage<T> {
+    fun save(item: T) -> Bool
+    fun load(id: Int) -> Option<T>
+    fun delete(id: Int) -> Bool
+}
+
+type DbConfig = MkDbConfig { host: String, port: Int, database: String }
+type DbConnection = MkDbConnection { config: DbConfig, connected: Bool }
+
+fun createConfig(h: String, p: Int, db: String) {
+    MkDbConfig { host: h, port: p, database: db }
+}
+
+fun connect(cfg: DbConfig) {
+    MkDbConnection { config: cfg, connected: true }
+}
+

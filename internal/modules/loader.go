@@ -439,6 +439,7 @@ func (l *Loader) loadDir(absPath string) (*Module, error) {
 			}
 
 			// Also export constructors for any exported types
+			// AND export extension methods for any exported types
 			for _, file := range module.Files {
 				for _, stmt := range file.Statements {
 					if typeDecl, ok := stmt.(*ast.TypeDeclarationStatement); ok {
@@ -447,6 +448,20 @@ func (l *Loader) loadDir(absPath string) (*Module, error) {
 							// Export all constructors of this type
 							for _, c := range typeDecl.Constructors {
 								module.Exports[c.Name.Value] = true
+							}
+						}
+					}
+					// Export extension methods for exported types
+					if funcDecl, ok := stmt.(*ast.FunctionStatement); ok {
+						if funcDecl.Receiver != nil {
+							// This is an extension method
+							// Extract the type name from receiver
+							if namedType, ok := funcDecl.Receiver.Type.(*ast.NamedType); ok {
+								receiverTypeName := namedType.Name.Value
+								// If the receiver type is exported, export the method too
+								if module.Exports[receiverTypeName] {
+									module.Exports[funcDecl.Name.Value] = true
+								}
 							}
 						}
 					}

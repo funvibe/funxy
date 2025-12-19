@@ -1,7 +1,7 @@
 package web
 
 import "kit/ui"
-import "lib/json" as JsonLib
+import "lib/json" (Json)
 
 type HttpRequest = {
     method: String,
@@ -12,21 +12,35 @@ type HttpRequest = {
     body: String
 }
 
+// Low-level response (wire format)
 type HttpResponse = {
     status: Int,
     headers: List<(String, String)>,
     body: String
 }
 
-type Context = {
-    req: HttpRequest,
-    // res удаляем, так как ответ мы возвращаем, а не накапливаем в контексте
-    params: Map<String, String>,
-    store: Map<String, JsonLib.Json> // Для передачи данных между middleware и handler (например, user)
+// High-level response body types
+type ResponseBody =
+    BodyString String
+    | BodyJson Json
+    | BodyHtml ui.VNode
+    | BodyEmpty
+
+// High-level response object
+type Response = {
+    status: Int,
+    headers: List<(String, String)>,
+    body: ResponseBody
 }
 
-// Handler теперь возвращает Result
-// Ошибка типа String по умолчанию
-type Handler = (Context) -> Result<String, HttpResponse>
+type Context = {
+    req: HttpRequest,
+    params: Map<String, String>,
+    store: Map<String, Json>
+}
+
+// Handler returns the high-level Response
+type Handler = (Context) -> Result<String, Response>
 
 type Middleware = (Handler) -> Handler
+

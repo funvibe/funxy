@@ -1,0 +1,54 @@
+// Comprehensive test for qualified trait names - all edge cases
+import "kit/sql" (toRow, tableName)
+import "lib/test" (*)
+import "lib/map" (mapNew, mapPut)
+import "lib/sql" (SqlValue)
+
+type User = MkUser { userId: Int, userName: String }
+
+// Edge Case 1: Multi-level qualified trait name (kit.sql.Model)
+// Parser supports arbitrary nesting: module.submodule.Trait
+instance kit.sql.Model User {
+    fun tableName(u) { "users" }
+    fun toRow(u) {
+        match u {
+            MkUser(r) -> {
+                mapNew()
+                    |> fun(m) { mapPut(m, "id", SqlInt(r.userId)) }
+                    |> fun(m) { mapPut(m, "name", SqlString(r.userName)) }
+            }
+        }
+    }
+}
+
+testRun("Edge Case 1: Multi-level qualified trait with method calls", fun() {
+    u = MkUser $ { userId: 1, userName: "Alice" }
+
+    // Call trait methods inside match (like in module_name_type tests)
+    match u {
+        MkUser(r) -> {
+            toRow(u)
+            name = tableName(u)
+            assertEquals(name, "users", "tableName should return 'users'")
+            assertEquals(r.userId, 1, "User ID should be 1")
+        }
+    }
+})
+
+// Edge Case 2: ADT constructors auto-import with selective type import
+testRun("Edge Case 2: ADT constructors auto-import", fun() {
+    // SqlValue constructors (SqlInt, SqlString, etc.) should be available
+    // They were imported along with SqlValue
+    v1 = SqlInt(42)
+    v2 = SqlString("test")
+
+    match v1 {
+        SqlInt(n) -> assertEquals(n, 42, "SqlInt constructor should work")
+        _ -> assertEquals(true, false, "Should match SqlInt")
+    }
+
+    match v2 {
+        SqlString(s) -> assertEquals(s, "test", "SqlString constructor should work")
+        _ -> assertEquals(true, false, "Should match SqlString")
+    }
+})

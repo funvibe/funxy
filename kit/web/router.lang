@@ -1,108 +1,48 @@
 package web
 
-import "lib/list" (foldl, filter, map)
+import "lib/list" (filter, foldl)
 import "lib/string" (stringSplit, stringReplaceAll, stringJoin)
-import "lib/tuple" (fst, snd)
 import "lib/map" (mapGet, mapPut)
+import "lib/tuple" (fst, snd)
 
-// --- ADT for Radix Tree ---
+// --- Router ---
 
 type NodeType = Static | Param | Wildcard
-
 type Node = MkNode NodeType String Option<Handler> List<Node>
-
-// Router now holds a map of roots (one per HTTP method)
-// roots: Map<Method, RootNode>
-type Router = MkRouter Map<String, Node> List<Middleware> Handler ((Context, String) -> Result<String, HttpResponse>)
+type Router = MkRouter Map<String, Node> List<Middleware> Handler ((Context, String) -> Result<String, Response>)
 
 fun newRouter() {
-    // Default handlers
-    defaultNotFoundHandler = fun(ctx) -> Result<String, HttpResponse> {
-        res: HttpResponse = resText("Not Found") |> withStatus(404)
-        Ok(res)
+    defaultNotFoundHandler = fun(ctx) -> Result<String, Response> {
+        Ok(resText("Not Found") |> withStatus(404))
     }
-
-    defaultErrorHandler = fun(ctx, err) -> Result<String, HttpResponse> {
-        res: HttpResponse = resText("Internal Server Error") |> withStatus(500)
-        Ok(res)
+    defaultErrorHandler = fun(ctx, err) -> Result<String, Response> {
+        Ok(resText("Internal Server Error") |> withStatus(500))
     }
-
-    // Initialize with empty map of roots
     MkRouter(%{}, [], defaultNotFoundHandler, defaultErrorHandler)
 }
 
-fun addRoute(method, path, handler, r) {
-    match r {
-        MkRouter(roots, mws, notFoundHandler, errorHandler) -> {
-            // Get or create root node for this method
-            root = match mapGet(roots, method) {
-                Some(n) -> n
-                Zero -> MkNode(Static, "/", Zero, [])
-            }
-
-            // Split path into segments, ignoring empty strings (e.g. initial /)
-            parts = stringSplit(path, "/")
-            segments = parts |> filter(fun(s) { s != "" })
-
-            // Insert handler into the tree
-            newRoot = insertNode(root, segments, handler)
-
-            // Update roots map
-            newRoots = mapPut(roots, method, newRoot)
-
-            MkRouter(newRoots, mws, notFoundHandler, errorHandler)
+// Router Internal: insertChildSorted
+fun insertChildSorted(children, newChild) {
+    rank = fun(node) {
+        match node {
+            MkNode(Static, _, _, _) -> 0
+            MkNode(Param, _, _, _) -> 1
+            MkNode(Wildcard, _, _, _) -> 2
         }
+    }
+    newRank = rank(newChild)
+    statics = children |> filter(fun(c) { rank(c) == 0 })
+    params = children |> filter(fun(c) { rank(c) == 1 })
+    wildcards = children |> filter(fun(c) { rank(c) == 2 })
+    match newRank {
+        0 -> (statics ++ [newChild]) ++ params ++ wildcards
+        1 -> statics ++ (params ++ [newChild]) ++ wildcards
+        2 -> statics ++ params ++ (wildcards ++ [newChild])
+        _ -> children ++ [newChild]
     }
 }
 
-fun insertNode(node, segments, handler) {
-    match segments {
-        [] -> {
-            // End of path, set handler on this node
-            match node {
-                MkNode(t, s, _, children) -> MkNode(t, s, Some(handler), children)
-            }
-        }
-        [seg, rest...] -> {
-            match node {
-                MkNode(typ, s, h, children) -> {
-                    // Determine type of the next segment
-                    nextSegInfo = if len(stringSplit(seg, ":")) > 1 {
-                        (Param, stringReplaceAll(seg, ":", ""))
-                    } else if seg == "*" {
-                        (Wildcard, "_wildcard") // Default name for wildcard
-                    } else {
-                        (Static, seg)
-                    }
-                    childType = fst(nextSegInfo)
-                    childSeg = snd(nextSegInfo)
-
-                    // Find if a matching child already exists
-                    // We split children into (matching, others)
-                    // matchChild returns (Option<Node>, List<Node>)
-                    matchResult = findMatchingChild(children, childType, childSeg)
-                    matchOpt = fst(matchResult)
-                    otherChildren = snd(matchResult)
-
-                    newChild = match matchOpt {
-                        Some(c) -> insertNode(c, rest, handler)
-                        Zero -> createChain(childType, childSeg, rest, handler)
-                    }
-
-                    // Reconstruct children list, maintaining priority order
-                    // Static > Param > Wildcard
-                    // Since we removed the matching child (if any) from otherChildren,
-                    // we just need to insert newChild into otherChildren at the right place.
-                    newChildren = insertChildSorted(otherChildren, newChild)
-
-                    MkNode(typ, s, h, newChildren)
-                }
-            }
-        }
-    }
-}
-
-// Create a chain of nodes for the remaining segments
+// Router Internal: createChain
 fun createChain(typ, seg, rest, handler) {
     match rest {
         [] -> MkNode(typ, seg, Some(handler), [])
@@ -122,8 +62,7 @@ fun createChain(typ, seg, rest, handler) {
     }
 }
 
-// Find a child with matching type and segment
-// Returns (Option<FoundNode>, List<OtherNodes>)
+// Router Internal: findMatchingChild
 fun findMatchingChild(children, typ, seg) {
     foldl(fun(acc, child) {
         found = fst(acc)
@@ -140,130 +79,62 @@ fun findMatchingChild(children, typ, seg) {
     }, (Zero, []), children)
 }
 
-// Insert a child into the list keeping order: Static < Param < Wildcard
-fun insertChildSorted(children, newChild) {
-    // 0=Static, 1=Param, 2=Wildcard
-    rank = fun(node) {
-        match node {
-            MkNode(Static, _, _, _) -> 0
-            MkNode(Param, _, _, _) -> 1
-            MkNode(Wildcard, _, _, _) -> 2
-        }
-    }
-
-    newRank = rank(newChild)
-
-    // Split into (lessOrEqual, greater)
-    // Actually we just need to insert before the first one with greater rank
-    // But since we want to group same ranks, let's just append if same rank?
-    // Order within same rank doesn't strictly matter for correctness, but maybe for determinism.
-
-    // Simple approach: partition by rank
-    statics = children |> filter(fun(c) { rank(c) == 0 })
-    params = children |> filter(fun(c) { rank(c) == 1 })
-    wildcards = children |> filter(fun(c) { rank(c) == 2 })
-
-    match newRank {
-        0 -> (statics ++ [newChild]) ++ params ++ wildcards
-        1 -> statics ++ (params ++ [newChild]) ++ wildcards
-        2 -> statics ++ params ++ (wildcards ++ [newChild])
-        _ -> children ++ [newChild] // Should not happen
-    }
-}
-
-// Find a route in the router
-// Returns Option<(Handler, Map<String, String>)>
-fun findRoute(router, method, path) {
-    match router {
-        MkRouter(roots, _, _, _) -> {
-            match mapGet(roots, method) {
-                Zero -> Zero
-                Some(root) -> {
-                    parts = stringSplit(path, "/")
-                    segments = parts |> filter(fun(s) { s != "" })
-                    matchNode(root, segments, %{})
-                }
-            }
-        }
-    }
-}
-
-// Recursive matching
-fun matchNode(node, segments, params) {
+// Router Internal: insertNode
+fun insertNode(node, segments, handler) {
     match segments {
         [] -> {
-            // End of path, check if this node has a handler
             match node {
-                MkNode(_, _, handlerOpt, _) -> match handlerOpt {
-                    Some(h) -> Some((h, params))
-                    Zero -> Zero // Node exists but no handler (intermediate node)
-                }
+                MkNode(t, s, _, children) -> MkNode(t, s, Some(handler), children)
             }
         }
         [seg, rest...] -> {
             match node {
-                MkNode(_, _, _, children) -> {
-                    // Try children in order
-                    // children are already sorted by priority
-                    searchChildren(children, seg, rest, params)
+                MkNode(typ, s, h, children) -> {
+                    nextSegInfo = if len(stringSplit(seg, ":")) > 1 {
+                        (Param, stringReplaceAll(seg, ":", ""))
+                    } else if seg == "*" {
+                        (Wildcard, "_wildcard")
+                    } else {
+                        (Static, seg)
+                    }
+                    childType = fst(nextSegInfo)
+                    childSeg = snd(nextSegInfo)
+                    matchResult = findMatchingChild(children, childType, childSeg)
+                    matchOpt = fst(matchResult)
+                    otherChildren = snd(matchResult)
+                    newChild = match matchOpt {
+                        Some(c) -> insertNode(c, rest, handler)
+                        Zero -> createChain(childType, childSeg, rest, handler)
+                    }
+                    newChildren = insertChildSorted(otherChildren, newChild)
+                    MkNode(typ, s, h, newChildren)
                 }
             }
         }
     }
 }
 
-fun searchChildren(children, seg, rest, params) {
-    match children {
-        [] -> Zero // No match found
-        [child, otherChildren...] -> {
-            match child {
-                MkNode(typ, childSeg, _, _) -> {
-                    match typ {
-                        Static -> {
-                            if childSeg == seg {
-                                // Match exact segment
-                                res = matchNode(child, rest, params)
-                                match res {
-                                    Some(_) -> res
-                                    Zero -> searchChildren(otherChildren, seg, rest, params) // Backtrack
-                                }
-                            } else {
-                                searchChildren(otherChildren, seg, rest, params)
-                            }
-                        }
-                        Param -> {
-                            // Match param, capture value
-                            newParams = mapPut(params, childSeg, seg)
-                            res = matchNode(child, rest, newParams)
-                            match res {
-                                Some(_) -> res
-                                Zero -> searchChildren(otherChildren, seg, rest, params)
-                            }
-                        }
-                        Wildcard -> {
-                            // Match wildcard (greedy match rest of path)
-                            // Wildcard captures everything remaining.
-                            // Reconstruct the rest of the path
-                            suffix = stringJoin([seg] ++ rest, "/")
-                            newParams = mapPut(params, childSeg, suffix)
-
-                            // Check if this wildcard node has a handler
-                            match child {
-                                MkNode(_, _, handlerOpt, _) -> match handlerOpt {
-                                    Some(h) -> Some((h, newParams))
-                                    Zero -> Zero // Wildcard without handler?
-                                }
-                            }
-                        }
-                    }
-                }
+fun addRoute(method, path, handler, r) {
+    match r {
+        MkRouter(roots, mws, notFoundHandler, errorHandler) -> {
+            root = match mapGet(roots, method) {
+                Some(n) -> n
+                Zero -> MkNode(Static, "/", Zero, [])
             }
+            parts = stringSplit(path, "/")
+            segments = parts |> filter(fun(s) { s != "" })
+            newRoot = insertNode(root, segments, handler)
+            newRoots = mapPut(roots, method, newRoot)
+            MkRouter(newRoots, mws, notFoundHandler, errorHandler)
         }
     }
 }
 
 fun get(path, handler, r) { addRoute("GET", path, handler, r) }
 fun post(path, handler, r) { addRoute("POST", path, handler, r) }
+fun put(path, handler, r) { addRoute("PUT", path, handler, r) }
+fun delete(path, handler, r) { addRoute("DELETE", path, handler, r) }
+fun patch(path, handler, r) { addRoute("PATCH", path, handler, r) }
 fun options(path, handler, r) { addRoute("OPTIONS", path, handler, r) }
 
 fun use(mw, r) {
@@ -284,3 +155,82 @@ fun setErrorHandler(r, handler) {
     }
 }
 
+// Router Internal: searchChildren
+fun searchChildren(children, seg, rest, params) {
+    match children {
+        [] -> Zero
+        [child, otherChildren...] -> {
+            match child {
+                MkNode(typ, childSeg, _, _) -> {
+                    match typ {
+                        Static -> {
+                            if childSeg == seg {
+                                res = matchNode(child, rest, params)
+                                match res {
+                                    Some(_) -> res
+                                    Zero -> searchChildren(otherChildren, seg, rest, params)
+                                }
+                            } else {
+                                searchChildren(otherChildren, seg, rest, params)
+                            }
+                        }
+                        Param -> {
+                            newParams = mapPut(params, childSeg, seg)
+                            res = matchNode(child, rest, newParams)
+                            match res {
+                                Some(_) -> res
+                                Zero -> searchChildren(otherChildren, seg, rest, params)
+                            }
+                        }
+                        Wildcard -> {
+                            suffix = stringJoin([seg] ++ rest, "/")
+                            newParams = mapPut(params, childSeg, suffix)
+                            match child {
+                                MkNode(_, _, handlerOpt, _) -> match handlerOpt {
+                                    Some(h) -> Some((h, newParams))
+                                    Zero -> Zero
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Router Internal: matchNode
+fun matchNode(node, segments, params) {
+    match segments {
+        [] -> {
+            match node {
+                MkNode(_, _, handlerOpt, _) -> match handlerOpt {
+                    Some(h) -> Some((h, params))
+                    Zero -> Zero
+                }
+            }
+        }
+        [seg, rest...] -> {
+            match node {
+                MkNode(_, _, _, children) -> {
+                    searchChildren(children, seg, rest, params)
+                }
+            }
+        }
+    }
+}
+
+fun findRoute(router, method, path) {
+    match router {
+        MkRouter(roots, _, _, _) -> {
+            match mapGet(roots, method) {
+                Zero -> Zero
+                Some(root) -> {
+                    parts = stringSplit(path, "/")
+                    segments = parts |> filter(fun(s) { s != "" })
+                    matchNode(root, segments, %{})
+                }
+            }
+        }
+    }
+}

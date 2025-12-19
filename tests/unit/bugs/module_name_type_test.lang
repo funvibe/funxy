@@ -1,0 +1,31 @@
+import "kit/sql" (Model)
+import "lib/test" (*)
+import "lib/map" (mapNew, mapPut)
+import "lib/sql" (SqlValue)
+
+type User = MkUser { userId: Int, userName: String }
+
+instance Model User {
+    fun tableName(u) { "users" }
+    fun toRow(u) {
+        match u {
+            MkUser(r) -> {
+                mapNew()
+                    |> fun(m) { mapPut(m, "id", SqlInt(r.userId)) }
+                    |> fun(m) { mapPut(m, "name", SqlString(r.userName)) }
+            }
+        }
+    }
+}
+
+testRun("Module Name Type", fun() {
+    u = MkUser $ { userId: 1, userName: "Alice" }
+
+    match u {
+        MkUser(r) -> {
+            toRow(u)
+            assertEquals(r.userId, 1, "User ID is 1")
+            assertEquals(r.userName, "Alice", "User name is Alice")
+        }
+    }
+})

@@ -5,7 +5,7 @@ import "lib/tuple" (fst, snd)
 import "lib/list" (find)
 
 // Custom error handlers for testing
-fun customNotFoundHandler(ctx) -> Result<String, web.HttpResponse> {
+fun customNotFoundHandler(ctx) -> Result<String, web.Response> {
     Ok(web.resHtml(
         ui.div(
             [
@@ -16,10 +16,7 @@ fun customNotFoundHandler(ctx) -> Result<String, web.HttpResponse> {
     ))
 }
 
-fun customErrorHandler(ctx, err) -> Result<String, web.HttpResponse> {
-    // Workaround: BUG in parser - variables from match expressions break subsequent operations
-    // Avoid using match results directly; convert to string first if needed
-    // For now just use static error message
+fun customErrorHandler(ctx, err) -> Result<String, web.Response> {
     htmlBody = "<h1>500 - Server Error</h1><p>Something went wrong</p>"
 
     Ok(
@@ -30,12 +27,12 @@ fun customErrorHandler(ctx, err) -> Result<String, web.HttpResponse> {
 }
 
 // Handler that always fails
-fun failingHandler(ctx) -> Result<String, web.HttpResponse> {
+fun failingHandler(ctx) -> Result<String, web.Response> {
     Fail("Something went wrong")
 }
 
 // Handler that succeeds
-fun successHandler(ctx) -> Result<String, web.HttpResponse> {
+fun successHandler(ctx) -> Result<String, web.Response> {
     Ok(web.resText("Success"))
 }
 
@@ -55,6 +52,7 @@ testRun("Custom Error Pages", fun() {
         body: ""
     }
 
+    // handleRequest returns HttpResponse (finalized)
     resExists = web.handleRequest(router404, reqExists)
     assertEquals(resExists.status, 200, "Existing route returns 200")
     assertEquals(resExists.body, "Success", "Existing route returns correct body")

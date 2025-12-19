@@ -463,11 +463,61 @@ func (p *Parser) parseInstanceDeclaration() *ast.InstanceDeclaration {
 	stmt := &ast.InstanceDeclaration{Token: p.curToken}
 
 	// instance Show Int { ... }
+	// instance sql.Model User { ... } -- Qualified trait name
+	// instance kit.sql.Model User { ... } -- Multi-level qualified trait name
 	// instance Functor<Option> { ... }  -- HKT style
-	if !p.expectPeek(token.IDENT_UPPER) {
+
+	// Check if we have a qualified name (module.submodule...Trait)
+	if p.peekTokenIs(token.IDENT_LOWER) {
+		// Could be qualified name syntax: module.Trait or module.submodule.Trait
+		p.nextToken() // consume and save first identifier
+		qualifiedPath := p.curToken.Literal.(string)
+		startToken := p.curToken
+
+		// Collect all parts of the qualified path (support multi-level: kit.sql.Model)
+		for p.peekTokenIs(token.DOT) {
+			p.nextToken() // consume dot
+
+			// Check what comes after the dot
+			if p.peekTokenIs(token.IDENT_LOWER) {
+				// Another module segment: kit.sql
+				p.nextToken()
+				qualifiedPath += "." + p.curToken.Literal.(string)
+			} else if p.peekTokenIs(token.IDENT_UPPER) {
+				// Final trait name: Model
+				p.nextToken()
+				traitName := p.curToken.Literal.(string)
+
+				// Split qualified path: "kit.sql" -> ModuleName, "Model" -> TraitName
+				stmt.ModuleName = &ast.Identifier{Token: startToken, Value: qualifiedPath}
+				stmt.TraitName = &ast.Identifier{Token: p.curToken, Value: traitName}
+				break
+			} else {
+				// Error: expected identifier after dot
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP005,
+					p.peekToken,
+					"expected identifier after '.' in qualified trait name",
+				))
+				return nil
+			}
+		}
+
+		// If we exited the loop without finding an uppercase trait name, it's an error
+		if stmt.TraitName == nil {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP005,
+				p.curToken,
+				"expected trait name (uppercase identifier) in qualified name",
+			))
+			return nil
+		}
+	} else if !p.expectPeek(token.IDENT_UPPER) {
+		// Simple case: instance Trait
 		return nil
+	} else {
+		stmt.TraitName = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 	}
-	stmt.TraitName = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 
 	// Check for HKT syntax: instance Trait<TypeConstructor> { ... }
 	// Or: instance Trait<TypeConstructor, E> { ... } with extra type params

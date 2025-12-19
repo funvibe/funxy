@@ -10,6 +10,7 @@ import (
 	"github.com/funvibe/funxy/internal/typesystem"
 	"github.com/funvibe/funxy/internal/utils"
 	"sort"
+	"strings"
 )
 
 func (w *walker) VisitPackageDeclaration(n *ast.PackageDeclaration) {}
@@ -91,8 +92,10 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 	// Define Module Symbol
 	name := ""
 	if n.Alias != nil {
+		// Explicit alias provided
 		name = n.Alias.Value
 	} else {
+		// Use base name by default
 		name = utils.ExtractModuleName(n.Path.Value)
 	}
 
@@ -136,6 +139,9 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 			// Import symbols directly into current scope
 			symbolsToImport := make(map[string]bool)
 
+			// Track which traits need to be implicitly imported when their methods are imported
+			traitsToImport := make(map[string]bool)
+
 			if n.ImportAll {
 				// Import all (using already sorted exportKeys)
 				for _, expName := range exportKeys {
@@ -146,12 +152,26 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 				for _, sym := range n.Symbols {
 					if _, ok := exportSymbols[sym.Value]; ok {
 						symbolsToImport[sym.Value] = true
+
+						// If this symbol is a trait method, automatically import the trait too
+						if modSymTable := loadedMod.GetSymbolTable(); modSymTable != nil {
+							if traitName, ok := modSymTable.GetTraitForMethod(sym.Value); ok {
+								traitsToImport[traitName] = true
+							}
+						}
 					} else {
 						w.addError(diagnostics.NewError(
 							diagnostics.ErrA006,
 							sym.GetToken(),
 							sym.Value,
 						))
+					}
+				}
+
+				// Add traits to import list
+				for traitName := range traitsToImport {
+					if !symbolsToImport[traitName] {
+						symbolsToImport[traitName] = true
 					}
 				}
 			} else if len(n.Exclude) > 0 {
@@ -288,8 +308,16 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 			fields := make(map[string]typesystem.Type)
 			for _, expName := range exportKeys {
 				sym := exportSymbols[expName]
+
+				// For traits, create a special marker type since they have Type=nil
+				if sym.Kind == symbols.TraitSymbol {
+					// Use a TCon to represent the trait in the module record
+					fields[expName] = typesystem.TCon{Name: expName}
+					continue
+				}
+
 				if sym.Type == nil {
-					// Skip symbols with nil types (e.g., traits)
+					// Skip symbols with nil types (other than traits)
 					continue
 				}
 				// Tag with alias for namespaced access (e.g., m.Vector)
@@ -302,6 +330,43 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 
 			moduleType := typesystem.TRecord{Fields: fields}
 			w.symbolTable.DefineModule(name, moduleType)
+
+			// Copy trait definitions for exported traits (qualified access like m.Trait)
+			if modSymTable := loadedMod.GetSymbolTable(); modSymTable != nil {
+				for _, expName := range exportKeys {
+					sym := exportSymbols[expName]
+					if sym.Kind == symbols.TraitSymbol {
+						// Copy trait definition with qualified name
+						typeParams, _ := modSymTable.GetTraitTypeParams(expName)
+						superTraits, _ := modSymTable.GetTraitSuperTraits(expName)
+						qualifiedTraitName := name + "." + expName
+
+						// Define the trait with qualified name
+						w.symbolTable.DefineTrait(qualifiedTraitName, typeParams, superTraits, sym.OriginModule)
+
+						// Copy trait methods
+						// Trait methods need to be available as functions when trait is imported
+						methods := modSymTable.GetTraitAllMethods(expName)
+						for _, methodName := range methods {
+							w.symbolTable.RegisterTraitMethod2(qualifiedTraitName, methodName)
+
+							// Try to get method type from module's symbol table
+							var methodType typesystem.Type
+							if methodSym, ok := modSymTable.Find(methodName); ok && methodSym.Type != nil {
+								methodType = methodSym.Type
+							} else {
+								// Method type not found in module symbol table
+								// This can happen if module wasn't fully analyzed
+								// Create a generic placeholder type that will be resolved via trait dispatch
+								methodType = typesystem.TVar{Name: "method_" + methodName}
+							}
+
+							taggedMethodType := tagModule(methodType, name, exportedTypes)
+							w.symbolTable.RegisterTraitMethod(methodName, qualifiedTraitName, taggedMethodType, sym.OriginModule)
+						}
+					}
+				}
+			}
 
 			// Copy type aliases for exported types (qualified names like m.Vector)
 			if modSymTable := loadedMod.GetSymbolTable(); modSymTable != nil {
@@ -1256,12 +1321,69 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	}
 
 	// 1. Check if Trait exists
-	sym, ok := w.symbolTable.Find(n.TraitName.Value)
+	var sym *symbols.Symbol
+	var ok bool
+	var traitName string // Full trait name (qualified if module is specified)
+
+	if n.ModuleName != nil {
+		// Qualified trait name: sql.Model or kit.sql.Model
+		// The ModuleName can be:
+		// 1. Simple module alias: "sql" (from import "lib/sql")
+		// 2. Qualified path: "kit.sql" (user wrote kit.sql.Model, but module was imported as "sql")
+
+		// Try to find the trait using different strategies:
+		// Strategy 1: Try the full qualified name (moduleName.traitName)
+		fullQualifiedName := n.ModuleName.Value + "." + n.TraitName.Value
+
+		// Strategy 2: Check if ModuleName contains dots (multi-level qualification)
+		// If yes, try to find module by the last part only
+		var candidateNames []string
+		candidateNames = append(candidateNames, fullQualifiedName)
+
+		if strings.Contains(n.ModuleName.Value, ".") {
+			// kit.sql.Model -> try "sql.Model" as well
+			parts := strings.Split(n.ModuleName.Value, ".")
+			lastPart := parts[len(parts)-1]
+			candidateNames = append(candidateNames, lastPart+"."+n.TraitName.Value)
+		}
+
+		// Strategy 3: Try just the trait name (for selective imports)
+		candidateNames = append(candidateNames, n.TraitName.Value)
+
+		// Try to find the trait using candidate names
+		for _, candidateName := range candidateNames {
+			symVal, found := w.symbolTable.Find(candidateName)
+			if found && symVal.Kind == symbols.TraitSymbol {
+				traitName = candidateName
+				sym = &symVal
+				ok = true
+				break
+			}
+		}
+
+		if !ok {
+			w.addError(diagnostics.NewError(
+				diagnostics.ErrA001,
+				n.TraitName.GetToken(),
+				fmt.Sprintf("trait %s not found in module %s", n.TraitName.Value, n.ModuleName.Value),
+			))
+			return
+		}
+	} else {
+		// Unqualified trait name
+		traitName = n.TraitName.Value
+		symVal, found := w.symbolTable.Find(traitName)
+		if found {
+			sym = &symVal
+			ok = true
+		}
+	}
+
 	if !ok {
 		w.addError(diagnostics.NewError(
 			diagnostics.ErrA001, // Undeclared identifier
 			n.TraitName.GetToken(),
-			n.TraitName.Value,
+			traitName,
 		))
 		return
 	}
@@ -1269,7 +1391,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		w.addError(diagnostics.NewError(
 			diagnostics.ErrA003, // Type error (or kind error)
 			n.TraitName.GetToken(),
-			n.TraitName.Value+" is not a trait",
+			traitName+" is not a trait",
 		))
 		return
 	}
@@ -1289,7 +1411,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	// Kind check: For HKT traits like Functor<F>, F must be a type constructor
 	// Use registered kinds (from symbol table) to verify
 	// Automatically detect HKT traits by checking if type param is applied in method signatures
-	isHKT := w.symbolTable.IsHKTTrait(n.TraitName.Value)
+	isHKT := w.symbolTable.IsHKTTrait(traitName)
 
 	// Extra type params in instance declaration count as partial application
 	hasExtraParams := len(n.TypeParams) > 0
@@ -1317,20 +1439,20 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 					diagnostics.ErrA003,
 					n.Target.GetToken(),
 					fmt.Sprintf("type %s has kind *, but trait %s requires kind * -> * (type constructor)",
-						typeName, n.TraitName.Value),
+						typeName, traitName),
 				))
 				return
 			}
 		}
 	}
 
-	superTraits, _ := w.symbolTable.GetTraitSuperTraits(n.TraitName.Value)
+	superTraits, _ := w.symbolTable.GetTraitSuperTraits(traitName)
 	for _, superTrait := range superTraits {
 		if !w.symbolTable.IsImplementationExists(superTrait, targetType) {
 			w.addError(diagnostics.NewError(
 				diagnostics.ErrA003,
 				n.Token,
-				"cannot implement "+n.TraitName.Value+" for "+targetType.String()+": missing implementation of super trait "+superTrait,
+				"cannot implement "+traitName+" for "+targetType.String()+": missing implementation of super trait "+superTrait,
 			))
 			return
 		}
@@ -1374,7 +1496,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	}
 
 	// 3. Register Implementation
-	err := w.symbolTable.RegisterImplementation(n.TraitName.Value, targetType)
+	err := w.symbolTable.RegisterImplementation(traitName, targetType)
 	if err != nil {
 		w.addError(diagnostics.NewError(
 			diagnostics.ErrA004, // Redefinition/Overlap
@@ -1385,7 +1507,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	}
 
 	// 3b. Check that all required methods are implemented
-	requiredMethods := w.symbolTable.GetTraitRequiredMethods(n.TraitName.Value)
+	requiredMethods := w.symbolTable.GetTraitRequiredMethods(traitName)
 	implementedMethods := make(map[string]bool)
 	for _, method := range n.Methods {
 		// For operator methods, Name is nil and Operator contains the operator symbol
@@ -1400,7 +1522,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 			w.addError(diagnostics.NewError(
 				diagnostics.ErrA003,
 				n.Token,
-				"instance "+n.TraitName.Value+" for "+typeName+" is missing required method '"+required+"'",
+				"instance "+traitName+" for "+typeName+" is missing required method '"+required+"'",
 			))
 		}
 	}
@@ -1412,12 +1534,12 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	defer func() { w.symbolTable = outer }()
 
 	// Verify signatures
-	typeParamNames, ok := w.symbolTable.GetTraitTypeParams(n.TraitName.Value)
+	typeParamNames, ok := w.symbolTable.GetTraitTypeParams(traitName)
 	if !ok {
 		w.addError(diagnostics.NewError(
 			diagnostics.ErrA001,
 			n.TraitName.GetToken(),
-			"unknown trait type param for "+n.TraitName.Value,
+			"unknown trait type param for "+traitName,
 		))
 		return
 	}
@@ -1426,7 +1548,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		w.addError(diagnostics.NewError(
 			diagnostics.ErrA003,
 			n.TraitName.GetToken(),
-			"trait "+n.TraitName.Value+" has no type parameters",
+			"trait "+traitName+" has no type parameters",
 		))
 		return
 	}
@@ -1450,17 +1572,17 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 			w.addError(diagnostics.NewError(
 				diagnostics.ErrA001,
 				method.Name.GetToken(),
-				"method "+method.Name.Value+" is not part of trait "+n.TraitName.Value,
+				"method "+method.Name.Value+" is not part of trait "+traitName,
 			))
 			continue
 		}
 
 		traitForMethod, _ := w.symbolTable.GetTraitForMethod(method.Name.Value)
-		if traitForMethod != n.TraitName.Value {
+		if traitForMethod != traitName {
 			w.addError(diagnostics.NewError(
 				diagnostics.ErrA003,
 				method.Name.GetToken(),
-				"method "+method.Name.Value+" belongs to trait "+traitForMethod+", not "+n.TraitName.Value,
+				"method "+method.Name.Value+" belongs to trait "+traitForMethod+", not "+traitName,
 			))
 			continue
 		}
@@ -1489,7 +1611,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 			// 5. Register instance method signature for use in type inference
 			// This allows traits like Optional to correctly extract inner types
 			// for any user-defined type, not just built-in types.
-			outer.RegisterInstanceMethod(n.TraitName.Value, typeName, method.Name.Value, expectedType)
+			outer.RegisterInstanceMethod(traitName, typeName, method.Name.Value, expectedType)
 		}
 	}
 }

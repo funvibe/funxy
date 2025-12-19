@@ -1,7 +1,10 @@
 package sql (*)
 
-import "lib/sql" (sqlQuery, sqlQueryRow, SqlValue)
-import "lib/list" (map)
+import "lib/sql" (sqlQuery, sqlQueryRow, sqlExec, SqlValue)
+import "lib/list" (map, foldl)
+import "lib/map" (mapItems)
+import "lib/string" (stringJoin)
+import "lib/tuple" (fst, snd)
 
 // --- ORM-like Helpers ---
 
@@ -31,9 +34,25 @@ fun findById(db, table, key, mapper) {
 fun insert<T: Model>(db, model: T) {
     table = tableName(model)
     row = toRow(model)
+    items = mapItems(row)
 
-    // Generate INSERT query
-    // This requires dynamic query building which is complex without further map helpers
-    // Placeholder implementation
-    Ok(0)
+    // items is List<(String, SqlValue)>
+    cols = items |> map(fst)
+    vals = items |> map(snd)
+
+    colStr = stringJoin(cols, ", ")
+
+    // Generate placeholders: $1, $2, ...
+    placeholdersInfo = foldl(fun(acc, _) {
+        idx = fst(acc)
+        list = snd(acc)
+        (idx + 1, list ++ ["$" ++ show(idx)])
+    }, (1, []), cols)
+    placeholders = snd(placeholdersInfo)
+
+    valStr = stringJoin(placeholders, ", ")
+
+    q = sprintf("INSERT INTO %s (%s) VALUES (%s)", table, colStr, valStr)
+
+    sqlExec(db, q, vals)
 }

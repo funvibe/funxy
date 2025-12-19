@@ -691,9 +691,11 @@ func (td *TraitDeclaration) GetToken() token.Token { return td.Token }
 // InstanceDeclaration represents an implementation of a trait for a type.
 // instance Show Int { fun show(val: Int) -> String { ... } }
 // instance Functor<Result, E> { ... } -- HKT with extra type params
+// instance sql.Model User { ... } -- Qualified trait name
 type InstanceDeclaration struct {
 	Token      token.Token          // 'instance'
-	TraitName  *Identifier          // 'Show' (was ClassName)
+	ModuleName *Identifier          // Optional: module name for qualified trait (e.g., 'sql' in 'sql.Model')
+	TraitName  *Identifier          // 'Show' or 'Model' (was ClassName)
 	Target     Type                 // 'Int' or '(List a)' or 'Maybe Int' or 'Result' for HKT
 	TypeParams []*Identifier        // Extra type params like E in Functor<Result, E>
 	Methods    []*FunctionStatement // Implementations

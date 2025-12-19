@@ -1,89 +1,30 @@
 package web (*)
 
-import "kit/ui"
-import "lib/time" (clockMs)
-import "lib/list" (find, foldr, foldl)
-import "lib/map" (mapPut)
+import "lib/list" (foldr)
 import "lib/tuple" (fst, snd)
-import "lib/regex"
 
-// --- Middleware Implementations ---
-
-fun logger(next) {
-    fun(ctx) {
-        start = clockMs()
-        result = next(ctx)
-        duration = clockMs() - start
-
-        req = ctx.req
-
-        match result {
-            Ok(res) -> {
-                // Log: METHOD PATH -> STATUS (DURATION ms)
-                msg = sprintf("%s %s -> %d (%d ms)", req.method, req.path, res.status, duration)
-                print(msg)
-            }
-            Fail(err) -> {
-                // Log: METHOD PATH -> ERROR (DURATION ms)
-                msg = sprintf("%s %s -> ERROR (%d ms)", req.method, req.path, duration)
-                print(msg)
-            }
-        }
-
-        result
-    }
-}
-
-// --- Server ---
-
-fun handleRequest(router, req: HttpRequest) {
-    // 1. Create Context
+fun handleRequest(router, req: HttpRequest) -> HttpResponse {
     ctx = context(req)
-
     match router {
-        // Updated MkRouter pattern match (roots instead of routes)
-        // We use the router variable for findRoute, but need fields for error handling
         MkRouter(_, middlewares, notFoundHandler, errorHandler) -> {
-
-            // Use the new tree-based findRoute
-            // Returns Option<(Handler, Map<String, String>)>
             found = findRoute(router, req.method, req.path)
-
-            match found {
+            highLevelResult = match found {
                 Some(matchResult) -> {
                     handler = fst(matchResult)
                     params = snd(matchResult)
-
-                    // Update context with params
                     updatedCtx: Context = { req: ctx.req, params: params, store: ctx.store }
-
-                    // Compose Handler with Middleware
                     wrappedHandler = foldr(fun(mw, h) { mw(h) }, handler, middlewares)
-
-                    // Execute
-                    result = wrappedHandler(updatedCtx)
-
-                    match result {
-                        Ok(res) -> res
-                        Fail(err) -> {
-                            // Use custom error handler
-                            match errorHandler(updatedCtx, err) {
-                                Ok(res) -> res
-                                Fail(_) -> {
-                                    // Fallback if error handler itself fails
-                                    { status: 500, headers: [("Content-Type", "text/plain")], body: "Internal Server Error" }
-                                }
-                            }
-                        }
-                    }
+                    wrappedHandler(updatedCtx)
                 }
-                Zero -> {
-                    // Use custom not found handler
-                    match notFoundHandler(ctx) {
-                        Ok(res) -> res
+                Zero -> notFoundHandler(ctx)
+            }
+            match highLevelResult {
+                Ok(res) -> finalizeResponse(res)
+                Fail(err) -> {
+                    match errorHandler(ctx, err) {
+                        Ok(res) -> finalizeResponse(res)
                         Fail(_) -> {
-                            // Fallback if not found handler fails
-                            { status: 404, headers: [("Content-Type", "text/plain")], body: "Not Found" }
+                            { status: 500, headers: [("Content-Type", "text/plain")], body: "Internal Server Error" }
                         }
                     }
                 }

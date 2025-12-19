@@ -1,0 +1,59 @@
+import "kit/sql" (*)
+import "lib/test" (*)
+import "lib/sql" (*)
+import "lib/map" (mapNew, mapPut, mapGet)
+import "lib/list"
+
+type User = MkUser { userId: Int, userName: String }
+
+instance Model User {
+    fun tableName(u) { "users" }
+    fun toRow(u) {
+        match u {
+            MkUser(r) -> {
+                mapNew()
+                    |> fun(m) { mapPut(m, "id", SqlInt(r.userId)) }
+                    |> fun(m) { mapPut(m, "name", SqlString(r.userName)) }
+            }
+        }
+    }
+}
+
+fun userMapper(row) {
+    // Extract fields
+    uid = match mapGet(row, "id") { Some(SqlInt(i)) -> i, _ -> 0 }
+    uname = match mapGet(row, "name") { Some(SqlString(s)) -> s, _ -> "" }
+    MkUser $ { userId: uid, userName: uname }
+}
+
+testRun("Kit SQL ORM", fun() {
+    match sqlOpen("sqlite", ":memory:") {
+        Ok(db) -> {
+            // Create table
+            sqlExec(db, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", [])
+
+            u1 = MkUser $ { userId: 1, userName: "Alice" }
+            match insert(db, u1) {
+                Ok(n) -> assertEquals(n, 1, "Insert returned 1")
+                Fail(e) -> assertFail(Ok(0), "Insert failed: " ++ e)
+            }
+
+            // Find By Id
+            match findById(db, "users", SqlInt(1), userMapper) {
+                Ok(Some(u)) -> {
+                    match u { MkUser(r) -> assertEquals(r.userName, "Alice", "Found correct user") }
+                }
+                _ -> assertFail(Ok(0), "User not found")
+            }
+
+            // Find All
+            match findAll(db, "users", userMapper) {
+                Ok(users) -> assertEquals(len(users), 1, "Found all users")
+                Fail(e) -> assertFail(Ok(0), "FindAll failed: " ++ e)
+            }
+
+            sqlClose(db)
+        }
+        Fail(e) -> assertFail(Ok(0), "DB Open failed: " ++ e)
+    }
+})

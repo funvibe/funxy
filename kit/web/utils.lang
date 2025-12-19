@@ -1,0 +1,94 @@
+package web
+
+import "lib/map" (mapNew, mapGet, mapPut)
+import "lib/url" (urlParse, urlQueryParams, urlQueryParam, urlDecode)
+import "lib/tuple" (snd)
+import "lib/list" (find, foldl)
+import "lib/string" (stringSplit, stringIndexOf)
+
+// --- Mime Types ---
+
+fun getMimeType(filePath) {
+    if stringIndexOf(filePath, ".html") != Zero { "text/html" }
+    else if stringIndexOf(filePath, ".css") != Zero { "text/css" }
+    else if stringIndexOf(filePath, ".js") != Zero { "application/javascript" }
+    else if stringIndexOf(filePath, ".json") != Zero { "application/json" }
+    else if stringIndexOf(filePath, ".png") != Zero { "image/png" }
+    else { "application/octet-stream" }
+}
+
+// --- Context Helpers ---
+
+fun context(req: HttpRequest) -> Context {
+    {
+        req: req,
+        params: mapNew(),
+        store: mapNew()
+    }
+}
+
+fun queryParams(ctx: Context) -> Map<String, List<String>> {
+    // Use urlParse to avoid manual record construction
+    fullUrl = "http://dummy/?" ++ ctx.req.query
+    match urlParse(fullUrl) {
+        Ok(u) -> urlQueryParams(u)
+        Fail(_) -> mapNew()
+    }
+}
+
+fun queryParam(key: String, ctx: Context) -> Option<String> {
+    fullUrl = "http://dummy/?" ++ ctx.req.query
+    match urlParse(fullUrl) {
+        Ok(u) -> urlQueryParam(u, key)
+        Fail(_) -> Zero
+    }
+}
+
+fun cookie(name: String, ctx: Context) -> Option<String> {
+    found = ctx.req.cookies |> find(fun(pair) {
+        match pair {
+            (k, _) -> k == name
+        }
+    })
+
+    match found {
+        Some(pair) -> Some(snd(pair))
+        Zero -> Zero
+    }
+}
+
+fun parseQueryString(body: String) -> Map<String, String> {
+    if body == "" {
+        mapNew()
+    } else {
+        pairs = stringSplit(body, "&")
+        foldl(fun(result, pair) {
+            parts = stringSplit(pair, "=")
+            match len(parts) {
+                0 -> result
+                1 -> {
+                    match urlDecode(parts[0]) {
+                        Ok(key) -> mapPut(result, key, "")
+                        Fail(_) -> result
+                    }
+                }
+                _ -> {
+                    match (urlDecode(parts[0]), urlDecode(parts[1])) {
+                        (Ok(key), Ok(value)) -> mapPut(result, key, value)
+                        _ -> result
+                    }
+                }
+            }
+        }, mapNew(), pairs)
+    }
+}
+
+fun formParams(ctx: Context) -> Map<String, String> {
+    parseQueryString(ctx.req.body)
+}
+
+fun formParam(key: String, ctx: Context) -> Option<String> {
+    params = parseQueryString(ctx.req.body)
+    mapGet(params, key)
+}
+

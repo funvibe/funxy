@@ -1,45 +1,30 @@
 package web
 
 import "lib/io"
-import "lib/path"
+import "lib/path" (pathJoin)
 import "lib/map" (mapGet)
+
+// --- Static Handler ---
 
 fun staticHandler(rootPath) {
     fun(ctx) {
         match mapGet(ctx.params, "_wildcard") {
             Some(subPath) -> {
-                // Simple join, assumming rootPath doesn't end with / and subPath doesn't start with /
-                // Ideally use pathJoin, but let's be safe with manual concat if path lib acts weirdly
-                // or just use pathJoin as intended.
-                filePath = path.pathJoin([rootPath, subPath])
-
-                if io.fileExists(filePath) && io.isFile(filePath) {
-                     match io.fileRead(filePath) {
+                fullPath = pathJoin([rootPath, subPath])
+                if io.fileExists(fullPath) && io.isFile(fullPath) {
+                    match io.fileRead(fullPath) {
                         Ok(content) -> {
-                             mime = getMimeType(filePath)
-                             // Manually construct response or use helpers if imported
-                             Ok({ status: 200, headers: [("Content-Type", mime)], body: content })
+                             mime = getMimeType(fullPath)
+                             Ok({ status: 200, headers: [("Content-Type", mime)], body: BodyString(content) })
                         }
-                        Fail(_) -> Ok({ status: 500, headers: [("Content-Type", "text/plain")], body: "Internal Server Error" })
-                     }
+                        Fail(_) -> Ok({ status: 500, headers: [("Content-Type", "text/plain")], body: BodyString("Internal Server Error") })
+                    }
                 } else {
-                    Ok({ status: 404, headers: [("Content-Type", "text/plain")], body: "Not Found" })
+                    Ok(resText("Not Found") |> withStatus(404))
                 }
             }
-            Zero -> Ok({ status: 404, headers: [("Content-Type", "text/plain")], body: "Not Found" })
+            Zero -> Ok(resText("Not Found") |> withStatus(404))
         }
     }
 }
 
-fun getMimeType(filePath) {
-    ext = path.pathExt(filePath)
-    if ext == ".html" { "text/html" }
-    else if ext == ".css" { "text/css" }
-    else if ext == ".js" { "application/javascript" }
-    else if ext == ".json" { "application/json" }
-    else if ext == ".png" { "image/png" }
-    else if ext == ".jpg" { "image/jpeg" }
-    else if ext == ".jpeg" { "image/jpeg" }
-    else if ext == ".gif" { "image/gif" }
-    else { "text/plain" }
-}

@@ -1,45 +1,64 @@
 package web
 
 import "kit/ui"
-import "lib/json" as JsonLib
+import "lib/json" (jsonEncode, jsonFromValue)
 
-// --- Response Factory ---
+// --- Response Helpers ---
 
-fun response(status, body) {
-    { status: status, headers: [], body: body }
+fun response(status, body) -> Response {
+    { status: status, headers: [], body: BodyString(body) }
 }
 
-fun resText(s) {
-    { status: 200, headers: [("Content-Type", "text/plain")], body: s }
+fun resText(s) -> Response {
+    { status: 200, headers: [("Content-Type", "text/plain")], body: BodyString(s) }
 }
 
-fun resHtml(node) {
-    body = ui.render(node)
-    { status: 200, headers: [("Content-Type", "text/html")], body: body }
+fun resHtml(node) -> Response {
+    { status: 200, headers: [("Content-Type", "text/html")], body: BodyHtml(node) }
 }
 
-fun resJson(data) {
-    body = JsonLib.jsonEncode(JsonLib.jsonFromValue(data))
-    { status: 200, headers: [("Content-Type", "application/json")], body: body }
+fun resJson(data) -> Response {
+    // data can be any value convertible to Json
+    { status: 200, headers: [("Content-Type", "application/json")], body: BodyJson(jsonFromValue(data)) }
 }
 
-fun redirect(url) {
-    { status: 302, headers: [("Location", url)], body: "" }
+fun redirect(url) -> Response {
+    { status: 302, headers: [("Location", url)], body: BodyEmpty }
 }
 
-// --- Response Modifiers ---
+// --- Modifiers ---
 
-fun withStatus(code, res: HttpResponse) {
+fun withStatus(code, res: Response) -> Response {
     { status: code, headers: res.headers, body: res.body }
 }
 
-fun setHeader(key, value, res: HttpResponse) {
-    newHeaders = res.headers ++ [(key, value)]
+fun setHeader(key, val, res: Response) -> Response {
+    newHeaders = res.headers ++ [(key, val)]
     { status: res.status, headers: newHeaders, body: res.body }
 }
 
-fun setCookie(name, value, res: HttpResponse) {
-    // Simple cookie serialization for now
-    cookieStr = sprintf("%s=%s", name, value)
-    setHeader("Set-Cookie", cookieStr, res)
+fun setCookie(name, val, res: Response) -> Response {
+    cookieHeader = ("Set-Cookie", sprintf("%s=%s; Path=/; HttpOnly", name, val))
+    newHeaders = res.headers ++ [cookieHeader]
+    { status: res.status, headers: newHeaders, body: res.body }
 }
+
+// --- Finalize ---
+
+fun finalizeResponse(res) -> HttpResponse {
+    match res.body {
+        BodyString(s) -> {
+            { status: res.status, headers: res.headers, body: s }
+        }
+        BodyJson(j) -> {
+            { status: res.status, headers: res.headers, body: jsonEncode(j) }
+        }
+        BodyHtml(node) -> {
+            { status: res.status, headers: res.headers, body: ui.render(node) }
+        }
+        BodyEmpty -> {
+            { status: res.status, headers: res.headers, body: "" }
+        }
+    }
+}
+
