@@ -762,20 +762,40 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		Constraints:  fnConstraints,
 	}
 
-	if n.Receiver != nil {
-		typeName := resolveReceiverTypeName(n.Receiver.Type, outer)
-		if typeName == "" {
-			w.addError(diagnostics.NewError(
-				diagnostics.ErrA003,
-				n.Receiver.Token,
-				"invalid receiver type for extension method",
-			))
-		} else {
-			outer.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
+	// 5. Define in Table (Outer)
+	// In ModeBodies, we only define if it's NOT already defined in the OUTER scope.
+	// This handles:
+	// 1. Top-level functions (already defined in Headers -> Skip)
+	// 2. Nested functions (not defined in Headers because body skipped -> Define)
+	shouldDefine := true
+	if w.mode == ModeBodies {
+		// Check if defined in OUTER scope (where we intend to define it)
+		if outer.IsDefinedLocally(n.Name.Value) {
+			if sym, ok := outer.Find(n.Name.Value); ok {
+				if !sym.IsPending {
+					// Already defined and not pending -> Skip
+					shouldDefine = false
+				}
+			}
 		}
-	} else {
-		// Functions are immutable by default
-		outer.DefineConstant(n.Name.Value, fnType, w.currentModuleName)
+	}
+
+	if shouldDefine {
+		if n.Receiver != nil {
+			typeName := resolveReceiverTypeName(n.Receiver.Type, outer)
+			if typeName == "" {
+				w.addError(diagnostics.NewError(
+					diagnostics.ErrA003,
+					n.Receiver.Token,
+					"invalid receiver type for extension method",
+				))
+			} else {
+				outer.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
+			}
+		} else {
+			// Functions are immutable by default
+			outer.DefineConstant(n.Name.Value, fnType, w.currentModuleName)
+		}
 	}
 
 	// 2.5 Register Receiver in scope
@@ -803,7 +823,7 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 	}
 
 	// 5. Analyze body
-	if n.Body != nil {
+	if n.Body != nil && w.mode != ModeHeaders {
 		prevInLoop := w.inLoop
 		w.inLoop = false
 		n.Body.Accept(w)
@@ -1498,14 +1518,16 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	}
 
 	// 3. Register Implementation
-	err := w.symbolTable.RegisterImplementation(traitName, targetType)
-	if err != nil {
-		w.addError(diagnostics.NewError(
-			diagnostics.ErrA004, // Redefinition/Overlap
-			n.TraitName.GetToken(),
-			err.Error(),
-		))
-		return
+	if w.mode != ModeBodies {
+		err := w.symbolTable.RegisterImplementation(traitName, targetType)
+		if err != nil {
+			w.addError(diagnostics.NewError(
+				diagnostics.ErrA004, // Redefinition/Overlap
+				n.TraitName.GetToken(),
+				err.Error(),
+			))
+			return
+		}
 	}
 
 	// 3b. Check that all required methods are implemented
@@ -1537,6 +1559,11 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	outer := w.symbolTable
 	w.symbolTable = symbols.NewEnclosedSymbolTable(outer)
 	defer func() { w.symbolTable = outer }()
+
+	// Track instance context
+	prevInInstance := w.inInstance
+	w.inInstance = true
+	defer func() { w.inInstance = prevInInstance }()
 
 	// Verify signatures
 	typeParamNames, ok := w.symbolTable.GetTraitTypeParams(traitName)
@@ -1574,6 +1601,11 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 
 		// Skip operator methods (method.Name is nil for operators)
 		if method.Name == nil {
+			continue
+		}
+
+		// Verify signature matches Trait definition (only in Headers/Full pass)
+		if w.mode == ModeBodies {
 			continue
 		}
 

@@ -26,8 +26,13 @@ cd funxy
 make build
 ./funxy hello.lang
 ```
+
 - Added `-c` flag to compile source to .fbc bytecode files
 - Added `-r` flag to run pre-compiled bytecode
+```bash
+./funxy -c hello.lang
+./funxy -r hello.fbc
+```
 - Bytecode compilation (-c) works for single-file programs
 - Module imports are not yet supported in compiled bytecode
 

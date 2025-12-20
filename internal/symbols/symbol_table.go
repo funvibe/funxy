@@ -773,6 +773,12 @@ func (s *SymbolTable) IsDefined(name string) bool {
 	return ok
 }
 
+// IsDefinedLocally checks if a symbol is defined in the current scope (shallow check)
+func (s *SymbolTable) IsDefinedLocally(name string) bool {
+	_, ok := s.store[name]
+	return ok
+}
+
 // Update updates the type of an existing symbol.
 // It searches up the scope chain and updates the symbol where it is defined.
 // Returns error if symbol not found.

@@ -83,6 +83,7 @@ type walker struct {
 	errorSet          map[string]*diagnostics.DiagnosticError // Key: "line:col:code" for deduplication
 	errors            []*diagnostics.DiagnosticError          // Temporary slice for compatibility with BuildType etc.
 	inLoop            bool // Track if we are inside a loop
+	inInstance        bool // Track if we are inside an instance declaration
 	loader            ModuleLoader
 	BaseDir           string
 	TypeMap           map[ast.Node]typesystem.Type

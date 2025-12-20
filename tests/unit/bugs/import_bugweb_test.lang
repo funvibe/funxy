@@ -1,0 +1,11 @@
+// Test that imports a package containing trait instances
+// This should trigger the RegisterImplementation bug
+
+import "./bugweb"
+
+test = fun() {
+    print("Package with Responder trait loaded")
+}
+
+test()
+

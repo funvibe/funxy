@@ -1,0 +1,4 @@
+package bugweb (*)
+
+// Entry file that exports everything
+

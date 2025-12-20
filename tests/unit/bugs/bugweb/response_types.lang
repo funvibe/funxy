@@ -1,0 +1,16 @@
+package bugweb
+
+// Types file - comes first alphabetically
+import "lib/json" (Json)
+
+type ResponseBody =
+    BodyString String
+    | BodyJson Json
+    | BodyEmpty
+
+type Response = {
+    status: Int,
+    headers: List<(String, String)>,
+    body: ResponseBody
+}
+
