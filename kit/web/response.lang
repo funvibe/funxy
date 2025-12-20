@@ -1,6 +1,6 @@
 package web
 
-import "kit/ui"
+import "kit/ui" (render)
 import "lib/json" (jsonEncode, jsonFromValue)
 
 // --- Response Helpers ---
@@ -55,7 +55,7 @@ fun finalizeResponse(res) -> HttpResponse {
             { status: res.status, headers: res.headers, body: encoded }
         }
         BodyHtml(node) -> {
-            rendered = ui.render(node)
+            rendered = render(node)
             { status: res.status, headers: res.headers, body: rendered }
         }
         BodyEmpty -> {
