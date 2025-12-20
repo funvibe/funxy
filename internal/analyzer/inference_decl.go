@@ -118,6 +118,38 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 	if ident, ok := n.Left.(*ast.Identifier); ok {
 		// Check if variable exists in scope chain (Update)
 		if sym, ok := table.Find(ident.Value); ok {
+			// Create token for error reporting at the start of the assignment statement
+			// Use the identifier token but adjust column to point to start of identifier
+			errorTok := ident.GetToken()
+			// The identifier token column points past the identifier
+			// We need to adjust it to point to the start
+			// Calculate: current column minus length of identifier
+			if len(ident.Value) > 0 && errorTok.Column > len(ident.Value) {
+				errorTok.Column = errorTok.Column - len(ident.Value)
+			}
+
+			// Check if it's a constant - cannot reassign constants
+			if sym.IsConstant {
+				return nil, nil, diagnostics.NewError(diagnostics.ErrA003, errorTok, "cannot reassign constant '"+ident.Value+"'")
+			}
+
+			// Cannot assign to types, traits, modules, or constructors
+			switch sym.Kind {
+			case symbols.TypeSymbol:
+				return nil, nil, diagnostics.NewError(diagnostics.ErrA003, errorTok, "cannot assign to type '"+ident.Value+"'")
+			case symbols.TraitSymbol:
+				return nil, nil, diagnostics.NewError(diagnostics.ErrA003, errorTok, "cannot assign to trait '"+ident.Value+"'")
+			case symbols.ModuleSymbol:
+				return nil, nil, diagnostics.NewError(diagnostics.ErrA003, errorTok, "cannot assign to module '"+ident.Value+"'")
+			case symbols.ConstructorSymbol:
+				return nil, nil, diagnostics.NewError(diagnostics.ErrA003, errorTok, "cannot assign to constructor '"+ident.Value+"'")
+			}
+
+			// Cannot reassign imported symbols
+			if ctx != nil && sym.OriginModule != "" && sym.OriginModule != ctx.CurrentModuleName {
+				return nil, nil, diagnostics.NewError(diagnostics.ErrA003, errorTok, "cannot reassign imported symbol '"+ident.Value+"' from module '"+sym.OriginModule+"'")
+			}
+
 			// It exists. Unify types.
 			// Note: If sym.Type is nil?
 			if sym.Type != nil {

@@ -1,2 +1,2 @@
 Processing failed with errors:
-- [analyzer] error at 3:11 [A003]: type error: record { add: (Int, Int) -> Int, another_func: () -> t2, visible_func: () -> t3 } has no field or extension method 'sub'
+- error at 3:11 [A003]: type error: record { add: (Int, Int) -> Int, another_func: () -> t2, visible_func: () -> t3 } has no field or extension method 'sub'

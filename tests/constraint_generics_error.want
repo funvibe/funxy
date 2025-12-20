@@ -1,2 +1,2 @@
 Processing failed with errors:
-- [analyzer] error at 20:14 [A003]: type error: type String does not implement trait Show
+- error at 20:14 [A003]: type error: type String does not implement trait Show

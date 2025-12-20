@@ -160,15 +160,15 @@ print(fmap(fun(x) -> x + 100, failVal))                  // Fail("error")
 print(fmap(fun(x) -> x + 100, failVal) == fmapS(fun(x) -> x + 100, failVal))  // true
 
 // Functor Laws:
-// Identity:    fmap(id, x) == x
+// Identity:    fmap(identity, x) == x
 // Composition: fmap(f ,, g, x) == fmap(f, fmap(g, x))
-id = fun(x) -> x
+identity = fun(x) -> x
 inc = fun(x: Int) -> x + 1
 dbl = fun(x: Int) -> x * 2
 composed = dbl ,, inc  // dbl(inc(x))
 
 optTest = Some(5)
-print(fmap(id, optTest) == optTest)                           // true (Identity)
+print(fmap(identity, optTest) == optTest)                           // true (Identity)
 print(fmap(composed, optTest) == fmap(dbl, fmap(inc, optTest))) // true (Composition)
 
 // =============================================================================

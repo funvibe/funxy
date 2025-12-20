@@ -359,8 +359,8 @@ func (s *SymbolTable) TraitExists(name string) bool {
 
 func (s *SymbolTable) RegisterTraitMethod(methodName, traitName string, t typesystem.Type, origin string) {
 	s.traitMethods[methodName] = traitName
-	// Define method as a function in the scope so it can be called
-	s.Define(methodName, t, origin)
+	// Define method as a constant function in the scope so it can be called but not reassigned
+	s.DefineConstant(methodName, t, origin)
 }
 
 func (s *SymbolTable) RegisterTraitDefaultMethod(traitName, methodName string) {

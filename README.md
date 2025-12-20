@@ -170,6 +170,27 @@ fun createUser(name, options: { age: Int, active: Bool }) {
 createUser("Alice", age: 25, active: true)
 ```
 
+### Block Syntax (Trailing Block)
+
+For cleaner DSL-style code, functions (lowercase identifiers) can be called with a block argument without parentheses:
+
+```rust
+import "kit/ui" (div, span, text, render)
+
+// Clean syntax - no parentheses needed!
+page = div {
+    span { text("Header") }
+    div {
+        text("Content line 1")
+        text("Content line 2")
+    }
+    span { text("Footer") }
+}
+
+html = render(page)
+// <div><span>Header</span><div>Content line 1Content line 2</div><span>Footer</span></div>
+```
+
 ### Tail Call Optimization
 
 ```rust

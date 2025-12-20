@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 2:17 [A004]: redefinition of symbol: 'Int'

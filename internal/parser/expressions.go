@@ -323,7 +323,27 @@ func (p *Parser) parseMatchExpression() ast.Expression {
 }
 
 func (p *Parser) parseIdentifier() ast.Expression {
-	return &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+	ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+
+	// Special case: lowercase identifier followed by { without () creates a call with trailing block
+	// This enables clean DSL syntax: div { ... } instead of div() { ... }
+	// Only apply to lowercase identifiers to avoid conflicts with constructor record syntax: MkUser { field: value }
+	if !p.disallowTrailingLambda && p.peekTokenIs(token.LBRACE) && p.curTokenIs(token.IDENT_LOWER) {
+		// Create CallExpression with no regular arguments, only trailing block
+		call := &ast.CallExpression{
+			Token:     p.curToken,
+			Function:  ident,
+			Arguments: []ast.Expression{},
+		}
+
+		p.nextToken() // consume identifier, move to {
+		blockExprs := p.parseBlockAsList()
+		call.Arguments = append(call.Arguments, blockExprs)
+
+		return call
+	}
+
+	return ident
 }
 
 // parseUnderscore parses the _ wildcard as an identifier for use in patterns

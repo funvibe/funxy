@@ -1036,13 +1036,16 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		return vm.callValue(fieldVal, argCount)
 
 	case OP_CHECK_TUPLE_LEN:
-		// Check tuple length
+		// Check tuple length (also supports List for variadic args compatibility)
 		length := int(vm.readByte())
 		val := vm.peek(0)
 		if val.IsObj() {
-			if tuple, ok := val.AsObject().(*evaluator.Tuple); ok {
-				vm.push(BoolVal(len(tuple.Elements) == length))
-			} else {
+			switch v := val.AsObject().(type) {
+			case *evaluator.Tuple:
+				vm.push(BoolVal(len(v.Elements) == length))
+			case *evaluator.List:
+				vm.push(BoolVal(v.Len() == length))
+			default:
 				vm.push(BoolVal(false))
 			}
 		} else {
@@ -1050,13 +1053,16 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_CHECK_TUPLE_LEN_GE:
-		// Check tuple length >= N (for spread patterns)
+		// Check tuple length >= N (for spread patterns, also supports List)
 		length := int(vm.readByte())
 		val := vm.peek(0)
 		if val.IsObj() {
-			if tuple, ok := val.AsObject().(*evaluator.Tuple); ok {
-				vm.push(BoolVal(len(tuple.Elements) >= length))
-			} else {
+			switch v := val.AsObject().(type) {
+			case *evaluator.Tuple:
+				vm.push(BoolVal(len(v.Elements) >= length))
+			case *evaluator.List:
+				vm.push(BoolVal(v.Len() >= length))
+			default:
 				vm.push(BoolVal(false))
 			}
 		} else {
@@ -1215,13 +1221,21 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_TUPLE_SLICE:
-		// Get slice of tuple from start to end
+		// Get slice of tuple from start (also supports List for variadic args)
 		startObj := vm.pop()
-		tuple := vm.pop().AsObject()
+		obj := vm.pop().AsObject()
 		start := int(startObj.AsInt())
-		tupleVal := tuple.(*evaluator.Tuple)
-		rest := &evaluator.Tuple{Elements: tupleVal.Elements[start:]}
-		vm.push(ObjVal(rest))
+
+		switch v := obj.(type) {
+		case *evaluator.Tuple:
+			rest := &evaluator.Tuple{Elements: v.Elements[start:]}
+			vm.push(ObjVal(rest))
+		case *evaluator.List:
+			rest := v.Slice(start, v.Len())
+			vm.push(ObjVal(rest))
+		default:
+			return fmt.Errorf("expected Tuple or List, got %s", obj.Type())
+		}
 
 	case OP_LIST_SLICE:
 		// Get slice of list from start to end
@@ -1268,25 +1282,38 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_GET_TUPLE_ELEM:
-		// Get tuple element by index (index on stack)
+		// Get tuple element by index (also supports List for variadic args)
 		idxObj := vm.pop()
 		val := vm.pop().AsObject()
-		tuple, ok := val.(*evaluator.Tuple)
-		if !ok {
-			return fmt.Errorf("expected Tuple, got %s", val.Type())
-		}
+
 		if !idxObj.IsInt() {
-			return fmt.Errorf("tuple index must be Integer, got %s", idxObj.RuntimeType().String())
+			return fmt.Errorf("tuple/list index must be Integer, got %s", idxObj.RuntimeType().String())
 		}
 		i := int(idxObj.AsInt())
-		// Support negative indexing
-		if i < 0 {
-			i = len(tuple.Elements) + i
+
+		switch v := val.(type) {
+		case *evaluator.Tuple:
+			// Support negative indexing
+			if i < 0 {
+				i = len(v.Elements) + i
+			}
+			if i >= len(v.Elements) || i < 0 {
+				return fmt.Errorf("tuple index %d out of bounds (len=%d)", i, len(v.Elements))
+			}
+			vm.push(ObjectToValue(v.Elements[i]))
+		case *evaluator.List:
+			// Support negative indexing
+			listLen := v.Len()
+			if i < 0 {
+				i = listLen + i
+			}
+			if i >= listLen || i < 0 {
+				return fmt.Errorf("list index %d out of bounds (len=%d)", i, listLen)
+			}
+			vm.push(ObjectToValue(v.Get(i)))
+		default:
+			return fmt.Errorf("expected Tuple or List, got %s", val.Type())
 		}
-		if i >= len(tuple.Elements) || i < 0 {
-			return fmt.Errorf("tuple index %d out of bounds (len=%d)", i, len(tuple.Elements))
-		}
-		vm.push(ObjectToValue(tuple.Elements[i]))
 
 	case OP_FORMATTER:
 		// Create format string function closure

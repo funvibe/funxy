@@ -3,7 +3,6 @@ import "lib/test" (*)
 import "lib/string" (stringIndexOf)
 import "lib/tuple" (fst, snd)
 
-// Helper for string containment check
 fun containsStr(needle, haystack) {
     match stringIndexOf(haystack, needle) {
         Some(_) -> true
@@ -22,41 +21,55 @@ testRun("UI Package - Render", fun() {
     node = div(class: "container", id: "main") {
         h1() { text("Title") }
         p(style: "color: red") { text("Content") }
-        raw("<span>Raw HTML</span>")
+        raw("<span>Raw rendered</span>")
     }
 
-    html = render(node)
+    rendered = render(node)
 
-    assert(html |> containsStr("<div"), "contains <div")
-    assert(html |> containsStr("class=\"container\""), "contains class")
-    assert(html |> containsStr("id=\"main\""), "contains id")
-    assert(html |> containsStr("<h1>Title</h1>"), "contains h1")
-    assert(html |> containsStr("<p style=\"color: red\">Content</p>"), "contains p")
-    assert(html |> containsStr("<span>Raw HTML</span>"), "contains raw")
-    assert(html |> containsStr("</div>"), "contains closing div")
+    assert(rendered |> containsStr("<div"), "contains <div")
+    assert(rendered |> containsStr("class=\"container\""), "contains class")
+    assert(rendered |> containsStr("id=\"main\""), "contains id")
+    assert(rendered |> containsStr("<h1>Title</h1>"), "contains h1")
+    assert(rendered |> containsStr("<p style=\"color: red\">Content</p>"), "contains p")
+    assert(rendered |> containsStr("<span>Raw rendered</span>"), "contains raw")
+    assert(rendered |> containsStr("</div>"), "contains closing div")
 })
 
 testRun("UI Package - Void Tags", fun() {
     imgNode = img(src: "pic.jpg", alt: "Pic")
-    html = render(imgNode)
+    rendered = render(imgNode)
 
-    assert(html |> containsStr("<img"), "contains <img")
-    assert(html |> containsStr("src=\"pic.jpg\""), "contains src")
-    assert(html |> containsStr(" />"), "self-closing")
+    assert(rendered |> containsStr("<img"), "contains <img")
+    assert(rendered |> containsStr("src=\"pic.jpg\""), "contains src")
+    assert(rendered |> containsStr(" />"), "self-closing")
 })
 
 testRun("UI Package - Attributes Normalization", fun() {
     btn = button(hx_post: "/api/click", data_val: "123") { text("Click") }
-    html = render(btn)
+    rendered = render(btn)
 
-    assert(html |> containsStr("hx-post=\"/api/click\""), "hx-post present")
-    assert(html |> containsStr("data-val=\"123\""), "data-val present")
-    assert(html |> containsStr("Click"), "contains text")
-    assert(!(html |> containsStr("'")), "no extra quotes")
+    assert(rendered |> containsStr("hx-post=\"/api/click\""), "hx-post present")
+    assert(rendered |> containsStr("data-val=\"123\""), "data-val present")
+    assert(rendered |> containsStr("Click"), "contains text")
+    assert(!(rendered |> containsStr("'")), "no extra quotes")
 })
 
 testRun("UI Package - Empty Element", fun() {
     empty = div()
-    html = render(empty)
-    assert(html |> containsStr("<div></div>"), "empty div")
+    rendered = render(empty)
+    assert(rendered |> containsStr("<div></div>"), "empty div")
+})
+
+testRun("UI Package - Block Syntax Without Parens", fun() {
+    // Testing clean DSL: div { ... } instead of div() { ... }
+    node = div {
+        text("Hello")
+        span { text("World") }
+    }
+    rendered = render(node)
+
+    assert(rendered |> containsStr("<div>"), "contains open div")
+    assert(rendered |> containsStr("Hello"), "contains text")
+    assert(rendered |> containsStr("<span>World</span>"), "contains nested span")
+    assert(rendered |> containsStr("</div>"), "contains close div")
 })

@@ -121,7 +121,7 @@ import "lib/list" (map)    // ✓ Valid
 map(fun(x) -> x * 2, [1, 2, 3])
 ```
 
-```rust
+```
 import "lib/list" as l (map)  // ✗ Invalid: cannot combine alias with selective import
 ```
 
@@ -166,9 +166,14 @@ Explicitly specify different aliases:
 import "kit/sql" as orm
 import "lib/sql" as types
 
+type User = { name: String, age: Int }
+
 // Now use qualified names:
-instance orm.Model User { ... }
-v = types.SqlValue(42)
+instance orm.Model User {
+    fun tableName(_) { "users" }
+    fun toRow(u) { u.name }
+}
+v = types.SqlInt(42)
 ```
 
 #### Solution 2: Auto-Aliasing
@@ -177,7 +182,7 @@ When no explicit alias is given for non-selective imports, the system can use th
 
 ```rust
 import "kit/sql"        // Default alias: sql
-import "lib/types"      // Default alias: types
+import "lib/flag"      // Default alias: flag
 ```
 
 **For qualified trait names**, you can use the full path:
@@ -187,10 +192,13 @@ import "kit/sql"        // Accessible as: kit.sql
 import "lib/sql" (SqlValue)
 
 // Multi-level qualification:
-instance kit.sql.Model User { ... }
+instance kit.sql.Model User {
+    fun tableName(_) { "users" }
+    fun toRow(u) { u.name }
+}
 
 // Selectively imported symbols work directly:
-v = SqlValue(...)
+v = SqlString("")
 ```
 
 #### Best Practices
@@ -209,7 +217,7 @@ v = SqlValue(...)
    // All symbols available directly:
    instance Model User {
        fun tableName(u) { "users" }
-       fun toRow(u) { ... }
+       fun toRow(u) { }
    }
 
    v = SqlValue(42)
@@ -223,7 +231,7 @@ v = SqlValue(...)
    // Access via qualified names:
    instance orm.Model User {
        fun tableName(u) { "users" }
-       fun toRow(u) { ... }
+       fun toRow(u) { }
    }
 
    v = types.SqlValue(42)
@@ -234,8 +242,8 @@ v = SqlValue(...)
 4. **For qualified traits**, use full path qualification:
    ```rust
    // No conflict even with same package name:
-   instance qualified_pkg.core.Validator User { ... }
-   instance qualified_pkg.db.Storage Product { ... }
+   instance qualified_pkg.core.Validator User { }
+   instance qualified_pkg.db.Storage Product { }
    ```
 
 ## Trait Instances
@@ -314,7 +322,12 @@ When you selectively import trait methods, the trait itself is automatically imp
 import "kit/sql" (toRow, tableName)
 // The Model trait is now available for implementing
 
-instance kit.sql.Model User { ... }
+type User = { name: String, age: Int }
+
+instance kit.sql.Model User {
+    fun tableName(_) { "users" }
+    fun toRow(u) { u.name }
+}
 ```
 
 **With module aliases:**
@@ -326,7 +339,7 @@ type Product = MkProduct { id: Int, name: String }
 // Using aliased module name in trait qualification
 instance orm.Model Product {
     fun tableName(p) { "products" }
-    fun toRow(p) { ... }
+    fun toRow(p) { }
 }
 ```
 

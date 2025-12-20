@@ -18,6 +18,8 @@ type InferenceContext struct {
 	ActiveConstraints map[string][]string
 	// Loader for looking up extension methods and traits in source modules
 	Loader ModuleLoader
+	// CurrentModuleName for checking imported symbol reassignment
+	CurrentModuleName string
 }
 
 // NewInferenceContext creates a new inference context.

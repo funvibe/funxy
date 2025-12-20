@@ -1,0 +1,5 @@
+// 1. Reassign exists type
+type MyInt = Int
+fun testConstructorReassign() {
+    MyInt = 1
+}

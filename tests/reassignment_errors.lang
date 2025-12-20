@@ -1,0 +1,60 @@
+import "kit/ui" (html)
+import "kit/sql" as sql
+
+// 1. Reassign imported module alias
+fun testModuleReassign() {
+    sql = 1
+}
+
+// 2. Reassign imported function (symbol)
+fun testImportReassign() {
+    html = "overwrite"
+}
+
+// 3. Reassign local Type
+type alias MyType = Int
+fun testTypeReassign() {
+    MyType = 1
+}
+
+// 4. Reassign local Trait
+trait MyTrait<T> {}
+fun testTraitReassign() {
+    MyTrait = 1
+}
+
+// 5. Reassign local Constructor
+type MyADT = MyCon
+fun testConstructorReassign() {
+    MyCon = 1
+}
+
+// 6. Reassign Constant
+constVal :- 10
+fun testConstReassign() {
+    constVal = 20
+}
+
+// 7. Reassign Type Alias (same as Type)
+type alias MyAlias = Int
+fun testAliasReassign() {
+    MyAlias = 1
+}
+
+// 8. Reassign Trait Method
+trait DisplayTrait<T> {
+    fun display(val: T) -> String
+}
+
+fun testTraitMethodReassign() {
+    display = fun(val: Int) -> String { "overwrite" }
+}
+
+// 9. Reassign User Function
+fun userFunc() -> Int {
+    42
+}
+
+fun testUserFuncReassign() {
+    userFunc = fun() -> Int { 100 }
+}

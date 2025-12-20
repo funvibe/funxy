@@ -1,0 +1,10 @@
+Processing failed with errors:
+- error at 6:5 [A003]: type error: cannot assign to module 'sql'
+- error at 11:5 [A003]: type error: cannot reassign imported symbol 'html' from module 'ui'
+- error at 17:5 [A003]: type error: cannot assign to type 'MyType'
+- error at 23:5 [A003]: type error: cannot assign to trait 'MyTrait'
+- error at 29:5 [A003]: type error: cannot assign to constructor 'MyCon'
+- error at 35:5 [A003]: type error: cannot reassign constant 'constVal'
+- error at 41:5 [A003]: type error: cannot assign to type 'MyAlias'
+- error at 50:5 [A003]: type error: cannot reassign constant 'display'
+- error at 59:5 [A003]: type error: cannot reassign constant 'userFunc'

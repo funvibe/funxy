@@ -1,3 +1,3 @@
-id = fun(x) { x }
-print(id(5))
-print(id("s"))
+identity = fun(x) { x }
+print(identity(5))
+print(identity("s"))

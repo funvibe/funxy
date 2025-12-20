@@ -51,10 +51,12 @@ fun finalizeResponse(res) -> HttpResponse {
             { status: res.status, headers: res.headers, body: s }
         }
         BodyJson(j) -> {
-            { status: res.status, headers: res.headers, body: jsonEncode(j) }
+            encoded = jsonEncode(j)
+            { status: res.status, headers: res.headers, body: encoded }
         }
         BodyHtml(node) -> {
-            { status: res.status, headers: res.headers, body: ui.render(node) }
+            rendered = ui.render(node)
+            { status: res.status, headers: res.headers, body: rendered }
         }
         BodyEmpty -> {
             { status: res.status, headers: res.headers, body: "" }

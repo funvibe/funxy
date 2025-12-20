@@ -25,8 +25,14 @@ fun raw(s) { Raw(s) }
 fun fragment(children) { Fragment(children) }
 
 fun element(tag, attrs, children) {
+    // attrs can be: {} (empty Record), {key: value, ...} (Record with fields), or Map
     attrMap = mapFromRecord(attrs)
     Element(tag, attrMap, children)
+}
+
+// Helper to check if a value is a Record that can be converted to Map
+fun isRecordAttrs(value) {
+    typeOf(value, Map) || (value == {})
 }
 
 // Helper to handle optional attributes
@@ -34,13 +40,47 @@ fun elem(tag, args...) {
     argLen = len(args)
     if argLen == 0 {
         element(tag, {}, [])
-    } else {
-        attrs = if argLen > 1 { args[0] } else { {} }
-        childrenRaw = if argLen > 1 { args[1] } else { args[0] }
-
-        children = if typeOf(childrenRaw, List) { childrenRaw } else { [childrenRaw] }
-
+    } else if argLen == 1 {
+        // Single argument: check what it is
+        arg0 = args[0]
+        // If it's empty record {}, treat as empty attrs
+        // If it's a List, treat as children
+        // Otherwise wrap in a list and treat as single child
+        if typeOf(arg0, List) {
+            element(tag, {}, arg0)
+        } else {
+            element(tag, {}, [arg0])
+        }
+    } else if argLen == 2 && typeOf(args[1], List) {
+        // Two arguments with second being a List: from block syntax with attrs
+        // args[0] = Record (attrs), args[1] = List (children from block)
+        attrs = args[0]
+        children = args[1]
         element(tag, attrs, children)
+    } else if argLen == 2 {
+        // Two arguments but second is NOT a List
+        // Check if first argument looks like attributes (a Record)
+        first = args[0]
+        second = args[1]
+
+        // Try to detect if first is a Record that can be converted to Map
+        // Records can be converted by mapFromRecord
+        firstAsMap = mapFromRecord(first)
+        firstIsNotEmpty = len(mapItems(firstAsMap)) > 0
+        firstIsRecordAttrs = first == {} || firstIsNotEmpty
+
+        if firstIsRecordAttrs {
+            // First is attributes, second is single child
+            children = if typeOf(second, List) { second } else { [second] }
+            element(tag, first, children)
+        } else {
+            // Both are children
+            element(tag, {}, args)
+        }
+    } else {
+        // All other cases: treat all args as children
+        // Handles: ul(li1, li2, li3) or div(class: "x")(child1)(child2)
+        element(tag, {}, args)
     }
 }
 
@@ -131,11 +171,12 @@ fun render(node) {
             childrenStrList = children |> map(render)
             childrenStr = stringJoin(childrenStrList, "")
 
-            if isVoidTag(tag) {
+            result = if isVoidTag(tag) {
                 "<" ++ tag ++ attrStr ++ " />"
             } else {
                 "<" ++ tag ++ attrStr ++ ">" ++ childrenStr ++ "</" ++ tag ++ ">"
             }
+            result
         }
         Text(s) -> escapeHtml(s)
         Raw(s) -> s
@@ -143,6 +184,7 @@ fun render(node) {
             strList = children |> map(render)
             stringJoin(strList, "")
         }
+        _ -> ""
     }
 }
 

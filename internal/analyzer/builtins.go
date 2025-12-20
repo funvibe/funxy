@@ -14,13 +14,13 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 
 	// Register primitive types as type constructors
 	// These allow using Int, Float, etc. in type annotations like "type alias X = Int"
-	table.Define("Int", typesystem.TType{Type: typesystem.Int}, prelude)
-	table.Define("Float", typesystem.TType{Type: typesystem.Float}, prelude)
-	table.Define("Bool", typesystem.TType{Type: typesystem.Bool}, prelude)
-	table.Define("Char", typesystem.TType{Type: typesystem.Char}, prelude)
-	table.Define("BigInt", typesystem.TType{Type: typesystem.BigInt}, prelude)
-	table.Define("Rational", typesystem.TType{Type: typesystem.Rational}, prelude)
-	table.Define("String", typesystem.TType{Type: typesystem.TApp{
+	table.DefineConstant("Int", typesystem.TType{Type: typesystem.Int}, prelude)
+	table.DefineConstant("Float", typesystem.TType{Type: typesystem.Float}, prelude)
+	table.DefineConstant("Bool", typesystem.TType{Type: typesystem.Bool}, prelude)
+	table.DefineConstant("Char", typesystem.TType{Type: typesystem.Char}, prelude)
+	table.DefineConstant("BigInt", typesystem.TType{Type: typesystem.BigInt}, prelude)
+	table.DefineConstant("Rational", typesystem.TType{Type: typesystem.Rational}, prelude)
+	table.DefineConstant("String", typesystem.TType{Type: typesystem.TApp{
 		Constructor: typesystem.TCon{Name: config.ListTypeName},
 		Args:        []typesystem.Type{typesystem.Char},
 	}}, prelude)
@@ -38,7 +38,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.Nil,
 		IsVariadic: true,
 	}
-	table.Define(config.PrintFuncName, printType, prelude)
+	table.DefineConstant(config.PrintFuncName, printType, prelude)
 
 	// write: (args...) -> Nil
 	// Same as print but without trailing newline
@@ -47,7 +47,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.Nil,
 		IsVariadic: true,
 	}
-	table.Define(config.WriteFuncName, writeType, prelude)
+	table.DefineConstant(config.WriteFuncName, writeType, prelude)
 
 	// typeOf: (val: Any, type: Type) -> Bool
 	typeOfType := typesystem.TFunc{
@@ -58,7 +58,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.Bool,
 		IsVariadic: false,
 	}
-	table.Define(config.TypeOfFuncName, typeOfType, prelude)
+	table.DefineConstant(config.TypeOfFuncName, typeOfType, prelude)
 
 	// panic: (msg: String) -> a
 	// It takes a String (List Char) and returns a generic type 'a' (Bottom/Never)
@@ -73,21 +73,21 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.TVar{Name: "panic_ret"}, // Polymorphic return
 		IsVariadic: false,
 	}
-	table.Define(config.PanicFuncName, panicType, prelude)
+	table.DefineConstant(config.PanicFuncName, panicType, prelude)
 
 	// debug: (T) -> Nil - prints value with type and location
 	debugType := typesystem.TFunc{
 		Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
 		ReturnType: typesystem.Nil,
 	}
-	table.Define(config.DebugFuncName, debugType, prelude)
+	table.DefineConstant(config.DebugFuncName, debugType, prelude)
 
 	// trace: (T) -> T - prints value with type and location, returns value
 	traceType := typesystem.TFunc{
 		Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
 		ReturnType: typesystem.TVar{Name: "a"},
 	}
-	table.Define(config.TraceFuncName, traceType, prelude)
+	table.DefineConstant(config.TraceFuncName, traceType, prelude)
 
 	// fun len<T>(collection: T) -> Int
 	// Accepts List or Tuple, checked at runtime
@@ -98,7 +98,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.Int,
 		IsVariadic: false,
 	}
-	table.Define(config.LenFuncName, lenType, prelude)
+	table.DefineConstant(config.LenFuncName, lenType, prelude)
 
 	// fun lenBytes(s: String) -> Int
 	// Returns byte length of string (not character count)
@@ -113,7 +113,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.Int,
 		IsVariadic: false,
 	}
-	table.Define(config.LenBytesFuncName, lenBytesType, prelude)
+	table.DefineConstant(config.LenBytesFuncName, lenBytesType, prelude)
 
 	// getType: (val: t) -> Type<t>
 	getTypeType := typesystem.TFunc{
@@ -123,7 +123,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.TType{Type: typesystem.TVar{Name: "t"}},
 		IsVariadic: false,
 	}
-	table.Define(config.GetTypeFuncName, getTypeType, prelude)
+	table.DefineConstant(config.GetTypeFuncName, getTypeType, prelude)
 
 	// default: <T: Default>() -> T
 	// Returns the default value for type T
@@ -135,7 +135,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 			{TypeVar: "t", Trait: "Default"},
 		},
 	}
-	table.Define(config.DefaultFuncName, defaultType, prelude)
+	table.DefineConstant(config.DefaultFuncName, defaultType, prelude)
 
 	// show: (a) -> String
 	// Converts any value to its string representation
@@ -148,7 +148,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: stringType,
 		IsVariadic: false,
 	}
-	table.Define(config.ShowFuncName, showType, prelude)
+	table.DefineConstant(config.ShowFuncName, showType, prelude)
 
 	// id: (a) -> a
 	// Identity function - returns its argument unchanged
@@ -157,7 +157,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.TVar{Name: "a"},
 		IsVariadic: false,
 	}
-	table.Define(config.IdFuncName, idType, prelude)
+	table.DefineConstant(config.IdFuncName, idType, prelude)
 
 	// const: (a, b) -> a
 	// Constant function - returns first argument, ignores second
@@ -166,21 +166,21 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: typesystem.TVar{Name: "a"},
 		IsVariadic: false,
 	}
-	table.Define(config.ConstFuncName, constType, prelude)
+	table.DefineConstant(config.ConstFuncName, constType, prelude)
 
 	// intToFloat: (Int) -> Float
 	intToFloatType := typesystem.TFunc{
 		Params:     []typesystem.Type{typesystem.Int},
 		ReturnType: typesystem.Float,
 	}
-	table.Define("intToFloat", intToFloatType, prelude)
+	table.DefineConstant("intToFloat", intToFloatType, prelude)
 
 	// floatToInt: (Float) -> Int
 	floatToIntType := typesystem.TFunc{
 		Params:     []typesystem.Type{typesystem.Float},
 		ReturnType: typesystem.Int,
 	}
-	table.Define("floatToInt", floatToIntType, prelude)
+	table.DefineConstant("floatToInt", floatToIntType, prelude)
 
 	// sprintf: (format: String, args: ...Any) -> String
 	sprintfType := typesystem.TFunc{
@@ -191,7 +191,7 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		ReturnType: stringType,
 		IsVariadic: true,
 	}
-	table.Define("sprintf", sprintfType, prelude)
+	table.DefineConstant("sprintf", sprintfType, prelude)
 
 	// read: (String, Type<T>) -> Option<T>
 	// Parses a string into a typed value, returns Zero on failure
@@ -206,10 +206,10 @@ func RegisterBuiltins(table *symbols.SymbolTable) {
 		},
 		IsVariadic: false,
 	}
-	table.Define(config.ReadFuncName, readType, prelude)
+	table.DefineConstant(config.ReadFuncName, readType, prelude)
 
 	// Register Nil as a value with type Nil (for use in expressions like `x = Nil`)
-	table.Define("Nil", typesystem.Nil, prelude)
+	table.DefineConstant("Nil", typesystem.Nil, prelude)
 }
 
 // registerBuiltinTraits registers the standard traits from config

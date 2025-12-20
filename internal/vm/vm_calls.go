@@ -128,7 +128,7 @@ func (vm *VM) callClosure(closure *ObjClosure, argCount int) error {
 			variadicArgs[i] = vm.stack[vm.sp-variadicCount+i].AsObject()
 		}
 		vm.sp -= variadicCount
-		vm.push(ObjVal(&evaluator.Tuple{Elements: variadicArgs}))
+		vm.push(ObjVal(evaluator.NewList(variadicArgs)))
 		argCount = fn.Arity + 1
 	} else {
 		if argCount < fn.RequiredArity {
@@ -173,7 +173,7 @@ func (vm *VM) callClosure(closure *ObjClosure, argCount int) error {
 				}
 			}
 		}
-		if argCount > fn.Arity {
+		if argCount > fn.Arity && !fn.IsVariadic {
 			return vm.runtimeError("expected %d arguments but got %d", fn.Arity, argCount)
 		}
 	}
@@ -244,17 +244,38 @@ func (vm *VM) tailCallClosure(closure *ObjClosure, argCount int) error {
 		return vm.callClosure(closure, argCount)
 	}
 
-	if argCount > fn.Arity {
+	if argCount > fn.Arity && !fn.IsVariadic {
 		return vm.runtimeError("expected %d arguments but got %d", fn.Arity, argCount)
 	}
 
 	vm.closeUpvalues(vm.frame.base)
 
-	for i := 0; i < argCount; i++ {
-		vm.stack[vm.frame.base+i] = vm.stack[vm.sp-argCount+i]
-	}
+	// Handle variadic arguments packing
+	if fn.IsVariadic {
+		if argCount < fn.Arity {
+			return vm.runtimeError("expected at least %d arguments but got %d", fn.Arity, argCount)
+		}
+		variadicCount := argCount - fn.Arity
+		variadicArgs := make([]evaluator.Object, variadicCount)
+		for i := 0; i < variadicCount; i++ {
+			variadicArgs[i] = vm.stack[vm.sp-variadicCount+i].AsObject()
+		}
 
-	vm.sp = vm.frame.base + argCount
+		// Copy fixed arguments
+		for i := 0; i < fn.Arity; i++ {
+			vm.stack[vm.frame.base+i] = vm.stack[vm.sp-argCount+i]
+		}
+
+		// Pack variadic arguments into List
+		vm.stack[vm.frame.base+fn.Arity] = ObjVal(evaluator.NewList(variadicArgs))
+		vm.sp = vm.frame.base + fn.Arity + 1
+	} else {
+		// Non-variadic: copy all arguments
+		for i := 0; i < argCount; i++ {
+			vm.stack[vm.frame.base+i] = vm.stack[vm.sp-argCount+i]
+		}
+		vm.sp = vm.frame.base + argCount
+	}
 
 	vm.frame.closure = closure
 	vm.frame.chunk = fn.Chunk

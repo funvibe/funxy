@@ -118,7 +118,7 @@ If the **last argument** of a function is expected to be a record, you can pass 
 
 ```rust
 // Definition
-fun createUser(name, options: { age: Int, active: Bool }) { ... }
+fun createUser(name, options: { age: Int, active: Bool }) {}
 
 // Call with shorthand
 createUser("Bob", age: 25, active: true)
@@ -137,15 +137,22 @@ This works particularly well for configuration objects or optional parameters.
 Example with UI components:
 
 ```rust
-// ui.div takes a list of children and a record of attributes
-fun div(children, attrs: { class: String, id: String }) { ... }
+// Modern UI DSL syntax - function with trailing block
+import "kit/ui" (div, span, text)
 
-// Usage
-ui.div(
-    [ui.text("Hello")],
+// Clean syntax without parentheses when using trailing block
+page = div {
+    span { text("Hello") }
+    span { text("World") }
+}
+
+// Or with traditional call syntax and named arguments for attributes
+page2 = div(
     class: "container",
     id: "main"
-)
+) {
+    text("Content")
+}
 ```
 
 ## Record Destructuring

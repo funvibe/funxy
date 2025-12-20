@@ -70,7 +70,7 @@ fun getEmpty() -> Option<Float> {
 // Type inferred from operations
 fun example() {
     opt = Some(42)  // opt: Option<Int>
-    
+
     // Zero must be Option<Int> to compare with opt
     if opt == Zero {
         print("empty")
@@ -211,7 +211,7 @@ import "lib/json" (jsonDecode)
 
 // Same function, different result types:
 r1 = jsonDecode("42")           // Ok(42) — Int
-r2 = jsonDecode("\"hello\"")    // Ok("hello") — String  
+r2 = jsonDecode("\"hello\"")    // Ok("hello") — String
 r3 = jsonDecode("[1,2,3]")      // Ok([1,2,3]) — List
 r4 = jsonDecode("{\"x\":1}")    // Ok({x:1}) — Record
 
@@ -312,7 +312,7 @@ match jsonDecode(input) {
 #### 3. Use Json ADT for Structured Access
 
 ```rust
-import "lib/json" (jsonParse, jsonGet)
+import "lib/json" (Json, jsonParse, jsonGet)
 
 input = "{\"name\":\"Alice\",\"age\":30}"
 match jsonParse(input) {
@@ -336,7 +336,7 @@ type User = { name: String, age: Int }
 
 fun parseUser(json: String) -> Result<String, User> {
     data = jsonDecode(json)?
-    
+
     // Validate structure
     if !typeOf(data.name, String) {
         Fail("name must be string")

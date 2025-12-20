@@ -174,8 +174,8 @@ fmap(fun(x) -> x + 100, Fail("error"))   // Fail("error")
 
 ```rust
 // Identity law
-id = fun(x) -> x
-print(fmap(id, [1, 2, 3]) == [1, 2, 3])  // true
+identity = fun(x) -> x
+print(fmap(identity, [1, 2, 3]) == [1, 2, 3])  // true
 
 // Composition law
 inc = fun(x) -> x + 1

@@ -26,7 +26,7 @@ func (e *combinedError) Error() string {
 // inferError creates a type error for inference failures
 func inferError(node ast.Node, message string) error {
 	tok := getNodeToken(node)
-	return diagnostics.NewAnalyzerError(diagnostics.ErrA003, tok, message)
+	return diagnostics.NewError(diagnostics.ErrA003, tok, message)
 }
 
 // inferErrorf creates a formatted type error
@@ -57,22 +57,22 @@ func undefinedWithHint(node ast.Node, name string, hint string) error {
 func findSimilarNames(name string, table interface{ GetAllNames() []string }, maxDist int) []string {
 	allNames := table.GetAllNames()
 	var suggestions []string
-	
+
 	nameLower := strings.ToLower(name)
 	isVar := len(name) > 0 && name[0] >= 'a' && name[0] <= 'z'
-	
+
 	for _, candidate := range allNames {
 		// Skip type names when looking for variable
 		if isVar && len(candidate) > 0 && candidate[0] >= 'A' && candidate[0] <= 'Z' {
 			continue
 		}
-		
+
 		dist := levenshtein(nameLower, strings.ToLower(candidate))
 		if dist > 0 && dist <= maxDist {
 			suggestions = append(suggestions, candidate)
 		}
 	}
-	
+
 	if len(suggestions) > 3 {
 		return suggestions[:3]
 	}
@@ -87,7 +87,7 @@ func levenshtein(a, b string) int {
 	if len(b) == 0 {
 		return len(a)
 	}
-	
+
 	matrix := make([][]int, len(a)+1)
 	for i := range matrix {
 		matrix[i] = make([]int, len(b)+1)
@@ -96,7 +96,7 @@ func levenshtein(a, b string) int {
 	for j := 0; j <= len(b); j++ {
 		matrix[0][j] = j
 	}
-	
+
 	for i := 1; i <= len(a); i++ {
 		for j := 1; j <= len(b); j++ {
 			cost := 1
@@ -106,7 +106,7 @@ func levenshtein(a, b string) int {
 			del := matrix[i-1][j] + 1
 			ins := matrix[i][j-1] + 1
 			sub := matrix[i-1][j-1] + cost
-			
+
 			min := del
 			if ins < min {
 				min = ins

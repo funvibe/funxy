@@ -13,6 +13,10 @@ func (w *walker) VisitProgram(program *ast.Program) {
 	for _, stmt := range program.Statements {
 		if pkg, ok := stmt.(*ast.PackageDeclaration); ok {
 			w.currentModuleName = pkg.Name.Value
+			// Set in inference context as well
+			if w.inferCtx != nil {
+				w.inferCtx.CurrentModuleName = pkg.Name.Value
+			}
 			break
 		}
 	}
@@ -178,7 +182,7 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 		// Use TCon (Rigid Type Constant) for body analysis to prevent instantiation
 		w.symbolTable.DefineType(tp.Value, typesystem.TCon{Name: tp.Value}, "")
 	}
-	
+
 	// Register constraints in the inference context
 	for _, c := range n.Constraints {
 		w.inferCtx.AddConstraint(c.TypeVar, c.Trait)
@@ -279,7 +283,7 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 		} else {
 			// Apply accumulated substitution from body to return type before unification
 			expectedRetType = expectedRetType.Apply(sBody)
-			
+
 			subst, err := typesystem.Unify(expectedRetType, bodyType)
 			if err != nil {
 				w.addError(diagnostics.NewError(diagnostics.ErrA003, n.Body.GetToken(),
@@ -287,19 +291,19 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 			} else {
 				// Success! Update TypeMap and SymbolTable with resolved types
 				finalSubst := subst.Compose(sBody)
-				
+
 				// FIX: Remove bindings for generic type params to avoid replacing TVars with Rigid TCons in the signature
 				for _, tp := range n.TypeParams {
 					delete(finalSubst, tp.Value)
 				}
-				
+
 				// Resolve fnType (which contains params and return type)
 				if tFunc, ok := fnType.(typesystem.TFunc); ok {
 					resolvedFnType := tFunc.Apply(finalSubst)
-					
+
 					// Update TypeMap for the function definition
 					w.TypeMap[n] = resolvedFnType
-					
+
 					// Update SymbolTable so callers see the resolved type
 					// Note: We need to be careful about overwriting if it was already defined.
 					// Since we are analyzing the body of the definition, we are the source of truth.
@@ -312,8 +316,14 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 							outer.RegisterExtensionMethod(recvTypeName, n.Name.Value, resolvedFnType)
 						}
 					} else {
-						// Global function update
-						outer.Define(n.Name.Value, resolvedFnType, w.currentModuleName)
+						// Global function type update after inference
+						// Use Update instead of Define to preserve IsConstant flag
+						err := outer.Update(n.Name.Value, resolvedFnType)
+						if err != nil {
+							// If Update fails, it means function wasn't registered - shouldn't happen
+							// Fall back to DefineConstant for safety
+							outer.DefineConstant(n.Name.Value, resolvedFnType, w.currentModuleName)
+						}
 					}
 				}
 			}

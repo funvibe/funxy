@@ -1,0 +1,53 @@
+import "lib/test" (*)
+import "lib/json" (Json, jsonFromValue)
+
+// Test multiline ADT with qualified types (like ui.VNode)
+type ResponseBody =
+    BodyString String
+    | BodyJson Json
+    | BodyHtml String
+    | BodyEmpty
+
+fun bodyToString(body: ResponseBody) -> String {
+    match body {
+        BodyString(s) -> "string: " ++ s
+        BodyJson(j) -> "json"
+        BodyHtml(h) -> "html: " ++ h
+        BodyEmpty -> "empty"
+    }
+}
+
+testRun("Multiline ADT with qualified types", fun() {
+    // Test with simple types
+    b1 = BodyString("hello")
+    r1 = bodyToString(b1)
+    assertEquals(r1, "string: hello", "BodyString should work")
+
+    // Test with Json type
+    j = jsonFromValue("test")
+    b2 = BodyJson(j)
+    r2 = bodyToString(b2)
+    assertEquals(r2, "json", "BodyJson should work")
+
+    // Test with empty
+    b3 = BodyEmpty
+    r3 = bodyToString(b3)
+    assertEquals(r3, "empty", "BodyEmpty should work")
+})
+
+// Test with nested module types
+type ApiResult =
+    Success Json
+    | Failure String
+    | Pending
+
+testRun("ADT with library types", fun() {
+    j = jsonFromValue("success")
+    r1 = Success(j)
+
+    match r1 {
+        Success(val) -> assertEquals(true, true, "Success should match")
+        Failure(e) -> panic("Should not be Failure")
+        Pending -> panic("Should not be Pending")
+    }
+})

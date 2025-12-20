@@ -85,11 +85,11 @@ Declared inside another function. They are visible only within the enclosing sco
 ```rust
 fun outer() {
     factor = 2
-    
+
     fun inner(x: Int) {
         x * factor // Captures 'factor'
     }
-    
+
     print(inner(5)) // 10
 }
 ```
@@ -116,6 +116,95 @@ tripled = map(fun(x) -> x * 3, list)
 thunk = fun() { print("Lazy!") }
 thunk()
 ```
+
+## Block Syntax (Trailing Block)
+
+When calling a function, you can pass a block as the last argument without wrapping it in parentheses. This creates a clean DSL-like syntax, especially useful for UI builders, configuration, and nested structures.
+
+**Important**: This syntax **only works with lowercase identifiers** (functions). Uppercase identifiers (constructors) use the standard syntax to avoid conflicts with constructor record syntax like `MkUser { field: value }`.
+
+### Basic Syntax
+
+```rust
+// Traditional syntax
+myFunc(arg1, arg2, { expr1, expr2, expr3 })
+
+// Block syntax - omit the wrapping when block is last argument
+myFunc(arg1, arg2) {
+    expr1
+    expr2
+    expr3
+}
+
+// When function takes only a block, you can omit parentheses entirely
+myFunc {
+    expr1
+    expr2
+    expr3
+}
+```
+
+### Case Sensitivity Rule
+
+```rust
+// ✓ Lowercase - block syntax works
+div { text("Hello") }
+
+// ✗ Uppercase - standard constructor syntax required
+MkUser { userId: 1, userName: "Alice" }  // This is constructor record syntax
+MyConstructor("value")  // Use parentheses for constructors
+```
+
+### UI DSL Example
+
+```rust
+import "kit/ui" (div, span, text, render)
+
+// Clean nested structure without excessive parentheses
+page = div {
+    span { text("Header") }
+    div {
+        text("Content line 1")
+        text("Content line 2")
+    }
+    span { text("Footer") }
+}
+
+html = render(page)
+```
+
+### With Attributes
+
+```rust
+// Combine named arguments with block syntax
+div(class: "container", id: "main") {
+    text("Hello")
+    span { text("World") }
+}
+```
+
+### Custom DSL Functions
+
+The block syntax works with any variadic function that accepts a list as its last parameter:
+
+```rust
+// Define a function that accepts children
+fun container(items...) {
+    print("Container with ${len(items)} items")
+    items
+}
+
+// Use it with block syntax
+result = container {
+    1
+    2
+    3
+}
+// Prints: Container with 1 items
+// Result is [1, 2, 3]
+```
+
+**Note**: The block expressions are collected into a single list and passed as one argument.
 
 ## Ignored Parameters (`_`)
 

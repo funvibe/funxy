@@ -197,7 +197,7 @@ For dynamic JSON manipulation, use the `Json` type:
 
 ```
 // Json ADT (built-in)
-type Json = 
+type Json =
     JNull                       // null
   | JBool Bool                  // true/false
   | JNum Float                  // numbers
@@ -211,7 +211,7 @@ type Json =
 Parses a JSON string into the `Json` ADT:
 
 ```rust
-import "lib/json" (jsonParse)
+import "lib/json" (Json, jsonParse)
 
 match jsonParse("[1, 2, 3]") {
     Ok(JArr(items)) -> print("Array: " ++ show(len(items)))
@@ -247,7 +247,7 @@ print(json2)  // JArr([JNum(1), JNum(2), JNum(3)])
 Gets a field from `JObj`:
 
 ```rust
-import "lib/json" (jsonParse, jsonGet)
+import "lib/json" (Json, jsonParse, jsonGet)
 
 jsonStr = "{\"name\":\"Alice\",\"age\":30}"
 match jsonParse(jsonStr) {

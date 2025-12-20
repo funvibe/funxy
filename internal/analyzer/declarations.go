@@ -683,7 +683,8 @@ func RegisterFunctionDeclaration(n *ast.FunctionStatement, table *symbols.Symbol
 			table.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
 		}
 	} else {
-		table.Define(n.Name.Value, fnType, origin)
+		// Functions are immutable by default
+		table.DefineConstant(n.Name.Value, fnType, origin)
 	}
 
 	return errors
@@ -773,7 +774,8 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 			outer.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
 		}
 	} else {
-		outer.Define(n.Name.Value, fnType, w.currentModuleName)
+		// Functions are immutable by default
+		outer.DefineConstant(n.Name.Value, fnType, w.currentModuleName)
 	}
 
 	// 2.5 Register Receiver in scope
@@ -1510,6 +1512,9 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	requiredMethods := w.symbolTable.GetTraitRequiredMethods(traitName)
 	implementedMethods := make(map[string]bool)
 	for _, method := range n.Methods {
+		if method == nil {
+			continue
+		}
 		// For operator methods, Name is nil and Operator contains the operator symbol
 		if method.Name != nil {
 			implementedMethods[method.Name.Value] = true
@@ -1562,7 +1567,15 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	subst := typesystem.Subst{typeParamNames[0]: renamedTarget}
 
 	for _, method := range n.Methods {
+		if method == nil {
+			continue
+		}
 		method.Accept(w)
+
+		// Skip operator methods (method.Name is nil for operators)
+		if method.Name == nil {
+			continue
+		}
 
 		// Verify signature matches Trait definition
 		// 1. Find generic signature

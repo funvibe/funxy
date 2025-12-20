@@ -55,17 +55,12 @@ func (w *walker) VisitAssignExpression(expr *ast.AssignExpression) {
 
 		// Check if it exists in scope chain (Update)
 		if w.symbolTable.IsDefined(ident.Value) {
-			// Check if it's a constant - cannot reassign constants
-			sym, ok := w.symbolTable.Find(ident.Value)
-			if ok && sym.IsConstant {
-				w.addError(diagnostics.NewError(
-					diagnostics.ErrA003,
-					expr.GetToken(),
-					"cannot reassign constant '"+ident.Value+"'",
-				))
-				return
-			}
-			// Mutable variable - reassignment allowed
+			// Checks for constants, types, traits, modules, constructors, and imported symbols
+			// are now done in inference (inference_decl.go) to avoid duplication
+			// and ensure correct error positioning.
+			// Type compatibility is also checked in inference.
+
+			// Mutable variable - reassignment allowed (checked in inference)
 		} else {
 			// New variable definition
 			w.symbolTable.Define(ident.Value, varType, "")
@@ -157,15 +152,18 @@ func (w *walker) VisitTypeApplicationExpression(n *ast.TypeApplicationExpression
 	for _, t := range n.TypeArguments {
 		// We could use BuildType to verify they are valid types in current scope
 		// (e.g., defined type names)
-		// Since BuildType returns typesystem.Type and we don't have a place to store them 
+		// Since BuildType returns typesystem.Type and we don't have a place to store them
 		// here (except TypeMap), we just call it for side-effects (errors).
 		_ = BuildType(t, w.symbolTable, &w.errors)
 	}
-	
+
 	// Note: Full type checking of the application happens in `Infer` which calls `inferTypeApplicationExpression`.
 }
 
 func (w *walker) VisitSpreadExpression(n *ast.SpreadExpression) {
+	if n == nil || n.Expression == nil {
+		return
+	}
 	n.Expression.Accept(w)
 }
 
@@ -185,7 +183,7 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 		} else {
 			paramType = w.freshVar()
 		}
-		
+
 		// For variadic parameters, wrap in List
 		if param.IsVariadic {
 			paramType = typesystem.TApp{
@@ -193,7 +191,7 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 				Args:        []typesystem.Type{paramType},
 			}
 		}
-		
+
 		// Don't define ignored parameters (_) in scope
 		if !param.IsIgnored {
 			w.symbolTable.Define(param.Name.Value, paramType, "")
@@ -203,9 +201,9 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	// 3. Analyze body
 	prevInLoop := w.inLoop
 	w.inLoop = false
-	
+
 	n.Body.Accept(w)
-	
+
 	w.markTailCalls(n.Body) // Mark tail calls in lambda body
 	w.inLoop = prevInLoop
 
@@ -222,7 +220,7 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 		} else {
 			// Apply body subst to declared type?
 			declaredRet = declaredRet.Apply(sBody)
-			
+
 			_, err := typesystem.Unify(declaredRet, bodyType)
 			if err != nil {
 				w.addError(diagnostics.NewError(
@@ -275,7 +273,7 @@ func (w *walker) VisitRecordLiteral(n *ast.RecordLiteral) {
 	if n.Spread != nil {
 		n.Spread.Accept(w)
 	}
-	
+
 	// Sort keys for deterministic traversal order
 	keys := make([]string, 0, len(n.Fields))
 	for k := range n.Fields {

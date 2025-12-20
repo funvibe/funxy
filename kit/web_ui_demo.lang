@@ -1,0 +1,133 @@
+// Example: Web application with HTML rendering using kit/ui
+
+import "lib/http" (httpServe)
+import "lib/list" (map)
+import "lib/sys" (sysExec)
+import "kit/web" (newRouter, get, handleRequest, setNotFoundHandler, resHtml, resJson, withStatus)
+import "kit/ui" (div, span, text, h1, h2, p, ul, li, a, render, html, head, title, body)
+
+// === Page Components ===
+
+fun layout(pageTitle, content) {
+    html {
+        head {
+            title { text(pageTitle) }
+        }
+        body {
+            div {
+                h1 { text("My Web App") }
+                content
+            }
+        }
+    }
+}
+
+fun homePage() {
+    layout("Home", div {
+        h2 { text("Welcome!") }
+        p { text("This is a web application built with kit/web and kit/ui") }
+        ul {
+            li { a({ href: "/about" }, text("About")) }
+            li { a({ href: "/users" }, text("Users")) }
+            li { a({ href: "/api/data" }, text("API Data")) }
+        }
+    })
+}
+
+fun aboutPage() {
+    layout("About", div {
+        h2 { text("About") }
+        p { text("This example demonstrates:") }
+        ul {
+            li { text("Clean block syntax for UI components") }
+            li { text("Nested component composition") }
+            li { text("HTML rendering with kit/ui") }
+            li { text("HTTP routing with kit/web") }
+        }
+        p { a({ href: "/" }, text("Back to home")) }
+    })
+}
+
+fun usersPage() {
+    users = [
+        { name: "Alice", age: 30 },
+        { name: "Bob", age: 25 },
+        { name: "Charlie", age: 35 }
+    ]
+
+    userItems = users |> map(fun(user) {
+        li { text(user.name ++ " (age: " ++ show(user.age) ++ ")") }
+    })
+
+    layout("Users", div {
+        h2 { text("User List") }
+        ul(userItems...)
+        p { a({ href: "/" }, text("Back to home")) }
+    })
+}
+
+fun notFoundPage() {
+    layout("Not Found", div {
+        h2 { text("404 - Page Not Found") }
+        p { text("The page you're looking for doesn't exist.") }
+        p { a({ href: "/" }, text("Back to home")) }
+    })
+}
+
+// === Handlers ===
+
+fun homeHandler(ctx) {
+    Ok(resHtml(homePage()))
+}
+
+fun aboutHandler(ctx) {
+    Ok(resHtml(aboutPage()))
+}
+
+fun usersHandler(ctx) {
+    Ok(resHtml(usersPage()))
+}
+
+fun apiHandler(ctx) {
+    data = {
+        status: "ok",
+        message: "This is JSON API endpoint",
+        timestamp: 1234567890
+    }
+    Ok(resJson(data))
+}
+
+fun notFoundHandler(ctx) {
+    Ok(withStatus(404, resHtml(render(notFoundPage()))))
+}
+
+// === Setup Router ===
+
+router = setNotFoundHandler(
+    newRouter()
+        |> get("/", homeHandler)
+        |> get("/about", aboutHandler)
+        |> get("/users", usersHandler)
+        |> get("/api/data", apiHandler),
+    notFoundHandler
+)
+
+// === Configuration ===
+
+port = 8080
+
+// === Start Server ===
+
+// Kill any existing process on this port
+_ = sysExec("sh", ["-c", "lsof -i :" ++ show(port) ++ " -t 2>/dev/null | xargs -r kill -9 2>/dev/null || true"])
+
+print("Starting server on http://localhost:${port}")
+print("Visit:")
+print("  - http://localhost:${port}/")
+print("  - http://localhost:${port}/about")
+print("  - http://localhost:${port}/users")
+print("  - http://localhost:${port}/api/data")
+print("")
+print("Press Ctrl+C to stop")
+
+httpServe(port, fun(req) { handleRequest(router, req) })
