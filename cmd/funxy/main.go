@@ -13,6 +13,7 @@ import (
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
+	"github.com/funvibe/funxy/internal/vm"
 	"path/filepath"
 	"strings"
 )
@@ -319,6 +320,150 @@ func handleHelp() bool {
 	return true
 }
 
+// handleCompile compiles a source file to bytecode (.fbc file)
+func handleCompile() bool {
+	if len(os.Args) < 3 {
+		return false
+	}
+
+	if os.Args[1] != "-c" && os.Args[1] != "--compile" {
+		return false
+	}
+
+	sourcePath := os.Args[2]
+
+	// Read source file
+	sourceCode, err := os.ReadFile(sourcePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading source file: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Use pipeline to get to AST
+	initialContext := pipeline.NewPipelineContext(string(sourceCode))
+	initialContext.FilePath = sourcePath
+
+	processingPipeline := pipeline.New(
+		&lexer.LexerProcessor{},
+		&parser.ParserProcessor{},
+		&analyzer.SemanticAnalyzerProcessor{},
+	)
+
+	finalContext := processingPipeline.Run(initialContext)
+
+	if len(finalContext.Errors) > 0 {
+		fmt.Fprintln(os.Stderr, "Compilation failed with errors:")
+		for _, err := range finalContext.Errors {
+			fmt.Fprintf(os.Stderr, "- %s\n", err.Error())
+		}
+		os.Exit(1)
+	}
+
+	// Get the AST
+	program, ok := finalContext.AstRoot.(*ast.Program)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Internal error: AST root is not a Program\n")
+		os.Exit(1)
+	}
+
+	// Compile to bytecode
+	compiler := vm.NewCompiler()
+	compiler.SetBaseDir(filepath.Dir(sourcePath))
+	chunk, err := compiler.Compile(program)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Compilation error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Set source file info
+	chunk.File = sourcePath
+
+	// Serialize to bytes
+	data, err := chunk.Serialize()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Serialization error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Determine output path
+	outputPath := strings.TrimSuffix(sourcePath, filepath.Ext(sourcePath)) + ".fbc"
+
+	// Write to file
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing bytecode file: %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Compiled %s -> %s\n", sourcePath, outputPath)
+	fmt.Printf("Bytecode size: %d bytes\n", len(data))
+	return true
+}
+
+// handleRunCompiled runs a pre-compiled .fbc bytecode file
+func handleRunCompiled() bool {
+	if len(os.Args) < 3 {
+		return false
+	}
+
+	if os.Args[1] != "-r" && os.Args[1] != "--run" {
+		return false
+	}
+
+	bytecodePath := os.Args[2]
+
+	// Read bytecode file
+	data, err := os.ReadFile(bytecodePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading bytecode file: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Deserialize
+	chunk, err := vm.Deserialize(data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Deserialization error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize VM
+	machine := vm.New()
+	machine.RegisterBuiltins()
+	machine.RegisterFPTraits()
+
+	// Set up file info for error messages
+	if chunk.File != "" {
+		machine.SetCurrentFile(filepath.Base(chunk.File))
+		// Set base directory for import resolution
+		machine.SetBaseDir(filepath.Dir(chunk.File))
+	}
+
+	// Set up module loader
+	loader := modules.NewLoader()
+	machine.SetLoader(loader)
+
+	// Process imports before running
+	if len(chunk.PendingImports) > 0 {
+		if err := machine.ProcessImports(chunk.PendingImports); err != nil {
+			fmt.Fprintf(os.Stderr, "Import error: %s\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Execute
+	result, err := machine.Run(chunk)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Runtime error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Print result if not nil
+	if result != nil && result.Type() != evaluator.NIL_OBJ {
+		fmt.Println(result.Inspect())
+	}
+
+	return true
+}
+
 // isTreeWalkMode returns true if the backend is configured to use Tree-Walk interpreter.
 // This is now determined at build time via BackendType variable.
 func isTreeWalkMode() bool {
@@ -390,6 +535,16 @@ func main() {
 
 	// Handle test command
 	if handleTest() {
+		return
+	}
+
+	// Handle compile mode (-c or --compile)
+	if handleCompile() {
+		return
+	}
+
+	// Handle run compiled mode (-r or --run)
+	if handleRunCompiled() {
 		return
 	}
 

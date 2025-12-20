@@ -187,6 +187,8 @@ func PrintHelp() string {
 	sb.WriteString("=========================================\n\n")
 	sb.WriteString("Usage:\n")
 	sb.WriteString("  funxy <file>                Run a program\n")
+	sb.WriteString("  funxy -c <file>             Compile to bytecode (.fbc)\n")
+	sb.WriteString("  funxy -r <file>             Run compiled bytecode (.fbc)\n")
 	sb.WriteString("  funxy -help                 Show this help\n")
 	sb.WriteString("  funxy -help packages        Show lib packages\n")
 	sb.WriteString("  funxy -help <package>       Show package documentation\n")
@@ -194,6 +196,9 @@ func PrintHelp() string {
 	sb.WriteString("  funxy -help precedence      Show operator precedence\n")
 	sb.WriteString("\n")
 	sb.WriteString("File extensions: .lang, .funxy, .fx\n")
+	sb.WriteString("\n")
+	sb.WriteString("Note: Bytecode compilation (-c) works for single-file programs.\n")
+	sb.WriteString("      Module imports are not yet supported in compiled bytecode.\n")
 	return sb.String()
 }
 

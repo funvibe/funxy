@@ -1,5 +1,16 @@
 package evaluator
 
+import (
+	"bytes"
+	"encoding/gob"
+)
+
+func init() {
+	// Register gob serialization types
+	gob.Register(&gobPersistentVector{})
+	gob.Register(&gobPvNode{})
+}
+
 // Persistent Vector implementation (Clojure-style)
 // Uses a 32-way branching trie with tail optimization
 // All operations are O(log₃₂n) which is effectively O(1) for practical sizes
@@ -260,4 +271,98 @@ func (v *PersistentVector) doAssoc(level uint, node *pvNode, i int, val Object) 
 		ret.array[subIdx] = v.doAssoc(level-bits, node.array[subIdx].(*pvNode), i, val)
 	}
 	return ret
+}
+
+// gobPersistentVector is a serializable representation of PersistentVector
+type gobPersistentVector struct {
+	Count  int
+	Shift  uint
+	Root   *gobPvNode
+	Tail   []Object
+}
+
+// gobPvNode is a serializable representation of pvNode
+type gobPvNode struct {
+	Array []interface{} // Can contain Object or *gobPvNode
+}
+
+// GobEncode implements gob encoding for PersistentVector
+func (v *PersistentVector) GobEncode() ([]byte, error) {
+	gobV := gobPersistentVector{
+		Count: v.count,
+		Shift: v.shift,
+		Tail:  v.tail,
+		Root:  convertNodeToGob(v.root),
+	}
+	return gobV.encode()
+}
+
+// GobDecode implements gob decoding for PersistentVector
+func (v *PersistentVector) GobDecode(data []byte) error {
+	gobV := &gobPersistentVector{}
+	if err := gobV.decode(data); err != nil {
+		return err
+	}
+	v.count = gobV.Count
+	v.shift = gobV.Shift
+	v.tail = gobV.Tail
+	v.root = convertNodeFromGob(gobV.Root)
+	return nil
+}
+
+// Helper functions for conversion
+func convertNodeToGob(node *pvNode) *gobPvNode {
+	if node == nil {
+		return nil
+	}
+	gobNode := &gobPvNode{
+		Array: make([]interface{}, len(node.array)),
+	}
+	for i, item := range node.array {
+		switch val := item.(type) {
+		case *pvNode:
+			gobNode.Array[i] = convertNodeToGob(val)
+		case Object:
+			gobNode.Array[i] = val
+		default:
+			gobNode.Array[i] = val
+		}
+	}
+	return gobNode
+}
+
+func convertNodeFromGob(gobNode *gobPvNode) *pvNode {
+	if gobNode == nil {
+		return nil
+	}
+	node := &pvNode{
+		array: make([]interface{}, len(gobNode.Array)),
+	}
+	for i, item := range gobNode.Array {
+		switch val := item.(type) {
+		case *gobPvNode:
+			node.array[i] = convertNodeFromGob(val)
+		case Object:
+			node.array[i] = val
+		default:
+			node.array[i] = val
+		}
+	}
+	return node
+}
+
+// encode/decode helper methods for gobPersistentVector
+func (g *gobPersistentVector) encode() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(g); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (g *gobPersistentVector) decode(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := gob.NewDecoder(buf)
+	return dec.Decode(g)
 }

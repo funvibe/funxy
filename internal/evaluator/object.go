@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"bytes"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"hash/fnv"
@@ -284,7 +285,28 @@ func (f *Function) Hash() uint32 {
 // OperatorFunction represents an operator used as a function, e.g., (+)
 type OperatorFunction struct {
 	Operator  string
-	Evaluator *Evaluator // Need evaluator reference to call evalInfixExpression
+	Evaluator *Evaluator // Need evaluator reference to call evalInfixExpression (not serialized)
+}
+
+// GobEncode implements custom serialization - only encodes Operator, not Evaluator
+func (of *OperatorFunction) GobEncode() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(of.Operator); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// GobDecode implements custom deserialization - restores Operator, leaves Evaluator nil
+func (of *OperatorFunction) GobDecode(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := gob.NewDecoder(buf)
+	if err := dec.Decode(&of.Operator); err != nil {
+		return err
+	}
+	of.Evaluator = nil // Evaluator is runtime-only, not persisted
+	return nil
 }
 
 func (of *OperatorFunction) Type() ObjectType         { return FUNCTION_OBJ }
@@ -764,6 +786,44 @@ func (l *List) Hash() uint32 {
 		h = 31*h + obj.Hash()
 	}
 	return h
+}
+
+// GobEncode implements gob encoding for List
+func (l *List) GobEncode() ([]byte, error) {
+	// Serialize as a simple slice of elements plus element type
+	// This avoids dealing with the complex internal structure
+	elements := l.ToSlice()
+	gobList := struct {
+		Elements    []Object
+		ElementType string
+	}{
+		Elements:    elements,
+		ElementType: l.ElementType,
+	}
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(gobList); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// GobDecode implements gob decoding for List
+func (l *List) GobDecode(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := gob.NewDecoder(buf)
+	var gobList struct {
+		Elements    []Object
+		ElementType string
+	}
+	if err := dec.Decode(&gobList); err != nil {
+		return err
+	}
+	// Reconstruct the list
+	newList := NewList(gobList.Elements)
+	newList.ElementType = gobList.ElementType
+	*l = *newList
+	return nil
 }
 
 // Map represents an immutable hash map (HAMT-based)

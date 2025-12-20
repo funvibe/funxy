@@ -200,7 +200,12 @@ func (c *Compiler) Compile(program *ast.Program) (*Chunk, error) {
 
 	c.emit(OP_HALT, 0)
 	c.function.LocalCount = c.localCount
-	return c.currentChunk(), nil
+
+	// Copy pending imports to the chunk for serialization
+	chunk := c.currentChunk()
+	chunk.PendingImports = c.pendingImports
+
+	return chunk, nil
 }
 
 // compileProgram compiles a program's statements without emitting HALT
