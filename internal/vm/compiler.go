@@ -122,6 +122,20 @@ func (c *Compiler) GetTypeAliases() map[string]typesystem.Type {
 	return c.typeAliases
 }
 
+// extractTypeConstructorName extracts the type constructor name from a type.
+// e.g., Option<Int> → "Option", List<String> → "List", Result<Int, String> → "Result"
+func extractTypeConstructorName(t typesystem.Type) string {
+	switch typ := t.(type) {
+	case typesystem.TCon:
+		return typ.Name
+	case typesystem.TApp:
+		// For TApp, recursively get the constructor
+		return extractTypeConstructorName(typ.Constructor)
+	default:
+		return ""
+	}
+}
+
 // SetBaseDir sets the base directory for resolving imports
 func (c *Compiler) SetBaseDir(dir string) {
 	c.baseDir = dir
@@ -411,17 +425,32 @@ func (c *Compiler) compileTupleLiteral(lit *ast.TupleLiteral) error {
 			// So total change: -2*N
 			c.slotCount -= fieldCount * 2
 			// Base is replaced by result, so slotCount stays same for base
-		} else {
-			// Emit MAKE_RECORD with field count
-			c.emit(OP_MAKE_RECORD, line)
-			c.currentChunk().Write(byte(fieldCount), line)
+	} else {
+		// Emit MAKE_RECORD with field count
+		c.emit(OP_MAKE_RECORD, line)
+		c.currentChunk().Write(byte(fieldCount), line)
 
-			c.slotCount -= fieldCount * 2 // name+value pairs
-			c.slotCount++
+		// Check if there's a nominal type name from TypeMap
+		var typeNameIdx int = 0xFFFF // Use 0xFFFF to indicate "no type name"
+		if c.typeMap != nil {
+			if inferredType := c.typeMap[lit]; inferredType != nil {
+				typeName := extractTypeConstructorName(inferredType)
+				if typeName != "" {
+					typeNameIdx = c.currentChunk().AddConstant(&stringConstant{Value: typeName})
+				}
+			}
 		}
 
-		return nil
+		// Emit type name index (2 bytes)
+		c.currentChunk().Write(byte(typeNameIdx>>8), line)
+		c.currentChunk().Write(byte(typeNameIdx), line)
+
+		c.slotCount -= fieldCount * 2 // name+value pairs
+		c.slotCount++
 	}
+
+	return nil
+}
 
 // Compile index expression: list[i], map[k]
 func (c *Compiler) compileIndexExpression(expr *ast.IndexExpression) error {

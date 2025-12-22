@@ -1,0 +1,32 @@
+import "lib/test" (*)
+
+testRun("while loop basic", fun() {
+    i = 0
+    sum = 0
+    while i < 10 {
+        sum = sum + i
+        i = i + 1
+    }
+    assert(sum == 45, "Sum should be 45")
+})
+
+testRun("while break", fun() {
+    i = 0
+    while true {
+        if i == 5 { break i }
+        i = i + 1
+    }
+    assert(i == 5, "Should break at 5")
+})
+
+testRun("while continue", fun() {
+    i = 0
+    sum = 0
+    while i < 10 {
+        i = i + 1
+        if i % 2 == 0 { continue }
+        sum = sum + i
+    }
+    // 1+3+5+7+9 = 25
+    assert(sum == 25, "Sum of odds")
+})

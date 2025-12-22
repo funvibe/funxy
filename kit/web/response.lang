@@ -1,6 +1,6 @@
 package web
 
-import "kit/ui" (render)
+import "kit/ui" (VNode, render)
 import "lib/json" (jsonEncode, jsonFromValue)
 
 // --- Response Helpers ---
@@ -18,7 +18,6 @@ fun resHtml(node) -> Response {
 }
 
 fun resJson(data) -> Response {
-    // data can be any value convertible to Json
     { status: 200, headers: [("Content-Type", "application/json")], body: BodyJson(jsonFromValue(data)) }
 }
 
@@ -45,10 +44,23 @@ fun setCookie(name, val, res: Response) -> Response {
 
 // --- Finalize ---
 
+// Automatic response conversion (used internally by handleRequest)
+fun autoResponse(val) -> Response {
+    if typeOf(val, Response) {
+        val
+    } else if typeOf(val, String) {
+        resText(val)
+    } else if typeOf(val, VNode) {
+        resHtml(val)
+    } else {
+        resJson(val)
+    }
+}
+
 fun finalizeResponse(res) -> HttpResponse {
     match res.body {
-        BodyString(s) -> {
-            { status: res.status, headers: res.headers, body: s }
+        BodyString(str) -> {
+            { status: res.status, headers: res.headers, body: str }
         }
         BodyJson(j) -> {
             encoded = jsonEncode(j)
@@ -63,4 +75,3 @@ fun finalizeResponse(res) -> HttpResponse {
         }
     }
 }
-

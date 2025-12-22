@@ -35,6 +35,10 @@ func (b *VMBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
 	if ctx.FilePath != "" {
 		compiler.SetBaseDir(filepath.Dir(ctx.FilePath))
 	}
+	// Pass TypeMap from analyzer to compiler for nominal record types
+	if ctx.TypeMap != nil {
+		compiler.SetTypeMap(ctx.TypeMap)
+	}
 	chunk, err := compiler.Compile(program)
 	if err != nil {
 		return nil, fmt.Errorf("compilation error: %w", err)
@@ -105,6 +109,9 @@ func (b *VMBackend) Disassemble(ctx *pipeline.PipelineContext) (string, error) {
 	compiler := vm.NewCompiler()
 	if ctx.FilePath != "" {
 		compiler.SetBaseDir(filepath.Dir(ctx.FilePath))
+	}
+	if ctx.TypeMap != nil {
+		compiler.SetTypeMap(ctx.TypeMap)
 	}
 	chunk, err := compiler.Compile(program)
 	if err != nil {

@@ -101,16 +101,44 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 
 	case *ast.ConstructorPattern:
 		sym, ok := table.Find(p.Name.Value)
-		if !ok || sym.Kind != symbols.ConstructorSymbol {
+		if !ok {
+			return nil, inferErrorf(p, "undefined symbol: %s", p.Name.Value)
+		}
+
+		// Allow matching against Type names (String, Int, etc.)
+		// 1. If Kind is TypeSymbol (defined via type alias)
+		// 2. If Kind is VariableSymbol (defined via DefineConstant) AND Type is TType (runtime Type Object)
+		isTypeSymbol := sym.Kind == symbols.TypeSymbol
+		isTypeConstant := sym.Kind == symbols.VariableSymbol && isTType(sym.Type)
+
+		if (isTypeSymbol || isTypeConstant) && len(p.Elements) == 0 {
+			// The pattern is a Type Object.
+			// If it's TypeSymbol, its type is Type<T> where T is the type it represents.
+			// If it's VariableSymbol (Type Constant), its type is already Type<T>.
+			var typeObjType typesystem.Type
+			if isTypeSymbol {
+				typeObjType = typesystem.TType{Type: sym.Type}
+			} else {
+				typeObjType = sym.Type
+			}
+
+			subst, err := typesystem.Unify(expectedType, typeObjType)
+			if err != nil {
+				return nil, inferErrorf(p, "pattern type mismatch: expected %s, got %s (%s)", expectedType, typeObjType, p.Name.Value)
+			}
+			return subst, nil
+		}
+
+		if sym.Kind != symbols.ConstructorSymbol {
 			return nil, inferErrorf(p, "undefined constructor: %s", p.Name.Value)
 		}
 
 		freshCtorType := InstantiateWithContext(ctx, sym.Type)
 		totalSubst := typesystem.Subst{}
 
-		if tFunc, ok := freshCtorType.(typesystem.TFunc); ok {
-			subst, err := typesystem.Unify(expectedType, tFunc.ReturnType)
-			if err != nil {
+	if tFunc, ok := freshCtorType.(typesystem.TFunc); ok {
+		subst, err := typesystem.Unify(expectedType, tFunc.ReturnType)
+		if err != nil {
 				return nil, inferErrorf(p, "pattern type mismatch: expected %s, got %s (%s)", expectedType, tFunc.ReturnType, p.Name.Value)
 			}
 			totalSubst = subst.Compose(totalSubst)
@@ -119,10 +147,10 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 				return nil, inferErrorf(p, "constructor %s expects %d arguments, got %d", p.Name.Value, len(tFunc.Params), len(p.Elements))
 			}
 
-			for i, el := range p.Elements {
-				// Apply current substitution to parameter type
-				paramType := tFunc.Params[i].Apply(totalSubst)
-				s, err := inferPattern(ctx, el, paramType, table)
+		for i, el := range p.Elements {
+			// Apply current substitution to parameter type
+			paramType := tFunc.Params[i].Apply(totalSubst)
+			s, err := inferPattern(ctx, el, paramType, table)
 				if err != nil {
 					return nil, err
 				}
@@ -195,7 +223,14 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 		}
 		sort.Strings(patternKeys)
 
-		if tRec, ok := expectedType.(typesystem.TRecord); ok {
+		// Unwrap expected type if it's a TCon (alias or nominal record) to check fields
+		checkType := typesystem.UnwrapUnderlying(expectedType)
+		// Resolve alias if not unwrapped
+		if _, ok := checkType.(typesystem.TRecord); !ok {
+			checkType = table.ResolveTypeAlias(expectedType)
+		}
+
+		if tRec, ok := checkType.(typesystem.TRecord); ok {
 			for _, key := range patternKeys {
 				pat := p.Fields[key]
 				if fieldType, ok := tRec.Fields[key]; ok {
@@ -412,6 +447,11 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 		}
 	}
 	return nil, inferErrorf(pat, "unknown pattern type")
+}
+
+func isTType(t typesystem.Type) bool {
+	_, ok := t.(typesystem.TType)
+	return ok
 }
 
 func (w *walker) VisitWildcardPattern(n *ast.WildcardPattern) {}

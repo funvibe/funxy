@@ -664,11 +664,56 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		}
 		return &TypeObject{TypeVal: typesystem.TApp{Constructor: fn.TypeVal, Args: typeArgs}}
 	case *ClassMethod:
-		// Try to find implementation by checking each argument
-		// This supports HKT where the type constructor might not be in the first argument
-		// (e.g., Functor.fmap(f, fa) where fa: F<A> is the second argument)
 		var foundMethod Object
 		var dispatchTypeName string
+
+		// 1. Try to dispatch by Context (ReturnType or ContainerContext)
+		// This handles cases like pure(x) -> F<x> where F is determined by context, not by x.
+
+		var contextTypeName string
+
+		// 1a. Container Context (from >>=)
+		if e.ContainerContext != "" {
+			contextTypeName = e.ContainerContext
+		}
+
+		// 1b. Return Type Context (from annotations)
+		if contextTypeName == "" && e.CurrentCallNode != nil {
+			// Try TypeMap first
+			if e.TypeMap != nil {
+				if expectedType := e.TypeMap[e.CurrentCallNode]; expectedType != nil {
+					contextTypeName = extractTypeConstructorName(expectedType)
+				}
+			}
+
+			// Fallback: check AST nodes if TypeMap failed
+			if contextTypeName == "" {
+				if assign, ok := e.CurrentCallNode.(*ast.AssignExpression); ok && assign.AnnotatedType != nil {
+					contextTypeName = extractTypeNameFromAST(assign.AnnotatedType)
+				} else if annotated, ok := e.CurrentCallNode.(*ast.AnnotatedExpression); ok && annotated.TypeAnnotation != nil {
+					contextTypeName = extractTypeNameFromAST(annotated.TypeAnnotation)
+				} else if constant, ok := e.CurrentCallNode.(*ast.ConstantDeclaration); ok && constant.TypeAnnotation != nil {
+					contextTypeName = extractTypeNameFromAST(constant.TypeAnnotation)
+				}
+			}
+		}
+
+		var contextCandidate Object
+		if contextTypeName != "" {
+			if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
+				if methodTableObj, ok := typesMap[contextTypeName]; ok {
+					if methodTable, ok := methodTableObj.(*MethodTable); ok {
+						if method, ok := methodTable.Methods[fn.Name]; ok {
+							contextCandidate = method
+						}
+					}
+				}
+			}
+		}
+
+		// 2. Try to dispatch by Arguments
+		var argCandidate Object
+		var argTypeName string
 
 		if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
 			for _, arg := range args {
@@ -676,8 +721,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				if methodTableObj, ok := typesMap[typeName]; ok {
 					if methodTable, ok := methodTableObj.(*MethodTable); ok {
 						if method, ok := methodTable.Methods[fn.Name]; ok {
-							foundMethod = method
-							dispatchTypeName = typeName
+							argCandidate = method
+							argTypeName = typeName
 							break
 						}
 					}
@@ -685,66 +730,28 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 			}
 		}
 
-		// If no match found from arguments, try to dispatch by ContainerContext
-		// This is set by >>= to let `pure` know what container to produce
-		if foundMethod == nil && e.ContainerContext != "" {
-			if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
-				if methodTableObj, ok := typesMap[e.ContainerContext]; ok {
-					if methodTable, ok := methodTableObj.(*MethodTable); ok {
-						if method, ok := methodTable.Methods[fn.Name]; ok {
-							foundMethod = method
-							dispatchTypeName = e.ContainerContext
-						}
-					}
-				}
-			}
-		}
+		// 3. Decide which one to use
+		// If context candidate exists and accepts args, prioritize it.
+		// This fixes ambiguity where Arg Type matches an instance (e.g. List)
+		// but Context Type expects another (e.g. Option).
 
-		// If no match found from arguments, try to dispatch by expected return type
-		// This is crucial for pure/mempty which don't have a container argument
-		if foundMethod == nil && e.CurrentCallNode != nil {
-			var typeCtorName string
-
-			// First try TypeMap
-			if e.TypeMap != nil {
-				if expectedType := e.TypeMap[e.CurrentCallNode]; expectedType != nil {
-					typeCtorName = extractTypeConstructorName(expectedType)
-				}
+		if contextCandidate != nil {
+			// Use context candidate if:
+			// - No arg candidate found, OR
+			// - Context candidate matches args (optimistic check)
+			if argCandidate == nil || e.checkArgsMatch(contextCandidate, args) {
+				foundMethod = contextCandidate
+				dispatchTypeName = contextTypeName
+			} else {
+				// Context candidate explicitly rejected args (e.g. Bool.eq(Int, Int))
+				// Fallback to arg candidate
+				foundMethod = argCandidate
+				dispatchTypeName = argTypeName
 			}
-
-			// Fallback: check if CurrentCallNode is AssignExpression with AnnotatedType
-			if typeCtorName == "" {
-				if assign, ok := e.CurrentCallNode.(*ast.AssignExpression); ok && assign.AnnotatedType != nil {
-					typeCtorName = extractTypeNameFromAST(assign.AnnotatedType)
-				}
-			}
-
-			// Fallback: check if CurrentCallNode is AnnotatedExpression
-			if typeCtorName == "" {
-				if annotated, ok := e.CurrentCallNode.(*ast.AnnotatedExpression); ok && annotated.TypeAnnotation != nil {
-					typeCtorName = extractTypeNameFromAST(annotated.TypeAnnotation)
-				}
-			}
-
-			// Fallback: check if CurrentCallNode is ConstantDeclaration with TypeAnnotation
-			if typeCtorName == "" {
-				if constant, ok := e.CurrentCallNode.(*ast.ConstantDeclaration); ok && constant.TypeAnnotation != nil {
-					typeCtorName = extractTypeNameFromAST(constant.TypeAnnotation)
-				}
-			}
-
-			if typeCtorName != "" {
-				if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
-					if methodTableObj, ok := typesMap[typeCtorName]; ok {
-						if methodTable, ok := methodTableObj.(*MethodTable); ok {
-							if method, ok := methodTable.Methods[fn.Name]; ok {
-								foundMethod = method
-								dispatchTypeName = typeCtorName
-							}
-						}
-					}
-				}
-			}
+		} else {
+			// No context candidate, use arg candidate
+			foundMethod = argCandidate
+			dispatchTypeName = argTypeName
 		}
 
 		if foundMethod != nil {
@@ -898,4 +905,115 @@ func MatchStringPattern(parts []ast.StringPatternPart, str string) (bool, map[st
 
 	// All parts matched and consumed entire string (or at least matched all parts)
 	return pos == len(str), captures
+}
+
+// checkArgsMatch checks if the arguments match the function parameters
+// This is used to disambiguate trait dispatch (Context vs Args)
+func (e *Evaluator) checkArgsMatch(fn Object, args []Object) bool {
+	switch f := fn.(type) {
+	case *Function:
+		paramCount := len(f.Parameters)
+		isVariadic := false
+		if paramCount > 0 && f.Parameters[paramCount-1].IsVariadic {
+			isVariadic = true
+			paramCount--
+		}
+
+		// Check basic count
+		if len(args) < paramCount-f.countDefaults() { // Minimal args (ignoring defaults for now/assuming provided)
+			// Rough check
+			if len(args) < 0 { // Placeholder
+				return false
+			}
+		}
+
+		for i, arg := range args {
+			if i >= paramCount {
+				if isVariadic {
+					// Variadic args match generic list usually, hard to check strict type without detailed info
+					return true
+				}
+				return false // Too many args
+			}
+
+			param := f.Parameters[i]
+			if !e.fuzzyMatchAstType(arg, param.Type) {
+				return false
+			}
+		}
+		return true
+
+	case *Builtin:
+		if f.TypeInfo == nil {
+			return true // Optimistic
+		}
+		if tFunc, ok := f.TypeInfo.(typesystem.TFunc); ok {
+			params := tFunc.Params
+			isVariadic := tFunc.IsVariadic
+
+			for i, arg := range args {
+				if i >= len(params) {
+					if isVariadic {
+						return true
+					}
+					return false
+				}
+				if !e.fuzzyMatchSystemType(arg, params[i]) {
+					return false
+				}
+			}
+			return true
+		}
+		return true
+
+	default:
+		return true // Optimistic
+	}
+}
+
+func (f *Function) countDefaults() int {
+	count := 0
+	for _, p := range f.Parameters {
+		if p.Default != nil {
+			count++
+		}
+	}
+	return count
+}
+
+// fuzzyMatchAstType checks if val matches type, being optimistic about generics
+func (e *Evaluator) fuzzyMatchAstType(val Object, t ast.Type) bool {
+	// If it's a NamedType and not standard, assume generic and match
+	if nt, ok := t.(*ast.NamedType); ok {
+		if !isStandardType(nt.Name.Value) {
+			return true
+		}
+	}
+	// Use strict check for standard types
+	return e.matchesType(val, t)
+}
+
+// fuzzyMatchSystemType checks if val matches system type
+func (e *Evaluator) fuzzyMatchSystemType(val Object, t typesystem.Type) bool {
+	switch typ := t.(type) {
+	case typesystem.TCon:
+		if !isStandardType(typ.Name) {
+			return true
+		}
+		// Check strict
+		return getRuntimeTypeName(val) == typ.Name // Simplified check
+	case typesystem.TVar:
+		return true // Generic matches all
+	default:
+		return true // Complex types - optimistic
+	}
+}
+
+func isStandardType(name string) bool {
+	switch name {
+	case "Int", "Float", "Bool", "Char", "String", "List", "Map", "Bytes", "Bits",
+		 "Option", "Result", "Nil", "BigInt", "Rational", "Tuple":
+		return true
+	}
+	return false
 }

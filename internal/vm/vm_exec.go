@@ -113,6 +113,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_SET_TYPE_NAME:
 		// Set TypeName on top of stack (for type-annotated records)
+		// Clean version
 		typeNameIdx := vm.readConstantIndex()
 		typeName := vm.frame.chunk.Constants[typeNameIdx].Inspect()
 		if val := vm.peek(0); val.IsObj() {
@@ -574,7 +575,20 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			}
 			fields[name] = value
 		}
-		vm.push(ObjVal(evaluator.NewRecord(fields)))
+
+		// Read type name index (2 bytes)
+		typeNameIdx := vm.readConstantIndex()
+		record := evaluator.NewRecord(fields)
+
+		// Set nominal type name if provided
+		if typeNameIdx != 0xFFFF {
+			typeNameConst := vm.frame.chunk.Constants[typeNameIdx]
+			if strConst, ok := typeNameConst.(*stringConstant); ok {
+				record.TypeName = strConst.Value
+			}
+		}
+
+		vm.push(ObjVal(record))
 
 	case OP_EXTEND_RECORD:
 		// Stack: [base, name1, val1, name2, val2...] -> [new_record]

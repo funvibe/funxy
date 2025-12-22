@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -676,7 +675,7 @@ func (vm *VM) performReturn() {
 }
 
 // returnWithValue returns from current frame with specified value
-func (vm *VM) returnWithValue(result Value) error {
+func (vm *VM) returnWithValue(result Value) {
 	frame := vm.frame
 
 	// If result is a RecordInstance and has no TypeName, try to set it from function's return type
@@ -712,8 +711,6 @@ func (vm *VM) returnWithValue(result Value) error {
 
 	// Push result back
 	vm.push(result)
-
-	return nil
 }
 
 // callValue handles function calls
@@ -854,130 +851,6 @@ func (vm *VM) getTypeName(obj Value) string {
 }
 
 // Helper functions
-func (vm *VM) objectsEqual(a, b Value) bool {
-	// Fast path for value types
-	if a.Type != b.Type {
-		return false
-	}
-	switch a.Type {
-	case ValInt, ValBool:
-		return a.Data == b.Data
-	case ValFloat:
-		return a.Data == b.Data
-	case ValNil:
-		return true
-	}
-
-	// Object comparison
-	return vm.objectPtrsEqual(a.Obj, b.Obj)
-}
-
-func (vm *VM) objectPtrsEqual(a, b evaluator.Object) bool {
-	switch av := a.(type) {
-	case *evaluator.Integer:
-		if bv, ok := b.(*evaluator.Integer); ok {
-			return av.Value == bv.Value
-		}
-	case *evaluator.Float:
-		if bv, ok := b.(*evaluator.Float); ok {
-			return av.Value == bv.Value
-		}
-	case *evaluator.Boolean:
-		if bv, ok := b.(*evaluator.Boolean); ok {
-			return av.Value == bv.Value
-		}
-	case *evaluator.Char:
-		if bv, ok := b.(*evaluator.Char); ok {
-			return av.Value == bv.Value
-		}
-	case *evaluator.BigInt:
-		if bv, ok := b.(*evaluator.BigInt); ok {
-			return av.Value.Cmp(bv.Value) == 0
-		}
-	case *evaluator.Rational:
-		if bv, ok := b.(*evaluator.Rational); ok {
-			return av.Value.Cmp(bv.Value) == 0
-		}
-	case *evaluator.Bytes:
-		if bv, ok := b.(*evaluator.Bytes); ok {
-			return bytes.Equal(av.ToSlice(), bv.ToSlice())
-		}
-	case *evaluator.Bits:
-		if bv, ok := b.(*evaluator.Bits); ok {
-			return av.Inspect() == bv.Inspect()
-		}
-	case *evaluator.Uuid:
-		if bv, ok := b.(*evaluator.Uuid); ok {
-			return av.Value == bv.Value
-		}
-	case *evaluator.Nil:
-		_, ok := b.(*evaluator.Nil)
-		return ok
-	case *evaluator.List:
-		if bv, ok := b.(*evaluator.List); ok {
-			return vm.listsEqual(av, bv)
-		}
-	case *evaluator.Tuple:
-		if bv, ok := b.(*evaluator.Tuple); ok {
-			return vm.tuplesEqual(av, bv)
-		}
-	case *evaluator.DataInstance:
-		if bv, ok := b.(*evaluator.DataInstance); ok {
-			return vm.dataInstancesEqual(av, bv)
-		}
-	case *evaluator.TypeObject:
-		if bv, ok := b.(*evaluator.TypeObject); ok {
-			return av.TypeVal.String() == bv.TypeVal.String()
-		}
-	}
-	return false
-}
-
-func (vm *VM) listsEqual(a, b *evaluator.List) bool {
-	if a.Len() != b.Len() {
-		return false
-	}
-	for i := 0; i < a.Len(); i++ {
-		elemA := a.Get(i)
-		elemB := b.Get(i)
-		if !vm.objectsEqual(ObjectToValue(elemA), ObjectToValue(elemB)) {
-			return false
-		}
-	}
-	return true
-}
-
-func (vm *VM) tuplesEqual(a, b *evaluator.Tuple) bool {
-	if len(a.Elements) != len(b.Elements) {
-		return false
-	}
-	for i := range a.Elements {
-		if !vm.objectsEqual(ObjectToValue(a.Elements[i]), ObjectToValue(b.Elements[i])) {
-			return false
-		}
-	}
-	return true
-}
-
-func (vm *VM) dataInstancesEqual(a, b *evaluator.DataInstance) bool {
-	// Names must match
-	if a.Name != b.Name {
-		return false
-	}
-	// TypeName comparison - skip if one is empty (runtime-created vs compile-time)
-	if a.TypeName != "" && b.TypeName != "" && a.TypeName != b.TypeName {
-		return false
-	}
-	if len(a.Fields) != len(b.Fields) {
-		return false
-	}
-	for i := range a.Fields {
-		if !vm.objectsEqual(ObjectToValue(a.Fields[i]), ObjectToValue(b.Fields[i])) {
-			return false
-		}
-	}
-	return true
-}
 
 func (vm *VM) isTruthy(obj Value) bool {
 	if obj.IsBool() {

@@ -325,22 +325,63 @@ func (p *Parser) parseMatchExpression() ast.Expression {
 func (p *Parser) parseIdentifier() ast.Expression {
 	ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 
-	// Special case: lowercase identifier followed by { without () creates a call with trailing block
+	// Special case: identifier followed by { without () creates a call with trailing block
 	// This enables clean DSL syntax: div { ... } instead of div() { ... }
-	// Only apply to lowercase identifiers to avoid conflicts with constructor record syntax: MkUser { field: value }
-	if !p.disallowTrailingLambda && p.peekTokenIs(token.LBRACE) && p.curTokenIs(token.IDENT_LOWER) {
-		// Create CallExpression with no regular arguments, only trailing block
-		call := &ast.CallExpression{
-			Token:     p.curToken,
-			Function:  ident,
-			Arguments: []ast.Expression{},
+	// And constructor record syntax: MkUser { field: value }
+	if !p.disallowTrailingLambda && p.peekTokenIs(token.LBRACE) {
+		if p.curTokenIs(token.IDENT_LOWER) || p.curTokenIs(token.IDENT_UPPER) {
+			isLower := p.curTokenIs(token.IDENT_LOWER)
+
+			// Create CallExpression with no regular arguments, only trailing block
+			call := &ast.CallExpression{
+				Token:     p.curToken,
+				Function:  ident,
+				Arguments: []ast.Expression{},
+			}
+
+			p.nextToken() // consume identifier, move to {
+
+			// parseRecordLiteralOrBlock disambiguates between Record and Block
+			arg := p.parseRecordLiteralOrBlock()
+
+			// For DSLs (IDENT_LOWER), if we got a BlockStatement, we historically treated it as a ListLiteral
+			// containing the expressions in the block.
+			// e.g. div { span {}, span {} } -> div([span{}, span{}])
+			if isLower {
+				if block, ok := arg.(*ast.BlockStatement); ok {
+					list := &ast.ListLiteral{Token: block.Token}
+					allExprs := true
+					for _, stmt := range block.Statements {
+						if exprStmt, ok := stmt.(*ast.ExpressionStatement); ok {
+							list.Elements = append(list.Elements, exprStmt.Expression)
+						} else {
+							allExprs = false
+							// Use type assertion for TokenProvider
+							var tok token.Token
+							if provider, ok := stmt.(ast.TokenProvider); ok {
+								tok = provider.GetToken()
+							} else {
+								tok = p.curToken // Fallback
+							}
+							p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+								diagnostics.ErrP005,
+								tok,
+								"block syntax in DSL arguments only supports expressions",
+							))
+						}
+					}
+					if allExprs {
+						arg = list
+					}
+				}
+			}
+
+			if arg != nil {
+				call.Arguments = append(call.Arguments, arg)
+			}
+
+			return call
 		}
-
-		p.nextToken() // consume identifier, move to {
-		blockExprs := p.parseBlockAsList()
-		call.Arguments = append(call.Arguments, blockExprs)
-
-		return call
 	}
 
 	return ident

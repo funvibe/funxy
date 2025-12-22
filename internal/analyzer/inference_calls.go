@@ -17,29 +17,86 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 	fnType = fnType.Apply(totalSubst)
 
 	// Resolve type aliases (e.g., type Observer = (Int) -> Nil)
-	fnType = typesystem.UnwrapUnderlying(fnType)
+	// Use table to look up alias definitions
+	fnType = table.ResolveTypeAlias(fnType)
 
-	// Handle Type Application (e.g. List(Int))
+	// Handle Type Application (e.g. List(Int)) or Constructor Call (e.g. Point({x:1}))
 	if tType, ok := fnType.(typesystem.TType); ok {
 		var typeArgs []typesystem.Type
-		for _, arg := range n.Arguments {
+		var valArgs []typesystem.Type
+		isConstruction := false
+
+		// Analyze arguments to determine if it's type application or construction
+		for i, arg := range n.Arguments {
 			argType, sArg, err := inferFn(arg, table)
 			if err != nil {
 				return nil, nil, err
 			}
 			totalSubst = sArg.Compose(totalSubst)
 
-			if tArg, ok := argType.(typesystem.TType); ok {
+			// Resolve aliases to see if it's a type (TType)
+			resolved := table.ResolveTypeAlias(argType)
+
+			if tArg, ok := resolved.(typesystem.TType); ok && !isConstruction {
 				typeArgs = append(typeArgs, tArg.Type)
 			} else {
-				return nil, nil, inferErrorf(n, "type application expects types as arguments, got %s", argType)
+				// Encountered a value (or we already decided it's construction)
+				if i == 0 {
+					isConstruction = true
+				} else if !isConstruction {
+					// Mixed types and values? e.g. List(Int, 1) -> invalid Type App.
+					// But could be construction if first arg was Type?
+					// Usually Type<Arg> or Type(Arg).
+					// If Type(Type), it's TypeApp.
+					// If Type(Value), it's Construction.
+					// If Type(Type, Value)? Invalid.
+					return nil, nil, inferErrorf(arg, "mixed type and value arguments not supported in type application")
+				}
+				valArgs = append(valArgs, argType)
 			}
 		}
+
+		if isConstruction {
+			// Construction / Cast: Point({x:1}) -> Point
+			targetType := tType.Type
+
+			// If target is TCon (alias), resolving it might give TRecord.
+			// But we want to return TCon (nominal type).
+
+			// If single argument, unify directly
+			if len(valArgs) == 1 {
+				// Unify target type with argument type
+				// e.g. Point vs {x:1}
+				// Point (Alias) unwraps to {x:int}. Unify works.
+				// Returns Point.
+
+				// Resolve target alias just for unification check (UnifyWithResolver does this)
+				// But we want to keep targetType as result.
+
+				subst, err := typesystem.UnifyAllowExtraWithResolver(targetType, valArgs[0], table)
+				if err != nil {
+					return nil, nil, inferErrorf(n, "constructor type mismatch: expected %s, got %s", targetType, valArgs[0])
+				}
+				totalSubst = subst.Compose(totalSubst)
+				return targetType.Apply(totalSubst), totalSubst, nil
+			} else {
+				// Multiple arguments: unify with Tuple?
+				// e.g. Point(1, 2) vs Point={x:Int, y:Int} ? No, Point is Record.
+				// Point(1, 2) only works if Point is Tuple alias.
+				tupleArg := typesystem.TTuple{Elements: valArgs}
+				subst, err := typesystem.UnifyWithResolver(targetType, tupleArg, table)
+				if err != nil {
+					return nil, nil, inferErrorf(n, "constructor arguments mismatch: %s vs %s", targetType, tupleArg)
+				}
+				totalSubst = subst.Compose(totalSubst)
+				return targetType.Apply(totalSubst), totalSubst, nil
+			}
+		}
+
 		return typesystem.TType{Type: typesystem.TApp{Constructor: tType.Type, Args: typeArgs}}, totalSubst, nil
 	} else if tFunc, ok := fnType.(typesystem.TFunc); ok {
 		// Handle TFunc
 		paramIdx := 0
-
 
 		// Note: Function types from inferIdentifier are already instantiated.
 		// We don't instantiate again here to keep TypeMap entries consistent.
@@ -91,7 +148,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 								if isIsolated {
 									// Skip unification
 								} else {
-									subst, err := typesystem.Unify(varType, elType)
+									subst, err := typesystem.UnifyWithResolver(varType, elType, table)
 									if err != nil {
 										return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, elType)
 									}
@@ -102,7 +159,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 							}
 						} else {
 							paramType := tFunc.Params[paramIdx].Apply(totalSubst)
-							subst, err := typesystem.UnifyAllowExtra(paramType, elType)
+							subst, err := typesystem.UnifyAllowExtraWithResolver(paramType, elType, table)
 							if err != nil {
 								return nil, nil, inferErrorf(arg, "argument %d type mismatch: %s vs %s", paramIdx+1, paramType, elType)
 							}
@@ -121,7 +178,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 					listElemType := getListElementType(argType)
 					varType := tFunc.Params[len(tFunc.Params)-1].Apply(totalSubst)
 
-					subst, err := typesystem.Unify(varType, listElemType)
+					subst, err := typesystem.UnifyWithResolver(varType, listElemType, table)
 					if err != nil {
 						return nil, nil, inferErrorf(arg, "spread argument element type mismatch: %s vs %s", varType, listElemType)
 					}
@@ -178,7 +235,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 							// But we should verify constraints if any?
 							// For now, simple skipping.
 						} else {
-							subst, err := typesystem.Unify(varType, argType)
+							subst, err := typesystem.UnifyWithResolver(varType, argType, table)
 							if err != nil {
 								return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, argType)
 							}
@@ -189,7 +246,10 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 					}
 				} else {
 					paramType := tFunc.Params[paramIdx].Apply(totalSubst)
-					subst, err := typesystem.UnifyAllowExtra(paramType, argType)
+					// Resolve type aliases in parameter type for proper unification
+					// This handles cases where parameter is a type alias (e.g., pkg.Handler)
+					paramType = table.ResolveTypeAlias(paramType)
+					subst, err := typesystem.UnifyAllowExtraWithResolver(paramType, argType, table)
 					if err != nil {
 						return nil, nil, inferErrorf(arg, "argument %d type mismatch: (%s) vs %s", paramIdx+1, paramType, argType)
 					}
@@ -264,7 +324,7 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 			ReturnType: resultVar,
 		}
 
-		subst, err := typesystem.Unify(tVar, expectedFnType)
+		subst, err := typesystem.UnifyWithResolver(tVar, expectedFnType, table)
 		if err != nil {
 			return nil, nil, inferErrorf(n, "cannot call %s as a function with arguments %v", fnType, paramTypes)
 		}

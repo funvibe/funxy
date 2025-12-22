@@ -1,0 +1,37 @@
+package responder_trait_import
+
+import "lib/json" (Json)
+import "kit/ui" (VNode)
+
+type ResponseBody =
+    BodyString String
+    | BodyJson Json
+    | BodyHtml VNode
+
+type Response = {
+    status: Int,
+    headers: List<(String, String)>,
+    body: ResponseBody
+}
+
+trait Responder<T> {
+    fun toResponse(val: T) -> Response
+}
+
+instance Responder String {
+    fun toResponse(s: String) -> Response {
+        { status: 200, headers: [("Content-Type", "text/plain")], body: BodyString(s) }
+    }
+}
+
+instance Responder VNode {
+    fun toResponse(node: VNode) -> Response {
+        { status: 200, headers: [("Content-Type", "text/html")], body: BodyHtml(node) }
+    }
+}
+
+instance Responder Json {
+    fun toResponse(j: Json) -> Response {
+        { status: 200, headers: [("Content-Type", "application/json")], body: BodyJson(j) }
+    }
+}

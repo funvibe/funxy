@@ -450,6 +450,18 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 				list.ElementType = elemType
 			}
 		}
+		// If value is a RecordInstance and type annotation is a named type, set TypeName
+		if record, ok := val.(*RecordInstance); ok {
+			// Handle simple named type (e.g. Point)
+			if namedType, ok := node.TypeAnnotation.(*ast.NamedType); ok {
+				record.TypeName = namedType.Name.Value
+			}
+			// Handle generic named type (e.g. Box<Int>)
+			// We only set the base TypeName ("Box") because runtime erasure
+			// TApp also has Constructor which is usually NamedType or TCon
+			// AST node for Box<Int> is NamedType with Args
+			// No change needed for AST NamedType structure (it includes Args)
+		}
 		return val
 	case *ast.SpreadExpression:
 		// SpreadExpression evaluated in isolation just evaluates its inner expression

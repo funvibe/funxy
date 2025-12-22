@@ -140,6 +140,8 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			finalFields[k] = t.Apply(totalSubst)
 		}
 
+		// Return anonymous record type by default
+		// Nominal typing is handled via explicit type annotations or unification
 		return typesystem.TRecord{Fields: finalFields}, totalSubst, nil
 
 	case *ast.ListLiteral:

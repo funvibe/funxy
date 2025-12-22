@@ -15,9 +15,13 @@ fun staticHandler(rootPath) {
                     match io.fileRead(fullPath) {
                         Ok(content) -> {
                              mime = getMimeType(fullPath)
-                             Ok({ status: 200, headers: [("Content-Type", mime)], body: BodyString(content) })
+                             resp: Response = { status: 200, headers: [("Content-Type", mime)], body: BodyString(content) }
+                             Ok(resp)
                         }
-                        Fail(_) -> Ok({ status: 500, headers: [("Content-Type", "text/plain")], body: BodyString("Internal Server Error") })
+                        Fail(_) -> {
+                             resp: Response = { status: 500, headers: [("Content-Type", "text/plain")], body: BodyString("Internal Server Error") }
+                             Ok(resp)
+                        }
                     }
                 } else {
                     Ok(resText("Not Found") |> withStatus(404))

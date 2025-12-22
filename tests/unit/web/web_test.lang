@@ -12,7 +12,7 @@ import "lib/map" (mapFromRecord)
 
 // Mock Handler
 fun helloHandler(ctx) {
-    Ok(web.resHtml(ui.div(ui.text("Hello"))))
+    Ok(ui.div(ui.text("Hello")))
 }
 
 // Middleware Test
@@ -20,7 +20,10 @@ fun headerMiddleware(next) {
     fun(ctx) {
         // Post-processing: add header after handler runs
         match next(ctx) {
-            Ok(res) -> Ok(web.setHeader("X-Middleware", "True", res))
+            Ok(res) -> {
+                response = web.autoResponse(res)
+                Ok(web.setHeader("X-Middleware", "True", response))
+            }
             Fail(e) -> Fail(e)
         }
     }
@@ -40,12 +43,12 @@ fun jsonHandler(ctx: web.Context) {
     match contentType {
         Some((_, "application/json")) -> {
             if ctx.req.body != "" {
-                Ok(web.resJson({ success: true, received: ctx.req.body }))
+                Ok({ success: true, received: ctx.req.body })
             } else {
-                Ok(web.resJson({ error: "Empty JSON body" }))
+                Ok({ error: "Empty JSON body" })
             }
         }
-        _ -> Ok(web.resText("Not JSON"))
+        _ -> Ok("Not JSON")
     }
 }
 
@@ -57,17 +60,17 @@ fun formHandler(ctx: web.Context) {
             email = web.formParam("email", ctx)
 
             match (name, email) {
-                (Some(n), Some(e)) -> Ok(web.resText("Form: " ++ n ++ " <" ++ e ++ ">"))
-                _ -> Ok(web.resText("Form: incomplete"))
+                (Some(n), Some(e)) -> Ok("Form: " ++ n ++ " <" ++ e ++ ">")
+                _ -> Ok("Form: incomplete")
             }
         }
-        _ -> Ok(web.resText("Not form data"))
+        _ -> Ok("Not form data")
     }
 }
 
-fun stringResponder(ctx) { Ok(web.resText("Hello String")) }
-fun htmlResponder(ctx) { Ok(web.resHtml(ui.div(ui.text("Hello HTML")))) }
-fun jsonResponder(ctx) { Ok(web.resJson({ message: "Hello JSON" })) }
+fun stringResponder(ctx) { Ok("Hello String") }
+fun htmlResponder(ctx) { Ok(ui.div(ui.text("Hello HTML"))) }
+fun jsonResponder(ctx) { Ok({ message: "Hello JSON" }) }
 
 fun redirectHandler(ctx) { Ok(web.redirect("/new-location")) }
 fun customStatusHandler(ctx) { Ok(web.resText("Not Found") |> web.withStatus(404)) }
@@ -76,14 +79,14 @@ fun headerHandler(ctx) {
 }
 
 fun failingHandler(ctx) { Fail("Test error") }
-fun corsHandler(ctx) { Ok(web.resText("CORS OK")) }
+fun corsHandler(ctx) { Ok("CORS OK") }
 
 fun sessionHandler(ctx) {
     response = web.resText("Session set")
     Ok(web.setSession(ctx, "user:alice", "my-secret-key", response))
 }
 
-fun successHandler(ctx) { Ok(web.resText("Success")) }
+fun successHandler(ctx) { Ok("Success") }
 
 testRun("web framework core", fun() {
     // Mock Request
@@ -101,6 +104,8 @@ testRun("web framework core", fun() {
 
     // Test Response Factory (Response type)
     respText: web.Response = web.resText("Hello")
+    print("Debug respText: " ++ show(respText))
+    print("Debug respText Type: " ++ show(getType(respText)))
     assertEquals(respText.status, 200, "Text response status 200")
 
     // Explicit type check

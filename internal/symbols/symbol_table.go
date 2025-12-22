@@ -202,6 +202,11 @@ func NewEnclosedSymbolTable(outer *SymbolTable) *SymbolTable {
 	return st
 }
 
+// IsGlobalScope returns true if this symbol table is the root (global) scope.
+func (s *SymbolTable) IsGlobalScope() bool {
+	return s.outer == nil
+}
+
 func (s *SymbolTable) DefineModule(name string, moduleType typesystem.Type) {
 	s.store[name] = Symbol{Name: name, Type: moduleType, Kind: ModuleSymbol}
 }
@@ -234,6 +239,11 @@ func (s *SymbolTable) DefineTypePending(name string, t typesystem.Type, origin s
 	s.store[name] = Symbol{Name: name, Type: t, Kind: TypeSymbol, IsPending: true, OriginModule: origin}
 }
 
+func (s *SymbolTable) DefinePendingTrait(name string, origin string) {
+	s.store[name] = Symbol{Name: name, Type: nil, Kind: TraitSymbol, IsPending: true, OriginModule: origin}
+	s.implementations[name] = []typesystem.Type{}
+}
+
 func (s *SymbolTable) Define(name string, t typesystem.Type, origin string) {
 	s.store[name] = Symbol{Name: name, Type: t, Kind: VariableSymbol, IsConstant: false, OriginModule: origin}
 }
@@ -251,9 +261,18 @@ func (s *SymbolTable) DefineType(name string, t typesystem.Type, origin string) 
 // Type field stores TCon for trait/module lookup, UnderlyingType stores the resolved type for unification.
 func (s *SymbolTable) DefineTypeAlias(name string, nominalType, underlyingType typesystem.Type, origin string) {
 	s.types[name] = underlyingType // For ResolveType to get underlying
+
+	// Crucial fix: Update the TCon itself to include the UnderlyingType.
+	// This ensures that when this TCon is exported (as Symbol.Type) or passed around,
+	// it carries the alias information needed for unwrapping.
+	if tCon, ok := nominalType.(typesystem.TCon); ok {
+		tCon.UnderlyingType = underlyingType
+		nominalType = tCon  // Assign back since Go structs are value types
+	}
+
 	s.store[name] = Symbol{
 		Name:           name,
-		Type:           nominalType,      // TCon for trait lookup
+		Type:           nominalType,      // TCon for trait lookup (with UnderlyingType set)
 		Kind:           TypeSymbol,
 		UnderlyingType: underlyingType,   // TRecord for field access
 		OriginModule:   origin,
@@ -283,45 +302,136 @@ func (s *SymbolTable) GetTypeAlias(name string) (typesystem.Type, bool) {
 // For TApp types, resolves the constructor and args recursively.
 // For other types, returns them unchanged.
 func (s *SymbolTable) ResolveTypeAlias(t typesystem.Type) typesystem.Type {
+	return s.resolveTypeAliasWithCycleCheck(t, make(map[string]bool))
+}
+
+func (s *SymbolTable) resolveTypeAliasWithCycleCheck(t typesystem.Type, visited map[string]bool) typesystem.Type {
 	switch ty := t.(type) {
 	case typesystem.TCon:
-		// Check if this TCon is a type alias
-		if underlying, ok := s.GetTypeAlias(ty.Name); ok {
-			// Recursively resolve the underlying type
-			return s.ResolveTypeAlias(underlying)
+		// For qualified types (e.g., dbStorage.DbConfig), look up with qualified name
+		lookupName := ty.Name
+		if ty.Module != "" {
+			lookupName = ty.Module + "." + ty.Name
 		}
+
+		// Cycle detection: if we've already visited this alias in the current path, stop expansion
+		if visited[lookupName] {
+			// Return the canonical type from symbol table if available,
+			// so it has UnderlyingType set correctly for future Unify calls (UnwrapUnderlying).
+			if sym, ok := s.Find(lookupName); ok && sym.Type != nil {
+				return sym.Type
+			}
+			return t
+		}
+
+		// Check if this TCon is a type alias
+		if underlying, ok := s.GetTypeAlias(lookupName); ok {
+			visited[lookupName] = true
+			defer delete(visited, lookupName) // Backtrack: remove from visited path when returning
+
+			// Recursively resolve the underlying type.
+			// If recursion hits a cycle, it will return a TCon (or type containing TCon).
+			return s.resolveTypeAliasWithCycleCheck(underlying, visited)
+		} else if ty.Module != "" {
+			// Try without module prefix (local alias)
+			if underlying, ok := s.GetTypeAlias(ty.Name); ok {
+				visited[ty.Name] = true
+				defer delete(visited, ty.Name)
+				return s.resolveTypeAliasWithCycleCheck(underlying, visited)
+			}
+		}
+
+		// Fallback: Check if it's a Nominal Type with UnderlyingType (e.g. from RegisterTypeDeclaration fallback)
+		// We treat it as an alias for resolution purposes to support structural unification (freshness).
+		if sym, ok := s.Find(lookupName); ok && sym.Kind == TypeSymbol {
+			if tCon, ok := sym.Type.(typesystem.TCon); ok && tCon.UnderlyingType != nil {
+				visited[lookupName] = true
+				defer delete(visited, lookupName)
+				return s.resolveTypeAliasWithCycleCheck(tCon.UnderlyingType, visited)
+			}
+		}
+
+		// EXTRA FALLBACK for qualified types (e.g. dbStorage.DbConfig) imported via module alias
+		if ty.Module != "" {
+			// 1. Try resolving via module symbol directly (if 'ty.Module' is a valid symbol in scope)
+			// ty.Module is likely "dbStorage" (alias)
+			if modSym, ok := s.Find(ty.Module); ok && modSym.Kind == ModuleSymbol {
+				if modType, ok := modSym.Type.(typesystem.TRecord); ok {
+					if fieldType, ok := modType.Fields[ty.Name]; ok {
+						// Found the exported type!
+						// Mark as visited to prevent re-entering this lookup for the same symbol
+						visited[ty.Module+"."+ty.Name] = true
+						defer delete(visited, ty.Module+"."+ty.Name)
+
+						// If it's a TCon, check if it has underlying
+						if tCon, ok := fieldType.(typesystem.TCon); ok {
+							if tCon.UnderlyingType != nil {
+								// Unwrap!
+								return s.resolveTypeAliasWithCycleCheck(tCon.UnderlyingType, visited)
+							}
+                            // Try to look up using the module alias logic below if this fails?
+							if tCon.Name == ty.Name {
+								// If we found a TCon with same name and no underlying type,
+                                // and we are trying to resolve it, maybe we should try the package name lookup?
+                                // Because maybe the TCon in the module record is just a reference, but the alias
+                                // registration has the underlying type.
+							}
+						} else {
+							// Not a TCon (e.g. TRecord), return it directly
+							return fieldType
+						}
+					}
+				}
+			}
+
+			// 2. Try to resolve the module alias (if ty.Module is an alias like "dbStorage")
+			if packageName, ok := s.GetPackageNameByAlias(ty.Module); ok {
+				// Use the ORIGINAL package name for lookup in TypeAliases
+
+				// Try fully qualified original name: "db.DbConfig"
+				originalFullName := packageName + "." + ty.Name
+				if underlying, ok := s.GetTypeAlias(originalFullName); ok {
+					visited[originalFullName] = true
+					defer delete(visited, originalFullName)
+					return s.resolveTypeAliasWithCycleCheck(underlying, visited)
+				}
+			}
+		}
+
 		return t
 	case typesystem.TApp:
 		// Resolve constructor and args recursively
-		resolvedCon := s.ResolveTypeAlias(ty.Constructor)
+		resolvedCon := s.resolveTypeAliasWithCycleCheck(ty.Constructor, visited)
 		resolvedArgs := make([]typesystem.Type, len(ty.Args))
 		for i, arg := range ty.Args {
-			resolvedArgs[i] = s.ResolveTypeAlias(arg)
+			resolvedArgs[i] = s.resolveTypeAliasWithCycleCheck(arg, visited)
 		}
 		return typesystem.TApp{Constructor: resolvedCon, Args: resolvedArgs}
 	case typesystem.TFunc:
 		// Resolve params and return type
 		resolvedParams := make([]typesystem.Type, len(ty.Params))
 		for i, p := range ty.Params {
-			resolvedParams[i] = s.ResolveTypeAlias(p)
+			resolvedParams[i] = s.resolveTypeAliasWithCycleCheck(p, visited)
 		}
 		return typesystem.TFunc{
-			Params:     resolvedParams,
-			ReturnType: s.ResolveTypeAlias(ty.ReturnType),
-			IsVariadic: ty.IsVariadic,
+			Params:       resolvedParams,
+			ReturnType:   s.resolveTypeAliasWithCycleCheck(ty.ReturnType, visited),
+			IsVariadic:   ty.IsVariadic,
+			DefaultCount: ty.DefaultCount,
+			Constraints:  ty.Constraints,
 		}
 	case typesystem.TTuple:
 		resolvedElems := make([]typesystem.Type, len(ty.Elements))
 		for i, e := range ty.Elements {
-			resolvedElems[i] = s.ResolveTypeAlias(e)
+			resolvedElems[i] = s.resolveTypeAliasWithCycleCheck(e, visited)
 		}
 		return typesystem.TTuple{Elements: resolvedElems}
 	case typesystem.TRecord:
 		resolvedFields := make(map[string]typesystem.Type)
 		for k, v := range ty.Fields {
-			resolvedFields[k] = s.ResolveTypeAlias(v)
+			resolvedFields[k] = s.resolveTypeAliasWithCycleCheck(v, visited)
 		}
-		return typesystem.TRecord{Fields: resolvedFields}
+		return typesystem.TRecord{Fields: resolvedFields, IsOpen: ty.IsOpen}
 	default:
 		return t
 	}
@@ -335,7 +445,11 @@ func (s *SymbolTable) DefineTrait(name string, typeParams []string, superTraits 
 	s.store[name] = Symbol{Name: name, Type: nil, Kind: TraitSymbol, OriginModule: origin}
 	s.traitTypeParams[name] = typeParams
 	s.traitSuperTraits[name] = superTraits
-	s.implementations[name] = []typesystem.Type{}
+	// Only initialize implementations list if it doesn't exist yet
+	// This prevents losing implementations when trait is re-defined during multi-pass analysis
+	if _, exists := s.implementations[name]; !exists {
+		s.implementations[name] = []typesystem.Type{}
+	}
 }
 
 func (s *SymbolTable) GetTraitSuperTraits(name string) ([]string, bool) {
@@ -1008,4 +1122,107 @@ func (s *SymbolTable) GetAllNames() []string {
 		}
 	}
 	return names
+}
+
+// FindMatchingRecordAlias searches for a type alias whose underlying type matches the given record structure.
+// This enables nominal typing for record type aliases (e.g., type Response = { status: Int, ... }).
+// Returns the nominal type (TCon) if found, nil otherwise.
+func (s *SymbolTable) FindMatchingRecordAlias(recordType typesystem.TRecord) typesystem.Type {
+	// Search in current scope
+	for _, sym := range s.store {
+		if sym.Kind == TypeSymbol && sym.IsTypeAlias() {
+			// Check if underlying type matches the record structure
+			if underlying, ok := sym.UnderlyingType.(typesystem.TRecord); ok {
+				if recordStructuresMatch(recordType, underlying) {
+					// Return the nominal type (TCon)
+					return sym.Type
+				}
+			}
+		}
+	}
+
+	// Search in outer scope
+	if s.outer != nil {
+		return s.outer.FindMatchingRecordAlias(recordType)
+	}
+
+	return nil
+}
+
+// recordStructuresMatch checks if two record types have the same structure
+func recordStructuresMatch(r1, r2 typesystem.TRecord) bool {
+	if len(r1.Fields) != len(r2.Fields) {
+		return false
+	}
+
+	for key, type1 := range r1.Fields {
+		type2, exists := r2.Fields[key]
+		if !exists {
+			return false
+		}
+		// Check if types match structurally
+		if !typesEqual(type1, type2) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// typesEqual checks if two types are structurally equal
+func typesEqual(t1, t2 typesystem.Type) bool {
+	switch t1 := t1.(type) {
+	case typesystem.TCon:
+		if t2, ok := t2.(typesystem.TCon); ok {
+			return t1.Name == t2.Name && t1.Module == t2.Module
+		}
+	case typesystem.TVar:
+		if t2, ok := t2.(typesystem.TVar); ok {
+			return t1.Name == t2.Name
+		}
+	case typesystem.TApp:
+		if t2, ok := t2.(typesystem.TApp); ok {
+			if !typesEqual(t1.Constructor, t2.Constructor) {
+				return false
+			}
+			if len(t1.Args) != len(t2.Args) {
+				return false
+			}
+			for i := range t1.Args {
+				if !typesEqual(t1.Args[i], t2.Args[i]) {
+					return false
+				}
+			}
+			return true
+		}
+	case typesystem.TRecord:
+		if t2, ok := t2.(typesystem.TRecord); ok {
+			return recordStructuresMatch(t1, t2)
+		}
+	case typesystem.TFunc:
+		if t2, ok := t2.(typesystem.TFunc); ok {
+			if len(t1.Params) != len(t2.Params) {
+				return false
+			}
+			for i := range t1.Params {
+				if !typesEqual(t1.Params[i], t2.Params[i]) {
+					return false
+				}
+			}
+			return typesEqual(t1.ReturnType, t2.ReturnType)
+		}
+	case typesystem.TTuple:
+		if t2, ok := t2.(typesystem.TTuple); ok {
+			if len(t1.Elements) != len(t2.Elements) {
+				return false
+			}
+			for i := range t1.Elements {
+				if !typesEqual(t1.Elements[i], t2.Elements[i]) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
 }

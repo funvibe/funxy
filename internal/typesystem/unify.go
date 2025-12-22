@@ -6,23 +6,92 @@ import (
 	"sort"
 )
 
+// Resolver interface allows Unify to look up type definitions (e.g. from SymbolTable)
+// to handle nominal types or aliases that are not locally resolved.
+type Resolver interface {
+	ResolveTypeAlias(Type) Type
+}
+
 // Unify attempts to find a substitution that makes t1 and t2 equal.
 // It enforces strict equality (invariant).
 func Unify(t1, t2 Type) (Subst, error) {
-	return unifyInternal(t1, t2, false)
+	return unifyInternal(t1, t2, false, nil, nil)
+}
+
+// UnifyWithResolver attempts to find a substitution using a resolver for type aliases.
+func UnifyWithResolver(t1, t2 Type, resolver Resolver) (Subst, error) {
+	return unifyInternal(t1, t2, false, nil, resolver)
 }
 
 // UnifyAllowExtra attempts to unify t1 and t2, allowing t2 to have extra fields if t1 is a Record.
 // This implements width subtyping (t2 is a subtype of t1).
 // t1 is the Expected type (Supertype), t2 is the Actual type (Subtype).
 func UnifyAllowExtra(t1, t2 Type) (Subst, error) {
-	return unifyInternal(t1, t2, true)
+	return unifyInternal(t1, t2, true, nil, nil)
 }
 
-func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
+// UnifyAllowExtraWithResolver allows extra fields and uses a resolver.
+func UnifyAllowExtraWithResolver(t1, t2 Type, resolver Resolver) (Subst, error) {
+	return unifyInternal(t1, t2, true, nil, resolver)
+}
+
+// typePair represents a pair of types being compared for co-induction
+type typePair struct {
+	t1 Type
+	t2 Type
+}
+
+func unifyInternal(t1, t2 Type, allowExtra bool, visited []typePair, resolver Resolver) (Subst, error) {
+	// Debug logging
+	// fmt.Printf("Unify: %s vs %s\n", t1, t2)
+
+	// Co-induction step: Check if we are already comparing these two types in the current stack
+	for _, p := range visited {
+		// Use reflect.DeepEqual for robust comparison including TCons
+		if reflect.DeepEqual(p.t1, t1) && reflect.DeepEqual(p.t2, t2) {
+			// Cycle detected, assume success (co-induction)
+			return Subst{}, nil
+		}
+	}
+
+	// Add current pair to visited
+	visited = append(visited, typePair{t1: t1, t2: t2})
+
 	// If types are strictly equal
 	if reflect.DeepEqual(t1, t2) {
 		return Subst{}, nil
+	}
+
+	// Unify directionality fix: If t2 is a TCon (alias) and t1 is a structural type (Record, Func, etc.),
+	// we need to unwrap t2 to see if it matches t1.
+	// We skip this if t1 is TCon (handled in switch) or TVar (handled in switch).
+	_, t1IsTCon := t1.(TCon)
+	_, t1IsTVar := t1.(TVar)
+	if !t1IsTCon && !t1IsTVar {
+		if t2Con, ok := t2.(TCon); ok {
+			u2 := UnwrapUnderlying(t2Con)
+			if u2 != t2Con { // If unwrappable
+				// fmt.Printf("DEBUG: Unify directionality flip. Unwrapping t2: %s -> %s\n", t2, u2)
+				return unifyInternal(t1, u2, allowExtra, visited, resolver)
+			}
+			// Try resolver if UnwrapUnderlying failed
+			if resolver != nil {
+				r2 := resolver.ResolveTypeAlias(t2)
+				// ResolveTypeAlias returns t2 if no change.
+				// We need robust check if it actually resolved something relevant?
+				// ResolveTypeAlias might return expanded type.
+				if !reflect.DeepEqual(r2, t2) {
+					return unifyInternal(t1, r2, allowExtra, visited, resolver)
+				}
+
+				// Extra check for qualified types:
+				// If r2 is still TCon, but maybe it resolved to a different TCon that DOES have underlying?
+				// ResolveTypeAlias might return TCon{Name: "DbConfig", Underlying: ...}
+				if r2Con, ok := r2.(TCon); ok && r2Con.UnderlyingType != nil {
+					return unifyInternal(t1, r2Con.UnderlyingType, allowExtra, visited, resolver)
+				}
+			}
+		}
 	}
 
 	// Special case: t2 is a union type, t1 is not
@@ -30,7 +99,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 	if _, ok := t1.(TUnion); !ok {
 		if union, ok := t2.(TUnion); ok {
 			for _, member := range union.Types {
-				if s, err := unifyInternal(t1, member, allowExtra); err == nil {
+				if s, err := unifyInternal(t1, member, allowExtra, visited, resolver); err == nil {
 					return s, nil
 				}
 			}
@@ -81,7 +150,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 					for i := 0; i < len(t1.Args); i++ {
 						arg1 := t1.Args[i].Apply(s1)
 						arg2 := t2.Args[numExtra+i].Apply(s1)
-						s2, err := unifyInternal(arg1, arg2, false)
+						s2, err := unifyInternal(arg1, arg2, false, visited, resolver)
 						if err != nil {
 							return nil, err
 						}
@@ -114,7 +183,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 					for i := 0; i < len(t2.Args); i++ {
 						arg1 := t1.Args[numExtra+i].Apply(s1)
 						arg2 := t2.Args[i].Apply(s1)
-						s2, err := unifyInternal(arg1, arg2, false)
+						s2, err := unifyInternal(arg1, arg2, false, visited, resolver)
 						if err != nil {
 							return nil, err
 						}
@@ -126,7 +195,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 
 			// Case 3: Standard unification (same constructor, same arity)
 			// Unify constructors
-			s1, err := unifyInternal(t1.Constructor, t2.Constructor, false)
+			s1, err := unifyInternal(t1.Constructor, t2.Constructor, false, visited, resolver)
 			if err != nil {
 				return nil, err
 			}
@@ -140,7 +209,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 			for i := 0; i < len(t1.Args); i++ {
 				arg1 := t1.Args[i].Apply(s1)
 				arg2 := t2.Args[i].Apply(s1)
-				s2, err := unifyInternal(arg1, arg2, false)
+				s2, err := unifyInternal(arg1, arg2, false, visited, resolver)
 				if err != nil {
 					return nil, err
 				}
@@ -164,14 +233,50 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 			u2 := UnwrapUnderlying(t2)
 			// If both unwrapped to non-TCon, unify them
 			if u1 != t1 || u2 != t2 {
-				return unifyInternal(u1, u2, allowExtra)
+				return unifyInternal(u1, u2, allowExtra, visited, resolver)
+			}
+			// Use Resolver if available to expand types
+			if resolver != nil {
+				r1 := resolver.ResolveTypeAlias(t1)
+				r2 := resolver.ResolveTypeAlias(t2)
+				if !reflect.DeepEqual(r1, t1) || !reflect.DeepEqual(r2, t2) {
+					return unifyInternal(r1, r2, allowExtra, visited, resolver)
+				}
+				// Check if resolved types have underlying types even if they are still TCons
+				if r1Con, ok := r1.(TCon); ok && r1Con.UnderlyingType != nil {
+					return unifyInternal(r1Con.UnderlyingType, r2, allowExtra, visited, resolver)
+				}
+				if r2Con, ok := r2.(TCon); ok && r2Con.UnderlyingType != nil {
+					return unifyInternal(r1, r2Con.UnderlyingType, allowExtra, visited, resolver)
+				}
 			}
 			return nil, errUnifyMsg(t1, t2, "type constant mismatch")
 		default:
 			// Unwrap and try to unify with underlying type
 			u1 := UnwrapUnderlying(t1)
 			if u1 != t1 {
-				return unifyInternal(u1, t2, allowExtra)
+				return unifyInternal(u1, t2, allowExtra, visited, resolver)
+			}
+			// Use Resolver
+			if resolver != nil {
+				r1 := resolver.ResolveTypeAlias(t1)
+				if !reflect.DeepEqual(r1, t1) {
+					return unifyInternal(r1, t2, allowExtra, visited, resolver)
+				}
+			}
+			// If we are comparing two TCons and strict name match failed,
+			// AND unwrapping failed (because nil underlying), maybe we can unwrap t2?
+			if t2Con, ok := t2.(TCon); ok {
+				u2 := UnwrapUnderlying(t2Con)
+				if u2 != t2Con {
+					return unifyInternal(t1, u2, allowExtra, visited, resolver)
+				}
+				if resolver != nil {
+					r2 := resolver.ResolveTypeAlias(t2)
+					if !reflect.DeepEqual(r2, t2) {
+						return unifyInternal(t1, r2, allowExtra, visited, resolver)
+					}
+				}
 			}
 			return nil, errUnify(t1, t2)
 		}
@@ -192,7 +297,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 				// If (Int, {x}) vs (Int, {x,y}).
 				// If we read tuple, it's safe.
 				// So we pass allowExtra.
-				s2, err := unifyInternal(arg1, arg2, allowExtra)
+				s2, err := unifyInternal(arg1, arg2, allowExtra, visited, resolver)
 				if err != nil {
 					return nil, err
 				}
@@ -205,8 +310,18 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 	case TRecord:
 		// If t2 is TCon with underlying type, unwrap it first
 		if tCon, ok := t2.(TCon); ok && tCon.UnderlyingType != nil {
-			return unifyInternal(t1, UnwrapUnderlying(tCon), allowExtra)
+			return unifyInternal(t1, UnwrapUnderlying(tCon), allowExtra, visited, resolver)
 		}
+		// Try resolver for t2
+		if resolver != nil {
+			if tCon, ok := t2.(TCon); ok {
+				r2 := resolver.ResolveTypeAlias(tCon)
+				if !reflect.DeepEqual(r2, t2) {
+					return unifyInternal(t1, r2, allowExtra, visited, resolver)
+				}
+			}
+		}
+
 		switch t2 := t2.(type) {
 		case TVar:
 			return Bind(t2, t1)
@@ -248,7 +363,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 				// Example: { a: {x, y} } passed to { a: {x} }.
 				// If function writes {x} to a, the original record loses y.
 				// So fields must be Invariant (Strict equality).
-				s2, err := unifyInternal(v1Applied, v2Applied, false) // false = Strict
+				s2, err := unifyInternal(v1Applied, v2Applied, false, visited, resolver) // false = Strict
 				if err != nil {
 					return nil, errUnifyContext(fmt.Sprintf("record field '%s'", k), err)
 				}
@@ -270,7 +385,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 			// Since types are normalized (sorted), we can compare pairwise
 			s := Subst{}
 			for i := range t1.Types {
-				s2, err := unifyInternal(t1.Types[i].Apply(s), t2.Types[i].Apply(s), allowExtra)
+				s2, err := unifyInternal(t1.Types[i].Apply(s), t2.Types[i].Apply(s), allowExtra, visited, resolver)
 				if err != nil {
 					return nil, errUnifyContext("union member", err)
 				}
@@ -280,7 +395,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 		default:
 			// Check if t2 is a member of the union t1 (subtyping: T <: T | U)
 			for _, member := range t1.Types {
-				if s, err := unifyInternal(member, t2, allowExtra); err == nil {
+				if s, err := unifyInternal(member, t2, allowExtra, visited, resolver); err == nil {
 					return s, nil
 				}
 			}
@@ -304,7 +419,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 				// Function params are invariant for now (simplification)
 				// Or Contravariant?
 				// Using strict equality for simplicity.
-				s2, err := unifyInternal(p1, p2, false)
+				s2, err := unifyInternal(p1, p2, false, visited, resolver)
 				if err != nil {
 					return nil, err
 				}
@@ -314,7 +429,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 			ret1 := t1.ReturnType.Apply(s1)
 			ret2 := t2.ReturnType.Apply(s1)
 			// Return type is Covariant.
-			s3, err := unifyInternal(ret1, ret2, allowExtra)
+			s3, err := unifyInternal(ret1, ret2, allowExtra, visited, resolver)
 			if err != nil {
 				return nil, err
 			}
@@ -328,7 +443,7 @@ func unifyInternal(t1, t2 Type, allowExtra bool) (Subst, error) {
 			return Bind(t2, t1)
 		case TType:
 			// Types of Types should be strict?
-			return unifyInternal(t1.Type, t2.Type, false)
+			return unifyInternal(t1.Type, t2.Type, false, visited, resolver)
 		default:
 			return nil, errUnifyMsg(t1, t2, "cannot unify TType")
 		}

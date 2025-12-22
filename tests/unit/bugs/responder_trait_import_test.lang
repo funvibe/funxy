@@ -1,0 +1,22 @@
+// Test that reproduces the Responder trait import issue
+// This should fail to compile because Responder trait instances
+// are not properly exported/imported between packages
+
+import "./responder_trait_import" (toResponse)
+import "lib/test" (*)
+import "kit/ui" (text)
+import "lib/json" (Json)
+
+testRun("Responder Trait Import Bug", fun() {
+    str = "Hello World"
+    html = text("Hello HTML")
+    json = JStr("Hello Json")
+
+    response1 = toResponse(json)      // Json -> Response via Responder trait
+    response2 = toResponse(str)      // String -> Response via Responder trait
+    response3 = toResponse(html)      // VNode -> Response via Responder trait
+
+    assertEquals(response1.status, 200, "JSON response works")
+    assertEquals(response2.status, 200, "String response should work but fails")
+    assertEquals(response3.status, 200, "HTML response should work but fails")
+})

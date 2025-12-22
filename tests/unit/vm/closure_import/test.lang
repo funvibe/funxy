@@ -7,3 +7,5 @@ testRun("VM Closure Import Capture", fun() {
     assert(res == [1], "should capture imported fst correctly")
 })
 
+
+

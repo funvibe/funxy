@@ -568,7 +568,10 @@ func inferIndexExpression(ctx *InferenceContext, n *ast.IndexExpression, table *
 	}
 	totalSubst = subst.Compose(totalSubst)
 
-	return itemType.Apply(totalSubst), totalSubst, nil
+	resultType := itemType.Apply(totalSubst)
+	// Debug: print result type for list indexing
+	// fmt.Printf("[DEBUG inferIndexExpression] itemType=%v, totalSubst=%v, resultType=%v\n", itemType, totalSubst, resultType)
+	return resultType, totalSubst, nil
 }
 
 // inferOptionalChain handles the ?. operator for optional chaining

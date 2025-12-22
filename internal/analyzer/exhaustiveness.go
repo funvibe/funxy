@@ -100,10 +100,10 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 		}
 	}
 
-	switch t := realType.(type) {
+	switch rt := realType.(type) {
 	case typesystem.TCon:
 		// Boolean
-		if t.Name == "Bool" {
+		if rt.Name == "Bool" {
 			hasTrue := false
 			hasFalse := false
 			for _, p := range patterns {
@@ -122,7 +122,7 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 
 		// ADTs (Custom Types)
 		// Get variants for this type
-		variants, ok := table.GetVariants(t.Name)
+		variants, ok := table.GetVariants(rt.Name)
 		if ok && len(variants) > 0 {
 			// Check if all constructors are covered
 			coveredVariants := make(map[string]bool)
@@ -140,7 +140,7 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 				}
 			}
 
-			return checkAdtExhaustiveness(t.Name, variants, patterns, table)
+			return checkAdtExhaustiveness(rt.Name, variants, patterns, table)
 		}
 
 		// Other TCons (Int, String, Char, etc.)
@@ -148,11 +148,11 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 
 	case typesystem.TApp:
 		// Probably an ADT with generics (e.g. Option[Int], List[String], Result[String, (Int, Task)])
-		if constructor, ok := t.Constructor.(typesystem.TCon); ok {
+		if constructor, ok := rt.Constructor.(typesystem.TCon); ok {
 			variants, ok := table.GetVariants(constructor.Name)
 			if ok && len(variants) > 0 {
 				// Pass type args for proper type resolution in nested patterns
-				return checkAdtExhaustivenessWithTypeArgs(constructor.Name, variants, patterns, table, t.Args)
+				return checkAdtExhaustivenessWithTypeArgs(constructor.Name, variants, patterns, table, rt.Args)
 			}
 		}
 		return false // Default to non-exhaustive if no catch-all
@@ -172,22 +172,22 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 
 				if hasSpread {
 					// Fixed elements count must be <= tuple length
-					if len(tp.Elements)-1 > len(t.Elements) {
+					if len(tp.Elements)-1 > len(rt.Elements) {
 						continue
 					}
 				} else {
-					if len(tp.Elements) != len(t.Elements) {
+					if len(tp.Elements) != len(rt.Elements) {
 						continue
 					}
 				}
 				tuplePatterns = append(tuplePatterns, tp)
 			}
 		}
-		
+
 		if len(tuplePatterns) == 0 {
 			return false
 		}
-		
+
 		// Quick check: if any pattern has all catch-alls, it's exhaustive
 		for _, tp := range tuplePatterns {
 			allCatchAll := true
@@ -204,17 +204,17 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 				return true
 			}
 		}
-		
+
 		// Check each tuple position independently for exhaustiveness
 		// This handles cases like (MkUserId x, MkUserId y) where MkUserId is the only constructor
-		for col := 0; col < len(t.Elements); col++ {
+		for col := 0; col < len(rt.Elements); col++ {
 			columnPatterns := make([]ast.Pattern, 0, len(tuplePatterns))
 			for _, tp := range tuplePatterns {
 				if col < len(tp.Elements) {
 					columnPatterns = append(columnPatterns, tp.Elements[col])
 				}
 			}
-			if !isExhaustive(t.Elements[col], columnPatterns, table) {
+			if !isExhaustive(rt.Elements[col], columnPatterns, table) {
 				return false
 			}
 		}
@@ -225,13 +225,33 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 		return false
 
 	case typesystem.TRecord:
+		// Check if the ORIGINAL type (before unwrapping) is an ADT-as-Alias
+		// If t is TCon or TApp(TCon), and it has variants, we should check ADT patterns
+		if tCon, ok := t.(typesystem.TCon); ok {
+			variants, ok := table.GetVariants(tCon.Name)
+			if ok && len(variants) > 0 {
+				if checkAdtExhaustiveness(tCon.Name, variants, patterns, table) {
+					return true
+				}
+			}
+		} else if tApp, ok := t.(typesystem.TApp); ok {
+			if constructor, ok := tApp.Constructor.(typesystem.TCon); ok {
+				variants, ok := table.GetVariants(constructor.Name)
+				if ok && len(variants) > 0 {
+					if checkAdtExhaustivenessWithTypeArgs(constructor.Name, variants, patterns, table, tApp.Args) {
+						return true
+					}
+				}
+			}
+		}
+
 		// For records, check for catch-all record pattern
 		for _, p := range patterns {
 			if rp, ok := p.(*ast.RecordPattern); ok {
 				// We don't enforce that pattern has all fields of t.
 				// Missing fields in pattern are treated as wildcards for those fields.
 				// We only check if the fields PRESENT in pattern are catch-alls.
-				
+
 				allFieldsCatchAll := true
 				for _, subPat := range rp.Fields {
 					if !isCatchAll(subPat) {
@@ -249,7 +269,7 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 	case typesystem.TUnion:
 		// For union types, check if all members are covered by type patterns
 		// Each member of the union must be covered
-		for _, member := range t.Types {
+		for _, member := range rt.Types {
 			memberCovered := false
 			for _, p := range patterns {
 				if tp, ok := p.(*ast.TypePattern); ok {
@@ -347,6 +367,19 @@ func deduceTypeFromPatterns(patterns []ast.Pattern, table *symbols.SymbolTable) 
 				// If it's a value (0-ary constructor defined as value?), might be TApp or TCon
 				return sym.Type
 			}
+		case *ast.TuplePattern:
+			// Deduce Tuple type
+			// We try to deduce element types from sub-patterns
+			elements := make([]typesystem.Type, len(p.Elements))
+			for i, el := range p.Elements {
+				deduced := deduceTypeFromPatterns([]ast.Pattern{el}, table)
+				if deduced != nil {
+					elements[i] = deduced
+				} else {
+					elements[i] = typesystem.TVar{Name: "unknown"}
+				}
+			}
+			return typesystem.TTuple{Elements: elements}
 		case *ast.RecordPattern:
 			// Deduce Record type with field names
 			// Types of fields are unknown (TVar), but presence of fields is known.
@@ -395,14 +428,14 @@ func checkAdtExhaustivenessWithTypeArgs(typeName string, variants []string, patt
 		if tFunc, ok := ctorSym.Type.(typesystem.TFunc); ok {
 			arity = len(tFunc.Params)
 			paramTypes = tFunc.Params
-			
+
 			// If we have type args, substitute type variables in paramTypes
 			// This resolves e.g. T in Ok(T) to the actual type like (Int, Task)
 			if len(typeArgs) > 0 {
 				// Build substitution from return type's type vars to typeArgs
 				// e.g., Result<e, t> with typeArgs [String, (Int, Task)] -> {e: String, t: (Int, Task)}
 				subst := buildTypeVarSubst(tFunc.ReturnType, typeArgs)
-				
+
 				// Apply substitution to param types
 				resolvedParams := make([]typesystem.Type, len(paramTypes))
 				for i, pt := range paramTypes {
@@ -462,7 +495,7 @@ func checkAdtExhaustivenessWithTypeArgs(typeName string, variants []string, patt
 func getMissingPatterns(t typesystem.Type, patterns []ast.Pattern, table *symbols.SymbolTable) string {
 	// Simplified reporting
 	realType := resolveType(t)
-	
+
 	// Try to deduce type if TVar
 	if _, ok := realType.(typesystem.TVar); ok {
 		deducedType := deduceTypeFromPatterns(patterns, table)
@@ -494,12 +527,12 @@ func getMissingPatterns(t typesystem.Type, patterns []ast.Pattern, table *symbol
 				return "false"
 			}
 		}
-		
+
 		// Check for List type
 		if t.Name == config.ListTypeName {
 			return getMissingListPatterns(patterns)
 		}
-		
+
 		variants, ok := table.GetVariants(t.Name)
 		if ok {
 			missing := []string{}
@@ -519,17 +552,17 @@ func getMissingPatterns(t typesystem.Type, patterns []ast.Pattern, table *symbol
 			}
 			return "some pattern combinations"
 		}
-		
+
 		// Int, String, etc - infinite cases
 		return fmt.Sprintf("other %s values (add _ or default case)", t.Name)
-		
+
 	case typesystem.TApp:
 		// Check for List<T>
 		if constructor, ok := t.Constructor.(typesystem.TCon); ok {
 			if constructor.Name == config.ListTypeName {
 				return getMissingListPatterns(patterns)
 			}
-			
+
 			variants, ok := table.GetVariants(constructor.Name)
 			if ok {
 				missing := []string{}
@@ -550,7 +583,7 @@ func getMissingPatterns(t typesystem.Type, patterns []ast.Pattern, table *symbol
 			}
 		}
 		return "_ (catch-all pattern)"
-		
+
 	case typesystem.TRecord:
 		// For records, suggest a record pattern
 		fields := make([]string, 0, len(t.Fields))
@@ -561,7 +594,7 @@ func getMissingPatterns(t typesystem.Type, patterns []ast.Pattern, table *symbol
 			return fmt.Sprintf("{ %s: _ } or _ (catch-all)", fields[0])
 		}
 		return "{ } or _ (catch-all)"
-		
+
 	case typesystem.TTuple:
 		// For tuples, suggest tuple pattern
 		return fmt.Sprintf("(%d-element tuple pattern) or _", len(t.Elements))
@@ -607,7 +640,7 @@ func getMissingPatterns(t typesystem.Type, patterns []ast.Pattern, table *symbol
 func getMissingListPatterns(patterns []ast.Pattern) string {
 	hasEmpty := false
 	hasNonEmpty := false
-	
+
 	for _, p := range patterns {
 		var elements []ast.Pattern
 		if lp, ok := p.(*ast.ListPattern); ok {
@@ -617,7 +650,7 @@ func getMissingListPatterns(patterns []ast.Pattern) string {
 		} else {
 			continue
 		}
-		
+
 		if len(elements) == 0 {
 			hasEmpty = true
 		} else {
@@ -628,7 +661,7 @@ func getMissingListPatterns(patterns []ast.Pattern) string {
 			}
 		}
 	}
-	
+
 	if !hasEmpty && !hasNonEmpty {
 		return "[] (empty list), [x, xs...] (non-empty list)"
 	}
@@ -655,7 +688,7 @@ func resolveType(t typesystem.Type) typesystem.Type {
 // e.g., Result<e, t> with typeArgs [String, (Int, Task)] -> {e: String, t: (Int, Task)}
 func buildTypeVarSubst(returnType typesystem.Type, typeArgs []typesystem.Type) typesystem.Subst {
 	subst := typesystem.Subst{}
-	
+
 	// Extract type vars from TApp structure
 	if tApp, ok := returnType.(typesystem.TApp); ok {
 		for i, arg := range tApp.Args {
@@ -666,6 +699,6 @@ func buildTypeVarSubst(returnType typesystem.Type, typeArgs []typesystem.Type) t
 			}
 		}
 	}
-	
+
 	return subst
 }

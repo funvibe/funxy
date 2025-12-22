@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
+	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
 )
@@ -59,13 +60,21 @@ func inferIfExpression(ctx *InferenceContext, n *ast.IfExpression, table *symbol
 	}
 }
 
+func cloneSubst(s typesystem.Subst) typesystem.Subst {
+	newS := make(typesystem.Subst, len(s))
+	for k, v := range s {
+		newS[k] = v
+	}
+	return newS
+}
+
 func inferMatchExpression(ctx *InferenceContext, n *ast.MatchExpression, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error), typeMap map[ast.Node]typesystem.Type) (typesystem.Type, typesystem.Subst, error) {
 	scrutineeType, s1, err := inferFn(n.Expression, table)
 	if err != nil {
 		return nil, nil, err
 	}
-	totalSubst := s1
-	scrutineeType = scrutineeType.Apply(totalSubst)
+	// globalSubst tracks constraints that apply to the entire match expression (e.g. result type consistency)
+	globalSubst := s1
 
 	var resType typesystem.Type
 	var firstError error // Collect first error but continue analysis
@@ -73,8 +82,15 @@ func inferMatchExpression(ctx *InferenceContext, n *ast.MatchExpression, table *
 	for _, arm := range n.Arms {
 		armTable := symbols.NewEnclosedSymbolTable(table)
 
+		// armSubst accumulates constraints specific to this arm (pattern matches)
+		// We clone globalSubst to isolate this arm's refinements from others
+		armSubst := cloneSubst(globalSubst)
+
+		// Apply current global constraints to scrutinee type
+		currentScrutinee := scrutineeType.Apply(armSubst)
+
 		// inferPattern now returns Subst
-		patSubst, err := inferPattern(ctx, arm.Pattern, scrutineeType, armTable)
+		patSubst, err := inferPattern(ctx, arm.Pattern, currentScrutinee, armTable)
 		if err != nil {
 			if firstError == nil {
 				firstError = err // Keep first error, don't wrap it
@@ -82,8 +98,7 @@ func inferMatchExpression(ctx *InferenceContext, n *ast.MatchExpression, table *
 			// Continue to check other arms for exhaustiveness analysis
 			continue
 		}
-		totalSubst = patSubst.Compose(totalSubst)
-		scrutineeType = scrutineeType.Apply(totalSubst)
+		armSubst = patSubst.Compose(armSubst)
 
 		// Type-check guard expression if present (must be Bool)
 		if arm.Guard != nil {
@@ -94,8 +109,8 @@ func inferMatchExpression(ctx *InferenceContext, n *ast.MatchExpression, table *
 				}
 				continue
 			}
-			totalSubst = sGuard.Compose(totalSubst)
-			guardType = guardType.Apply(totalSubst)
+			armSubst = sGuard.Compose(armSubst)
+			guardType = guardType.Apply(armSubst)
 
 			// Guard must be Bool
 			if _, err := typesystem.Unify(guardType, typesystem.TCon{Name: "Bool"}); err != nil {
@@ -113,26 +128,30 @@ func inferMatchExpression(ctx *InferenceContext, n *ast.MatchExpression, table *
 			}
 			continue
 		}
-		totalSubst = sArm.Compose(totalSubst)
-		armType = armType.Apply(totalSubst)
+		armSubst = sArm.Compose(armSubst)
+		armType = armType.Apply(armSubst)
 
 		if resType == nil {
 			resType = armType
 		} else {
-			subst, err := typesystem.Unify(resType.Apply(totalSubst), armType)
+			// Unify result type with previous arms
+			// Note: We unify against resType.Apply(globalSubst) to respect global constraints,
+			// but we unify WITH armType which has arm-local constraints applied.
+			// The resulting substitution is added to globalSubst.
+			subst, err := typesystem.Unify(resType.Apply(globalSubst), armType)
 			if err != nil {
 				// If unification fails, create a union type
 				// This allows match arms to return different types: Int | Nil
-				resType = typesystem.NormalizeUnion([]typesystem.Type{resType.Apply(totalSubst), armType})
+				resType = typesystem.NormalizeUnion([]typesystem.Type{resType.Apply(globalSubst), armType})
 				continue
 			}
-			totalSubst = subst.Compose(totalSubst)
-			resType = resType.Apply(totalSubst)
+			globalSubst = subst.Compose(globalSubst)
+			// resType might not change, but we apply new globalSubst next time
 		}
 	}
 
 	// Always check exhaustiveness, even if there were pattern errors
-	exhaustErr := CheckExhaustiveness(n, scrutineeType, table)
+	exhaustErr := CheckExhaustiveness(n, scrutineeType.Apply(globalSubst), table)
 
 	// Return errors - prioritize pattern errors, but also report exhaustiveness
 	if firstError != nil {
@@ -146,7 +165,13 @@ func inferMatchExpression(ctx *InferenceContext, n *ast.MatchExpression, table *
 		return nil, nil, exhaustErr
 	}
 
-	return resType, totalSubst, nil
+	// Ensure resType is fully applied with final global constraints
+	var finalResType typesystem.Type = typesystem.Nil // Default if no arms
+	if resType != nil {
+		finalResType = resType.Apply(globalSubst)
+	}
+
+	return finalResType, globalSubst, nil
 }
 
 func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
@@ -155,6 +180,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 
 	enclosedTable := symbols.NewEnclosedSymbolTable(table)
 
+	// Infer statements
 	for _, stmt := range n.Statements {
 		if es, ok := stmt.(*ast.ExpressionStatement); ok {
 			t, s, err := inferFn(es.Expression, enclosedTable)
@@ -166,8 +192,80 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 		} else if tds, ok := stmt.(*ast.TypeDeclarationStatement); ok {
 			RegisterTypeDeclaration(tds, enclosedTable, "")
 			lastType = typesystem.Nil
+		} else if id, ok := stmt.(*ast.InstanceDeclaration); ok {
+			// Register local instance
+			traitName := id.TraitName.Value
+			if id.ModuleName != nil {
+				traitName = id.ModuleName.Value + "." + traitName
+			}
+
+			// Validate trait exists
+			if !enclosedTable.TraitExists(traitName) {
+				// Try short name if qualified name failed (e.g. qualified_pkg.core.Validator -> Validator)
+				shortName := id.TraitName.Value
+				if enclosedTable.TraitExists(shortName) {
+					traitName = shortName
+				} else {
+					return nil, nil, fmt.Errorf("trait %s not defined", traitName)
+				}
+			}
+
+			// Build target type
+			var errs []*diagnostics.DiagnosticError
+			targetType := BuildType(id.Target, enclosedTable, &errs)
+			if len(errs) > 0 {
+				return nil, nil, errs[0]
+			}
+
+			// Register implementation
+			if err := enclosedTable.RegisterImplementation(traitName, targetType); err != nil {
+				return nil, nil, err
+			}
+			lastType = typesystem.Nil
 		} else if fs, ok := stmt.(*ast.FunctionStatement); ok {
-			RegisterFunctionDeclaration(fs, enclosedTable, func() string { return ctx.FreshVar().Name }, "")
+			// Register function in the block scope for type inference
+			// We build a simplified signature here for inference purposes
+
+			// 1. Create type variables for type parameters
+			sigScope := symbols.NewEnclosedSymbolTable(enclosedTable)
+			for _, tp := range fs.TypeParams {
+				sigScope.DefineType(tp.Value, typesystem.TVar{Name: tp.Value}, "")
+			}
+
+			// 2. Build params
+			var params []typesystem.Type
+			for _, p := range fs.Parameters {
+				if p.Type != nil {
+					// Need BuildType equivalent accessible here?
+					// BuildType is in declarations.go and depends on walker.
+					// We can't use it easily here.
+					// But for inference, we might rely on what's already resolved?
+					// Or just use fresh vars if type building is too complex?
+					// Using fresh vars is safer for pure inference pass.
+					// If we really need strict types, we assume walker already validated them.
+					params = append(params, ctx.FreshVar())
+				} else {
+					params = append(params, ctx.FreshVar())
+				}
+			}
+
+			// 3. Return type
+			retType := ctx.FreshVar()
+
+			// 4. Constraints
+			var fnConstraints []typesystem.Constraint
+			for _, c := range fs.Constraints {
+				fnConstraints = append(fnConstraints, typesystem.Constraint{TypeVar: c.TypeVar, Trait: c.Trait})
+			}
+
+			fnType := typesystem.TFunc{
+				Params:      params,
+				ReturnType:  retType,
+				Constraints: fnConstraints,
+			}
+
+			enclosedTable.DefineConstant(fs.Name.Value, fnType, "")
+
 			lastType = typesystem.Nil
 		} else if bs, ok := stmt.(*ast.BreakStatement); ok {
 			t, s, err := inferBreakStatement(ctx, bs, enclosedTable, inferFn)

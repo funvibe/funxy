@@ -228,7 +228,7 @@ Without type annotation, a record has a structural type:
 
 ```rust
 point1 = { x: 10, y: 20 }
-print(getType(point1))  // { x: Int, y: Int }
+print(getType(point1))  // { x: Int, y: Int } (represented as anonymous record type)
 ```
 
 ### Nominal Types (Record Type Definition)
@@ -243,13 +243,24 @@ p: Point = { x: 10, y: 20 }
 print(getType(p))  // Point
 ```
 
-**Important:** `type Point = { ... }` is a **record type definition**, not a type alias. Type alias is defined with the `alias` keyword:
+**Important:** `type Point = { ... }` is a **record type definition**, not a type alias. It creates a new type identity.
+
+For assignment, Funxy allows assigning a structurally compatible anonymous record to a nominal type variable (implicit conversion):
 
 ```rust
 type Point = { x: Int, y: Int }
+p: Point = { x: 1, y: 2 } // OK, converted to Point
+```
 
-// Type alias — just another name for existing type
-type alias Coordinate = Point
+But at runtime, they are distinct:
+
+```rust
+type Point = { x: Int, y: Int }
+anon = { x: 1, y: 2 }
+named: Point = { x: 1, y: 2 }
+
+print(typeOf(named, Point)) // true
+print(typeOf(anon, Point))  // false (unless casted/assigned to Point)
 ```
 
 ### Why is this important?
@@ -284,17 +295,7 @@ instance Default Point {}
 p: Point = default(Point)  // { x: 0, y: 0 }
 ```
 
-3. **Code clarity** — type names document intent:
-
-```rust
-type Point = { x: Int, y: Int }
-
-// Unclear what this is
-fun processAnon(data: { x: Int, y: Int }) -> Int { data.x + data.y }
-
-// Clear this is a coordinate
-fun processNamed(data: Point) -> Int { data.x + data.y }
-```
+3. **Method Dispatch** — resolving overloaded methods or trait methods based on type.
 
 ## Extension Methods
 

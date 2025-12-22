@@ -37,7 +37,7 @@ func (w *walker) VisitAssignExpression(expr *ast.AssignExpression) {
 			annotType := BuildType(expr.AnnotatedType, w.symbolTable, &w.errors)
 			if varType != nil {
 				// Check if varType is compatible with annotType (subtyping)
-				subst, err := typesystem.UnifyAllowExtra(annotType, varType)
+				subst, err := typesystem.UnifyAllowExtraWithResolver(annotType, varType, w.symbolTable)
 				if err != nil {
 					w.addError(diagnostics.NewError(
 						diagnostics.ErrA003,

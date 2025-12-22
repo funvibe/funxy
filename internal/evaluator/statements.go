@@ -706,6 +706,17 @@ func (e *Evaluator) evalConstantDeclaration(node *ast.ConstantDeclaration, env *
 		return val
 	}
 
+	// Propagate TypeName from annotation if value is a record
+	if node.TypeAnnotation != nil {
+		// If value is a RecordInstance and type annotation is a named type, set TypeName
+		if record, ok := val.(*RecordInstance); ok {
+			// Handle simple named type (e.g. Point)
+			if namedType, ok := node.TypeAnnotation.(*ast.NamedType); ok {
+				record.TypeName = namedType.Name.Value
+			}
+		}
+	}
+
 	// Handle pattern destructuring
 	if node.Pattern != nil {
 		return e.bindPatternToValue(node.Pattern, val, env)

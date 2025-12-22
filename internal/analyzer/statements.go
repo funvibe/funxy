@@ -9,6 +9,8 @@ import (
 )
 
 func (w *walker) VisitProgram(program *ast.Program) {
+	// panic(fmt.Sprintf("DEBUG: VisitProgram mode=%d", w.mode))
+
 	// Detect package name
 	for _, stmt := range program.Statements {
 		if pkg, ok := stmt.(*ast.PackageDeclaration); ok {
@@ -21,14 +23,8 @@ func (w *walker) VisitProgram(program *ast.Program) {
 		}
 	}
 
-	if w.mode == ModeHeaders {
-		// Pass 1: Headers (Imports, Declarations)
-		// Strategy for Cyclic Dependencies:
-		// 1. Register Declarations (Names) FIRST.
-		// 2. Process Imports (which might recurse and see our names).
-		// 3. Resolve Signature Details (which might use imported types).
-
-		// Phase 1: Pre-register Names
+	if w.mode == ModeNaming {
+		// Pass 0: Naming (Discovery) - Register names only
 		for _, stmt := range program.Statements {
 			if stmt == nil {
 				continue
@@ -57,44 +53,49 @@ func (w *walker) VisitProgram(program *ast.Program) {
 					continue
 				}
 				w.symbolTable.DefinePending(s.Name.Value, typesystem.TCon{Name: "PendingFunction"}, w.currentModuleName)
-			// NOTE: ConstantDeclarations are NOT pre-registered in Phase 1
-			// They are processed in order during body analysis
-			// This ensures that `a = 1; a :- 2` correctly errors on the redefinition
+			case *ast.TraitDeclaration:
+				if s == nil || s.Name == nil {
+					continue
+				}
+				w.symbolTable.DefinePendingTrait(s.Name.Value, w.currentModuleName)
+			case *ast.ConstantDeclaration:
+				if s != nil && s.Name != nil {
+					w.symbolTable.DefinePendingConstant(s.Name.Value, typesystem.TCon{Name: "PendingConstant"}, w.currentModuleName)
+				}
+			case *ast.ExpressionStatement:
+				// Handle top-level assignments: x = expr
+				if s != nil && s.Expression != nil {
+					if assign, ok := s.Expression.(*ast.AssignExpression); ok {
+						if ident, ok := assign.Left.(*ast.Identifier); ok {
+							w.symbolTable.DefinePending(ident.Value, typesystem.TCon{Name: "PendingVariable"}, w.currentModuleName)
+						}
+					}
+				}
 			}
 		}
+		return
+	}
 
-		// Phase 2: Imports
+	if w.mode == ModeHeaders {
+		// Pass 1: Headers (Imports, Declarations)
+
+		// Phase 1: Imports
 		for _, stmt := range program.Statements {
 			if s, ok := stmt.(*ast.ImportStatement); ok {
 				s.Accept(w)
 			}
 		}
 
-		// Phase 3: Full Declaration Analysis (Resolving Signatures)
-		// Process statements in order to handle interleaved = and :- correctly
+		// Phase 2: Declarations (Resolving Signatures)
 		for _, stmt := range program.Statements {
 			switch s := stmt.(type) {
 			case *ast.ImportStatement:
 				// Already done
 			case *ast.TypeDeclarationStatement:
-				errs := RegisterTypeDeclaration(s, w.symbolTable, w.currentModuleName)
-				if len(errs) > 0 {
-					w.addErrors(errs)
-				}
+				s.Accept(w)
 			case *ast.TraitDeclaration:
 				s.Accept(w)
-			case *ast.InstanceDeclaration:
-				s.Accept(w)
 			case *ast.FunctionStatement:
-				errs := RegisterFunctionDeclaration(s, w.symbolTable, w.freshVarName, w.currentModuleName)
-				if len(errs) > 0 {
-					w.addErrors(errs)
-				}
-			case *ast.ConstantDeclaration:
-				// Process constants in order with other statements
-				s.Accept(w)
-			case *ast.ExpressionStatement:
-				// Process expression statements (including assignments) in order
 				s.Accept(w)
 			}
 		}
@@ -109,6 +110,22 @@ func (w *walker) VisitProgram(program *ast.Program) {
 				w.analyzeFunctionBody(s)
 			case *ast.ImportStatement:
 				s.Accept(w) // Ensure dependency bodies are analyzed
+			case *ast.ConstantDeclaration:
+				s.Accept(w)
+			case *ast.ExpressionStatement:
+				s.Accept(w)
+			case *ast.InstanceDeclaration:
+				s.Accept(w)
+			}
+		}
+		return
+	}
+
+	if w.mode == ModeInstances {
+		// Pass 3: Instances (only InstanceDeclaration)
+		for _, stmt := range program.Statements {
+			if s, ok := stmt.(*ast.InstanceDeclaration); ok {
+				s.Accept(w)
 			}
 		}
 		return
@@ -116,21 +133,11 @@ func (w *walker) VisitProgram(program *ast.Program) {
 
 	// Pass 1: Register all top-level declarations
 	for _, stmt := range program.Statements {
-	switch s := stmt.(type) {
-	case *ast.FunctionStatement:
-		errs := RegisterFunctionDeclaration(s, w.symbolTable, w.freshVarName, w.currentModuleName)
-			if len(errs) > 0 {
-				for _, e := range errs {
-					w.addError(e)
-				}
-			}
+		switch s := stmt.(type) {
+		case *ast.FunctionStatement:
+			s.Accept(w)
 		case *ast.TypeDeclarationStatement:
-			errs := RegisterTypeDeclaration(s, w.symbolTable, w.currentModuleName)
-			if len(errs) > 0 {
-				for _, e := range errs {
-					w.addError(e)
-				}
-			}
+			s.Accept(w)
 		case *ast.TraitDeclaration:
 			// Register Trait
 		case *ast.InstanceDeclaration:

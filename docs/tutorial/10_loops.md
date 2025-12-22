@@ -1,14 +1,20 @@
 # Iteration 10: Loops
 
-The language supports loops for repeating code execution.
+The language supports loops for repeating code execution. The `for` and `while` cycles are synonymous.
 
-## While Loop (Standard For)
+## While Loop
 
 The `for` loop with a condition works as a conditional loop.
 
 ```rust
 i = 0
 for i < 5 {
+    print(i)
+    i = i + 1
+}
+
+i = 0
+while i < 5 {
     print(i)
     i = i + 1
 }

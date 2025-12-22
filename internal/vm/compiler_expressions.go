@@ -467,8 +467,8 @@ func (c *Compiler) compileAssignExpression(expr *ast.AssignExpression) error {
 				if elemNamed, ok := named.Args[0].(*ast.NamedType); ok {
 					listElemType = elemNamed.Name.Value
 				}
-			} else if len(named.Args) == 0 {
-				// Simple type like Point
+			} else {
+				// Simple type like Point or generic like Box<Int>
 				typeName = named.Name.Value
 			}
 		}

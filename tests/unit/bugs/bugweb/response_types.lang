@@ -14,3 +14,6 @@ type Response = {
     body: ResponseBody
 }
 
+trait Responder<T> {
+    fun toResponse(val: T) -> Response
+}

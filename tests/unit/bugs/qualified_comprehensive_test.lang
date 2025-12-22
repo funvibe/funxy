@@ -11,10 +11,9 @@ import "./qualified_pkg/db" (MkDbConfig, MkDbConnection)
 import "./qualified_pkg/cache" (MkCacheConfig, MkCacheEntry)
 
 // === SCENARIO 2: Selective import with trait method auto-import ===
-import "./qualified_pkg/core" (validate, getMessage, getErrors, audit, timestamp, display, incrementVersion)
+import "./qualified_pkg/core" (validate, getMessage, getErrors, audit, timestamp, display, incrementVersion, Status, Entity)
 
 // === SCENARIO 3: ADT constructors auto-import ===
-import "./qualified_pkg/core" (Status, Entity)
 // Active, Inactive, Pending should be auto-imported
 
 type User = MkUser { userId: Int, userName: String, email: String }

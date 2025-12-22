@@ -3,7 +3,7 @@
 import "lib/http" (httpServe)
 import "lib/list" (map)
 import "lib/sys" (sysExec)
-import "kit/web" (newRouter, get, handleRequest, setNotFoundHandler, resHtml, resJson, withStatus)
+import "kit/web" (newRouter, get, handleRequest, setNotFoundHandler, withStatus, resHtml)
 import "kit/ui" (div, span, text, h1, h2, p, ul, li, a, render, html, head, title, body)
 
 // === Page Components ===
@@ -77,15 +77,15 @@ fun notFoundPage() {
 // === Handlers ===
 
 fun homeHandler(ctx) {
-    Ok(resHtml(homePage()))
+    Ok(homePage())  // VNode -> Response via autoResponse
 }
 
 fun aboutHandler(ctx) {
-    Ok(resHtml(aboutPage()))
+    Ok(aboutPage())  // VNode -> Response via autoResponse
 }
 
 fun usersHandler(ctx) {
-    Ok(resHtml(usersPage()))
+    Ok(usersPage())  // VNode -> Response via autoResponse
 }
 
 fun apiHandler(ctx) {
@@ -94,11 +94,16 @@ fun apiHandler(ctx) {
         message: "This is JSON API endpoint",
         timestamp: 1234567890
     }
-    Ok(resJson(data))
+    Ok(data)  // Json -> Response via autoResponse
+}
+
+fun healthHandler(ctx) {
+    Ok("OK")  // String -> Response via autoResponse
 }
 
 fun notFoundHandler(ctx) {
-    Ok(withStatus(404, resHtml(render(notFoundPage()))))
+    // Explicitly create response to set status code
+    Ok(resHtml(notFoundPage()) |> withStatus(404))
 }
 
 // === Setup Router ===
@@ -108,7 +113,8 @@ router = setNotFoundHandler(
         |> get("/", homeHandler)
         |> get("/about", aboutHandler)
         |> get("/users", usersHandler)
-        |> get("/api/data", apiHandler),
+        |> get("/api/data", apiHandler)
+        |> get("/health", healthHandler),
     notFoundHandler
 )
 
@@ -127,6 +133,7 @@ print("  - http://localhost:${port}/")
 print("  - http://localhost:${port}/about")
 print("  - http://localhost:${port}/users")
 print("  - http://localhost:${port}/api/data")
+print("  - http://localhost:${port}/health")
 print("")
 print("Press Ctrl+C to stop")
 

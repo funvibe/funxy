@@ -12,7 +12,16 @@ fun logger(next) {
         req = ctx.req
         match result {
             Ok(res) -> {
-                msg = sprintf("%s %s -> %d (%d ms)", req.method, req.path, res.status, duration)
+                // We rely on duck typing for status access, or autoResponse if needed.
+                // But generally handler results should be compatible with Response structure.
+                // If we want to be safe against non-Response objects (like VNode returned directly),
+                // we should use autoResponse, but autoResponse requires tagged Response to pass through correctly.
+                // Since we are fixing handlers to return tagged Responses (or autoResponse will handle them in handleRequest),
+                // we can just peek at status if it exists.
+                // However, `res` could be "Hello" (String). String doesn't have .status.
+                // So we MUST use autoResponse to normalize it for logging.
+                respObj = autoResponse(res)
+                msg = sprintf("%s %s -> %d (%d ms)", req.method, req.path, respObj.status, duration)
                 print(msg)
             }
             Fail(err) -> {
@@ -29,7 +38,8 @@ fun recover(next) {
         match next(ctx) {
             Ok(res) -> Ok(res)
             Fail(err) -> {
-                Ok({ status: 500, headers: [("Content-Type", "text/plain")], body: BodyString("Internal Server Error") })
+                resp: Response = { status: 500, headers: [("Content-Type", "text/plain")], body: BodyString("Internal Server Error") }
+                Ok(resp)
             }
         }
     }
@@ -38,7 +48,7 @@ fun recover(next) {
 fun cors(next) {
     fun(ctx) {
         if ctx.req.method == "OPTIONS" {
-             Ok({
+             resp: Response = {
                 status: 204,
                 headers: [
                     ("Access-Control-Allow-Origin", "*"),
@@ -46,16 +56,19 @@ fun cors(next) {
                     ("Access-Control-Allow-Headers", "Content-Type, Authorization")
                 ],
                 body: BodyEmpty
-             })
+             }
+             Ok(resp)
         } else {
             match next(ctx) {
                 Ok(res) -> {
-                     newHeaders = res.headers ++ [
+                     respObj = autoResponse(res)
+                     newHeaders = respObj.headers ++ [
                         ("Access-Control-Allow-Origin", "*"),
                         ("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"),
                         ("Access-Control-Allow-Headers", "Content-Type, Authorization")
                      ]
-                     Ok({ status: res.status, headers: newHeaders, body: res.body })
+                     resp: Response = { status: respObj.status, headers: newHeaders, body: respObj.body }
+                     Ok(resp)
                 }
                 Fail(e) -> Fail(e)
             }

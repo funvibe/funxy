@@ -1,0 +1,83 @@
+import "lib/test" (*)
+
+// 1. Nominal vs Structural Typing
+type Point = { x: Int, y: Int }
+type Vector = { x: Int, y: Int }
+
+fun checkPoint(p: Point) { true }
+fun checkVector(v: Vector) { true }
+fun checkStruct(s: { x: Int, y: Int }) { true }
+
+testRun("Nominal Typing Strictness", fun() {
+    p = { x: 1, y: 2 } // Anonymous record
+    pTyped: Point = { x: 1, y: 2 }
+    vTyped: Vector = { x: 1, y: 2 }
+
+    // Explicitly typed records should have different runtime types
+    typeP = getType(pTyped)
+    typeV = getType(vTyped)
+
+    // They should NOT be equal types
+    assert(typeP != typeV, "Nominal types with same structure should be distinct")
+
+    assert(typeOf(pTyped, Point), "Point instance is Point")
+    assert(!typeOf(pTyped, Vector), "Point instance is NOT Vector")
+
+    // Anonymous record behavior
+    isPoint = typeOf(p, Point)
+    print("Anonymous record is Point? " ++ show(isPoint))
+})
+
+// 2. Forward References & Multi-pass Analysis
+// Define a type that refers to a type defined later
+type Node = { val: Int, next: Option<Link> }
+type Link = { node: Node }
+
+testRun("Recursive/Forward Types", fun() {
+    // Explicitly type the inner records to help inference
+    // Analyzer needs to know that the inner { node: ... } is a Link
+    // and inner { val: 2 ... } is a Node
+    n: Node = {
+        val: 1,
+        next: Some({
+            node: {
+                val: 2,
+                next: Zero : Option<Link>
+            } : Node
+        } : Link)
+    }
+
+    assert(n.val == 1, "Access field 1")
+
+    match n.next {
+        Some(link) -> assert(link.node.val == 2, "Access deep field")
+        Zero -> assert(false, "Should be Some")
+    }
+})
+
+// 3. Generic Nominal Records
+type Box<T> = { value: T }
+
+testRun("Generic Nominal Records", fun() {
+    b1: Box<Int> = { value: 10 }
+    b2: Box<String> = { value: "Hello" }
+
+    assert(typeOf(b1, Box), "b1 is Box") // Check against constructor
+
+    assert(b1.value == 10, "Box<Int> value")
+    assert(b2.value == "Hello", "Box<String> value")
+})
+
+// 4. Pattern Matching on Nominal Records
+type User = { name: String, age: Int }
+
+testRun("Pattern Matching Nominal", fun() {
+    u: User = { name: "Alice", age: 30 }
+
+    match u {
+        { name: n, age: a } -> {
+            assert(n == "Alice", "Match name")
+            assert(a == 30, "Match age")
+        }
+    }
+})

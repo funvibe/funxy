@@ -43,4 +43,3 @@ type Context = {
 type Handler = (Context) -> Result<String, Response>
 
 type Middleware = (Handler) -> Handler
-

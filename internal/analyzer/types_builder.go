@@ -24,7 +24,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 	// 0. Check for qualified type names (e.g., "module.Type")
 	// These should NOT be treated as type variables even if they start with lowercase
 	isQualified := strings.Contains(name, ".")
-	
+
 	// For qualified names, return TCon with module info AND underlying type
 	// This preserves nominal type for extension method lookup while allowing unification
 	if isQualified {
@@ -32,7 +32,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 		if len(parts) == 2 {
 			moduleName := parts[0]
 			typeName := parts[1]
-			
+
 			// Resolve underlying type via symbol table
 			var underlyingType typesystem.Type
 			if table != nil {
@@ -40,9 +40,9 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 					underlyingType = resolved
 				}
 			}
-			
+
 			tBase := typesystem.TCon{Name: typeName, Module: moduleName, UnderlyingType: underlyingType}
-			
+
 			// Handle generic arguments
 			if len(t.Args) > 0 {
 				args := []typesystem.Type{}
@@ -54,7 +54,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 			return tBase
 		}
 	}
-	
+
 	// 1. Check if Type Variable or Rigid Type Parameter
 	isTypeParam := false
 	var typeParamType typesystem.Type
@@ -100,7 +100,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 				"SqlTx":    "lib/sql",
 				"Date":     "lib/sql",
 			}
-			
+
 			if pkg, needsImport := requiresImport[name]; needsImport {
 				// This type requires import
 				*errs = append(*errs, diagnostics.NewError(
@@ -177,7 +177,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 							))
 							break
 						}
-						
+
 						argKind := GetKind(arg, table)
 						if !arrow.Left.Equal(argKind) {
 							*errs = append(*errs, diagnostics.NewError(
@@ -212,7 +212,16 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 
 		// 4. Default: TCon
 		tBase := typesystem.TCon{Name: name}
-		
+
+		// Attempt to preserve TCon info from Symbol Table (Module, UnderlyingType)
+		if table != nil {
+			if resolved, ok := table.ResolveType(name); ok {
+				if tCon, ok := resolved.(typesystem.TCon); ok && tCon.Name == name {
+					tBase = tCon
+				}
+			}
+		}
+
 		// Validate Kind if arguments are present
 		if len(t.Args) > 0 {
 			args := []typesystem.Type{}
@@ -222,7 +231,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 
 			if table != nil && errs != nil {
 				// Check Kind
-				var conKind typesystem.Kind = typesystem.Star
+				conKind := typesystem.Star
 				if k, ok := table.GetKind(name); ok {
 					conKind = k
 				}
@@ -238,7 +247,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 						))
 						break
 					}
-					
+
 					argKind := GetKind(arg, table)
 					if !arrow.Left.Equal(argKind) {
 						*errs = append(*errs, diagnostics.NewError(

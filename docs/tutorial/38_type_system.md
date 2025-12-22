@@ -146,12 +146,10 @@ Checks if value matches a type. For generic types, checks only the **base type**
 list = [1, 2, 3]
 
 typeOf(list, List)       // true — is it a List?
-typeOf(list, List(Int))  // true — is it List<Int>?
 typeOf(list, Int)        // false — not an Int
 
 opt = Some(42)
 typeOf(opt, Option)      // true
-typeOf(opt, Option(Int)) // true
 ```
 
 ### getType(value) -> Type
@@ -176,6 +174,13 @@ getType(Some(42)) == getType(Some("hi"))   // true
 // Different base types:
 getType(Some(42)) == getType(Ok(42))       // false
 getType([1]) == getType(%{})               // false
+
+// Nominal Types:
+type Point = { x: Int, y: Int }
+p: Point = { x: 1, y: 2 }
+anon = { x: 1, y: 2 }
+
+getType(p) == getType(anon)                // false (Point vs Record)
 ```
 
 ## Runtime Type Safety

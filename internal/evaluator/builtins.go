@@ -574,6 +574,18 @@ func getTypeFromObject(val Object) typesystem.Type {
 }
 
 func checkType(val Object, expected typesystem.Type) bool {
+	// Special handling for checking against generic constructors (e.g. typeOf(val, Box))
+	// If expected is a TCon "Box", but val is an instance of "Box", we should match.
+	if tCon, ok := expected.(typesystem.TCon); ok {
+		if ri, ok := val.(*RecordInstance); ok {
+			// val is a record instance, check if its TypeName matches
+			// This covers both non-generic "Point" and generic "Box" (where TypeName is "Box")
+			if ri.TypeName == tCon.Name {
+				return true
+			}
+		}
+	}
+
 	switch t := expected.(type) {
 	case typesystem.TCon:
 		switch t.Name {
@@ -638,8 +650,16 @@ func checkType(val Object, expected typesystem.Type) bool {
 		return true
 
 	case typesystem.TApp:
-		// For generic types, we only check the base constructor for now.
-		// e.g. Option(Int) checks if it is Option.
+		// For generic types, check against the base constructor
+		// e.g. Box(Int) vs Box (constructor)
+		if con, ok := t.Constructor.(typesystem.TCon); ok {
+			// If expected type is a generic constructor (TCon), match against the Constructor of TApp
+			if expectedCon, ok := expected.(typesystem.TCon); ok {
+				return con.Name == expectedCon.Name
+			}
+		}
+
+		// Recursively check against the constructor if expected is also TApp (not happening in typeOf(x, Box) case)
 		return checkType(val, t.Constructor)
 
 	case typesystem.TType:

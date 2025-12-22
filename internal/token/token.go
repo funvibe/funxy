@@ -163,6 +163,7 @@ var keywords = map[string]TokenType{
 	"import":   IMPORT,
 	"where":    WHERE,
 	"_":        UNDERSCORE,
+	"while":    FOR,
 }
 
 // LookupIdent checks the keywords table to see whether the given identifier

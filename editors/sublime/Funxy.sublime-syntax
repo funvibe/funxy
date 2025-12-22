@@ -74,9 +74,9 @@ contexts:
       scope: constant.numeric.integer.funxy
 
   keywords:
-    - match: \b(fun|type|alias|match|if|else|for|in|break|continue|return)\b
+    - match: \b(fun|type|alias|match|if|else|for|while|in|break|continue|package|import|as)\b
       scope: keyword.control.funxy
-    - match: \b(import|export|package|trait|instance|operator|async|await)\b
+    - match: \b(export|trait|instance|operator|async|await)\b
       scope: keyword.other.funxy
     - match: \b(true|false|Nil|Zero)\b
       scope: constant.language.funxy

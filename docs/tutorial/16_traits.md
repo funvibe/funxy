@@ -704,13 +704,12 @@ print(double(Ok(50)))       // Ok(100)
 You can define your own HKT traits:
 
 ```rust
-// Bifunctor - for types with two mappable positions
 trait Bifunctor<B> {
     fun bimap<A, C, D, E>(f: (A) -> C, g: (D) -> E, x: B<A, D>) -> B<C, E>
 }
 
 instance Bifunctor<Result> {
-    fun bimap<A, C, D, E>(f: (A) -> C, g: (D) -> E, x: Result<A, D>) -> Result<C, E> {
+    fun bimap<A, C, D, E>(f: (A) -> C, g: (D) -> E, x: Result<D, A>) -> Result<E, C> {
         match x {
             Ok(a) -> Ok(f(a))
             Fail(d) -> Fail(g(d))

@@ -168,19 +168,15 @@
       "patterns": [
         {
           "name": "keyword.control.funxy",
-          "match": "\\b(if|else|match|for|in|break|continue)\\b"
+          "match": "\\b(if|else|match|for|while|in|break|continue|package|import|as)\\b"
         },
         {
           "name": "keyword.declaration.funxy",
-          "match": "\\b(fun|type|alias|trait|instance|package|import|operator|where)\\b"
+          "match": "\\b(fun|type|alias|trait|instance|operator|where)\\b"
         },
         {
           "name": "constant.language.funxy",
           "match": "\\b(true|false|nil)\\b"
-        },
-        {
-          "name": "keyword.other.funxy",
-          "match": "\\b(as)\\b"
         }
       ]
     },

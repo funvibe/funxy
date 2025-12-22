@@ -30,7 +30,7 @@ func inferAnnotatedExpression(ctx *InferenceContext, n *ast.AnnotatedExpression,
 
 	// Unify them (Check if exprType is a subtype of annotatedType)
 	// Swap args: Expected, Actual
-	subst, err := typesystem.UnifyAllowExtra(annotatedType, exprType)
+	subst, err := typesystem.UnifyAllowExtraWithResolver(annotatedType, exprType, table)
 	if err != nil {
 		return nil, nil, typeMismatch(n, annotatedType.String(), exprType.String())
 	}
@@ -94,7 +94,9 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 		}
 
 		// Unify: TCon with UnderlyingType will automatically unify with TRecord
-		subst, err := typesystem.UnifyAllowExtra(explicitType, valType)
+		// Ensure types are fully resolved (handling stale references in recursive types)
+		// Use UnifyAllowExtraWithResolver to handle stale TCons in recursive types
+		subst, err := typesystem.UnifyAllowExtraWithResolver(explicitType, valType, table)
 		if err != nil {
 			name := "?"
 			if id, ok := n.Left.(*ast.Identifier); ok {
@@ -118,6 +120,13 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 	if ident, ok := n.Left.(*ast.Identifier); ok {
 		// Check if variable exists in scope chain (Update)
 		if sym, ok := table.Find(ident.Value); ok {
+			// If it's a Pending symbol (forward declared in Naming pass),
+			// treat this as the initial definition and overwrite it.
+			if sym.IsPending {
+				table.Define(ident.Value, declaredType, ctx.CurrentModuleName)
+				return valType, totalSubst, nil
+			}
+
 			// Create token for error reporting at the start of the assignment statement
 			// Use the identifier token but adjust column to point to start of identifier
 			errorTok := ident.GetToken()
@@ -154,7 +163,7 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 			// Note: If sym.Type is nil?
 			if sym.Type != nil {
 				// Allow subtype assignment
-				subst, err := typesystem.UnifyAllowExtra(sym.Type, valType)
+				subst, err := typesystem.UnifyAllowExtraWithResolver(sym.Type, valType, table)
 				if err != nil {
 					return nil, nil, inferErrorf(n, "cannot assign %s to variable %s of type %s", valType, ident.Value, sym.Type)
 				}
@@ -184,7 +193,7 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 			if fieldType, ok := tRec.Fields[ma.Member.Value]; ok {
 				// Unify field type with value type
 				// Allow subtype assignment to field
-				subst, err := typesystem.UnifyAllowExtra(fieldType, valType)
+				subst, err := typesystem.UnifyAllowExtraWithResolver(fieldType, valType, table)
 				if err != nil {
 					return nil, nil, inferErrorf(n, "type mismatch in assignment to field %s: expected %s, got %s", ma.Member.Value, fieldType, valType)
 				}
@@ -263,7 +272,7 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 			return nil, nil, err
 		}
 		// Allow returning a subtype (e.g. record with more fields)
-		subst, err := typesystem.UnifyAllowExtra(retType, bodyType)
+		subst, err := typesystem.UnifyAllowExtraWithResolver(retType, bodyType, table)
 		if err != nil {
 			return nil, nil, inferErrorf(n, "lambda return type mismatch: expected %s, got %s", retType, bodyType)
 		}

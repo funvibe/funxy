@@ -137,9 +137,26 @@ type AnalysisMode int
 
 const (
 	ModeFull    AnalysisMode = iota // Legacy/Single file
-	ModeHeaders                     // Pass 1: Imports and Declarations
-	ModeBodies                      // Pass 2: Bodies and Expressions
+	ModeNaming                      // Pass 1: Name Discovery (Pending Symbols)
+	ModeHeaders                     // Pass 2: Imports and Signature Resolution
+	ModeInstances                   // Pass 3: Trait Instances
+	ModeBodies                      // Pass 4: Bodies and Expressions
 )
+
+// AnalyzeNaming runs the naming pass (discovery)
+func (a *Analyzer) AnalyzeNaming(node ast.Node) []*diagnostics.DiagnosticError {
+	// Simple walker for naming only
+	w := &walker{
+		symbolTable:   a.symbolTable,
+		errorSet:      make(map[string]*diagnostics.DiagnosticError),
+		errors:        []*diagnostics.DiagnosticError{},
+		loader:        a.loader,
+		BaseDir:       a.BaseDir,
+		mode:          ModeNaming,
+	}
+	node.Accept(w)
+	return w.getErrors()
+}
 
 func (a *Analyzer) AnalyzeHeaders(node ast.Node) []*diagnostics.DiagnosticError {
 	typeMap := make(map[ast.Node]typesystem.Type)
@@ -171,6 +188,33 @@ func (a *Analyzer) AnalyzeHeaders(node ast.Node) []*diagnostics.DiagnosticError 
 	for k, v := range w.TypeMap {
 		a.TypeMap[k] = v
 	}
+
+	return w.getErrors()
+}
+
+func (a *Analyzer) AnalyzeInstances(node ast.Node) []*diagnostics.DiagnosticError {
+	// Reuse existing TypeMap and InferenceContext from Headers pass
+	if a.TypeMap == nil {
+		a.TypeMap = make(map[ast.Node]typesystem.Type)
+	}
+	if a.inferCtx == nil {
+		a.inferCtx = NewInferenceContextWithLoader(a.loader)
+	}
+	a.inferCtx.TypeMap = a.TypeMap
+
+	w := &walker{
+		symbolTable:   a.symbolTable,
+		errorSet:      make(map[string]*diagnostics.DiagnosticError),
+		errors:        []*diagnostics.DiagnosticError{},
+		inLoop:        false,
+		loader:        a.loader,
+		BaseDir:       a.BaseDir,
+		TypeMap:       a.TypeMap,
+		inferCtx:      a.inferCtx,
+		mode:          ModeInstances,
+		TraitDefaults: a.TraitDefaults,
+	}
+	node.Accept(w)
 
 	return w.getErrors()
 }
@@ -208,10 +252,22 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
 func (a *Analyzer) Analyze(node ast.Node) []*diagnostics.DiagnosticError {
 	// If node is Program, use multi-pass analysis
 	if prog, ok := node.(*ast.Program); ok {
-		errs := a.AnalyzeHeaders(prog)
+		// Pass 1: Naming
+		errs := a.AnalyzeNaming(prog)
 		if len(errs) > 0 {
 			return errs
 		}
+		// Pass 2: Headers
+		errs = a.AnalyzeHeaders(prog)
+		if len(errs) > 0 {
+			return errs
+		}
+		// Pass 3: Instances
+		errs = a.AnalyzeInstances(prog)
+		if len(errs) > 0 {
+			return errs
+		}
+		// Pass 4: Bodies
 		return a.AnalyzeBodies(prog)
 	}
 
@@ -262,11 +318,6 @@ func (a *Analyzer) Analyze(node ast.Node) []*diagnostics.DiagnosticError {
 // freshVar generates a fresh type variable using the walker's inference context.
 func (w *walker) freshVar() typesystem.TVar {
 	return w.inferCtx.FreshVar()
-}
-
-// freshVarName generates a fresh type variable name using the walker's inference context.
-func (w *walker) freshVarName() string {
-	return w.inferCtx.FreshVar().Name
 }
 
 func (w *walker) markTailCalls(node ast.Node) {

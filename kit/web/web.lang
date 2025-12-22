@@ -19,10 +19,10 @@ fun handleRequest(router, req: HttpRequest) -> HttpResponse {
                 Zero -> notFoundHandler(ctx)
             }
             match highLevelResult {
-                Ok(res) -> finalizeResponse(res)
+                Ok(res) -> finalizeResponse(autoResponse(res))
                 Fail(err) -> {
                     match errorHandler(ctx, err) {
-                        Ok(res) -> finalizeResponse(res)
+                        Ok(res) -> finalizeResponse(autoResponse(res))
                         Fail(_) -> {
                             { status: 500, headers: [("Content-Type", "text/plain")], body: "Internal Server Error" }
                         }

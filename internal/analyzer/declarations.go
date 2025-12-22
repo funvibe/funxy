@@ -3,7 +3,6 @@ package analyzer
 import (
 	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
-	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/token"
@@ -24,6 +23,11 @@ func tagModule(t typesystem.Type, moduleName string, exportedTypes map[string]bo
 	case typesystem.TCon:
 		if exportedTypes[t.Name] {
 			t.Module = moduleName
+		}
+		// Preserve UnderlyingType when tagging with module
+		// This is crucial for type aliases to work correctly with qualified names
+		if t.UnderlyingType != nil {
+			t.UnderlyingType = tagModule(t.UnderlyingType, moduleName, exportedTypes)
 		}
 		return t
 	case typesystem.TApp:
@@ -69,6 +73,14 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 		return
 	}
 
+	// Only process imports in ModeHeaders (or ModeFull)
+	// We ALSO need to process in ModeBodies to:
+	// 1. Ensure dependency bodies are analyzed (via analyzeRegularModule)
+	// 2. Refresh imported symbol types (resolved from Pending to Actual)
+	if w.mode == ModeNaming || w.mode == ModeInstances {
+		return
+	}
+
 	// Resolve absolute path from ImportStatement
 	importPath := n.Path.Value
 	pathToCheck := utils.ResolveImportPath(w.BaseDir, importPath)
@@ -108,9 +120,15 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 			w.analyzeRegularModule(loadedMod, pathToCheck)
 		}
 
-		// Store mapping alias -> packageName for extension method/trait lookup
-		packageName := loadedMod.GetName()
+	// Store mapping alias -> packageName for extension method/trait lookup
+	packageName := loadedMod.GetName()
+	// If alias provided, register it
+	if n.Alias != nil {
+		w.symbolTable.RegisterModuleAlias(n.Alias.Value, packageName)
+	} else {
+		// Default name is also an alias
 		w.symbolTable.RegisterModuleAlias(name, packageName)
+	}
 
 		// Get Exports (Symbols with Kinds)
 		exportSymbols := loadedMod.GetExports()
@@ -196,7 +214,10 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 
 			for _, symName := range importKeys {
 				sym := exportSymbols[symName]
-				taggedType := tagModule(sym.Type, packageName, exportedTypes)
+				// For selective imports, don't tag types with module name
+				// Types are imported into local scope without qualification
+				// taggedType := tagModule(sym.Type, packageName, exportedTypes)
+				taggedType := sym.Type
 
 				// Use OriginModule from source symbol, or packageName if not set
 				origin := sym.OriginModule
@@ -207,24 +228,37 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 				// Check for duplicate import - allow if same origin (same symbol re-exported via different paths)
 				if existing, exists := w.symbolTable.Find(symName); exists {
 					if existing.OriginModule == origin {
-						// Same symbol from same origin - OK, skip
+						// Same symbol from same origin.
+						// If current mode is Bodies, we might want to update the type (from Pending to Actual).
+						// If existing is Pending, definitely update.
+						if existing.IsPending || w.mode == ModeBodies {
+							// Proceed to overwrite
+						} else {
+							// Same symbol, already defined, no update needed
+							continue
+						}
+					} else {
+						// Different origins - conflict
+						w.addError(diagnostics.NewError(
+							diagnostics.ErrA004,
+							n.GetToken(),
+							fmt.Sprintf("%s' (already defined from %s, cannot import from %s)",
+								symName, existing.OriginModule, origin),
+						))
 						continue
 					}
-					// Different origins - conflict
-					w.addError(diagnostics.NewError(
-						diagnostics.ErrA004,
-						n.GetToken(),
-						fmt.Sprintf("%s' (already defined from %s, cannot import from %s)",
-							symName, existing.OriginModule, origin),
-					))
-					continue
 				}
 
 				if sym.Kind == symbols.TypeSymbol {
 					// Check if it's a type alias with underlying type
 					if sym.IsTypeAlias() {
 						// Copy both nominal type and underlying type
-						w.symbolTable.DefineTypeAlias(symName, taggedType, sym.UnderlyingType, origin)
+						// Extract tagged underlying type from taggedType (if it's a TCon)
+						taggedUnderlying := sym.UnderlyingType
+						if tCon, ok := taggedType.(typesystem.TCon); ok && tCon.UnderlyingType != nil {
+							taggedUnderlying = tCon.UnderlyingType
+						}
+						w.symbolTable.DefineTypeAlias(symName, taggedType, taggedUnderlying, origin)
 					} else {
 						w.symbolTable.DefineType(symName, taggedType, origin)
 					}
@@ -372,8 +406,9 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 			if modSymTable := loadedMod.GetSymbolTable(); modSymTable != nil {
 				for typeName := range exportedTypes {
 					if aliasType, ok := modSymTable.GetTypeAlias(typeName); ok {
+						qualifiedName := name + "." + typeName
 						// Register with qualified name (e.g., "m.Vector" -> TRecord{...})
-						w.symbolTable.RegisterTypeAlias(name+"."+typeName, aliasType)
+						w.symbolTable.RegisterTypeAlias(qualifiedName, aliasType)
 					}
 				}
 			}
@@ -462,61 +497,7 @@ func resolveReexports(mod LoadedModule) []*diagnostics.DiagnosticError {
 	return errors
 }
 
-// preRegisterModuleNames pre-registers all type and function names from all files in the module
-// This ensures that cross-file references within the same module work correctly
-func preRegisterModuleNames(modAnalyzer *Analyzer, files []*ast.Program) {
-	var typeErrors []*diagnostics.DiagnosticError
-
-	// First pass: Register all types as pending
-	for _, file := range files {
-		if file == nil {
-			continue
-		}
-		for _, stmt := range file.Statements {
-			if stmt == nil {
-				continue
-			}
-			switch s := stmt.(type) {
-			case *ast.TypeDeclarationStatement:
-				// Register TCon (skip if parsing failed)
-				if s == nil || s.Name == nil {
-					continue
-				}
-				modAnalyzer.symbolTable.DefineTypePending(s.Name.Value, typesystem.TCon{Name: s.Name.Value}, "")
-				// Register Kind
-				kind := typesystem.Star
-				if len(s.TypeParameters) > 0 {
-					kinds := make([]typesystem.Kind, len(s.TypeParameters)+1)
-					for i := range s.TypeParameters {
-						kinds[i] = typesystem.Star
-					}
-					kinds[len(s.TypeParameters)] = typesystem.Star
-					kind = typesystem.MakeArrow(kinds...)
-				}
-				modAnalyzer.symbolTable.RegisterKind(s.Name.Value, kind)
-			case *ast.FunctionStatement:
-				// Register Function Name with placeholder (skip if parsing failed)
-				if s == nil || s.Name == nil {
-					continue
-				}
-				modAnalyzer.symbolTable.DefinePending(s.Name.Value, typesystem.TCon{Name: "PendingFunction"}, "")
-			}
-		}
-	}
-
-	// Second pass: Fully analyze type aliases so they're available for ADT constructors
-	for _, file := range files {
-		if file == nil {
-			continue
-		}
-		for _, stmt := range file.Statements {
-			if typeDecl, ok := stmt.(*ast.TypeDeclarationStatement); ok && typeDecl.IsAlias {
-				errs := RegisterTypeDeclaration(typeDecl, modAnalyzer.symbolTable, "")
-				typeErrors = append(typeErrors, errs...)
-			}
-		}
-	}
-}
+// preRegisterModuleNames removed
 
 // analyzeRegularModule handles analysis for a regular (non-package-group) module
 func (w *walker) analyzeRegularModule(loadedMod LoadedModule, pathToCheck string) {
@@ -533,12 +514,25 @@ func (w *walker) analyzeRegularModule(loadedMod LoadedModule, pathToCheck string
 			modAnalyzer.RegisterBuiltins()
 			modAnalyzer.BaseDir = utils.GetModuleDir(pathToCheck)
 
-			// Pre-register all type and function names from all files in the module
-			// This ensures cross-file dependencies work (e.g., type A used in type B)
-			preRegisterModuleNames(modAnalyzer, loadedMod.GetFiles())
+			// Pass 1: Naming (Discovery) - Register all names as Pending
+			// This replaces preRegisterModuleNames
+			for _, file := range loadedMod.GetFiles() {
+				// Use AnalyzeNaming (ModeNaming)
+				errs := modAnalyzer.AnalyzeNaming(file)
+				// Naming errors (e.g. invalid names) should be reported
+				w.addErrors(errs)
+			}
 
+			// Pass 2: Declarations (Headers) - Resolve Types and Signatures
 			for _, file := range loadedMod.GetFiles() {
 				errs := modAnalyzer.AnalyzeHeaders(file)
+				w.addErrors(errs)
+			}
+
+			// Pass 3: Instances - Check trait implementations
+			// This is done after all headers (types/traits/signatures) are known
+			for _, file := range loadedMod.GetFiles() {
+				errs := modAnalyzer.AnalyzeInstances(file)
 				w.addErrors(errs)
 			}
 
@@ -604,95 +598,14 @@ func (w *walker) analyzeRegularModule(loadedMod LoadedModule, pathToCheck string
 	}
 }
 
-func RegisterFunctionDeclaration(n *ast.FunctionStatement, table *symbols.SymbolTable, freshVar func() string, origin string) []*diagnostics.DiagnosticError {
-	var errors []*diagnostics.DiagnosticError
-
-	// Skip if function was not properly parsed
-	if n == nil || n.Name == nil {
-		return errors
-	}
-
-	// Check for shadowing, but allow overwriting Pending symbols (forward declarations)
-	if table.IsDefined(n.Name.Value) {
-		sym, ok := table.Find(n.Name.Value)
-		if ok && !sym.IsPending {
-			errors = append(errors, diagnostics.NewError(diagnostics.ErrA004, n.Name.GetToken(), n.Name.Value))
-			return errors
-		}
-	}
-
-	// 1. Create temporary scope for signature analysis (Type Params)
-	sigScope := symbols.NewEnclosedSymbolTable(table)
-
-	// 2. Register Type Params
-	for _, tp := range n.TypeParams {
-		sigScope.DefineType(tp.Value, typesystem.TVar{Name: tp.Value}, "")
-	}
-
-	// 3. Build Return Type
-	var retType typesystem.Type
-	if n.ReturnType != nil {
-		retType = BuildType(n.ReturnType, sigScope, &errors)
-	} else {
-		retType = typesystem.TVar{Name: freshVar()}
-	}
-
-	// 4. Build Params
-	var params []typesystem.Type
-	// If extension, add receiver
-	if n.Receiver != nil && n.Receiver.Type != nil {
-		params = append(params, BuildType(n.Receiver.Type, sigScope, &errors))
-	}
-
-	var isVariadic bool
-	var defaultCount int
-	for _, p := range n.Parameters {
-		if p.IsVariadic {
-			isVariadic = true
-		}
-		if p.Default != nil {
-			defaultCount++
-		}
-		if p.Type != nil {
-			params = append(params, BuildType(p.Type, sigScope, &errors))
-		} else {
-			params = append(params, typesystem.TVar{Name: freshVar()})
-		}
-	}
-
-	// Build constraints for TFunc
-	var fnConstraints []typesystem.Constraint
-	for _, c := range n.Constraints {
-		fnConstraints = append(fnConstraints, typesystem.Constraint{TypeVar: c.TypeVar, Trait: c.Trait})
-	}
-
-	fnType := typesystem.TFunc{
-		Params:       params,
-		ReturnType:   retType,
-		IsVariadic:   isVariadic,
-		DefaultCount: defaultCount,
-		Constraints:  fnConstraints,
-	}
-
-	// 5. Define in Table (Outer)
-	if n.Receiver != nil {
-		typeName := resolveReceiverTypeName(n.Receiver.Type, table)
-		if typeName == "" {
-			errors = append(errors, diagnostics.NewError(diagnostics.ErrA003, n.Receiver.Token, "invalid receiver type"))
-		} else {
-			table.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
-		}
-	} else {
-		// Functions are immutable by default
-		table.DefineConstant(n.Name.Value, fnType, origin)
-	}
-
-	return errors
-}
-
 func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 	// Skip if function was not properly parsed
 	if n == nil || n.Name == nil {
+		return
+	}
+
+	// Mode Checks
+	if w.mode == ModeNaming || w.mode == ModeInstances {
 		return
 	}
 
@@ -703,9 +616,7 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		}
 	}
 
-	// 1. Register Signature in Outer Scope
-
-	// 1. Prepare types
+	// 1. Prepare types for Signature
 	var retType typesystem.Type
 	if n.ReturnType != nil {
 		retType = BuildType(n.ReturnType, w.symbolTable, &w.errors)
@@ -713,21 +624,27 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		retType = w.freshVar()
 	}
 
-	// 2. Create new scope for function body (and header analysis)
-	outer := w.symbolTable
-	w.symbolTable = symbols.NewEnclosedSymbolTable(outer)
-	defer func() { w.symbolTable = outer }()
+	// 2. Register Generic Constraints / Type Params (Temporarily in scope for signature building)
+	// Actually, we need to register them in the symbol table to store them in the TFunc
+	// But TFunc stores constraints, not the scope.
+	// For analysis, we need a scope with these type params.
+	// But here we are just defining the function symbol.
 
-	// 4. Register Generic Constraints / Type Params
-	for _, tp := range n.TypeParams {
-		w.symbolTable.DefineType(tp.Value, typesystem.TVar{Name: tp.Value}, "")
+	// Create a temporary scope for building the signature if we have type params
+	// This ensures type params are resolved correctly in the signature types.
+	sigScope := w.symbolTable
+	if len(n.TypeParams) > 0 {
+		sigScope = symbols.NewEnclosedSymbolTable(w.symbolTable)
+		for _, tp := range n.TypeParams {
+			sigScope.DefineType(tp.Value, typesystem.TVar{Name: tp.Value}, "")
+		}
 	}
 
 	var params []typesystem.Type
 
 	// If extension, add receiver to params first
 	if n.Receiver != nil && n.Receiver.Type != nil {
-		params = append(params, BuildType(n.Receiver.Type, w.symbolTable, &w.errors))
+		params = append(params, BuildType(n.Receiver.Type, sigScope, &w.errors))
 	}
 
 	var isVariadic bool
@@ -740,7 +657,7 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 			defaultCount++
 		}
 		if p.Type != nil {
-			t := BuildType(p.Type, w.symbolTable, &w.errors)
+			t := BuildType(p.Type, sigScope, &w.errors)
 			params = append(params, t)
 		} else {
 			tv := w.freshVar()
@@ -762,107 +679,65 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		Constraints:  fnConstraints,
 	}
 
-	// 5. Define in Table (Outer)
-	// In ModeBodies, we only define if it's NOT already defined in the OUTER scope.
-	// This handles:
-	// 1. Top-level functions (already defined in Headers -> Skip)
-	// 2. Nested functions (not defined in Headers because body skipped -> Define)
-	shouldDefine := true
-	if w.mode == ModeBodies {
-		// Check if defined in OUTER scope (where we intend to define it)
-		if outer.IsDefinedLocally(n.Name.Value) {
-			if sym, ok := outer.Find(n.Name.Value); ok {
-				if !sym.IsPending {
-					// Already defined and not pending -> Skip
-					shouldDefine = false
-				}
-			}
-		}
-	}
+	// 3. Define in Symbol Table
+	// In ModeHeaders: We are defining top-level functions.
+	// In ModeBodies: We are defining nested functions (since top-level uses analyzeFunctionBody).
+	// In both cases, we want to define the symbol in the current scope.
 
-	if shouldDefine {
-		if n.Receiver != nil {
-			typeName := resolveReceiverTypeName(n.Receiver.Type, outer)
-			if typeName == "" {
-				w.addError(diagnostics.NewError(
-					diagnostics.ErrA003,
-					n.Receiver.Token,
-					"invalid receiver type for extension method",
-				))
+	// Check for redefinition
+	if w.symbolTable.IsDefinedLocally(n.Name.Value) {
+		sym, ok := w.symbolTable.Find(n.Name.Value)
+		if ok {
+			if sym.IsPending {
+				// OK to overwrite Pending
 			} else {
-				outer.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
+				// Error: redefinition
+				w.addError(diagnostics.NewError(diagnostics.ErrA004, n.Name.GetToken(), n.Name.Value))
+				// Continue analysis despite error to find more errors?
+				// Maybe better to return to avoid cascading errors.
+				return
 			}
-		} else {
-			// Functions are immutable by default
-			outer.DefineConstant(n.Name.Value, fnType, w.currentModuleName)
 		}
 	}
 
-	// 2.5 Register Receiver in scope
 	if n.Receiver != nil {
-		w.symbolTable.Define(n.Receiver.Name.Value, params[0], "")
-	}
-
-	// 3. Register parameters in the new scope
-	for i, param := range n.Parameters {
-		idx := i
-		if n.Receiver != nil {
-			idx++
-		}
-
-		paramType := params[idx]
-
-		if param.IsVariadic {
-			// Wrap in List
-			paramType = typesystem.TApp{
-				Constructor: typesystem.TCon{Name: config.ListTypeName},
-				Args:        []typesystem.Type{paramType},
-			}
-		}
-		w.symbolTable.Define(param.Name.Value, paramType, "")
-	}
-
-	// 5. Analyze body
-	if n.Body != nil && w.mode != ModeHeaders {
-		prevInLoop := w.inLoop
-		w.inLoop = false
-		n.Body.Accept(w)
-		w.markTailCalls(n.Body)
-		w.inLoop = prevInLoop
-
-		bodyType, sBody, err := InferWithContext(w.inferCtx, n.Body, w.symbolTable)
-		if err != nil {
+		typeName := resolveReceiverTypeName(n.Receiver.Type, w.symbolTable)
+		if typeName == "" {
 			w.addError(diagnostics.NewError(
 				diagnostics.ErrA003,
-				n.Body.GetToken(),
-				err.Error(),
+				n.Receiver.Token,
+				"invalid receiver type for extension method",
 			))
 		} else {
-			// Apply accumulated substitution from body to return type before unification
-			retType = retType.Apply(sBody)
-
-			subst, err := typesystem.Unify(retType, bodyType)
-			if err != nil {
-				w.addError(diagnostics.NewError(
-					diagnostics.ErrA003,
-					n.Body.GetToken(),
-					"function return type mismatch: declared "+retType.String()+", got "+bodyType.String(),
-				))
-			}
-
-			// Compose all substitutions
-			finalSubst := subst.Compose(sBody)
-
-			// Apply to function type
-			fnType = fnType.Apply(finalSubst).(typesystem.TFunc)
-
-			// Apply substitution to all nodes in body in TypeMap
-			w.applySubstToNode(n.Body, finalSubst)
+			w.symbolTable.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
 		}
+	} else {
+		// Functions are immutable by default
+		// We use DefineConstant. For top-level, module is current. For nested, empty?
+		module := w.currentModuleName
+		if w.mode == ModeBodies {
+			module = "" // Nested functions don't belong to module exports usually?
+		}
+		w.symbolTable.DefineConstant(n.Name.Value, fnType, module)
 	}
 
-	// 6. Store Function Type in TypeMap for Compiler
+	// 4. Store Function Type in TypeMap
 	w.TypeMap[n] = fnType
+
+	// 5. Analyze Body
+	// If ModeHeaders: Skip body.
+	// If ModeBodies: Analyze body (this is a nested function).
+	// If ModeFull: Analyze body.
+
+	if w.mode == ModeHeaders {
+		return
+	}
+
+	// For nested functions, we use the shared analyzeFunctionBody logic?
+	// analyzeFunctionBody expects FunctionStatement.
+	// But analyzeFunctionBody creates a NEW scope.
+	// Yes, nested functions need a new scope.
+	w.analyzeFunctionBody(n)
 }
 
 // applySubstToNode recursively applies a type substitution to all nodes in the AST.
@@ -1194,11 +1069,65 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 				}
 			}
 		}
+
+		// Special case: Single-constructor ADT wrapping a record
+		// REMOVED: This optimization caused ADTs (like MyBox) to be treated as type aliases
+		// by ResolveTypeAlias, breaking nominal typing in function signatures and pattern matching.
+		// ADTs should be strict and require constructor usage.
+		/*
+		if len(stmt.Constructors) == 1 && len(stmt.TypeParameters) == 0 {
+			c := stmt.Constructors[0]
+			if len(c.Parameters) == 1 {
+				// Build the parameter type
+				paramType := BuildType(c.Parameters[0], typeScope, &errors)
+				// If it's a record, update the TCon to include it as underlying type
+				if _, ok := paramType.(typesystem.TRecord); ok {
+					// Get the current symbol and update it
+					if sym, ok := table.Find(stmt.Name.Value); ok && sym.Kind == symbols.TypeSymbol {
+						if tCon, ok := sym.Type.(typesystem.TCon); ok {
+							tCon.UnderlyingType = paramType
+							// Re-define with updated TCon
+							table.DefineType(stmt.Name.Value, tCon, origin)
+						}
+					}
+				}
+			}
+		}
+		*/
+
+		// Fallback for Nominal Records (type Node = { ... } where IsAlias=false)
+		// Ensure UnderlyingType is set so Unify can verify structural compatibility
+		if len(stmt.Constructors) == 0 && stmt.TargetType != nil {
+			realType := BuildType(stmt.TargetType, typeScope, &errors)
+			if sym, ok := table.Find(stmt.Name.Value); ok && sym.Kind == symbols.TypeSymbol {
+				if tCon, ok := sym.Type.(typesystem.TCon); ok {
+					tCon.UnderlyingType = realType
+					table.DefineType(stmt.Name.Value, tCon, origin)
+				}
+			}
+		}
 	}
 	return errors
 }
 
 func (w *walker) VisitTypeDeclarationStatement(stmt *ast.TypeDeclarationStatement) {
+	if w.mode == ModeNaming || w.mode == ModeInstances {
+		return
+	}
+
+	// Handle local type declarations vs top-level
+	// In ModeHeaders: Process ONLY global types (top-level)
+	// In ModeBodies: Process ONLY local types (inside functions)
+	// In ModeFull: Process ALL
+	isGlobal := w.symbolTable.IsGlobalScope()
+
+	if w.mode == ModeHeaders && !isGlobal {
+		return // Should not happen usually as Headers pass doesn't enter bodies
+	}
+	if w.mode == ModeBodies && isGlobal {
+		return // Skip top-level types in Bodies pass (already done in Headers)
+	}
+
 	// Use RegisterTypeDeclaration to register and get errors
 	errs := RegisterTypeDeclaration(stmt, w.symbolTable, w.currentModuleName)
 	w.addErrors(errs)
@@ -1210,6 +1139,11 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 		return
 	}
 
+	// Mode Checks: Only process in ModeHeaders or ModeFull
+	if w.mode == ModeNaming || w.mode == ModeInstances || w.mode == ModeBodies {
+		return
+	}
+
 	// 0. Check naming convention (trait name must start with uppercase)
 	if !checkTypeName(n.Name.Value, n.Token, &w.errors) {
 		return
@@ -1217,12 +1151,14 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 
 	// 0.1. Check for redefinition of existing trait (including built-ins)
 	if sym, ok := w.symbolTable.Find(n.Name.Value); ok && sym.Kind == symbols.TraitSymbol {
-		w.addError(diagnostics.NewError(
-			diagnostics.ErrA004,
-			n.Token,
-			n.Name.Value,
-		))
-		return
+		if !sym.IsPending {
+			w.addError(diagnostics.NewError(
+				diagnostics.ErrA004,
+				n.Token,
+				n.Name.Value,
+			))
+			return
+		}
 	}
 
 	// 1. Extract super trait names and verify they exist
@@ -1339,6 +1275,11 @@ func resolveReceiverTypeName(t ast.Type, table *symbols.SymbolTable) string {
 func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	// Skip if not properly parsed
 	if n == nil || n.TraitName == nil {
+		return
+	}
+
+	// Mode Checks
+	if w.mode == ModeNaming || w.mode == ModeHeaders {
 		return
 	}
 
@@ -1530,6 +1471,11 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 	}
 
+	// Stop here if ModeInstances (Pass 3) - we only register the implementation
+	if w.mode == ModeInstances {
+		return
+	}
+
 	// 3b. Check that all required methods are implemented
 	requiredMethods := w.symbolTable.GetTraitRequiredMethods(traitName)
 	implementedMethods := make(map[string]bool)
@@ -1664,6 +1610,11 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 func (w *walker) VisitConstantDeclaration(n *ast.ConstantDeclaration) {
 	// Skip if not properly parsed
 	if n == nil {
+		return
+	}
+
+	// Mode Checks: Only process in ModeBodies or ModeFull
+	if w.mode == ModeNaming || w.mode == ModeHeaders || w.mode == ModeInstances {
 		return
 	}
 

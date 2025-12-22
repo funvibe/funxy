@@ -2,10 +2,6 @@ package bugweb
 
 import "lib/json" (Json)
 
-trait Responder<T> {
-    fun toResponse(val: T) -> Response
-}
-
 instance Responder Json {
     fun toResponse(j: Json) -> Response {
         // Inline expression - this should now work!
