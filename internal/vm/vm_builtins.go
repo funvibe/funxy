@@ -23,39 +23,39 @@ func (vm *VM) RegisterBuiltins() {
 // registerFPTraitMethods registers FP trait class methods as globals
 func (vm *VM) registerFPTraitMethods() {
 	// Semigroup
-	vm.globals = vm.globals.Put("(< >)", &evaluator.ClassMethod{Name: "(<>)", ClassName: "Semigroup", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(< >)", &evaluator.ClassMethod{Name: "(<>)", ClassName: "Semigroup", Arity: 2})
 
 	// Monoid
-	vm.globals = vm.globals.Put("mempty", &evaluator.ClassMethod{Name: "mempty", ClassName: "Monoid", Arity: 0})
+	vm.globals.Globals = vm.globals.Globals.Put("mempty", &evaluator.ClassMethod{Name: "mempty", ClassName: "Monoid", Arity: 0})
 
 	// Functor
-	vm.globals = vm.globals.Put("fmap", &evaluator.ClassMethod{Name: "fmap", ClassName: "Functor", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("fmap", &evaluator.ClassMethod{Name: "fmap", ClassName: "Functor", Arity: 2})
 
 	// Applicative
-	vm.globals = vm.globals.Put("pure", &evaluator.ClassMethod{Name: "pure", ClassName: "Applicative", Arity: 1})
-	vm.globals = vm.globals.Put("(<*>)", &evaluator.ClassMethod{Name: "(<*>)", ClassName: "Applicative", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("pure", &evaluator.ClassMethod{Name: "pure", ClassName: "Applicative", Arity: 1})
+	vm.globals.Globals = vm.globals.Globals.Put("(<*>)", &evaluator.ClassMethod{Name: "(<*>)", ClassName: "Applicative", Arity: 2})
 
 	// Monad
-	vm.globals = vm.globals.Put("(>>=)", &evaluator.ClassMethod{Name: "(>>=)", ClassName: "Monad", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(>>=)", &evaluator.ClassMethod{Name: "(>>=)", ClassName: "Monad", Arity: 2})
 
 	// Optional
-	vm.globals = vm.globals.Put("(??)", &evaluator.ClassMethod{Name: "(??)", ClassName: "Optional", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(??)", &evaluator.ClassMethod{Name: "(??)", ClassName: "Optional", Arity: 2})
 
 	// Empty
-	vm.globals = vm.globals.Put("isEmpty", &evaluator.ClassMethod{Name: "isEmpty", ClassName: "Empty", Arity: 1})
+	vm.globals.Globals = vm.globals.Globals.Put("isEmpty", &evaluator.ClassMethod{Name: "isEmpty", ClassName: "Empty", Arity: 1})
 
 	// Show trait
-	vm.globals = vm.globals.Put("show", &evaluator.ClassMethod{Name: "show", ClassName: "Show", Arity: 1})
+	vm.globals.Globals = vm.globals.Globals.Put("show", &evaluator.ClassMethod{Name: "show", ClassName: "Show", Arity: 1})
 
 	// Equal trait
-	vm.globals = vm.globals.Put("(==)", &evaluator.ClassMethod{Name: "(==)", ClassName: "Equal", Arity: 2})
-	vm.globals = vm.globals.Put("(/=)", &evaluator.ClassMethod{Name: "(/=)", ClassName: "Equal", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(==)", &evaluator.ClassMethod{Name: "(==)", ClassName: "Equal", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(/=)", &evaluator.ClassMethod{Name: "(/=)", ClassName: "Equal", Arity: 2})
 
 	// Ord trait
-	vm.globals = vm.globals.Put("(<)", &evaluator.ClassMethod{Name: "(<)", ClassName: "Ord", Arity: 2})
-	vm.globals = vm.globals.Put("(<=)", &evaluator.ClassMethod{Name: "(<=)", ClassName: "Ord", Arity: 2})
-	vm.globals = vm.globals.Put("(>)", &evaluator.ClassMethod{Name: "(>)", ClassName: "Ord", Arity: 2})
-	vm.globals = vm.globals.Put("(>=)", &evaluator.ClassMethod{Name: "(>=)", ClassName: "Ord", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(<)", &evaluator.ClassMethod{Name: "(<)", ClassName: "Ord", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(<=)", &evaluator.ClassMethod{Name: "(<=)", ClassName: "Ord", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(>)", &evaluator.ClassMethod{Name: "(>)", ClassName: "Ord", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("(>=)", &evaluator.ClassMethod{Name: "(>=)", ClassName: "Ord", Arity: 2})
 
 	// Register builtin trait implementations for primitive types
 	vm.registerBuiltinTraitImpls()
@@ -233,7 +233,7 @@ func (vm *VM) registerBuiltinTraitMethod(traitName, typeName, methodName string,
 func (vm *VM) importBuiltinsFromEnv(env *evaluator.Environment) {
 	builtins := evaluator.GetBuiltinsList()
 	for name, obj := range builtins {
-		vm.globals = vm.globals.Put(name, obj)
+		vm.globals.Globals = vm.globals.Globals.Put(name, obj)
 	}
 }
 

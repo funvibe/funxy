@@ -49,7 +49,8 @@ type VM struct {
 	frame *CallFrame
 
 	// Globals are stored in an immutable persistent map for thread safety
-	globals *PersistentMap
+	// Wrapped in ModuleScope for shared mutable access within a module
+	globals *ModuleScope
 
 	// Linked list of open upvalues, sorted by stack location (highest first)
 	openUpvalues *ObjUpvalue
@@ -101,7 +102,7 @@ func New() *VM {
 	return &VM{
 		stack:               make([]Value, 0, InitialStackSize), // Dynamic stack with initial capacity
 		frames:              make([]CallFrame, 0, InitialFrameCount),       // Dynamic frames with initial capacity
-		globals:             EmptyMap(),
+		globals:             NewModuleScope(),
 		traitMethods:        EmptyMap(),
 		extensionMethods:    EmptyMap(),
 		builtinTraitMethods: EmptyMap(),
@@ -368,11 +369,13 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 		evaluator.RegisterFPTraits(vm.eval, vm.eval.GlobalEnv)
 	}
 	// Sync VM globals to evaluator's GlobalEnv for trait dispatch
-		if vm.eval.GlobalEnv != nil {
-		vm.globals.Range(func(name string, obj evaluator.Object) bool {
-			vm.eval.GlobalEnv.Set(name, obj)
-			return true
-		})
+	if vm.eval.GlobalEnv != nil {
+		if vm.globals != nil && vm.globals.Globals != nil {
+			vm.globals.Globals.Range(func(name string, obj evaluator.Object) bool {
+				vm.eval.GlobalEnv.Set(name, obj)
+				return true
+			})
+		}
 	}
 	// Sync VM trait methods to evaluator's ClassImplementations
 	vm.traitMethods.Range(func(traitName string, typeMapObj evaluator.Object) bool {
@@ -615,6 +618,7 @@ func (vm *VM) Run(chunk *Chunk) (evaluator.Object, error) {
 	scriptClosure := &ObjClosure{
 		Function: scriptFn,
 		Upvalues: nil,
+		Globals:  vm.globals,
 	}
 
 	// Reset stack and frames - allocate full size initially for compatibility
@@ -1172,7 +1176,15 @@ func (vm *VM) ForkVM() *VM {
 	newVM.SetOutput(vm.out)
 
 	// Copy state
-	newVM.globals = vm.globals // Structural sharing of immutable map is safe!
+	// For forked VM (e.g. evaluator fallback), we want to share the current globals
+	// But thread safety implies we should probably copy the snapshot?
+	// VM.globals is *ModuleScope (mutable).
+	// If we share *ModuleScope, changes in newVM affect vm.
+	// ForkVM is used for evaluator Fork(), which usually implies isolation.
+	// However, PersistentMap is immutable.
+	// So we should create a NEW ModuleScope with the SAME PersistentMap root.
+	newVM.globals = &ModuleScope{Globals: vm.globals.Globals}
+
 	newVM.loader = vm.loader
 	newVM.baseDir = vm.baseDir
 	newVM.typeAliases = vm.typeAliases
@@ -1218,7 +1230,9 @@ func (vm *VM) asyncHandler(fn evaluator.Object, args []evaluator.Object) evaluat
 	// Inherit output
 	newVM.SetOutput(vm.out)
 	// Copy state
-	newVM.globals = vm.globals // Structural sharing of immutable map is safe!
+	// For async, we want isolation. So we snapshot the globals.
+	newVM.globals = &ModuleScope{Globals: vm.globals.Globals}
+
 	newVM.loader = vm.loader
 	newVM.baseDir = vm.baseDir
 	newVM.typeAliases = vm.typeAliases
@@ -1313,7 +1327,7 @@ func (vm *VM) RegisterFPTraits() {
 
 	// Copy symbols from env to globals
 	for name, val := range env.GetStore() {
-		vm.globals = vm.globals.Put(name, val)
+		vm.globals.Globals = vm.globals.Globals.Put(name, val)
 	}
 
 	// Copy trait implementations from evaluator to VM

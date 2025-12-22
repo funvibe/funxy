@@ -1,0 +1,8 @@
+package ft
+
+value  =  100
+kValue :- 100
+
+fun getModuleGlobal() {
+    value + kValue
+}

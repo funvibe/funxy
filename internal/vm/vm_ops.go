@@ -397,7 +397,7 @@ func (vm *VM) getField(obj Value, name string) (Value, error) {
 		return NilVal(), fmt.Errorf("record has no field '%s'", name)
 
 	case *evaluator.DataInstance:
-		if fn := vm.globals.Get(name); fn != nil {
+		if fn := vm.globals.Globals.Get(name); fn != nil {
 			if function, ok := fn.(*evaluator.Function); ok {
 				return ObjVal(&evaluator.BoundMethod{Receiver: objVal, Function: function}), nil
 			}
@@ -413,7 +413,7 @@ func (vm *VM) getField(obj Value, name string) (Value, error) {
 		return NilVal(), nil
 
 	default:
-		if fn := vm.globals.Get(name); fn != nil {
+		if fn := vm.globals.Globals.Get(name); fn != nil {
 			if function, ok := fn.(*evaluator.Function); ok {
 				return ObjVal(&evaluator.BoundMethod{Receiver: objVal, Function: function}), nil
 			}

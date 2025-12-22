@@ -210,15 +210,34 @@ func (p *Parser) parseIfExpression() ast.Expression {
 
 	expression.Consequence = p.parseBlockStatement()
 
-	// Skip newlines
-	for p.peekTokenIs(token.NEWLINE) {
-		p.nextToken()
+	// Check for optional ELSE, looking ahead past newlines without consuming them yet
+	hasElse := false
+	if p.peekTokenIs(token.ELSE) {
+		hasElse = true
+	} else if p.peekTokenIs(token.NEWLINE) {
+		// Look ahead to find ELSE
+		lookahead := p.stream.Peek(50)
+		for _, t := range lookahead {
+			if t.Type == token.NEWLINE {
+				continue
+			}
+			if t.Type == token.ELSE {
+				hasElse = true
+			}
+			break // Found non-newline token
+		}
 	}
 
-	if p.peekTokenIs(token.ELSE) {
-		p.nextToken()
+	if hasElse {
+		// Consume newlines now that we know there is an ELSE
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
 
-		if p.peekTokenIs(token.IF) {
+		if p.peekTokenIs(token.ELSE) {
+			p.nextToken()
+
+			if p.peekTokenIs(token.IF) {
 			p.nextToken()
 			ifExpr := p.parseIfExpression()
 			block := &ast.BlockStatement{
@@ -232,6 +251,7 @@ func (p *Parser) parseIfExpression() ast.Expression {
 			}
 			expression.Alternative = p.parseBlockStatement()
 		}
+	}
 	}
 
 	return expression

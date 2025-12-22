@@ -166,7 +166,7 @@ func (vm *VM) compileAndExecuteModule(mod *modules.Module) (*evaluator.RecordIns
 
 	exports := make(map[string]evaluator.Object)
 	for name := range mod.Exports {
-		if val := modVM.globals.Get(name); val != nil {
+		if val := modVM.globals.Globals.Get(name); val != nil {
 			exports[name] = val
 		}
 	}
@@ -204,7 +204,6 @@ func (vm *VM) compileAndExecuteModule(mod *modules.Module) (*evaluator.RecordIns
 			modMethodMap.Range(func(methodName string, closureObj evaluator.Object) bool {
 				closure := closureObj.(*ObjClosure)
 				// Attach module globals to trait methods
-				// ObjClosure.Globals is *PersistentMap, modVM.globals is *PersistentMap
 				closure.Globals = modVM.globals
 
 				parentMethodMap = parentMethodMap.Put(methodName, closure)
@@ -278,7 +277,7 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 	}
 
 	if imp.Alias != "" {
-		vm.globals = vm.globals.Put(imp.Alias, modObj)
+		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, modObj)
 	} else if imp.ImportAll {
 		// Create a set of excluded symbols for efficient lookup
 		excluded := make(map[string]bool)
@@ -289,7 +288,7 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 		// Import all symbols except excluded ones
 		for _, field := range modObj.Fields {
 			if !excluded[field.Key] {
-				vm.globals = vm.globals.Put(field.Key, field.Value)
+				vm.globals.Globals = vm.globals.Globals.Put(field.Key, field.Value)
 			}
 		}
 	} else if len(imp.ExcludeSymbols) > 0 {
@@ -301,13 +300,13 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 
 		for _, field := range modObj.Fields {
 			if !excluded[field.Key] {
-				vm.globals = vm.globals.Put(field.Key, field.Value)
+				vm.globals.Globals = vm.globals.Globals.Put(field.Key, field.Value)
 			}
 		}
 	} else if len(imp.Symbols) > 0 {
 		for _, sym := range imp.Symbols {
 			if val := modObj.Get(sym); val != nil {
-				vm.globals = vm.globals.Put(sym, val)
+				vm.globals.Globals = vm.globals.Globals.Put(sym, val)
 
 				// Implicit import of constructors for ADTs
 				if typeObj, ok := val.(*evaluator.TypeObject); ok {
@@ -324,7 +323,7 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 						// Scan module exports for constructors of this type
 						for _, field := range modObj.Fields {
 							if isConstructorForType(field.Value, typeName) {
-								vm.globals = vm.globals.Put(field.Key, field.Value)
+								vm.globals.Globals = vm.globals.Globals.Put(field.Key, field.Value)
 							}
 						}
 					}
@@ -338,7 +337,7 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 						for _, methodName := range traitMethodNames {
 							// Try to get the method from modObj
 							if methodVal := modObj.Get(methodName); methodVal != nil {
-								vm.globals = vm.globals.Put(methodName, methodVal)
+								vm.globals.Globals = vm.globals.Globals.Put(methodName, methodVal)
 							}
 						}
 						continue
@@ -352,7 +351,7 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 		if ext := filepath.Ext(modName); ext != "" {
 			modName = modName[:len(modName)-len(ext)]
 		}
-		vm.globals = vm.globals.Put(modName, modObj)
+		vm.globals.Globals = vm.globals.Globals.Put(modName, modObj)
 	}
 	return nil
 }
@@ -395,7 +394,7 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 		for name, fn := range builtins {
 			fields[name] = fn
 		}
-		vm.globals = vm.globals.Put(imp.Alias, evaluator.NewRecord(fields))
+		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, evaluator.NewRecord(fields))
 	} else if imp.ImportAll {
 		// Create a set of excluded symbols for efficient lookup
 		excluded := make(map[string]bool)
@@ -406,7 +405,7 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 		// Import all symbols except excluded ones
 		for name, fn := range builtins {
 			if !excluded[name] {
-				vm.globals = vm.globals.Put(name, fn)
+				vm.globals.Globals = vm.globals.Globals.Put(name, fn)
 			}
 		}
 	} else if len(imp.ExcludeSymbols) > 0 {
@@ -418,20 +417,20 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 
 		for name, fn := range builtins {
 			if !excluded[name] {
-				vm.globals = vm.globals.Put(name, fn)
+				vm.globals.Globals = vm.globals.Globals.Put(name, fn)
 			}
 		}
 	} else if len(imp.Symbols) > 0 {
 		for _, sym := range imp.Symbols {
 			if fn, ok := builtins[sym]; ok {
-				vm.globals = vm.globals.Put(sym, fn)
+				vm.globals.Globals = vm.globals.Globals.Put(sym, fn)
 
 				// Auto-import ADT constructors if present
 				if pkg := modules.GetVirtualPackage("lib/" + pkgName); pkg != nil {
 					if variants, ok := pkg.Variants[sym]; ok {
 						for _, variantName := range variants {
 							if variantFn, exists := builtins[variantName]; exists {
-								vm.globals = vm.globals.Put(variantName, variantFn)
+								vm.globals.Globals = vm.globals.Globals.Put(variantName, variantFn)
 							}
 						}
 					}
@@ -445,7 +444,7 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 		for name, fn := range builtins {
 			fields[name] = fn
 		}
-		vm.globals = vm.globals.Put(pkgName, evaluator.NewRecord(fields))
+		vm.globals.Globals = vm.globals.Globals.Put(pkgName, evaluator.NewRecord(fields))
 	}
 
 	return nil
@@ -466,7 +465,7 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
 			for name, fn := range builtins {
 				if !excluded[name] {
-					vm.globals = vm.globals.Put(name, fn)
+					vm.globals.Globals = vm.globals.Globals.Put(name, fn)
 				}
 			}
 		}
@@ -481,7 +480,7 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
 			for name, fn := range builtins {
 				if !excluded[name] {
-					vm.globals = vm.globals.Put(name, fn)
+					vm.globals.Globals = vm.globals.Globals.Put(name, fn)
 				}
 			}
 		}
@@ -497,7 +496,7 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 				libFields[pkg] = evaluator.NewRecord(pkgFields)
 			}
 		}
-		vm.globals = vm.globals.Put(imp.Alias, evaluator.NewRecord(libFields))
+		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, evaluator.NewRecord(libFields))
 	} else {
 		libFields := make(map[string]evaluator.Object)
 		for _, pkg := range packages {
@@ -510,7 +509,7 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 				libFields[pkg] = evaluator.NewRecord(pkgFields)
 			}
 		}
-		vm.globals = vm.globals.Put("lib", evaluator.NewRecord(libFields))
+		vm.globals.Globals = vm.globals.Globals.Put("lib", evaluator.NewRecord(libFields))
 	}
 
 	return nil

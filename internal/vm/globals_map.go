@@ -23,6 +23,18 @@ type PersistentMap struct {
 	count int
 }
 
+// ModuleScope wraps PersistentMap to provide shared mutable access to globals within a module
+type ModuleScope struct {
+	Globals *PersistentMap
+}
+
+// NewModuleScope creates a new module scope
+func NewModuleScope() *ModuleScope {
+	return &ModuleScope{
+		Globals: EmptyMap(),
+	}
+}
+
 // Implement evaluator.Object interface so PersistentMap can be nested
 func (m *PersistentMap) Type() evaluator.ObjectType { return "PERSISTENT_MAP" }
 func (m *PersistentMap) Inspect() string {

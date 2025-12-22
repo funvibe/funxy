@@ -1,0 +1,19 @@
+import "lib/test" (*)
+
+type Flag = { flag: Bool }
+
+fun returnTuple(flag: Flag) -> (Float, Float, Float) {
+    if flag.flag {
+        if flag.flag {
+            print("Flag is true")
+        }
+        (1.0, 2.0, 3.0)
+    } else {
+        (4.0, 5.0, 6.0)
+    }
+}
+
+testRun("Return tuple", \ -> {
+    tuple = returnTuple({ flag: true })
+    assert(tuple == (1.0, 2.0, 3.0), "Tuple is (1.0, 2.0, 3.0)")
+})

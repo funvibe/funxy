@@ -1,0 +1,6 @@
+import "./ft" (getModuleGlobal)
+import "lib/test" (assertEquals, testRun)
+
+testRun("Module globals", \ -> {
+    assertEquals(200, getModuleGlobal(), "Module global should be 200")
+})

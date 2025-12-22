@@ -3,10 +3,10 @@ package vm
 import (
 	"fmt"
 	"math/big"
-	"strings"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"strings"
 )
 
 func (vm *VM) executeOneOp(op Opcode) error {
@@ -321,12 +321,13 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		var ok bool
 
 		if vm.frame.closure != nil && vm.frame.closure.Globals != nil {
-			val = vm.frame.closure.Globals.Get(name)
+			// ModuleScope lookup
+			val = vm.frame.closure.Globals.Globals.Get(name)
 			ok = val != nil
 		}
 
 		if !ok {
-			val = vm.globals.Get(name)
+			val = vm.globals.Globals.Get(name)
 			ok = val != nil
 		}
 
@@ -338,11 +339,19 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	case OP_SET_GLOBAL:
 		nameIdx := vm.readConstantIndex()
 		name := vm.frame.chunk.Constants[nameIdx].Inspect()
+		val := vm.peek(0).AsObject()
 
 		if vm.frame.closure != nil && vm.frame.closure.Globals != nil {
-			vm.frame.closure.Globals = vm.frame.closure.Globals.Put(name, vm.peek(0).AsObject())
+			// Update shared module scope
+			vm.frame.closure.Globals.Globals = vm.frame.closure.Globals.Globals.Put(name, val)
+
+			// If we are in the top-level script, update the VM's main global map too.
+			// This ensures that subsequent OP_CLOSURE instructions capture the updated globals.
+			if vm.frame.closure.Function.Name == "<script>" {
+				vm.globals = vm.frame.closure.Globals
+			}
 		} else {
-			vm.globals = vm.globals.Put(name, vm.peek(0).AsObject())
+			vm.globals.Globals = vm.globals.Globals.Put(name, val)
 		}
 
 	case OP_CLOSE_SCOPE:
@@ -1001,14 +1010,14 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 		// Fallback to globals if not found
 		if extFn == nil {
-			if fn := vm.globals.Get(methodName); fn != nil {
+			if fn := vm.globals.Globals.Get(methodName); fn != nil {
 				extFn = fn
 			}
 		}
 
 		// Also check closure context globals if present
 		if extFn == nil && vm.frame.closure != nil && vm.frame.closure.Globals != nil {
-			if fn := vm.frame.closure.Globals.Get(methodName); fn != nil {
+			if fn := vm.frame.closure.Globals.Globals.Get(methodName); fn != nil {
 				extFn = fn
 			}
 		}

@@ -43,7 +43,7 @@ func (f *CompiledFunction) Hash() uint32 {
 type ObjClosure struct {
 	Function *CompiledFunction
 	Upvalues []*ObjUpvalue
-	Globals  *PersistentMap // Optional: context-specific globals (for modules)
+	Globals  *ModuleScope // Shared mutable scope for module globals
 }
 
 func (c *ObjClosure) Type() evaluator.ObjectType { return "CLOSURE" }
