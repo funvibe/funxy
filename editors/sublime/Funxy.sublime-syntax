@@ -92,7 +92,7 @@ contexts:
       scope: support.function.builtin.funxy
 
   operators:
-    - match: '->|=>|>>=|<\*>|<>|\|>|<\||\+\+|::|==|!=|<=|>=|&&|\|\||:=|:-|,,|\$'
+    - match: '->|=>|>>=|<\*>|<>|\|>|<\||\+\+|::|==|!=|<=|>=|&&|\|\||:=|:-|,,|\$|\\'
       scope: keyword.operator.funxy
 
   functions:

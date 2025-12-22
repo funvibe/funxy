@@ -199,6 +199,10 @@
           "match": "->"
         },
         {
+          "name": "keyword.operator.lambda.funxy",
+          "match": "\\\\"
+        },
+        {
           "name": "keyword.operator.fatarrow.funxy",
           "match": "=>"
         },

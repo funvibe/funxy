@@ -151,6 +151,7 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 	p.registerPrefix(token.LBRACKET, p.parseListLiteral)
 	p.registerPrefix(token.PERCENT_LBRACE, p.parseMapLiteral)
 	p.registerPrefix(token.FUN, p.parseFunctionLiteral)
+	p.registerPrefix(token.BACKSLASH, p.parseLambdaExpression)
 	p.registerPrefix(token.FOR, p.parseForExpression) // for loop
 	p.registerPrefix(token.ELLIPSIS, p.parsePrefixSpreadExpression)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression) // Re-register explicitly to be safe

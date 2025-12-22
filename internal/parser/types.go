@@ -243,3 +243,50 @@ func (p *Parser) parseAtomicType() ast.Type {
 	return nil
 }
 
+// parseTypeNoArrow parses a type but does not consume top-level arrows.
+// This is used for parsing lambda parameters where -> is the delimiter.
+func (p *Parser) parseTypeNoArrow() ast.Type {
+	t := p.parseNonUnionTypeNoArrow()
+	if t == nil {
+		return nil
+	}
+
+	// Check for T?
+	if p.peekTokenIs(token.QUESTION) {
+		p.nextToken()
+		nilType := &ast.NamedType{
+			Token: p.curToken,
+			Name:  &ast.Identifier{Token: p.curToken, Value: "Nil"},
+		}
+		return &ast.UnionType{
+			Token: t.GetToken(),
+			Types: []ast.Type{t, nilType},
+		}
+	}
+
+	// Check for Union Type '|'
+	if p.peekTokenIs(token.PIPE) {
+		types := []ast.Type{t}
+		for p.peekTokenIs(token.PIPE) {
+			p.nextToken()
+			p.nextToken()
+			nextType := p.parseNonUnionTypeNoArrow()
+			if nextType == nil {
+				return nil
+			}
+			types = append(types, nextType)
+		}
+		return &ast.UnionType{
+			Token: t.GetToken(),
+			Types: types,
+		}
+	}
+	return t
+}
+
+func (p *Parser) parseNonUnionTypeNoArrow() ast.Type {
+	if p.curTokenIs(token.LBRACE) {
+		return p.parseRecordType()
+	}
+	return p.parseTypeApplication()
+}

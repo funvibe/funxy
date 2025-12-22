@@ -118,6 +118,7 @@ const (
 	// Special symbols
 	ARROW      TokenType = "->"
 	UNDERSCORE TokenType = "_"
+	BACKSLASH  TokenType = "\\"
 
 	// Identifiers & literals
 	IDENT_UPPER TokenType = "IDENT_UPPER" // List, Triangle, Int

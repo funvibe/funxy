@@ -81,9 +81,9 @@ Save as `hello.lang` and run: `./funxy hello.lang`
 ```rust
 import "lib/list" (map)
 
-numbers = [1, 2, 3]              // Type inferred: List<Int>
-doubled = map(fun(x) { x * 2 }, numbers)
-print(doubled)  // [2, 4, 6]
+numbers = [1, 2, 3] // Type inferred: List<Int>
+doubled = map(\x -> { x * 2 }, numbers)
+print(doubled) // [2, 4, 6]
 
 // Explicit types when needed
 fun add(a: Int, b: Int) -> Int { a + b }
@@ -147,7 +147,7 @@ fun area(s: Shape) -> Float {
     }
 }
 
-print(area(Circle(5.0)))        // 78.5
+print(area(Circle(5.0)))         // 78.5
 print(area(Rectangle(3.0, 4.0))) // 12.0
 ```
 
@@ -321,7 +321,7 @@ fun qsort(xs) {
     }
 }
 
-print(qsort([3, 1, 4, 1, 5, 9, 2, 6]))  // [1, 1, 2, 3, 4, 5, 6, 9]
+print(qsort([3, 1, 4, 1, 5, 9, 2, 6])) // [1, 1, 2, 3, 4, 5, 6, 9]
 ```
 
 ### Binary Parsing
@@ -339,7 +339,7 @@ specs = [
 ]
 
 match bitsExtract(packet, specs) {
-    Ok(flags) -> print(flags)  // %{"ack" => 1, "syn" => 1, ...}
+    Ok(flags) -> print(flags) // %{"ack" => 1, "syn" => 1, ...}
     Fail(e) -> print(e)
 }
 ```

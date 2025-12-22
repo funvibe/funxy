@@ -272,6 +272,8 @@ func (l *Lexer) NextToken() token.Token {
 		} else {
 			tok = newToken(token.QUESTION, l.ch, l.line, l.column)
 		}
+	case '\\':
+		tok = newToken(token.BACKSLASH, l.ch, l.line, l.column)
 	case '@':
 		// @"...", @x"...", @b"..." - Bytes literals
 		if l.peekChar() == '"' {

@@ -1,0 +1,73 @@
+import "lib/test" (*)
+import "lib/list" (map)
+
+testRun("Basic lambda", \ -> {
+    f = \x -> x * 2
+    assert(f(2) == 4, "basic lambda failed")
+})
+
+testRun("Two arguments", \ -> {
+    add = \x, y -> x + y
+    assert(add(2, 3) == 5, "two args lambda failed")
+})
+
+testRun("Typed lambda", \ -> {
+    typed = \x: Int -> x + 1
+    assert(typed(10) == 11, "typed lambda failed")
+})
+
+testRun("Multiple typed args", \ -> {
+    mul = \a: Int, b: Int -> a * b
+    assert(mul(3, 4) == 12, "multi typed lambda failed")
+})
+
+testRun("Block body", \ -> {
+    block = \x -> {
+        y = x + 1
+        y * 2
+    }
+    assert(block(5) == 12, "block lambda failed")
+})
+
+testRun("IIFE", \ -> {
+    res = (\x -> x + 1)(10)
+    assert(res == 11, "IIFE lambda failed")
+})
+
+testRun("No arguments", \ -> {
+    thunk = \ -> "lazy"
+    assert(thunk() == "lazy", "no-arg lambda failed")
+})
+
+testRun("High order functions", \ -> {
+    doubled = map(\x -> x * 2, [1, 2, 3])
+    assert(doubled[0] == 2, "map lambda failed")
+})
+
+testRun("Variadic lambda", \ -> {
+    sum = \nums... -> {
+        // Simple manual sum since foldl might not be imported/available in this context without stdlib deps
+        total = 0
+        for n in nums {
+            total = total + n
+        }
+        total
+    }
+    assert(sum(1, 2, 3, 4) == 10, "variadic lambda failed")
+})
+
+testRun("Ignored parameters", \ -> {
+    alwaysFirst = \x, _ -> x
+    assert(alwaysFirst(10, 20) == 10, "ignored param failed")
+
+    alwaysSecond = \_, y -> y
+    assert(alwaysSecond(10, 20) == 20, "ignored param failed")
+})
+
+testRun("Spread in body", \ -> {
+    // Using spread in list literal inside lambda
+    prepend = \x, list -> [x, ...list]
+    res = prepend(1, [2, 3])
+    assert(res[0] == 1, "spread in body failed")
+    assert(res[1] == 2, "spread in body failed")
+})

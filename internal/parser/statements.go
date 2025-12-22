@@ -890,6 +890,10 @@ func (p *Parser) parseFunctionParameters() []*ast.Parameter {
 }
 
 func (p *Parser) parseParameter() *ast.Parameter {
+	return p.parseParameterCommon(true)
+}
+
+func (p *Parser) parseParameterCommon(allowArrowInType bool) *ast.Parameter {
 	param := &ast.Parameter{Token: p.curToken}
 
 	// Allow underscore as "ignored" parameter
@@ -907,7 +911,11 @@ func (p *Parser) parseParameter() *ast.Parameter {
 	if p.peekTokenIs(token.COLON) {
 		p.nextToken()
 		p.nextToken()
-		param.Type = p.parseType()
+		if allowArrowInType {
+			param.Type = p.parseType()
+		} else {
+			param.Type = p.parseTypeNoArrow()
+		}
 	}
 
 	// Check for variadic ...

@@ -1551,6 +1551,63 @@ func (p *Parser) parseTypeApplicationExpression(left ast.Expression) ast.Express
 	return expr
 }
 
+func (p *Parser) parseLambdaExpression() ast.Expression {
+	lit := &ast.FunctionLiteral{Token: p.curToken}
+	p.nextToken() // consume '\'
+
+	lit.Parameters = []*ast.Parameter{}
+
+	// Check if immediate arrow (no params)
+	if !p.curTokenIs(token.ARROW) {
+		for {
+			param := p.parseParameterCommon(false) // false = don't allow arrow in type (ambiguous with lambda arrow)
+			if param != nil {
+				lit.Parameters = append(lit.Parameters, param)
+			} else {
+				return nil
+			}
+
+			if p.peekTokenIs(token.COMMA) {
+				p.nextToken() // consume comma
+				p.nextToken() // move to next param
+				// Skip newlines
+				for p.curTokenIs(token.NEWLINE) {
+					p.nextToken()
+				}
+			} else {
+				break
+			}
+		}
+
+		if !p.expectPeek(token.ARROW) {
+			return nil
+		}
+	}
+
+	p.nextToken() // consume ->
+
+	// Skip newlines before body
+	for p.curTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
+
+	// Body: Block or Expression
+	if p.curTokenIs(token.LBRACE) {
+		lit.Body = p.parseBlockStatement()
+	} else {
+		bodyExpr := p.parseExpression(LOWEST)
+		if bodyExpr == nil {
+			return nil
+		}
+		lit.Body = &ast.BlockStatement{
+			Token:      lit.Token,
+			Statements: []ast.Statement{&ast.ExpressionStatement{Token: bodyExpr.GetToken(), Expression: bodyExpr}},
+		}
+	}
+
+	return lit
+}
+
 func (p *Parser) parsePrefixSpreadExpression() ast.Expression {
 	expression := &ast.SpreadExpression{Token: p.curToken}
 	p.nextToken() // consume '...'

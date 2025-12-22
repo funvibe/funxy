@@ -99,7 +99,8 @@ Used as expressions, typically passed to other functions.
 - **Parameter Types**: **Optional** (if context allows inference).
 - **Return Type**: Optional (inferred).
 
-Syntax: `fun(args) { body }` or `fun(args) -> expr`
+Syntax: `fun(args) { body }` or `fun(args) -> expr`.
+Short syntax: `\args -> expr` (Haskell-style).
 
 ```rust
 import "lib/list" (map)
@@ -112,8 +113,13 @@ doubled = map(fun(x: Int) { x * 2 }, list)
 // Inferred types (recommended)
 tripled = map(fun(x) -> x * 3, list)
 
+// Short syntax (Lambda sugar)
+quadrupled = map(\x -> x * 4, list)
+multiArg = (\x, y -> x + y)(1, 2)
+
 // No arguments
 thunk = fun() { print("Lazy!") }
+thunk2 = \ -> print("Lazy 2!")
 thunk()
 ```
 
