@@ -1,0 +1,90 @@
+import "lib/test" (testRun, assertEquals)
+
+// Panic is hard to test in unit tests without a 'catch' mechanism,
+// assuming tests stop on panic. So we skip panic tests or assume they crash.
+
+testRun("Result success and failure", \ -> {
+    res1 = Ok(42)
+    res2 = Fail("error")
+
+    match res1 {
+        Ok(v) -> assertEquals(42, v, "Ok value")
+        Fail(_) -> assertEquals(0, 1, "Should be Ok")
+    }
+
+    match res2 {
+        Ok(_) -> assertEquals(0, 1, "Should be Fail")
+        Fail(e) -> assertEquals("error", e, "Fail value")
+    }
+})
+
+fun safeDiv(a: Int, b: Int) -> Result<String, Int> {
+    if b == 0 { Fail("div by zero") } else { Ok(a / b) }
+}
+
+testRun("Result propagation (?) operator", \ -> {
+    fun calc(x, y, z) -> Result<String, Int> {
+        v1 = safeDiv(x, y)?
+        v2 = safeDiv(v1, z)?
+        Ok(v2)
+    }
+
+    match calc(100, 5, 2) { // 100/5 = 20, 20/2 = 10
+        Ok(v) -> assertEquals(10, v, "Calc success")
+        Fail(_) -> assertEquals(0, 1, "Calc failed")
+    }
+
+    match calc(100, 0, 2) {
+        Ok(_) -> assertEquals(0, 1, "Calc should fail")
+        Fail(e) -> assertEquals("div by zero", e, "Calc failed correctly")
+    }
+})
+
+testRun("Option type", \ -> {
+    opt = Some(10)
+    zero = Zero
+
+    match opt {
+        Some(v) -> assertEquals(10, v, "Option Some")
+        Zero -> assertEquals(0, 1, "Should be Some")
+    }
+
+    match zero {
+        Some(_) -> assertEquals(0, 1, "Should be Zero")
+        Zero -> assertEquals(0, 0, "Option Zero")
+    }
+})
+
+testRun("Option propagation (?) operator", \ -> {
+    fun optAdd(ma: Option<Int>, mb: Option<Int>) -> Option<Int> {
+        a = ma?
+        b = mb?
+        Some(a + b)
+    }
+
+    match optAdd(Some(1), Some(2)) {
+        Some(v) -> assertEquals(3, v, "Option prop success")
+        Zero -> assertEquals(0, 1, "Option prop failed")
+    }
+
+    match optAdd(Some(1), Zero) {
+        Some(_) -> assertEquals(0, 1, "Option prop should be Zero")
+        Zero -> assertEquals(0, 0, "Option prop Zero correct")
+    }
+})
+
+testRun("Nullable types (T?)", \ -> {
+    // T? is shorthand for T | Nil
+    x: Int? = 42
+    y: Int? = nil
+
+    match x {
+        v: Int -> assertEquals(42, v, "Nullable value")
+        _: Nil -> assertEquals(0, 1, "Should be Int")
+    }
+
+    match y {
+        v: Int -> assertEquals(0, 1, "Should be Nil")
+        _: Nil -> assertEquals(0, 0, "Nullable nil")
+    }
+})

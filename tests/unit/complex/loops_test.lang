@@ -1,0 +1,69 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/list" (range)
+
+testRun("While loop", \ -> {
+    i = 0
+    // while loop returns last expression of last iteration
+    res = while i < 5 {
+        i = i + 1
+        i
+    }
+    assertEquals(5, i, "Counter incremented")
+    assertEquals(5, res, "While loop result")
+})
+
+testRun("For condition loop (synonym for while)", \ -> {
+    i = 0
+    for i < 3 {
+        i = i + 1
+    }
+    assertEquals(3, i, "For loop counter")
+})
+
+testRun("For-in loop", \ -> {
+    sum = 0
+    for x in [1, 2, 3] {
+        sum = sum + x
+    }
+    assertEquals(6, sum, "For-in sum")
+
+    // Range
+    sum2 = 0
+    for x in range(0, 4) { // 0, 1, 2, 3
+        sum2 = sum2 + x
+    }
+    assertEquals(6, sum2, "Range sum")
+})
+
+testRun("Loop control (break/continue)", \ -> {
+    // Break with value
+    res = for x in [1, 2, 3, 4, 5] {
+        if x == 3 {
+            break x * 10
+        }
+        x
+    }
+    assertEquals(30, res, "Break with value")
+
+    // Continue
+    sum = 0
+    for x in [1, 2, 3, 4] {
+        if x % 2 == 0 {
+            continue
+        }
+        sum = sum + x
+    }
+    // 1 + 3 = 4
+    assertEquals(4, sum, "Continue skipping evens")
+})
+
+testRun("Loop result consistency", \ -> {
+    // Both break and normal return must have same type if used as expression
+    res = for x in [1, 2] {
+        if x == 2 {
+            break 100
+        }
+        x
+    }
+    assertEquals(100, res, "Break result")
+})

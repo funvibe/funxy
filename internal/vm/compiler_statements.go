@@ -432,8 +432,24 @@ func (c *Compiler) compileFunctionBody(body *ast.BlockStatement) error {
 		}
 
 		if !isLast {
-			c.emit(OP_POP, 0)
-			c.slotCount--
+			// Only pop if the statement produced a value that needs to be discarded.
+			// Declarations (ConstantDeclaration, FunctionStatement) leave locals on the stack
+			// that must NOT be popped.
+			// ExpressionStatements produce a value that should be discarded if not last.
+			shouldPop := false
+			switch stmt.(type) {
+			case *ast.ExpressionStatement:
+				shouldPop = true
+			case *ast.ImportStatement:
+				shouldPop = true // pushes nil
+			case *ast.TraitDeclaration:
+				shouldPop = true // pushes nil
+			}
+
+			if shouldPop {
+				c.emit(OP_POP, 0)
+				c.slotCount--
+			}
 		}
 	}
 

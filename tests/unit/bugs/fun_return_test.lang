@@ -5,7 +5,7 @@ type Flag = { flag: Bool }
 fun returnTuple(flag: Flag) -> (Float, Float, Float) {
     if flag.flag {
         if flag.flag {
-            print("Flag is true")
+            id("Flag is true")
         }
         (1.0, 2.0, 3.0)
     } else {

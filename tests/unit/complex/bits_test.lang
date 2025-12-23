@@ -1,0 +1,51 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/bits" (*)
+
+testRun("Bits literals and length", \ -> {
+    b1 = #b"10101010"
+    assertEquals(8, len(b1), "Length 8")
+
+    b2 = #b"101"
+    assertEquals(3, len(b2), "Length 3 (not byte aligned)")
+
+    b3 = #x"FF"
+    assertEquals(8, len(b3), "Hex literal length")
+    // FF is 11111111
+    assertEquals("11111111", bitsToBinary(b3), "Hex FF to binary")
+})
+
+testRun("Bits conversion", \ -> {
+    b = #b"10101010"
+    assertEquals("10101010", bitsToBinary(b), "To binary")
+    assertEquals("aa", bitsToHex(b), "To hex") // Assuming lowercase
+})
+
+testRun("Bits manipulation", \ -> {
+    b1 = #b"1111"
+    b2 = #b"0000"
+
+    concat = b1 ++ b2
+    assertEquals(8, len(concat), "Concat length")
+    assertEquals("11110000", bitsToBinary(concat), "Concat content")
+
+    // Set bit
+    b3 = bitsSet(#b"0000", 0, 1)
+    assertEquals("1000", bitsToBinary(b3), "Set bit 0")
+
+    // Padding
+    padded = bitsPadLeft(#b"1", 4)
+    assertEquals("0001", bitsToBinary(padded), "Pad left")
+})
+
+testRun("Bits numeric values", \ -> {
+    b = bitsNew()
+    // Add 255 (11111111) as 8 bits
+    b = bitsAddInt(b, 255, 8)
+    assertEquals("11111111", bitsToBinary(b), "Add 255")
+
+    // Add 1 as 16 bits little endian
+    b2 = bitsAddInt(bitsNew(), 1, 16, "little")
+    // 1 in 16 bits is 00000000 00000001
+    // Little endian: Low byte first -> 00000001 00000000
+    assertEquals("0000000100000000", bitsToBinary(b2), "Add 1 little endian")
+})

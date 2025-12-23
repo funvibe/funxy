@@ -1,0 +1,54 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/string" (*)
+import "lib/list" (reverse, take)
+
+testRun("String literals and interpolation", \ -> {
+    s = "hello"
+    assertEquals(5, len(s), "Length")
+    assertEquals('h', s[0], "Char access")
+
+    name = "World"
+    assertEquals("Hello World", "Hello ${name}", "Interpolation")
+    assertEquals("3", show(1 + 2), "Show check")
+    assertEquals("3", "${1 + 2}", "Expr interpolation")
+})
+
+testRun("String concatenation", \ -> {
+    s1 = "Hello"
+    s2 = "World"
+    assertEquals("Hello World", s1 ++ " " ++ s2, "Concat")
+})
+
+testRun("List operations on String", \ -> {
+    // String is List<Char>
+    s = "hello"
+    assertEquals("olleh", reverse(s), "Reverse")
+    assertEquals("hel", take(s, 3), "Take")
+})
+
+testRun("String module functions", \ -> {
+    assertEquals("HELLO", stringToUpper("hello"), "ToUpper")
+    assertEquals("hello", stringToLower("HELLO"), "ToLower")
+    assertEquals("Hello", stringCapitalize("hello"), "Capitalize")
+
+    assertEquals("hello", stringTrim("  hello  "), "Trim")
+
+    parts = stringSplit("a,b,c", ",")
+    assertEquals(["a", "b", "c"], parts, "Split")
+
+    joined = stringJoin(parts, "-")
+    assertEquals("a-b-c", joined, "Join")
+
+    assertEquals(true, stringStartsWith("hello", "he"), "StartsWith")
+    assertEquals(true, stringEndsWith("hello", "lo"), "EndsWith")
+
+    match stringIndexOf("hello", "ll") {
+        Some(i) -> assertEquals(2, i, "IndexOf")
+        Zero -> assertEquals(0, 1, "IndexOf failed")
+    }
+
+    assertEquals("heLlo", stringReplace("hello", "l", "L"), "Replace first")
+    assertEquals("heLLo", stringReplaceAll("hello", "l", "L"), "Replace all")
+
+    assertEquals("0042", stringPadLeft("42", 4, '0'), "Pad left")
+})

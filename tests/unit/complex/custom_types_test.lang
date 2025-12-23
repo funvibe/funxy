@@ -1,0 +1,72 @@
+import "lib/test" (testRun, assertEquals)
+
+// Type Alias
+type alias Money = Float
+
+fun formatMoney(m: Money) -> String {
+    "$" ++ show(m)
+}
+
+testRun("Type Aliases", \ -> {
+    m: Money = 19.99
+    // Aliases are just the underlying type at runtime usually
+    assertEquals(19.99, m, "Alias value")
+    assertEquals(true, typeOf(m, Float), "Alias is Float")
+    // Note: typeOf(m, Money) might not work if alias is erased, but tutorial implies readability
+    // Let's stick to underlying type check for now or assume structural compatibility
+})
+
+// Record Type
+type Point = { x: Int, y: Int }
+
+fun (p: Point) distSq() -> Int {
+    p.x * p.x + p.y * p.y
+}
+
+testRun("Record Types and Methods", \ -> {
+    p: Point = { x: 3, y: 4 }
+    assertEquals(3, p.x, "Field access")
+    assertEquals(25, p.distSq(), "Method call")
+    assertEquals(true, typeOf(p, Point), "Type check Record")
+})
+
+// ADT
+type Shape = Circle Float | Rect Float Float
+
+fun area(s: Shape) -> Float {
+    match s {
+        Circle(r) -> 3.14 * r * r
+        Rect(w, h) -> w * h
+    }
+}
+
+testRun("Algebraic Data Types", \ -> {
+    c = Circle(2.0)
+    r = Rect(3.0, 4.0)
+
+    // Float comparison usually needs epsilon, but let's try exact for simple constants
+    assertEquals(12.56, area(c), "Circle area")
+    assertEquals(12.0, area(r), "Rect area")
+
+    assertEquals(true, typeOf(c, Shape), "Type check ADT")
+})
+
+// Generic ADT
+type MyOption<T> = MySome(T) | MyNone
+
+testRun("Generic ADTs", \ -> {
+    opt = MySome(42)
+    none = MyNone
+
+    val = match opt {
+        MySome(v) -> v
+        MyNone -> 0
+    }
+    assertEquals(42, val, "Match Generic ADT")
+
+    assertEquals(true, typeOf(opt, MyOption), "Type check Generic ADT base")
+    // Due to Type Erasure, typeOf checks only the base type at runtime
+    assertEquals(true, typeOf(opt, MyOption(Int)), "Type check Generic ADT specialized")
+    // This returns true because the type parameter is erased and ignored by typeOf
+    assertEquals(true, typeOf(opt, MyOption(String)), "Type check Generic ADT mismatch (erased)")
+})

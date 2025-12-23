@@ -1,0 +1,82 @@
+import "lib/test" (testRun, assertEquals)
+
+// Define a trait
+trait MyShow<T> {
+    fun myShow(val: T) -> String
+}
+
+// Implement for Int
+instance MyShow Int {
+    fun myShow(val: Int) -> String {
+        "Int: " ++ show(val)
+    }
+}
+
+// Implement for Bool
+instance MyShow Bool {
+    fun myShow(val: Bool) -> String {
+        if val { "True" } else { "False" }
+    }
+}
+
+fun display<T: MyShow>(val: T) -> String {
+    myShow(val)
+}
+
+testRun("Trait implementation", \ -> {
+    assertEquals("Int: 42", display(42), "Int impl")
+    assertEquals("True", display(true), "Bool impl")
+})
+
+// Trait with default implementation
+trait DefaultEq<T> {
+    fun eq(a: T, b: T) -> Bool
+    fun neq(a: T, b: T) -> Bool {
+        if eq(a, b) { false } else { true }
+    }
+}
+
+instance DefaultEq Int {
+    fun eq(a: Int, b: Int) -> Bool { a == b }
+}
+
+testRun("Default implementation", \ -> {
+    assertEquals(true, eq(1, 1), "Eq match")
+    assertEquals(false, neq(1, 1), "Neq default")
+    assertEquals(true, neq(1, 2), "Neq default true")
+})
+
+// Operator overloading
+type MyBox = MkBox Int
+
+fun unbox(b: MyBox) -> Int {
+    match b { MkBox x -> x }
+}
+
+instance Numeric MyBox {
+    operator (+)(a: MyBox, b: MyBox) -> MyBox {
+        MkBox(unbox(a) + unbox(b))
+    }
+    operator (-)(a: MyBox, b: MyBox) -> MyBox {
+        MkBox(unbox(a) - unbox(b))
+    }
+    operator (*)(a: MyBox, b: MyBox) -> MyBox {
+        MkBox(unbox(a) * unbox(b))
+    }
+    operator (/)(a: MyBox, b: MyBox) -> MyBox {
+        MkBox(unbox(a) / unbox(b))
+    }
+    operator (%)(a: MyBox, b: MyBox) -> MyBox {
+        MkBox(unbox(a) % unbox(b))
+    }
+    operator (**)(a: MyBox, b: MyBox) -> MyBox {
+        MkBox(unbox(a) ** unbox(b))
+    }
+}
+
+testRun("Operator overloading", \ -> {
+    b1 = MkBox(10)
+    b2 = MkBox(20)
+    b3 = b1 + b2
+    assertEquals(30, unbox(b3), "Custom + operator")
+})

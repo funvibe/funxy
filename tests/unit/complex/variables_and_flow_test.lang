@@ -1,0 +1,52 @@
+import "lib/test" (testRun, assertEquals)
+
+testRun("Variables and assignment", \ -> {
+    x = 10
+    assertEquals(10, x, "Init x")
+
+    x = 20
+    assertEquals(20, x, "Reassign x")
+
+    y = x + 1
+    assertEquals(21, y, "Use x in expr")
+})
+
+testRun("Block scope", \ -> {
+    x = 1
+    {
+        y = 2
+        x = 3 // Updates outer x
+        assertEquals(2, y, "Inner y")
+    }
+    assertEquals(3, x, "Outer x updated")
+    // Cannot test accessing y here as it would be a compile error, but we trust the scope rules.
+
+    // Shadowing (if allowed, or just redefinition in inner block if declared differently?
+    // Funxy seems to allow update of outer var. Tutorial doesn't explicitly show shadowing `var x = ...` syntax diff, just `x = ...`.
+    // Assuming assignment to existing name updates it. New name creates it.
+})
+
+testRun("If expression", \ -> {
+    x = 10
+    res = if x > 5 { "big" } else { "small" }
+    assertEquals("big", res, "If result")
+
+    res2 = if x < 5 { 1 } else { 0 }
+    assertEquals(0, res2, "Else result")
+
+    // Nested if
+    res3 = if x > 100 { 2 } else if x > 5 { 1 } else { 0 }
+    assertEquals(1, res3, "Else if")
+})
+
+testRun("Literals", \ -> {
+    assertEquals(true, true, "True")
+    assertEquals(false, false, "False")
+
+    // Nil equality
+    x = nil
+    match x {
+        _: Nil -> assertEquals(0, 0, "Match nil")
+        _ -> assertEquals(0, 1, "Should be nil")
+    }
+})

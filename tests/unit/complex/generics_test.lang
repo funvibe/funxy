@@ -1,0 +1,38 @@
+import "lib/test" (testRun, assertEquals)
+
+fun identity<T>(x: T) -> T {
+    x
+}
+
+fun swap<A, B>(pair: (A, B)) -> (B, A) {
+    (a, b) = pair
+    (b, a)
+}
+
+testRun("Generic functions", \ -> {
+    assertEquals(42, identity(42), "Identity Int")
+    assertEquals("hello", identity("hello"), "Identity String")
+
+    t = (1, "a")
+    swapped = swap(t)
+    assertEquals("a", swapped[0], "Swap 0")
+    assertEquals(1, swapped[1], "Swap 1")
+})
+
+type Box<T> = { value: T }
+
+testRun("Generic record type", \ -> {
+    b1: Box<Int> = { value: 10 }
+    assertEquals(10, b1.value, "Box Int")
+
+    b2: Box<String> = { value: "hi" }
+    assertEquals("hi", b2.value, "Box String")
+})
+
+type Pair<A, B> = { first: A, second: B }
+
+testRun("Multi-param generic type", \ -> {
+    p: Pair<Int, Bool> = { first: 1, second: true }
+    assertEquals(1, p.first, "Pair first")
+    assertEquals(true, p.second, "Pair second")
+})

@@ -265,7 +265,7 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 				typeAnnot = anno.TypeAnnotation
 			} else {
 				// Error: LHS of constant decl must be identifier or pattern
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "expected identifier or pattern in constant declaration"))
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP001, expr.GetToken(), "identifier or pattern", expr.GetToken().Type))
 				return nil
 			}
 		} else if tuple, ok := expr.(*ast.TupleLiteral); ok {
@@ -282,8 +282,15 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "invalid pattern in list destructuring"))
 				return nil
 			}
+		} else if rec, ok := expr.(*ast.RecordLiteral); ok {
+			// Convert record literal to record pattern
+			pattern = p.recordExprToPattern(rec)
+			if pattern == nil {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "invalid pattern in record destructuring"))
+				return nil
+			}
 		} else {
-			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "expected identifier or pattern in constant declaration"))
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP001, expr.GetToken(), "identifier or pattern", expr.GetToken().Type))
 			return nil
 		}
 

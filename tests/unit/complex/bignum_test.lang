@@ -1,0 +1,61 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/bignum" (*)
+
+testRun("BigInt literals and arithmetic", \ -> {
+    a = 1000000000000000000n
+    b = 2000000000000000000n
+
+    assertEquals(3000000000000000000n, a + b, "BigInt add")
+    assertEquals(1000000000000000000n, b - a, "BigInt sub")
+    assertEquals(2000000000000000000000000000000000000n, a * b, "BigInt mul")
+    assertEquals(2n, b / a, "BigInt div")
+    assertEquals(0n, b % a, "BigInt mod")
+
+    // Power
+    // 2^10 = 1024
+    assertEquals(1024n, 2n ** 10n, "BigInt power")
+})
+
+testRun("BigInt conversions", \ -> {
+    x = bigIntNew("999999999999999999999999")
+    assertEquals("999999999999999999999999", bigIntToString(x), "BigInt to string")
+
+    y = bigIntFromInt(42)
+    match bigIntToInt(y) {
+        Some(i) -> assertEquals(42, i, "BigInt to Int success")
+        Zero -> assertEquals(0, 1, "BigInt to Int failed")
+    }
+
+    z = bigIntNew("99999999999999999999")
+    match bigIntToInt(z) {
+        Some(_) -> assertEquals(0, 1, "Should not fit in Int")
+        Zero -> assertEquals(0, 0, "BigInt too large correctly handled")
+    }
+})
+
+testRun("Rational basics", \ -> {
+    r1 = ratFromInt(1, 3)
+    r2 = ratFromInt(2, 4) // simplifies to 1/2
+
+    assertEquals("1/3", ratToString(r1), "Rational 1/3")
+    assertEquals("1/2", ratToString(r2), "Rational simplified")
+
+    // Arithmetic
+    sum = r1 + r2 // 1/3 + 1/2 = 2/6 + 3/6 = 5/6
+    assertEquals("5/6", ratToString(sum), "Rational add")
+
+    prod = r1 * r2 // 1/3 * 1/2 = 1/6
+    assertEquals("1/6", ratToString(prod), "Rational mul")
+})
+
+testRun("Rational properties", \ -> {
+    r = ratFromInt(3, 4)
+    // Numerator/Denominator are BigInts
+    assertEquals(3n, ratNumer(r), "Numerator")
+    assertEquals(4n, ratDenom(r), "Denominator")
+
+    match ratToFloat(ratFromInt(1, 4)) {
+        Some(f) -> assertEquals(0.25, f, "Rational to Float")
+        Zero -> assertEquals(0, 1, "Float conversion failed")
+    }
+})

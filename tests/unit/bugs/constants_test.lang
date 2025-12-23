@@ -1,0 +1,61 @@
+import "lib/test" (testRun, assertEquals)
+
+fun getConstant() -> Int {
+    kConst :- 1
+    kConst + 0
+}
+
+testRun("Constants in function", \ -> {
+    assertEquals(1, getConstant(), "1 should be 1")
+})
+
+testRun("Typed Constants", \ -> {
+    kInt : Int :- 42
+    assertEquals(42, kInt, "Typed Int")
+
+    kFloat : Float :- 3.14
+    assertEquals(3.14, kFloat, "Typed Float")
+})
+
+testRun("Tuple Constants", \ -> {
+    (kX, kY) :- (10, 20)
+    assertEquals(10, kX, "Tuple X")
+    assertEquals(20, kY, "Tuple Y")
+
+    (kA, (kB, kC)) :- (1, (2, 3))
+    assertEquals(3, kC, "Nested Tuple")
+})
+
+testRun("List Constants", \ -> {
+    [kL1, kL2] :- [100, 200]
+    assertEquals(100, kL1, "List 1")
+    assertEquals(200, kL2, "List 2")
+})
+
+testRun("Record Constants", \ -> {
+    type Point = { x: Int, y: Int }
+    {x: kPx, y: kPy} :- {x: 10, y: 20} : Point
+    assertEquals(10, kPx, "Record X")
+    assertEquals(20, kPy, "Record Y")
+})
+
+testRun("Block Scope Constants", \ -> {
+    kOuter :- 10
+    if true {
+        kInner :- 20
+        assertEquals(10, kOuter, "Outer visible in inner")
+        assertEquals(20, kInner, "Inner visible")
+    }
+    // kInner is not visible here, but we can't easily test compilation failure in unit test
+    assertEquals(10, kOuter, "Outer visible after block")
+})
+
+fun constantClosure() -> () -> Int {
+    kCaptured :- 99
+    \ -> kCaptured
+}
+
+testRun("Closure Constants", \ -> {
+    fn = constantClosure()
+    assertEquals(99, fn(), "Captured constant")
+})

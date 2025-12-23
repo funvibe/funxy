@@ -1,0 +1,71 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/list" (*)
+
+testRun("List literals and basic access", \ -> {
+    xs = [10, 20, 30]
+    assertEquals(3, length(xs), "List length")
+    assertEquals(10, xs[0], "Index 0")
+    assertEquals(30, xs[-1], "Index -1 (last)")
+})
+
+testRun("Cons and concatenation", \ -> {
+    xs = [2, 3]
+    ys = 1 :: xs
+    assertEquals([1, 2, 3], ys, "Cons prepend")
+
+    zs = xs ++ [4, 5]
+    assertEquals([2, 3, 4, 5], zs, "Concatenation")
+})
+
+testRun("Head and Tail", \ -> {
+    l = [1, 2, 3]
+    // Using safe alternatives for Option return
+    match find(\x -> x == 1, l) {
+        Some(x) -> assertEquals(1, x, "Find Some")
+        Zero -> assertEquals(0, 1, "Find failed")
+    }
+
+    match tail(l) {
+        t -> assertEquals([2, 3], t, "Tail")
+    }
+
+    // Testing safe head via headOr
+    assertEquals(10, headOr([], 10), "HeadOr default")
+})
+
+testRun("Transformations (map, filter)", \ -> {
+    l = [1, 2, 3, 4]
+    doubled = map(\x -> x * 2, l)
+    assertEquals([2, 4, 6, 8], doubled, "Map")
+
+    evens = filter(\x -> x % 2 == 0, l)
+    assertEquals([2, 4], evens, "Filter")
+})
+
+testRun("Folds", \ -> {
+    l = [1, 2, 3]
+    sum = foldl(\acc, x -> acc + x, 0, l)
+    assertEquals(6, sum, "Foldl sum")
+
+    // String concat
+    s = foldl(\acc, x -> acc ++ x, "", ["a", "b"])
+    assertEquals("ab", s, "Foldl string")
+})
+
+testRun("Slicing", \ -> {
+    l = [1, 2, 3, 4, 5]
+    assertEquals([1, 2], take(l, 2), "Take 2")
+    assertEquals([3, 4, 5], drop(l, 2), "Drop 2")
+    assertEquals([2, 3], slice(l, 1, 3), "Slice 1..3")
+})
+
+testRun("Search", \ -> {
+    l = [10, 20, 30]
+    assertEquals(true, contains(l, 20), "Contains true")
+    assertEquals(false, contains(l, 99), "Contains false")
+
+    match indexOf(l, 30) {
+        Some(i) -> assertEquals(2, i, "IndexOf")
+        Zero -> assertEquals(0, 1, "IndexOf failed")
+    }
+})

@@ -1,0 +1,47 @@
+import "lib/test" (testRun, assertEquals)
+
+type Point = { x: Int, y: Int }
+
+testRun("Record literal and access", \ -> {
+    p: Point = { x: 10, y: 20 }
+    assertEquals(10, p.x, "Access x")
+    assertEquals(20, p.y, "Access y")
+})
+
+testRun("Record modification (mutable)", \ -> {
+    p = { x: 10, y: 20 }
+    p.x = 100
+    assertEquals(100, p.x, "Mutable update")
+})
+
+testRun("Record spread (immutable update)", \ -> {
+    p = { x: 1, y: 2 }
+    p2 = { ...p, x: 10 }
+    assertEquals(10, p2.x, "Spread update x")
+    assertEquals(2, p2.y, "Spread keep y")
+    assertEquals(1, p.x, "Original unchanged")
+})
+
+testRun("Destructuring", \ -> {
+    p = { x: 3, y: 4 }
+    { x: a, y: b } = p
+    assertEquals(3, a, "Destructure x")
+    assertEquals(4, b, "Destructure y")
+})
+
+testRun("Named arguments shorthand", \ -> {
+    fun area(opts: { w: Int, h: Int }) {
+        opts.w * opts.h
+    }
+
+    // Call with shorthand
+    res = area(w: 10, h: 20)
+    assertEquals(200, res, "Named args shorthand")
+
+    // Call with implicit last arg
+    fun vol(d, opts: { w: Int, h: Int }) {
+        d * opts.w * opts.h
+    }
+    res2 = vol(2, w: 3, h: 4)
+    assertEquals(24, res2, "Mixed args shorthand")
+})

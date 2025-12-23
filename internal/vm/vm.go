@@ -536,6 +536,25 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 	for vm.frameCount > targetFrameCount {
 		result, done, err := vm.step()
 		if err != nil {
+			// Check for early return signal
+			if errors.Is(err, errEarlyReturn) {
+				vm.performReturn()
+				if vm.frameCount <= targetFrameCount {
+					// We returned from the function called by vmCallHandler
+					// Result is on top of stack (pushed by performReturn)
+					resultVal := vm.pop()
+
+					// Restore stack pointer to before arguments were pushed
+					// performReturn sets sp to frame.base + 1 (result)
+					// frame.base is usually savedSp
+					// So sp is savedSp + 1. pop() makes it savedSp.
+					vm.sp = savedSp
+					vm.frame = savedFrame
+					return resultVal.AsObject()
+				}
+				continue
+			}
+
 			vm.frameCount = savedFrameCount
 			vm.sp = savedSp
 			vm.frame = savedFrame

@@ -1,0 +1,48 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/tuple" (*)
+
+testRun("Tuple literal and access", \ -> {
+    t = (1, "hello")
+    assertEquals(1, t[0], "Index 0")
+    assertEquals("hello", t[1], "Index 1")
+    assertEquals("hello", t[-1], "Index -1 (last)")
+
+    assertEquals(1, fst(t), "fst")
+    assertEquals("hello", snd(t), "snd")
+    assertEquals(1, tupleGet(t, 0), "tupleGet 0")
+})
+
+testRun("Tuple transformation", \ -> {
+    t = (1, 2)
+    assertEquals((2, 1), tupleSwap(t), "Swap")
+    assertEquals((10, 10), tupleDup(10), "Dup")
+})
+
+testRun("Mapping tuple elements", \ -> {
+    t = (1, 2)
+    assertEquals((2, 2), mapFst(\x -> x * 2, t), "mapFst")
+    assertEquals((1, 4), mapSnd(\x -> x * 2, t), "mapSnd")
+    assertEquals((2, 4), mapPair(\x -> x * 2, \y -> y * 2, t), "mapPair")
+})
+
+testRun("Currying", \ -> {
+    add = \p: (Int, Int) -> p[0] + p[1]
+    curriedAdd = curry(add)
+    assertEquals(5, curriedAdd(2)(3), "Curried call")
+
+    curried = \x -> \y -> x + y
+    uncurried = uncurry(curried)
+    assertEquals(5, uncurried((2, 3)), "Uncurried call")
+})
+
+testRun("Tuple predicates", \ -> {
+    pos = \x -> x > 0
+    t1 = (1, 2)
+    t2 = (1, -1)
+
+    assertEquals(true, tupleBoth(pos, t1), "tupleBoth true")
+    assertEquals(false, tupleBoth(pos, t2), "tupleBoth false")
+
+    assertEquals(true, tupleEither(pos, t2), "tupleEither true")
+    assertEquals(false, tupleEither(pos, (-1, -2)), "tupleEither false")
+})

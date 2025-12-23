@@ -1,0 +1,61 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/bytes" (*)
+
+testRun("Bytes literals and creation", \ -> {
+    b1 = @"Hello"
+    assertEquals(5, len(b1), "UTF-8 literal length")
+
+    b2 = @x"DEADBEEF"
+    assertEquals(4, len(b2), "Hex literal length")
+
+    b3 = @b"01001000" // 'H'
+    assertEquals(1, len(b3), "Binary literal length")
+
+    match bytesFromHex("DEADBEEF") {
+        Ok(b) -> assertEquals(b2, b, "From hex")
+        Fail(_) -> assertEquals(0, 1, "From hex failed")
+    }
+})
+
+testRun("Bytes indexing and slicing", \ -> {
+    b = @"Hello"
+    // Indexing returns Option<Int> (byte value)
+    match b[0] {
+        Some(v) -> assertEquals(72, v, "First byte 'H'")
+        Zero -> assertEquals(0, 1, "Index 0 failed")
+    }
+
+    match b[10] {
+        Some(_) -> assertEquals(0, 1, "Out of bounds should fail")
+        Zero -> assertEquals(0, 0, "Out of bounds handled")
+    }
+
+    slice = bytesSlice(b, 0, 2) // "He"
+    assertEquals(@"He", slice, "Slice 0-2")
+})
+
+testRun("Bytes concatenation", \ -> {
+    b1 = @"Foo"
+    b2 = @"Bar"
+    res = b1 ++ b2
+    assertEquals(@"FooBar", res, "Concatenation")
+})
+
+testRun("Bytes conversion", \ -> {
+    b = @"Hello"
+    assertEquals("48656c6c6f", bytesToHex(b), "To Hex") // Assuming lowercase
+
+    match bytesToString(b) {
+        Ok(s) -> assertEquals("Hello", s, "To String")
+        Fail(_) -> assertEquals(0, 1, "To String failed")
+    }
+})
+
+testRun("Numeric encoding", \ -> {
+    // 0x1234 = 4660. Big endian: 12 34
+    encoded = bytesEncodeInt(4660, 2, "big")
+    assertEquals(@x"1234", encoded, "Encode int big endian")
+
+    decoded = bytesDecodeInt(encoded, "big")
+    assertEquals(4660, decoded, "Decode int big endian")
+})

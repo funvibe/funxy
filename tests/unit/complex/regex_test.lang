@@ -1,0 +1,51 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/regex" (*)
+
+testRun("Regex match", \ -> {
+    assertEquals(true, regexMatch("\\d+", "123"), "Digits match")
+    assertEquals(false, regexMatch("\\d+", "abc"), "Digits no match")
+    assertEquals(true, regexMatch("^hello", "hello world"), "Anchor start")
+})
+
+testRun("Regex find", \ -> {
+    match regexFind("\\d+", "abc123def456") {
+        Some(s) -> assertEquals("123", s, "Find first")
+        Zero -> assertEquals(0, 1, "Find failed")
+    }
+
+    matches = regexFindAll("\\d+", "a1b22c333")
+    assertEquals(["1", "22", "333"], matches, "Find all")
+})
+
+testRun("Regex capture", \ -> {
+    // (year)-(month)-(day)
+    res = regexCapture("(\\d{4})-(\\d{2})-(\\d{2})", "Date: 2024-03-15")
+    match res {
+        Some(groups) -> {
+            assertEquals("2024-03-15", groups[0], "Full match")
+            assertEquals("2024", groups[1], "Year")
+            assertEquals("03", groups[2], "Month")
+            assertEquals("15", groups[3], "Day")
+        }
+        Zero -> assertEquals(0, 1, "Capture failed")
+    }
+})
+
+testRun("Regex replace", \ -> {
+    s = "a1b2c3"
+    res = regexReplace("\\d+", "X", s)
+    assertEquals("aXb2c3", res, "Replace first")
+
+    resAll = regexReplaceAll("\\d+", "X", s)
+    assertEquals("aXbXcX", resAll, "Replace all")
+
+    // Groups in replacement
+    resGroups = regexReplaceAll("(\\w+)", "[$1]", "hello")
+    assertEquals("[hello]", resGroups, "Replace with group")
+})
+
+testRun("Regex split", \ -> {
+    s = "a, b, c"
+    parts = regexSplit(",\\s*", s)
+    assertEquals(["a", "b", "c"], parts, "Split")
+})

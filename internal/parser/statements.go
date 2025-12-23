@@ -1192,7 +1192,7 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 			stmt = p.parseContinueStatement()
 			p.nextToken()
 		} else {
-			stmt = p.parseExpressionStatement()
+			stmt = p.parseExpressionStatementOrConstDecl()
 			p.nextToken()
 		}
 

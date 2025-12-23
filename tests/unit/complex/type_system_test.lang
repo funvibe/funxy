@@ -1,0 +1,52 @@
+import "lib/test" (testRun, assertEquals)
+
+testRun("Type inference", \ -> {
+    x = 42
+    assertEquals(true, typeOf(x, Int), "Inferred Int")
+
+    s = "hello"
+    assertEquals(true, typeOf(s, String), "Inferred String")
+
+    l = [1, 2]
+    assertEquals(true, typeOf(l, List), "Inferred List")
+})
+
+testRun("Polymorphic values", \ -> {
+    z = Zero
+    assertEquals(true, typeOf(z, Option), "Zero is Option")
+
+    // Contextual typing
+    fun check(opt: Option<Int>) { typeOf(opt, Option) }
+    assertEquals(true, check(Zero), "Zero passed as Option<Int>")
+})
+
+testRun("Runtime type checking (erasure)", \ -> {
+    // Option<Int> vs Option<String> - same base type at runtime due to erasure
+    o1 = Some(1)
+    o2 = Some("a")
+
+    t1 = getType(o1)
+    t2 = getType(o2)
+
+    // They should be equal because of erasure
+    assertEquals(true, t1 == t2, "Erasure: Option<Int> == Option<String>")
+
+    // List is reified (NOT erased) in current implementation
+    l1 = [1, 2]
+    l2 = ["a", "b"]
+    assertEquals(false, getType(l1) == getType(l2), "List is reified: List<Int> != List<String>")
+
+    assertEquals(true, typeOf(l1, List), "typeOf List")
+    // Based on tutorial 38, we cannot check List(Int)
+    // But let's verify if basic typeOf works
+})
+
+testRun("Pattern matching types", \ -> {
+    x: Int | String = 42
+    res = match x {
+        i: Int -> "Int"
+        s: String -> "String"
+        _ -> "Other"
+    }
+    assertEquals("Int", res, "Match Int")
+})

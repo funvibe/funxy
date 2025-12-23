@@ -1,0 +1,40 @@
+import "lib/test" (testRun, assertEquals)
+
+testRun("Arithmetic operations", \ -> {
+    assertEquals(3, 1 + 2, "Addition")
+    assertEquals(-1, 1 - 2, "Subtraction")
+    assertEquals(6, 2 * 3, "Multiplication")
+    assertEquals(2, 7 / 3, "Integer division")
+    assertEquals(1, 7 % 3, "Remainder")
+    assertEquals(8, 2 ** 3, "Power")
+})
+
+testRun("Floating point arithmetic", \ -> {
+    assertEquals(4.0, 1.5 + 2.5, "Float addition")
+    assertEquals(1.5, 3.0 / 2.0, "Float division")
+})
+
+testRun("Bitwise operations", \ -> {
+    assertEquals(1, 5 & 3, "Bitwise AND")
+    assertEquals(7, 5 | 3, "Bitwise OR")
+    assertEquals(6, 5 ^ 3, "Bitwise XOR")
+    assertEquals(-6, ~5, "Bitwise NOT")
+    assertEquals(20, 5 << 2, "Left shift")
+    assertEquals(1, 5 >> 2, "Right shift")
+})
+
+testRun("Comparison operations", \ -> {
+    assertEquals(true, 1 < 2, "Less than")
+    assertEquals(true, 2 > 1, "Greater than")
+    assertEquals(true, 1 <= 1, "Less or equal")
+    assertEquals(true, 1 >= 1, "Greater or equal")
+    assertEquals(true, 1 == 1, "Equality")
+    assertEquals(true, 1 != 2, "Inequality")
+})
+
+testRun("Number literals", \ -> {
+    assertEquals(255, 0xFF, "Hex literal")
+    assertEquals(511, 0o777, "Octal literal")
+    assertEquals(5, 0b101, "Binary literal")
+})
+

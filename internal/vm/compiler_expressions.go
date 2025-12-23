@@ -766,10 +766,15 @@ func (c *Compiler) compileConstantDeclaration(stmt *ast.ConstantDeclaration) err
 func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 	switch p := pattern.(type) {
 	case *ast.TuplePattern:
-		// Value is on stack, destructure it
+		// Value to match is on stack at matchValSlot
+		matchValSlot := c.slotCount - 1
+
 		for i, elem := range p.Elements {
-			c.emit(OP_DUP, line)
+			// Get match value (Tuple)
+			c.emit(OP_GET_LOCAL, line)
+			c.currentChunk().Write(byte(matchValSlot), line)
 			c.slotCount++
+
 			// Get element i from tuple
 			c.emitConstant(&evaluator.Integer{Value: int64(i)}, line)
 			c.slotCount++
@@ -804,10 +809,15 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 		return nil
 
 	case *ast.ListPattern:
-		// Similar to tuple
+		// Value to match is on stack at matchValSlot
+		matchValSlot := c.slotCount - 1
+
 		for i, elem := range p.Elements {
-			c.emit(OP_DUP, line)
+			// Get match value (List)
+			c.emit(OP_GET_LOCAL, line)
+			c.currentChunk().Write(byte(matchValSlot), line)
 			c.slotCount++
+
 			// Push index and get element
 			idxConst := c.currentChunk().AddConstant(&evaluator.Integer{Value: int64(i)})
 			c.emit(OP_CONST, line)
@@ -839,7 +849,9 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 		return nil
 
 	case *ast.RecordPattern:
-		// Value is on stack (record), extract fields
+		// Value to match is on stack at matchValSlot
+		matchValSlot := c.slotCount - 1
+
 		// Sort keys for deterministic compilation
 		keys := make([]string, 0, len(p.Fields))
 		for k := range p.Fields {
@@ -849,7 +861,10 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 
 		for _, fieldName := range keys {
 			fieldPattern := p.Fields[fieldName]
-			c.emit(OP_DUP, line)
+
+			// Get match value (Record)
+			c.emit(OP_GET_LOCAL, line)
+			c.currentChunk().Write(byte(matchValSlot), line)
 			c.slotCount++
 
 			// Get field

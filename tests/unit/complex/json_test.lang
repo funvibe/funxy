@@ -1,0 +1,67 @@
+import "lib/test" (testRun, assert, assertEquals)
+import "lib/json" (jsonEncode, jsonDecode, jsonParse, jsonGet, jsonFromValue, Json)
+
+testRun("JSON encoding", \ -> {
+    assertEquals("42", jsonEncode(42), "Encode int")
+    assertEquals("\"hello\"", jsonEncode("hello"), "Encode string")
+    assertEquals("true", jsonEncode(true), "Encode bool")
+    assertEquals("[1,2,3]", jsonEncode([1, 2, 3]), "Encode list")
+
+    rec = { x: 10, y: 20 }
+    // Record field order in JSON might vary? Typically sorted.
+    // Based on tutorial output: {"x":10,"y":20} if sorted, or depends on insertion.
+    // Let's assume sorted or try exact match.
+    // Tutorial says: {"age":30,"name":"Alice"}
+    encoded = jsonEncode(rec)
+    // Avoid brittle string comparison if order is unstable, but usually it's sorted by key in encoders.
+    // Let's rely on round-trip for robustness in real tests, but here we test encode string.
+    assert(typeOf(encoded, String), "Encode type")
+})
+
+testRun("JSON decoding", \ -> {
+    res = jsonDecode("42")
+    match res {
+        Ok(n) -> assertEquals(42, n, "Decode int")
+        Fail(e) -> assertEquals("", e, "Decode failed")
+    }
+
+    resList = jsonDecode("[1, 2]")
+    match resList {
+        Ok(l) -> {
+            assertEquals(2, len(l), "Decode list length")
+            assertEquals(1, l[0], "Decode list item")
+        }
+        Fail(e) -> assertEquals("", e, "Decode list failed")
+    }
+})
+
+testRun("JSON ADT parsing", \ -> {
+    jsonStr = "{\"x\": 10}"
+    match jsonParse(jsonStr) {
+        Ok(obj) -> {
+            // jsonGet returns Option<Json>
+            match jsonGet(obj, "x") {
+                Some(JNum(n)) -> assertEquals(10.0, n, "Get x as number")
+                Some(_) -> assertEquals(0, 1, "Wrong type")
+                Zero -> assertEquals(0, 1, "Missing field")
+            }
+        }
+        Fail(e) -> assertEquals("", e, "Parse failed")
+    }
+})
+
+testRun("Record round-trip", \ -> {
+    type Config = { port: Int, host: String }
+    cfg = { port: 8080, host: "localhost" }
+
+    encoded = jsonEncode(cfg)
+    decoded = jsonDecode(encoded)
+
+    match decoded {
+        Ok(d) -> {
+            assertEquals(8080, d.port, "Round trip port")
+            assertEquals("localhost", d.host, "Round trip host")
+        }
+        Fail(e) -> assertEquals("", e, "Round trip failed")
+    }
+})

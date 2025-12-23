@@ -23,9 +23,8 @@ type PersistentMap struct {
 
 // hamtNode is a node in the HAMT
 type hamtNode struct {
-	bitmap   uint32      // which indices are populated
-	entries  []hamtEntry // actual entries (compressed)
-	children []*hamtNode // child nodes for hash collisions at deeper levels
+	bitmap uint32        // which indices are populated
+	nodes  []interface{} // hamtEntry or *hamtNode
 }
 
 // hamtEntry holds a key-value pair
@@ -168,19 +167,16 @@ func (n *hamtNode) get(hash uint32, key Object, shift uint) Object {
 	}
 
 	pos := popcount(n.bitmap & (bit - 1))
+	node := n.nodes[pos]
 
-	// Check entries first
-	if pos < len(n.entries) {
-		entry := n.entries[pos]
-		if entry.hash == hash && objectsEqualForMap(entry.key, key) {
-			return entry.value
+	switch v := node.(type) {
+	case hamtEntry:
+		if v.hash == hash && objectsEqualForMap(v.key, key) {
+			return v.value
 		}
-	}
-
-	// Check children for deeper traversal
-	childIdx := pos - len(n.entries)
-	if childIdx >= 0 && childIdx < len(n.children) && n.children[childIdx] != nil {
-		return n.children[childIdx].get(hash, key, shift+hamtBits)
+		return nil
+	case *hamtNode:
+		return v.get(hash, key, shift+hamtBits)
 	}
 
 	return nil
@@ -192,74 +188,54 @@ func (n *hamtNode) put(hash uint32, key, value Object, shift uint) (*hamtNode, b
 
 	// Clone node
 	newNode := &hamtNode{
-		bitmap:   n.bitmap,
-		entries:  make([]hamtEntry, len(n.entries)),
-		children: make([]*hamtNode, len(n.children)),
+		bitmap: n.bitmap,
+		nodes:  make([]interface{}, len(n.nodes)),
 	}
-	copy(newNode.entries, n.entries)
-	copy(newNode.children, n.children)
+	copy(newNode.nodes, n.nodes)
 
 	if n.bitmap&bit == 0 {
 		// New entry
 		newNode.bitmap |= bit
 		pos := popcount(newNode.bitmap & (bit - 1))
-		newEntry := hamtEntry{hash: hash, key: key, value: value}
-
+		
 		// Insert at position
-		newNode.entries = append(newNode.entries, hamtEntry{})
-		copy(newNode.entries[pos+1:], newNode.entries[pos:])
-		newNode.entries[pos] = newEntry
+		newNode.nodes = append(newNode.nodes, nil)
+		copy(newNode.nodes[pos+1:], newNode.nodes[pos:])
+		newNode.nodes[pos] = hamtEntry{hash: hash, key: key, value: value}
 
 		return newNode, true
 	}
 
 	pos := popcount(n.bitmap & (bit - 1))
+	existing := newNode.nodes[pos]
 
-	// Check if updating existing entry
-	if pos < len(newNode.entries) {
-		entry := newNode.entries[pos]
-		if entry.hash == hash && objectsEqualForMap(entry.key, key) {
-			// Update existing
-			newNode.entries[pos] = hamtEntry{hash: hash, key: key, value: value}
+	switch v := existing.(type) {
+	case hamtEntry:
+		if v.hash == hash && objectsEqualForMap(v.key, key) {
+			// Update existing value
+			newNode.nodes[pos] = hamtEntry{hash: hash, key: key, value: value}
 			return newNode, false
 		}
 
-		// Hash collision at this level - need to go deeper or create child
-		if shift+hamtBits >= 32 {
-			// Max depth - linear search in entries
-			for i, e := range newNode.entries {
-				if e.hash == hash && objectsEqualForMap(e.key, key) {
-					newNode.entries[i] = hamtEntry{hash: hash, key: key, value: value}
-					return newNode, false
-				}
-			}
-			// Append new entry
-			newNode.entries = append(newNode.entries, hamtEntry{hash: hash, key: key, value: value})
-			return newNode, true
-		}
-
-		// Create child node with existing entry and new entry
-		existingEntry := newNode.entries[pos]
+		// Collision - create child node and push both entries down
 		child := &hamtNode{}
-		child, _ = child.put(existingEntry.hash, existingEntry.key, existingEntry.value, shift+hamtBits)
-		child, added := child.put(hash, key, value, shift+hamtBits)
+		var added1, added2 bool
+		
+		// Put existing entry first
+		child, added1 = child.put(v.hash, v.key, v.value, shift+hamtBits)
+		
+		// Put new entry
+		child, added2 = child.put(hash, key, value, shift+hamtBits)
+		
+		newNode.nodes[pos] = child
+		return newNode, added1 || added2
 
-		// Remove entry from this level, add child
-		newNode.entries = append(newNode.entries[:pos], newNode.entries[pos+1:]...)
-		newNode.children = append(newNode.children, child)
-
+	case *hamtNode:
+		newChild, added := v.put(hash, key, value, shift+hamtBits)
+		newNode.nodes[pos] = newChild
 		return newNode, added
 	}
 
-	// Delegate to child
-	childIdx := pos - len(newNode.entries)
-	if childIdx >= 0 && childIdx < len(newNode.children) && newNode.children[childIdx] != nil {
-		newChild, added := newNode.children[childIdx].put(hash, key, value, shift+hamtBits)
-		newNode.children[childIdx] = newChild
-		return newNode, added
-	}
-
-	// Should not reach here
 	return newNode, false
 }
 
@@ -272,71 +248,100 @@ func (n *hamtNode) remove(hash uint32, key Object, shift uint) (*hamtNode, bool)
 	}
 
 	pos := popcount(n.bitmap & (bit - 1))
+	existing := n.nodes[pos]
 
-	// Clone node
-	newNode := &hamtNode{
-		bitmap:   n.bitmap,
-		entries:  make([]hamtEntry, len(n.entries)),
-		children: make([]*hamtNode, len(n.children)),
-	}
-	copy(newNode.entries, n.entries)
-	copy(newNode.children, n.children)
-
-	// Check entries
-	if pos < len(newNode.entries) {
-		entry := newNode.entries[pos]
-		if entry.hash == hash && objectsEqualForMap(entry.key, key) {
-			// Remove entry
-			newNode.entries = append(newNode.entries[:pos], newNode.entries[pos+1:]...)
-			if len(newNode.entries) == 0 && len(newNode.children) == 0 {
-				newNode.bitmap &^= bit
+	switch v := existing.(type) {
+	case hamtEntry:
+		if v.hash == hash && objectsEqualForMap(v.key, key) {
+			// Remove this entry
+			newNode := &hamtNode{
+				bitmap: n.bitmap &^ bit, // Clear bit
+				nodes:  make([]interface{}, len(n.nodes)-1),
 			}
+			// Copy elements before pos
+			copy(newNode.nodes[:pos], n.nodes[:pos])
+			// Copy elements after pos
+			copy(newNode.nodes[pos:], n.nodes[pos+1:])
+			
 			return newNode, true
 		}
-	}
+		return n, false
 
-	// Check children
-	childIdx := pos - len(newNode.entries)
-	if childIdx >= 0 && childIdx < len(newNode.children) && newNode.children[childIdx] != nil {
-		newChild, removed := newNode.children[childIdx].remove(hash, key, shift+hamtBits)
-		if removed {
-			newNode.children[childIdx] = newChild
+	case *hamtNode:
+		newChild, removed := v.remove(hash, key, shift+hamtBits)
+		if !removed {
+			return n, false
+		}
+		
+		// If child became empty, remove it?
+		// Or if child has only 1 entry, collapse it? 
+		// For simplicity, just update the child for now. 
+		// Optimization: if child has 0 entries, remove it from this node.
+		if len(newChild.nodes) == 0 {
+			newNode := &hamtNode{
+				bitmap: n.bitmap &^ bit,
+				nodes:  make([]interface{}, len(n.nodes)-1),
+			}
+			copy(newNode.nodes[:pos], n.nodes[:pos])
+			copy(newNode.nodes[pos:], n.nodes[pos+1:])
 			return newNode, true
 		}
+
+		// Optimization: if child has 1 entry (and it's a leaf), pull it up?
+		// Only if it's an entry, not another node.
+		if len(newChild.nodes) == 1 {
+			if entry, ok := newChild.nodes[0].(hamtEntry); ok {
+				newNode := &hamtNode{
+					bitmap: n.bitmap,
+					nodes:  make([]interface{}, len(n.nodes)),
+				}
+				copy(newNode.nodes, n.nodes)
+				newNode.nodes[pos] = entry
+				return newNode, true
+			}
+		}
+
+		newNode := &hamtNode{
+			bitmap: n.bitmap,
+			nodes:  make([]interface{}, len(n.nodes)),
+		}
+		copy(newNode.nodes, n.nodes)
+		newNode.nodes[pos] = newChild
+		return newNode, true
 	}
 
 	return n, false
 }
 
 func (n *hamtNode) collectKeys(keys *[]Object) {
-	for _, entry := range n.entries {
-		*keys = append(*keys, entry.key)
-	}
-	for _, child := range n.children {
-		if child != nil {
-			child.collectKeys(keys)
+	for _, node := range n.nodes {
+		switch v := node.(type) {
+		case hamtEntry:
+			*keys = append(*keys, v.key)
+		case *hamtNode:
+			v.collectKeys(keys)
 		}
 	}
 }
 
 func (n *hamtNode) collectValues(values *[]Object) {
-	for _, entry := range n.entries {
-		*values = append(*values, entry.value)
-	}
-	for _, child := range n.children {
-		if child != nil {
-			child.collectValues(values)
+	for _, node := range n.nodes {
+		switch v := node.(type) {
+		case hamtEntry:
+			*values = append(*values, v.value)
+		case *hamtNode:
+			v.collectValues(values)
 		}
 	}
 }
 
 func (n *hamtNode) collectItems(items *[]struct{ Key, Value Object }) {
-	for _, entry := range n.entries {
-		*items = append(*items, struct{ Key, Value Object }{entry.key, entry.value})
-	}
-	for _, child := range n.children {
-		if child != nil {
-			child.collectItems(items)
+	for _, node := range n.nodes {
+		switch v := node.(type) {
+		case hamtEntry:
+			*items = append(*items, struct{ Key, Value Object }{v.key, v.value})
+		case *hamtNode:
+			v.collectItems(items)
 		}
 	}
 }

@@ -1,0 +1,101 @@
+import "lib/test" (testRun, assertEquals)
+
+testRun("Semigroup (<>)", \ -> {
+    // List concatenation
+    l1 = [1, 2]
+    l2 = [3, 4]
+    assertEquals([1, 2, 3, 4], l1 <> l2, "List Semigroup")
+
+    // Option
+    assertEquals(Some(1), Some(1) <> Some(2), "Option Some <> Some")
+    assertEquals(Some(1), Some(1) <> Zero, "Option Some <> Zero")
+    assertEquals(Some(2), Zero <> Some(2), "Option Zero <> Some")
+    assertEquals(Zero, Zero <> Zero, "Option Zero <> Zero")
+})
+
+testRun("Monoid (mempty)", \ -> {
+    // List identity
+    emptyList: List<Int> = mempty()
+    assertEquals([], emptyList, "List mempty")
+    assertEquals([1, 2], [1, 2] <> emptyList, "List right identity")
+    assertEquals([1, 2], emptyList <> [1, 2], "List left identity")
+
+    // Option identity
+    zero: Option<Int> = mempty()
+    match zero {
+        Some(_) -> assertEquals(0, 1, "Should be Zero")
+        Zero -> assertEquals(0, 0, "Option mempty is Zero")
+    }
+})
+
+testRun("Functor (fmap)", \ -> {
+    // List map
+    l = [1, 2, 3]
+    mapped = fmap(\x -> x * 2, l)
+    assertEquals([2, 4, 6], mapped, "List fmap")
+
+    // Option map
+    opt = Some(10)
+    mappedOpt = fmap(\x -> x + 5, opt)
+    match mappedOpt {
+        Some(v) -> assertEquals(15, v, "Option fmap")
+        Zero -> assertEquals(0, 1, "Option fmap failed")
+    }
+
+    // Result map
+    res = Ok(10)
+    mappedRes = fmap(\x -> x + 5, res)
+    match mappedRes {
+        Ok(v) -> assertEquals(15, v, "Result fmap")
+        Fail(_) -> assertEquals(0, 1, "Result fmap failed")
+    }
+})
+
+testRun("Applicative (pure, <*>)", \ -> {
+    // Pure
+    p: Option<Int> = pure(42)
+    match p {
+        Some(v) -> assertEquals(42, v, "pure Option")
+        Zero -> assertEquals(0, 1, "pure failed")
+    }
+
+    // Apply
+    // Some(\x -> x * 2) <*> Some(10) -> Some(20)
+    fnOpt = Some(\x -> x * 2)
+    valOpt = Some(10)
+    res = fnOpt <*> valOpt
+
+    match res {
+        Some(v) -> assertEquals(20, v, "Option apply")
+        Zero -> assertEquals(0, 1, "Option apply failed")
+    }
+})
+
+testRun("Monad (>>=)", \ -> {
+    // List flatMap
+    l = [1, 2]
+    // [1, 2] >>= \x -> [x, x*10] -> [1, 10, 2, 20]
+    res = l >>= \x -> [x, x * 10]
+    assertEquals(4, len(res), "List bind length")
+    assertEquals(1, res[0], "List bind 0")
+    assertEquals(10, res[1], "List bind 1")
+    assertEquals(2, res[2], "List bind 2")
+
+    // Option bind (chaining)
+    safeDiv = \x, y -> if y == 0 { Zero } else { Some(x / y) }
+
+    // 100 / 2 / 5 = 10
+    chain = Some(100) >>= \x -> safeDiv(x, 2) >>= \y -> safeDiv(y, 5)
+
+    match chain {
+        Some(v) -> assertEquals(10, v, "Option bind chain")
+        Zero -> assertEquals(0, 1, "Option bind failed")
+    }
+
+    // Failure chain
+    failChain = Some(100) >>= \x -> safeDiv(x, 0) >>= \y -> safeDiv(y, 5)
+    match failChain {
+        Some(_) -> assertEquals(0, 1, "Should be Zero")
+        Zero -> assertEquals(0, 0, "Option bind failure")
+    }
+})

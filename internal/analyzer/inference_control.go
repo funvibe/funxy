@@ -289,9 +289,19 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 			}
 			totalSubst = s.Compose(totalSubst)
 
-			// We should also check type annotation if present, but for now we prioritize
-			// capturing the substitution and defining the symbol for subsequent statements.
-			enclosedTable.Define(cd.Name.Value, t.Apply(totalSubst), "")
+			// Handle pattern destructuring or simple name binding
+			if cd.Pattern != nil {
+				// Use inferPattern to bind variables
+				patSubst, err := inferPattern(ctx, cd.Pattern, t.Apply(totalSubst), enclosedTable)
+				if err != nil {
+					return nil, nil, err
+				}
+				totalSubst = patSubst.Compose(totalSubst)
+			} else if cd.Name != nil {
+				// We should also check type annotation if present, but for now we prioritize
+				// capturing the substitution and defining the symbol for subsequent statements.
+				enclosedTable.Define(cd.Name.Value, t.Apply(totalSubst), "")
+			}
 
 			lastType = typesystem.Nil
 		}

@@ -106,6 +106,9 @@ func StringToList(s string) *List {
 
 // IsStringList checks if a list contains only Char elements (is a string)
 func IsStringList(l *List) bool {
+	if l.ElementType == "Char" {
+		return true
+	}
 	if l.Len() == 0 {
 		return false // Empty list is not considered a string
 	}

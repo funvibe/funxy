@@ -1,0 +1,67 @@
+import "lib/test" (testRun, assertEquals)
+
+fun add(a: Int, b: Int) -> Int {
+    a + b
+}
+
+fun factorial(n: Int) -> Int {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+
+testRun("Named functions", \ -> {
+    assertEquals(5, add(2, 3), "Simple add")
+    assertEquals(120, factorial(5), "Recursive function")
+})
+
+fun greet(name: String = "World") -> String { "Hello " ++ name }
+fun calc(x: Int, y: Int = 2, z: Int = 3) -> Int { x + y + z }
+
+testRun("Default parameters", \ -> {
+    assertEquals("Hello World", greet(), "Default value")
+    assertEquals("Hello Alice", greet("Alice"), "Override default")
+
+    assertEquals(6, calc(1), "All defaults")
+    assertEquals(10, calc(1, 6), "One default")
+    assertEquals(14, calc(1, 6, 7), "No defaults")
+})
+
+testRun("Lambdas", \ -> {
+    f = \x -> x * 2
+    assertEquals(10, f(5), "Lambda arrow syntax")
+
+    g = fun(x) { x + 1 }
+    assertEquals(6, g(5), "Lambda block syntax")
+
+    h = \x, y -> x + y
+    assertEquals(3, h(1, 2), "Lambda multiple args")
+})
+
+testRun("Partial application", \ -> {
+    add5 = add(5)
+    assertEquals(8, add5(3), "Partial app")
+
+    fun add3(a, b, c) { a + b + c }
+    // 1 + 2 + 3 = 6
+    assertEquals(6, add3(1)(2)(3), "Currying chain")
+})
+
+testRun("Ignored parameters", \ -> {
+    fun ignoreFirst(_, y) { y }
+    assertEquals(2, ignoreFirst(1, 2), "Ignore param")
+
+    l = \_, _, z -> z
+    assertEquals(3, l(1, 2, 3), "Multiple ignored")
+})
+
+testRun("Block syntax", \ -> {
+    fun runBlock(x, block) {
+        len(block) + x
+    }
+
+    res = runBlock(10) {
+        1
+        2
+        3
+    }
+    assertEquals(13, res, "Block syntax list length")
+})

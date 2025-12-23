@@ -1000,17 +1000,34 @@ func (c *Compiler) compileBitsLiteral(lit *ast.BitsLiteral) error {
 func (c *Compiler) compileInterpolatedString(expr *ast.InterpolatedString) error {
 	line := expr.Token.Line
 
-	// Each part is either a string literal or an expression
-	// We compile them all and concatenate using string concat
-	for i, part := range expr.Parts {
-		if err := c.compileExpression(part); err != nil {
+	if len(expr.Parts) == 0 {
+		c.emitConstant(evaluator.StringToList(""), line)
+		c.slotCount++
+		return nil
+	}
+
+	// Compile first part
+	if err := c.compileExpression(expr.Parts[0]); err != nil {
+		return err
+	}
+
+	// If only one part, we must ensure it's a string
+	if len(expr.Parts) == 1 {
+		// Force conversion to string by concatenating with empty string
+		c.emitConstant(evaluator.StringToList(""), line)
+		c.slotCount++
+		c.emit(OP_INTERP_CONCAT, line)
+		c.slotCount--
+		return nil
+	}
+
+	// Compile remaining parts and concatenate
+	for i := 1; i < len(expr.Parts); i++ {
+		if err := c.compileExpression(expr.Parts[i]); err != nil {
 			return err
 		}
-		// After first part, concatenate with previous
-		if i > 0 {
-			c.emit(OP_INTERP_CONCAT, line)
-			c.slotCount--
-		}
+		c.emit(OP_INTERP_CONCAT, line)
+		c.slotCount--
 	}
 
 	return nil

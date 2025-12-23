@@ -1,0 +1,50 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/map" (*)
+
+testRun("Map creation and access", \ -> {
+    // Map literal with String keys
+    m = %{ "one" => 1, "two" => 2 }
+
+    // Access using mapGet (returns Option)
+    match mapGet(m, "one") {
+        Some(v) -> assertEquals(1, v, "mapGet existing")
+        Zero -> assertEquals(1, 0, "mapGet failed to find existing key")
+    }
+
+    // Access using mapGetOr
+    assertEquals(1, mapGetOr(m, "one", 0), "mapGetOr existing")
+    assertEquals(0, mapGetOr(m, "three", 0), "mapGetOr default")
+
+    // Check presence
+    assertEquals(true, mapContains(m, "two"), "mapContains true")
+    assertEquals(false, mapContains(m, "three"), "mapContains false")
+})
+
+testRun("Map modification (immutable)", \ -> {
+    m1 = %{ "a" => 1 }
+    m2 = mapPut(m1, "b", 2)
+
+    assertEquals(1, mapSize(m1), "Original map size unchanged")
+    assertEquals(2, mapSize(m2), "New map size")
+
+    m3 = mapRemove(m2, "a")
+    assertEquals(1, mapSize(m3), "Removed size")
+    assertEquals(false, mapContains(m3, "a"), "Removed key")
+    assertEquals(true, mapContains(m3, "b"), "Kept key")
+})
+
+testRun("Map merge", \ -> {
+    m1 = %{ "a" => 1, "b" => 2 }
+    m2 = %{ "b" => 3, "c" => 4 }
+
+    merged = mapMerge(m1, m2)
+    assertEquals(3, mapSize(merged), "Merged size")
+    assertEquals(1, mapGetOr(merged, "a", 0), "Key from m1")
+    assertEquals(3, mapGetOr(merged, "b", 0), "Key override from m2")
+    assertEquals(4, mapGetOr(merged, "c", 0), "Key from m2")
+})
+
+testRun("Empty map", \ -> {
+    m: Map<String, Int> = %{}
+    assertEquals(0, mapSize(m), "Empty map size")
+})

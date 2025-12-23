@@ -1,0 +1,118 @@
+import "lib/test" (testRun, assertEquals)
+
+testRun("Basic literal matching", \ -> {
+    x = 10
+    res = match x {
+        10 -> "ten"
+        _ -> "other"
+    }
+    assertEquals("ten", res, "Match 10")
+
+    res2 = match 5 {
+        10 -> "ten"
+        _ -> "other"
+    }
+    assertEquals("other", res2, "Match wildcard")
+})
+
+testRun("Tuple destructuring", \ -> {
+    t = (1, 2)
+    res = match t {
+        (0, 0) -> "origin"
+        (x, y) -> "point"
+    }
+    assertEquals("point", res, "Tuple match")
+
+    // Spread
+    t2 = (1, 2, 3, 4)
+    res2 = match t2 {
+        (h, t...) -> h
+        _ -> 0
+    }
+    assertEquals(1, res2, "Tuple spread head")
+})
+
+testRun("List destructuring", \ -> {
+    l = [1, 2, 3]
+    res = match l {
+        [] -> "empty"
+        [h, t...] -> h
+    }
+    assertEquals(1, res, "List head match")
+
+    res2 = match [] {
+        [] -> "empty"
+        _ -> "not empty"
+    }
+    assertEquals("empty", res2, "List empty match")
+})
+
+testRun("Record destructuring", \ -> {
+    r = { x: 10, y: 20 }
+    res = match r {
+        { x: 0 } -> "x is 0"
+        { x: v } -> "x is " ++ show(v) // Assumes show exists or string concat works
+        // Let's use simple logic
+    }
+    // "x is 10" - string concat check
+    // Actually show(10) -> "10"
+    // Just return v to be safe
+    vVal = match r {
+        { x: v } -> v
+        _ -> 0
+    }
+    assertEquals(10, vVal, "Record field match")
+})
+
+testRun("Guards", \ -> {
+    fun classify(n) {
+        match n {
+            x if x > 0 -> "pos"
+            x if x < 0 -> "neg"
+            _ -> "zero"
+        }
+    }
+    assertEquals("pos", classify(10), "Guard pos")
+    assertEquals("neg", classify(-5), "Guard neg")
+    assertEquals("zero", classify(0), "Guard zero")
+})
+
+testRun("Pin operator (^)", \ -> {
+    target = 42
+    res = match 42 {
+        ^target -> "matched"
+        _ -> "no"
+    }
+    assertEquals("matched", res, "Pin match exact")
+
+    res2 = match 100 {
+        ^target -> "matched"
+        _ -> "no"
+    }
+    assertEquals("no", res2, "Pin no match")
+
+    // In record
+    r = { id: 42, val: "hi" }
+    idToFind = 42
+    found = match r {
+        { id: ^idToFind } -> true
+        _ -> false
+    }
+    assertEquals(true, found, "Pin in record")
+})
+
+testRun("String patterns", \ -> {
+    path = "/users/42"
+    res = match path {
+        "/users/{id}" -> id
+        _ -> "none"
+    }
+    assertEquals("42", res, "String capture")
+
+    path2 = "/static/css/style.css"
+    res2 = match path2 {
+        "/static/{file...}" -> file
+        _ -> "none"
+    }
+    assertEquals("css/style.css", res2, "String capture greedy")
+})

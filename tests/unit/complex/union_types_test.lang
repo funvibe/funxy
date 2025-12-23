@@ -1,0 +1,48 @@
+import "lib/test" (testRun, assertEquals)
+
+testRun("Union type variable", \ -> {
+    x: Int | String = 42
+    match x {
+        i: Int -> assertEquals(42, i, "Match Int")
+        s: String -> assertEquals(0, 1, "Should be Int")
+    }
+
+    y: Int | String = "hello"
+    match y {
+        i: Int -> assertEquals(0, 1, "Should be String")
+        s: String -> assertEquals("hello", s, "Match String")
+    }
+})
+
+testRun("Nullable shorthand (T?)", \ -> {
+    n: Int? = 42
+    match n {
+        i: Int -> assertEquals(42, i, "Nullable value")
+        _: Nil -> assertEquals(0, 1, "Should be Int")
+    }
+
+    n2: Int? = nil
+    match n2 {
+        _: Int -> assertEquals(0, 1, "Should be Nil")
+        _: Nil -> assertEquals(0, 0, "Nullable nil")
+    }
+})
+
+testRun("Union return type inference", \ -> {
+    fun mix(b: Bool) -> Int | String {
+        if b { 10 } else { "ten" }
+    }
+
+    // Result is Int | String
+    r1: Int | String = mix(true)
+    match r1 {
+        i: Int -> assertEquals(10, i, "Inferred Int")
+        _: String -> assertEquals(0, 1, "Should be Int")
+    }
+
+    r2: Int | String = mix(false)
+    match r2 {
+        _: Int -> assertEquals(0, 1, "Should be String")
+        s: String -> assertEquals("ten", s, "Inferred String")
+    }
+})
