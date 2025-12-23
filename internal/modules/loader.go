@@ -336,6 +336,7 @@ func (l *Loader) loadDir(absPath string) (*Module, error) {
 		pPar := parser.New(ctx.TokenStream, ctx)
 
 		root := pPar.ParseProgram()
+		root.File = file
 
 		if len(ctx.Errors) > 0 {
 			// Just return first error for now

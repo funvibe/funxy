@@ -96,7 +96,7 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 		w.addError(diagnostics.NewError(
 			diagnostics.ErrA001,
 			n.Path.GetToken(),
-			"module not found: "+n.Path.Value,
+			fmt.Sprintf("module not found: %s (%s)", n.Path.Value, err.Error()),
 		))
 		return
 	}

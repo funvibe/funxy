@@ -11,6 +11,11 @@ import (
 func (w *walker) VisitProgram(program *ast.Program) {
 	// panic(fmt.Sprintf("DEBUG: VisitProgram mode=%d", w.mode))
 
+	// Set current file context for error reporting
+	if program.File != "" {
+		w.currentFile = program.File
+	}
+
 	// Detect package name
 	for _, stmt := range program.Statements {
 		if pkg, ok := stmt.(*ast.PackageDeclaration); ok {

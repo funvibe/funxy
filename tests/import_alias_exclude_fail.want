@@ -1,4 +1,4 @@
 Processing failed with errors:
 - error at 1:24 [P006]: cannot use 'as' alias with exclude import; use either 'import "path" as alias' or 'import "path" !(symbols)'
-- [analyzer] error at 1:31 [A006]: undefined symbol: 'head'
-- [analyzer] error at 3:9 [A006]: undefined symbol: 'll'
+- error at 1:31 [A006]: undefined symbol: 'head'
+- error at 3:9 [A006]: undefined symbol: 'll'

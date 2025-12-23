@@ -32,6 +32,7 @@ type Expression interface {
 
 // Program is the root node of every AST our parser produces.
 type Program struct {
+	File       string // Source file path
 	Package    *PackageDeclaration
 	Imports    []*ImportStatement
 	Statements []Statement

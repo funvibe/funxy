@@ -90,11 +90,15 @@ type walker struct {
 	inferCtx          *InferenceContext // Context for type inference
 	mode              AnalysisMode
 	TraitDefaults     map[string]*ast.FunctionStatement // "TraitName.methodName" -> FunctionStatement
-	currentModuleName string // Name of the module being analyzed (for OriginModule tracking)
+	currentModuleName string                            // Name of the module being analyzed (for OriginModule tracking)
+	currentFile       string                            // Current file being analyzed (for error reporting)
 }
 
 // addError adds an error to the walker, deduplicating by position and message
 func (w *walker) addError(err *diagnostics.DiagnosticError) {
+	if err.File == "" && w.currentFile != "" {
+		err.File = w.currentFile
+	}
 	key := fmt.Sprintf("%d:%d:%s", err.Token.Line, err.Token.Column, err.Code)
 	if w.errorSet == nil {
 		w.errorSet = make(map[string]*diagnostics.DiagnosticError)

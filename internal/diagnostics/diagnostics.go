@@ -84,10 +84,13 @@ func (e *DiagnosticError) Error() string {
 		prefix = fmt.Sprintf("%s: ", e.File)
 	}
 
+	/*
 	phaseStr := ""
 	if e.Phase != "" {
 		phaseStr = fmt.Sprintf("[%s] ", e.Phase)
 	}
+	*/
+	phaseStr := ""
 
 	var result string
 	if e.Token.Line > 0 {

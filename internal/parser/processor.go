@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/token"
@@ -18,6 +19,17 @@ func (pp *ParserProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.Pipe
 
 	parser := New(ctx.TokenStream, ctx)
 	ctx.AstRoot = parser.ParseProgram()
+
+	if prog, ok := ctx.AstRoot.(*ast.Program); ok {
+		prog.File = ctx.FilePath
+	}
+
+	// Ensure all errors have file path set
+	for _, err := range ctx.Errors {
+		if err.File == "" {
+			err.File = ctx.FilePath
+		}
+	}
 
 	// Errors are already added to the context by the parser instance,
 	// so we don't need to retrieve them again.

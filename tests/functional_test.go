@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -113,6 +114,18 @@ func TestFunctional(t *testing.T) {
 			var got string
 			stdoutStr := strings.TrimSpace(stdout.String())
 			stderrStr := strings.TrimSpace(stderr.String())
+
+			// Normalize paths in stderr (errors usually contain full paths now)
+			// Replace /abs/path/to/project with nothing or relative path
+			if stderrStr != "" {
+				// Normalize paths to be relative to project root
+				stderrStr = strings.ReplaceAll(stderrStr, projectRoot+"/", "")
+
+				// Regex to remove filename prefix: "- <filename>: (<optional phase> )error" -> "- <optional phase> error"
+				// We look for "- ", then text ending in ": ", then optional "[...]" block, then "error"
+				re := regexp.MustCompile(`(- )(.*?: )(\[.*?\] )?(error)`)
+				stderrStr = re.ReplaceAllString(stderrStr, "$1$3$4")
+			}
 
 			// Combine: stdout first, then stderr
 			if stdoutStr != "" && stderrStr != "" {
