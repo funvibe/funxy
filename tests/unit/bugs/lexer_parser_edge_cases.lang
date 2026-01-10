@@ -1,0 +1,84 @@
+// =============================================================================
+// Lexer/Parser Edge Cases Regression Tests
+// =============================================================================
+// Tests critical fixes for:
+// 1. Unicode Identifiers
+// 2. String Interpolation Nesting
+// 3. Block Comments
+// =============================================================================
+
+import "lib/test" (testRun, assertEquals, assertTrue)
+
+// 1. Unicode Identifiers
+testRun("Unicode Identifier", \ -> {
+    // This tests that the lexer correctly handles multi-byte characters in identifiers
+    α = 10
+    β = 20
+    assertEquals(30, α + β, "unicode var addition")
+
+    // Mixed
+    my_var_Ω = 100
+    assertEquals(100, my_var_Ω, "mixed ascii and unicode")
+})
+
+// 2. String Interpolation Edge Cases
+testRun("Interpolation: brace in string", \ -> {
+    // This checks if the lexer/parser correctly identifies strings inside interpolation
+    // and doesn't close the interpolation early at the first '}' inside the string.
+    s = "${ "}" }"
+    assertEquals("}", s, "brace in string inside interpolation")
+})
+
+testRun("Interpolation: unbalanced brace in string", \ -> {
+    // A string containing an unbalanced brace inside interpolation
+    // s = "${ "{" }"
+    s = "${ "{" }"
+    assertEquals("{", s, "brace in string inside interpolation")
+})
+
+testRun("Interpolation: nesting", \ -> {
+    x = 10
+    // "${ "${x}" }" -> "10"
+    // This tests recursive interpolation parsing
+    s = "${ "${x}" }"
+    assertEquals("10", s, "nested interpolation")
+})
+
+testRun("Interpolation: deep nesting with strings", \ -> {
+    name = "World"
+    // "${ "${ "Hello" } ${name}" }" -> "Hello World"
+    s = "${ "${ "Hello" } ${name}" }"
+    assertEquals("Hello World", s, "deep mixed nesting")
+})
+
+// 3. Block Comments
+/*
+   This is a block comment.
+   It should be completely ignored by the lexer.
+   Code inside should not run.
+   x = 999
+*/
+testRun("Block Comment", \ -> {
+    x = 1
+    /* x = 2 */
+    assertEquals(1, x, "block comments ignored")
+})
+
+testRun("Block Comment: Multiline", \ -> {
+    /*
+       Line 1
+       Line 2
+    */
+    assertTrue(true, "multiline block comment")
+})
+
+testRun("Block Comment: Nested (Not Supported but shouldn't crash)", \ -> {
+    // Note: Standard C-style block comments usually don't nest.
+    // Our implementation:
+    // /* /* */ */
+    // It will consume until the FIRST */.
+    // So the trailing */ will be invalid syntax if we try to parse it.
+    // Let's not test nested block comments unless we explicitly support them.
+    assertTrue(true, "nested block comments not supported (standard C behavior)")
+})
+

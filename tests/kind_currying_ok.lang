@@ -1,0 +1,19 @@
+// Test: Type Constructor Currying
+// Functor expects * -> *
+// Result is * -> * -> *
+// Result<String> is * -> *
+
+instance Functor Result<String> {
+    fun fmap(f, x) {
+        match x {
+            Ok(v) -> Ok(f(v))
+            Fail(e) -> Fail(e)
+        }
+    }
+}
+
+r: Result<String, Int> = Ok(42)
+mapped: Result<String, Bool> = fmap(fun(x) { true }, r)
+
+print("OK")
+

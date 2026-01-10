@@ -19,11 +19,6 @@ testRun("Block scope", \ -> {
         assertEquals(2, y, "Inner y")
     }
     assertEquals(3, x, "Outer x updated")
-    // Cannot test accessing y here as it would be a compile error, but we trust the scope rules.
-
-    // Shadowing (if allowed, or just redefinition in inner block if declared differently?
-    // Funxy seems to allow update of outer var. Tutorial doesn't explicitly show shadowing `var x = ...` syntax diff, just `x = ...`.
-    // Assuming assignment to existing name updates it. New name creates it.
 })
 
 testRun("If expression", \ -> {

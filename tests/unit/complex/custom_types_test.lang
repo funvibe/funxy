@@ -52,7 +52,7 @@ testRun("Algebraic Data Types", \ -> {
 })
 
 // Generic ADT
-type MyOption<T> = MySome(T) | MyNone
+type MyOption<t> = MySome(t) | MyNone
 
 testRun("Generic ADTs", \ -> {
     opt = MySome(42)

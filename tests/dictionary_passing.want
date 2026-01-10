@@ -1,0 +1,13 @@
+--- Stage 1: MPTC with User Types ---
+Name(User42)
+Data(true)
+--- Stage 2: Complex Constraints ---
+Entity(ID(100), eq=true)
+MyMap(Values:Show)
+--- Stage 3 & 4: Deep Composition ---
+N([Leaf(UID(1)), Node([Leaf(UID(2))])])
+--- Stage 5: Generic Dependency ---
+Transformed: 123
+--- Stage 6: Hardcore Mutual Recursion ---
+Eval: 15
+Pretty: (5 + {10})

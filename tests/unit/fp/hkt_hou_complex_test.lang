@@ -1,0 +1,85 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+// ==========================================
+// Complex HKT & HOU Tests
+// ==========================================
+
+// 1. Monad Transformers: OptionT<Identity>
+testRun("OptionT<Identity>", \ -> {
+    // pure(10) :: OptionT<Identity, Int>
+    val: OptionT<Identity, Int> = pure(10)
+
+    opt = runIdentity(runOptionT(val))
+    match opt {
+        Some(x) -> assertEquals(10, x, "OptionT pure value correct"),
+        Zero -> assert(false, "Should be Some")
+    }
+
+    // Chain with >>=
+    // Adding explicit type annotation block to help inference if deep HOU fails
+    doubled = val >>= \x -> {
+        ret = pure(x * 2)
+        ret
+    }
+
+    opt2 = runIdentity(runOptionT(doubled))
+    match opt2 {
+        Some(x) -> assertEquals(20, x, "OptionT bind works"),
+        Zero -> assert(false, "Should be Some")
+    }
+})
+
+// 2. Monad Transformers: ResultT<List>
+testRun("ResultT<List>", \ -> {
+    // pure(5) :: ResultT<M=List, E=String, A=Int>
+    val = pure(5)
+
+    list = runResultT(val)
+    match list[0] {
+        Ok(x) -> assertEquals(5, x, "ResultT<List> pure creates Ok"),
+        Fail(_) -> assert(false, "Should be Ok")
+    }
+
+    // Mapping
+    mapped = fmap(\x -> x + 1, val)
+    list2 = runResultT(mapped)
+
+    match list2[0] {
+        Ok(x) -> assertEquals(6, x, "ResultT fmap works"),
+        Fail(_) -> assert(false, "Should be Ok")
+    }
+})
+
+// 3. Contextual Typing for Arguments (HOU)
+fun processList(l: List<Int>) -> Int {
+    match l {
+        [h, ...t] -> h,
+        [] -> 0
+    }
+}
+
+testRun("Argument Context HOU", \ -> {
+    res = processList(pure(5))
+    assertEquals(5, res, "Argument inference for List")
+})
+
+// 4. Nested Transformers
+testRun("Nested OptionT<ResultT<Identity>>", \ -> {
+    // M = ResultT<Identity, String> (partial: E=String)
+    // A = Int
+    val: OptionT<ResultT<Identity, String>, Int> = pure(42)
+
+    resT = runOptionT(val)
+    idRes = runResultT(resT)
+    res = runIdentity(idRes)
+
+    match res {
+        Ok(opt) -> {
+            match opt {
+                Some(x) -> assertEquals(42, x, "Nested stack value is 42"),
+                Zero -> assert(false, "Inner Option is Zero")
+            }
+        },
+        Fail(_) -> assert(false, "Outer Result is Fail")
+    }
+})

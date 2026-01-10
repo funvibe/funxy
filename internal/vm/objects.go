@@ -25,6 +25,9 @@ type CompiledFunction struct {
 	DefaultChunks []*Chunk // Bytecode chunks for defaults that need evaluation
 	// TypeInfo stores the function's type signature for getType()
 	TypeInfo typesystem.Type
+	// LocalNames stores names of local variables for debugging
+	// LocalNames[i] is the name of local variable at slot i
+	LocalNames []string
 }
 
 func (f *CompiledFunction) Type() evaluator.ObjectType { return "COMPILED_FUNCTION" }
@@ -75,10 +78,10 @@ type spreadArg struct {
 	Value evaluator.Object
 }
 
-func (s *spreadArg) Type() evaluator.ObjectType      { return "SPREAD_ARG" }
-func (s *spreadArg) Inspect() string                 { return "..." + s.Value.Inspect() }
-func (s *spreadArg) RuntimeType() typesystem.Type    { return nil }
-func (s *spreadArg) Hash() uint32                    { return 0 }
+func (s *spreadArg) Type() evaluator.ObjectType   { return "SPREAD_ARG" }
+func (s *spreadArg) Inspect() string              { return "..." + s.Value.Inspect() }
+func (s *spreadArg) RuntimeType() typesystem.Type { return nil }
+func (s *spreadArg) Hash() uint32                 { return 0 }
 
 // VMComposedFunction represents f ,, g - native VM function composition
 type VMComposedFunction struct {
@@ -107,4 +110,34 @@ func (b *BuiltinClosure) Hash() uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(b.Name))
 	return h.Sum32()
+}
+
+// ObjRange represents a range [Start, End) or [Start, Next, End)
+type ObjRange struct {
+	Start Value
+	Next  Value // ValNil if not present
+	End   Value
+}
+
+func (r *ObjRange) Type() evaluator.ObjectType { return "RANGE" }
+func (r *ObjRange) Inspect() string {
+	if r.Next.Type != ValNil {
+		return fmt.Sprintf("%s, %s..%s", r.Start.Inspect(), r.Next.Inspect(), r.End.Inspect())
+	}
+	return fmt.Sprintf("%s..%s", r.Start.Inspect(), r.End.Inspect())
+}
+func (r *ObjRange) RuntimeType() typesystem.Type {
+	// Range<T> where T is type of Start
+	return typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "Range"},
+		Args:        []typesystem.Type{r.Start.RuntimeType()},
+	}
+}
+func (r *ObjRange) Hash() uint32 {
+	h := r.Start.Hash()
+	if r.Next.Type != ValNil {
+		h ^= r.Next.Hash()
+	}
+	h ^= r.End.Hash()
+	return h
 }

@@ -32,10 +32,24 @@ var BuiltinTypes = []TypeInfo{
 	{Name: "Map", Kind: "* -> * -> *", Description: "Immutable hash map (HAMT-based)"},
 	{Name: "Bytes", Kind: "*", Description: "Immutable byte sequence"},
 	{Name: "Bits", Kind: "*", Description: "Immutable bit sequence for binary protocols"},
+	{Name: "Range", Kind: "* -> *", Description: "Range of values: start..end (inclusive) or (start, next)..end",
+		Example: "1..10, (1, 3)..10, 'a'..'z'", Constructors: []string{"start..end"}},
 	{Name: "Option", Kind: "* -> *", Description: "Optional value: Some(x) or Zero",
 		Example: "Some(42), Zero", Constructors: []string{"Some(T)", "Zero"}},
 	{Name: "Result", Kind: "* -> * -> *", Description: "Success or failure: Ok(x) or Fail(e)",
 		Example: "Ok(42), Fail(\"error\")", Constructors: []string{"Ok(T)", "Fail(E)"}},
+	{Name: "Reader", Kind: "* -> * -> *", Description: "Reader Monad: computation with environment",
+		Example: "reader(\\e -> e + 1)", Constructors: []string{"reader(E -> A)"}},
+	{Name: "Identity", Kind: "* -> *", Description: "Identity Monad: simple wrapper",
+		Example: "identity(42)", Constructors: []string{"identity(T)"}},
+	{Name: "State", Kind: "* -> * -> *", Description: "State Monad: computation with mutable state",
+		Example: "state(\\s -> (val, s))", Constructors: []string{"state(S -> (A, S))"}},
+	{Name: "Writer", Kind: "* -> * -> *", Description: "Writer Monad: computation with logging",
+		Example: "writer(val, log)", Constructors: []string{"writer(A, W)"}},
+	{Name: "OptionT", Kind: "(* -> *) -> * -> *", Description: "Option Monad Transformer",
+		Example: "optionT(identity(Some(42)))", Constructors: []string{"optionT(M<Option<A>>)"}},
+	{Name: "ResultT", Kind: "(* -> *) -> * -> * -> *", Description: "Result Monad Transformer",
+		Example: "resultT(identity(Ok(42)))", Constructors: []string{"resultT(M<Result<E, A>>)"}},
 
 	// Aliases
 	{Name: "String", Kind: "= List<Char>", Description: "String is a list of characters"},
@@ -67,6 +81,8 @@ type TraitInfo struct {
 
 var BuiltinTraits = []TraitInfo{
 	// Basic traits
+	{Name: "Show", TypeParams: []string{"T"}, Kind: "*",
+		Methods: []string{"show"}, Description: "String representation"},
 	{Name: "Equal", TypeParams: []string{"T"}, Kind: "*",
 		Operators: []string{"==", "!="}, Description: "Equality comparison"},
 	{Name: "Order", TypeParams: []string{"T"}, Kind: "*", SuperTraits: []string{"Equal"},
@@ -156,6 +172,38 @@ var BuiltinFunctions = []FunctionInfo{
 	{Name: "id", Signature: "(T) -> T", Description: "Identity function", Category: "Function"},
 	{Name: "const", Signature: "(A, B) -> A", Description: "Return first argument, ignore second", Category: "Function"},
 
+	// Reader
+	{Name: "reader", Signature: "(E -> A) -> Reader<E, A>", Description: "Create a Reader from a function", Category: "Reader"},
+	{Name: "runReader", Signature: "(Reader<E, A>, E) -> A", Description: "Run a Reader with an environment", Category: "Reader"},
+
+	// Identity
+	{Name: "identity", Signature: "(A) -> Identity<A>", Description: "Create an Identity value", Category: "Identity"},
+	{Name: "runIdentity", Signature: "(Identity<A>) -> A", Description: "Extract value from Identity", Category: "Identity"},
+
+	// State
+	{Name: "state", Signature: "(S -> (A, S)) -> State<S, A>", Description: "Create a State computation", Category: "State"},
+	{Name: "runState", Signature: "(State<S, A>, S) -> (A, S)", Description: "Run State computation", Category: "State"},
+	{Name: "evalState", Signature: "(State<S, A>, S) -> A", Description: "Run State and return value", Category: "State"},
+	{Name: "execState", Signature: "(State<S, A>, S) -> S", Description: "Run State and return final state", Category: "State"},
+	{Name: "sGet", Signature: "() -> State<S, S>", Description: "Get current state", Category: "State"},
+	{Name: "sPut", Signature: "(S) -> State<S, ()>", Description: "Set current state", Category: "State"},
+
+	// Writer
+	{Name: "writer", Signature: "(A, W) -> Writer<W, A>", Description: "Create a Writer value", Category: "Writer"},
+	{Name: "runWriter", Signature: "(Writer<W, A>) -> (A, W)", Description: "Unwrap Writer", Category: "Writer"},
+	{Name: "execWriter", Signature: "(Writer<W, A>) -> W", Description: "Extract log from Writer", Category: "Writer"},
+	{Name: "wTell", Signature: "(W) -> Writer<W, ()>", Description: "Log a value", Category: "Writer"},
+
+	// Transformers
+	{Name: "optionT", Signature: "(M<Option<A>>) -> OptionT<M, A>", Description: "Create OptionT from inner monad",
+		Example: "optionT(identity(Some(42)))", Category: "Transformers"},
+	{Name: "runOptionT", Signature: "(OptionT<M, A>) -> M<Option<A>>", Description: "Unwrap OptionT",
+		Example: "runOptionT(opt)", Category: "Transformers"},
+	{Name: "resultT", Signature: "(M<Result<E, A>>) -> ResultT<M, E, A>", Description: "Create ResultT from inner monad",
+		Example: "resultT(identity(Ok(42)))", Category: "Transformers"},
+	{Name: "runResultT", Signature: "(ResultT<M, E, A>) -> M<Result<E, A>>", Description: "Unwrap ResultT",
+		Example: "runResultT(res)", Category: "Transformers"},
+
 	// Trait methods
 	{Name: "default", Signature: "(Type) -> T", Description: "Get default value for type",
 		Example: "default(Int) // 0", Category: "Trait", Constraint: "Default<T>"},
@@ -179,6 +227,11 @@ var BuiltinFunctions = []FunctionInfo{
 	{Name: "unwrapResult", Signature: "(Result<E, T>) -> T", Description: "Extract value from Ok (panics on Fail)", Category: "Result"},
 	{Name: "unwrapError", Signature: "(Result<E, T>) -> E", Description: "Extract error from Fail (panics on Ok)", Category: "Result"},
 	{Name: "unwrapResultOr", Signature: "(Result<E, T>, T) -> T", Description: "Extract value or return default", Category: "Result"},
+
+	// Reflection / Introspection
+	{Name: "kindOf", Signature: "(T) -> String", Description: "Get the kind of a value's type (e.g. *, * -> *)", Category: "Reflection"},
+	{Name: "debugType", Signature: "(T) -> String", Description: "Get detailed type representation", Category: "Reflection"},
+	{Name: "debugRepr", Signature: "(T) -> String", Description: "Get internal Go struct representation (deep debug)", Category: "Reflection"},
 }
 
 // GetFunctionInfo returns function info by name

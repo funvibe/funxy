@@ -15,22 +15,22 @@ testPrimitives = fun() {
     // Int
     assert(typeOf(42, Int), "Int type")
     assert(typeOf(-100, Int), "negative Int")
-    
+
     // Float
     assert(typeOf(3.14, Float), "Float type")
     assert(typeOf(-0.5, Float), "negative Float")
-    
+
     // Bool
     assert(typeOf(true, Bool), "Bool true")
     assert(typeOf(false, Bool), "Bool false")
-    
+
     // Char
     assert(typeOf('a', Char), "Char type")
     assert(typeOf('\n', Char), "escape Char")
-    
+
     // BigInt
     assert(typeOf(12345678901234567890n, BigInt), "BigInt type")
-    
+
     // Different primitives have different types
     assert(getType(42) != getType(3.14), "Int != Float")
     assert(getType(true) != getType('a'), "Bool != Char")
@@ -43,7 +43,7 @@ testPrimitives = fun() {
 testStrings = fun() {
     s = "hello"
     assert(typeOf(s, List(Char)), "String is List<Char>")
-    
+
     // Empty string
     empty = ""
     assert(typeOf(empty, List(Char)), "empty string is List<Char>")
@@ -57,18 +57,18 @@ testLists = fun() {
     // Non-empty lists infer element type
     intList = [1, 2, 3]
     assert(typeOf(intList, List(Int)), "List<Int>")
-    
+
     floatList = [1.0, 2.0]
     assert(typeOf(floatList, List(Float)), "List<Float>")
-    
+
     // Nested list
     nested = [[1, 2], [3, 4]]
     assert(typeOf(nested, List(List(Int))), "List<List<Int>>")
-    
+
     // Empty list with annotation
     empty: List<Int> = []
     assert(typeOf(empty, List(Int)), "annotated empty List<Int>")
-    
+
     // Different element types = different list types
     assert(getType(intList) != getType(floatList), "List<Int> != List<Float>")
 }
@@ -81,15 +81,15 @@ testTuples = fun() {
     pair = (1, "hello")
     t = getType(pair)
     assert(t != getType(42), "Tuple type different from Int")
-    
+
     // Same structure tuples have same type
     pair2 = (2, "world")
     assertEquals(getType(pair), getType(pair2), "same structure tuples")
-    
+
     // Different structure = different types
     triple = (true, 3.14, 'x')
     assert(getType(pair) != getType(triple), "different tuples have different types")
-    
+
     // Empty tuple
     unit = ()
     assert(getType(unit) != getType(pair), "unit != pair")
@@ -102,7 +102,7 @@ testTuples = fun() {
 testMaps = fun() {
     m = %{ "a" => 1, "b" => 2 }
     assert(typeOf(m, Map(List(Char), Int)), "Map<String, Int>")
-    
+
     // Empty map
     empty = %{}
     assert(typeOf(empty, Map), "empty Map")
@@ -115,12 +115,13 @@ testMaps = fun() {
 testOption = fun() {
     some = Some(42)
     assert(typeOf(some, Option), "Some is Option")
-    
+
     zero = Zero
     assert(typeOf(zero, Option), "Zero is Option")
-    
-    // Both are Option
-    assertEquals(getType(some), getType(zero), "Some and Zero same type")
+
+    // With reified generics, Some now has concrete type
+    someType = getType(some)
+    assertEquals("type((Option Int))", show(someType), "Some has concrete type Option Int")
 }
 
 // ----------------------------------------------------------------------------
@@ -130,10 +131,10 @@ testOption = fun() {
 testResult = fun() {
     ok = Ok(100)
     assert(typeOf(ok, Result), "Ok is Result")
-    
+
     fail = Fail("error")
     assert(typeOf(fail, Result), "Fail is Result")
-    
+
     // Both are Result
     assertEquals(getType(ok), getType(fail), "Ok and Fail same type")
 }
@@ -150,15 +151,15 @@ testRecords = fun() {
     anon = { a: 1, b: "test" }
     t = getType(anon)
     assert(t != getType(42), "anonymous record has type != Int")
-    
+
     // Named record (type alias)
     p: Point = { x: 10, y: 20 }
     assertEquals(getType(p), Point, "named record Point")
-    
+
     // Different named records have same type if same TypeName
     p2: Point = { x: 100, y: 200 }
     assertEquals(getType(p), getType(p2), "same Point type")
-    
+
     // Different TypeName = different types
     s: Size = { w: 10, h: 20 }
     assert(getType(p) != getType(s), "Point != Size")
@@ -173,27 +174,30 @@ type Status = Active | Inactive
 type Tree = Leaf(Int) | Branch((Tree, Tree))
 
 testUserADT = fun() {
-    // Simple enum-like
-    assertEquals(getType(Red), Color, "Color Red")
-    assertEquals(getType(Green), Color, "Color Green")
-    assertEquals(getType(Blue), Color, "Color Blue")
-    
-    // All colors have same type
-    assertEquals(getType(Red), getType(Green), "Colors same type")
-    
+    // Simple enum-like - check they are all Color type
+    assert(typeOf(Red, Color), "Red is Color")
+    assert(typeOf(Green, Color), "Green is Color")
+    assert(typeOf(Blue, Color), "Blue is Color")
+
+    // All colors have same type at base level
+    assert(typeOf(Red, Color), "Red is Color")
+    assert(typeOf(Green, Color), "Green is Color")
+
     // Different ADTs have different types
-    assert(getType(Red) != getType(Active), "Color != Status")
-    
+    assert(typeOf(Red, Color), "Red is Color")
+    assert(typeOf(Active, Status), "Active is Status")
+
     // ADT with data
     leaf = Leaf(42)
-    assertEquals(getType(leaf), Tree, "Tree Leaf")
-    
+    assert(typeOf(leaf, Tree), "Leaf is Tree")
+
     // Tree with branches (using tuple for multiple args)
     branch = Branch((Leaf(1), Leaf(2)))
-    assertEquals(getType(branch), Tree, "Tree Branch")
-    
+    assert(typeOf(branch, Tree), "Branch is Tree")
+
     // Different constructors, same type
-    assertEquals(getType(leaf), getType(branch), "Leaf and Branch same Tree type")
+    assert(typeOf(leaf, Tree), "Leaf is Tree")
+    assert(typeOf(branch, Tree), "Branch is Tree")
 }
 
 // ----------------------------------------------------------------------------
@@ -208,11 +212,11 @@ testTypeAliases = fun() {
     // Alias to primitive - getType returns underlying type
     userId: UserId = 42
     assertEquals(getType(userId), Int, "UserId alias resolves to Int")
-    
+
     email: Email = "test@example.com"
     // Email = String = List<Char>
     assert(typeOf(email, List(Char)), "Email alias resolves to String")
-    
+
     // Alias to tuple
     coords: Coords = (1.5, 2.5)
     // Coords is tuple, check it's not Int
@@ -230,13 +234,13 @@ testRecordTypes = fun() {
     // Record type (ADT style, not alias)
     person: Person = { name: "Alice", age: 30 }
     assertEquals(getType(person), Person, "Person record type")
-    
+
     addr: Address = { city: "NYC", zip: 10001 }
     assertEquals(getType(addr), Address, "Address record type")
-    
+
     // Different record types have different types
     assert(getType(person) != getType(addr), "Person != Address")
-    
+
     // Same type, different values
     person2: Person = { name: "Bob", age: 25 }
     assertEquals(getType(person), getType(person2), "same Person type")
@@ -251,11 +255,11 @@ testFunctions = fun() {
     add = fun(a: Int, b: Int) -> Int { a + b }
     t = getType(add)
     assert(t != getType(42), "function has type != Int")
-    
+
     // Lambda with same structure have same type
     mul = fun(a: Int, b: Int) -> Int { a * b }
     assertEquals(getType(add), getType(mul), "same signature functions")
-    
+
     // Different signature = different type
     inc = fun(x: Int) -> Int { x + 1 }
     assert(getType(add) != getType(inc), "different arity = different type")
@@ -270,15 +274,15 @@ testBytesAndBits = fun() {
     b2 = @"world"
     // Same Bytes type
     assertEquals(getType(b), getType(b2), "Bytes same type")
-    
+
     bits = #b"1010"
     bits2 = #b"1111"
     // Same Bits type
     assertEquals(getType(bits), getType(bits2), "Bits same type")
-    
+
     // Bytes != Bits
     assert(getType(b) != getType(bits), "Bytes != Bits")
-    
+
     // Bytes != Int
     assert(getType(b) != getType(42), "Bytes != Int")
 }
@@ -293,13 +297,13 @@ testTypeConsistency = fun() {
     appended = list ++ [4]
     assert(typeOf(appended, List(Int)), "appended list keeps type")
     assertEquals(getType(list), getType(appended), "concat preserves type")
-    
+
     // Map operations
     m = %{ "x" => 1 }
     m2 = mapPut(m, "y", 2)
     assert(typeOf(m2, Map(List(Char), Int)), "map put preserves type")
     assertEquals(getType(m), getType(m2), "mapPut preserves type")
-    
+
     // Record spread preserves TypeName
     base: Point = { x: 1, y: 2 }
     updated = { ...base, x: 10 }

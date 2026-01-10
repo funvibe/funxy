@@ -6,6 +6,7 @@ type Visitor interface {
 	VisitProgram(n *Program)
 	VisitPackageDeclaration(n *PackageDeclaration) // Added
 	VisitImportStatement(n *ImportStatement)       // Added
+	VisitDirectiveStatement(n *DirectiveStatement) // Added
 	VisitConstantDeclaration(n *ConstantDeclaration)
 	VisitExpressionStatement(n *ExpressionStatement)
 	VisitFunctionStatement(n *FunctionStatement)
@@ -32,6 +33,7 @@ type Visitor interface {
 	VisitNamedType(n *NamedType)
 	VisitTupleType(n *TupleType)
 	VisitFunctionType(n *FunctionType)
+	VisitForallType(n *ForallType)
 	VisitDataConstructor(n *DataConstructor)
 	VisitMatchExpression(n *MatchExpression)
 	VisitWildcardPattern(n *WildcardPattern)
@@ -42,6 +44,7 @@ type Visitor interface {
 	VisitAnnotatedExpression(n *AnnotatedExpression)
 	VisitSpreadExpression(n *SpreadExpression)
 	VisitSpreadPattern(n *SpreadPattern)
+	VisitRangeExpression(n *RangeExpression)
 	VisitListPattern(n *ListPattern)
 	VisitListLiteral(n *ListLiteral)
 	VisitIndexExpression(n *IndexExpression)
@@ -66,4 +69,6 @@ type Visitor interface {
 	VisitForExpression(n *ForExpression)
 	VisitBreakStatement(n *BreakStatement)
 	VisitContinueStatement(n *ContinueStatement)
+	// List Comprehension
+	VisitListComprehension(n *ListComprehension)
 }

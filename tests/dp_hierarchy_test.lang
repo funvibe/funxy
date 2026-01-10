@@ -1,0 +1,15 @@
+trait Base<t> { fun base(x: t) -> String }
+trait Left<t>: Base<t> { fun left(x: t) -> String }
+trait Right<t>: Base<t> { fun right(x: t) -> String }
+trait Top<t>: Left<t>, Right<t> { fun top(x: t) -> String }
+
+instance Base Int { fun base(x) -> String { "Base" } }
+instance Left Int { fun left(x) -> String { "Left" } }
+instance Right Int { fun right(x) -> String { "Right" } }
+instance Top Int { fun top(x) -> String { "Top" } }
+
+fun useBase<t: Base>(x: t) {
+  print(base(x))
+}
+
+useBase(1)

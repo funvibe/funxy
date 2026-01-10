@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error at 7:29 [A003]: type error: type Int has kind *, but trait Container requires kind (* -> *) for parameter b (type constructor)
+- error at 14:24 [A003]: type error: type List has kind (* -> *), but trait Container requires kind * for parameter v (concrete type)
+- error at 14:29 [A003]: type error: type Int has kind *, but trait Container requires kind (* -> *) for parameter b (type constructor)

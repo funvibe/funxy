@@ -11,9 +11,9 @@ The language provides three approaches to error handling:
 Use `panic` when an error is **unrecoverable** — the program cannot continue.
 
 ```rust
-fun myHead<T>(xs: List<T>) -> T {
+fun myHead<t>(xs: List<t>) -> t {
     match xs {
-        [x, _...] -> x
+        [x, ..._] -> x
         [] -> panic("myHead: empty list")
     }
 }
@@ -68,7 +68,7 @@ type Result<E, A> = Ok A | Fail E
 x = Ok(42)               // Result<E, Int>
 y = Ok("hello")          // Result<E, String>
 
-// Failure  
+// Failure
 e = Fail("not found")    // Result<String, A>
 e2 = Fail(404)           // Result<Int, A>
 ```
@@ -253,10 +253,10 @@ match safeDivide(10, 2) {
 ### Pattern Matching on Option
 
 ```rust
-fun findFirst<T>(xs: List<T>, pred: (T) -> Bool) -> Option<T> {
+fun findFirst<t>(xs: List<t>, pred: (t) -> Bool) -> Option<t> {
     match xs {
         [] -> Zero
-        [x, rest...] -> if pred(x) { Some(x) } else { findFirst(rest, pred) }
+        [x, ...rest] -> if pred(x) { Some(x) } else { findFirst(rest, pred) }
     }
 }
 

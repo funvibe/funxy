@@ -1,0 +1,72 @@
+import "lib/test" (testRun, assertEquals, assertSome, assertZero)
+
+testRun("HKT: List Functor", fun() {
+    list = [1, 2, 3]
+    // fmap should infer F=List
+    mapped = fmap(fun(x) { x * 2 }, list)
+    assertEquals(mapped, [2, 4, 6])
+})
+
+testRun("HKT: Option Functor", fun() {
+    opt = Some(10)
+    // fmap should infer F=Option
+    mapped = fmap(fun(x) { x + 5 }, opt)
+    assertSome(mapped)
+    // We can't easily check value inside Some without unwrap or pattern match in test lib
+    // Assuming assertSome checks variants.
+
+    none = Zero
+    mappedNone = fmap(fun(x) { x + 5 }, none)
+    assertZero(mappedNone)
+})
+
+fun takeList(l) {
+    assertEquals(l, [20])
+}
+
+testRun("HKT: List Applicative (Contextual Typing)", fun() {
+    l = pure(10)
+    assertEquals(l, [10])
+
+    val = pure(20)
+    takeList(val)
+})
+
+testRun("HKT: Option Applicative", fun() {
+    o = pure(42)
+    assertEquals(o, Some(42))
+})
+
+testRun("HKT: Monad Bind (>>=) Inference", fun() {
+    list = [1, 2, 3]
+
+    flatMapped = list >>= fun(x) {
+        [x, x * 10] // Returns List implicitly
+    }
+
+    assertEquals(flatMapped, [1, 10, 2, 20, 3, 30])
+})
+
+fun doubleOption(m) {
+    m >>= fun(x) { pure(x * 2) }
+}
+
+fun doubleList(m) {
+    m >>= fun(x) { pure(x * 2) }
+}
+
+testRun("HKT: Generic Function using Witness", fun() {
+    assertEquals(doubleList([1, 2]), [2, 4])
+    res = doubleOption(Some(5))
+    assertEquals(res, Some(10))
+})
+
+testRun("HKT: HOU Partial Application (State Monad-like)", fun() {
+    nested = [Some(1), Zero, Some(2)]
+
+    res = fmap(fun(opt) {
+        fmap(fun(x) { x + 1 }, opt)
+    }, nested)
+
+    assertEquals(res, [Some(2), Zero, Some(3)])
+})

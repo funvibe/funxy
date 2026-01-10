@@ -28,7 +28,7 @@ type Point = MkPoint Int Int
 pointX5 = MkPoint(5)
 print(pointX5(10))  // MkPoint(5, 10)
 
-type Box<T> = MkBox T T T
+type Box<t> = MkBox t t t
 boxWith1 = MkBox(1)
 print(boxWith1(2)(3))  // MkBox(1, 2, 3)
 
@@ -91,6 +91,6 @@ print(add5(3))  // 8
 // ==========================================
 // 9. Generic constructor partial application
 // ==========================================
-type Pair<A, B> = MkPair A B
+type Pair<a, b> = MkPair a b
 pairWith1 = MkPair(1)
 print(pairWith1("hello"))  // MkPair(1, "hello")

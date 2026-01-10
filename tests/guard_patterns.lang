@@ -45,8 +45,8 @@ print(comparePair((2, 8)))   // second
 fun findPositive(xs: List<Int>) -> Option<Int> {
     match xs {
         [] -> Zero
-        [x, rest...] if x > 0 -> Some(x)
-        [_, rest...] -> findPositive(rest)
+        [x, ...rest] if x > 0 -> Some(x)
+        [_, ...rest] -> findPositive(rest)
     }
 }
 

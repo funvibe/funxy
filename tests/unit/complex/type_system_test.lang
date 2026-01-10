@@ -28,8 +28,8 @@ testRun("Runtime type checking (erasure)", \ -> {
     t1 = getType(o1)
     t2 = getType(o2)
 
-    // They should be equal because of erasure
-    assertEquals(true, t1 == t2, "Erasure: Option<Int> == Option<String>")
+    // With reified generics, they should be different
+    assertEquals(false, t1 == t2, "Reified: Option<Int> != Option<String>")
 
     // List is reified (NOT erased) in current implementation
     l1 = [1, 2]
@@ -37,8 +37,6 @@ testRun("Runtime type checking (erasure)", \ -> {
     assertEquals(false, getType(l1) == getType(l2), "List is reified: List<Int> != List<String>")
 
     assertEquals(true, typeOf(l1, List), "typeOf List")
-    // Based on tutorial 38, we cannot check List(Int)
-    // But let's verify if basic typeOf works
 })
 
 testRun("Pattern matching types", \ -> {

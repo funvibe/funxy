@@ -26,12 +26,13 @@ const (
 	PrecBitwiseOr  = 3  // | ^
 	PrecBitwiseAnd = 4  // &
 	PrecEquality   = 5  // == != < > <= >= <*>
-	PrecShift      = 6  // << >>
-	PrecAdditive   = 7  // + - ++ <> ::
-	PrecMultiply   = 8  // * / %
-	PrecPower      = 9  // ** ,,
-	PrecUnary      = 10 // ! - (prefix) ?
-	PrecCall       = 11 // f(x) x[i] x.y
+	PrecRange      = 6  // ..
+	PrecShift      = 7  // << >>
+	PrecAdditive   = 8  // + - ++ <> ::
+	PrecMultiply   = 9  // * / %
+	PrecPower      = 10 // ** ,,
+	PrecUnary      = 11 // ! - (prefix) ?
+	PrecCall       = 12 // f(x) x[i] x.y
 )
 
 // OperatorInfo contains all metadata for an operator
@@ -71,6 +72,9 @@ var AllOperators = []OperatorInfo{
 	{Symbol: ">", Signature: "(T, T) -> Bool", Description: "Greater than", Trait: "Order", Precedence: PrecEquality, Assoc: AssocLeft, CanOverride: true, Category: "Comparison"},
 	{Symbol: "<=", Signature: "(T, T) -> Bool", Description: "Less or equal", Trait: "Order", Precedence: PrecEquality, Assoc: AssocLeft, CanOverride: true, Category: "Comparison"},
 	{Symbol: ">=", Signature: "(T, T) -> Bool", Description: "Greater or equal", Trait: "Order", Precedence: PrecEquality, Assoc: AssocLeft, CanOverride: true, Category: "Comparison"},
+
+	// Range
+	{Symbol: "..", Signature: "(T, T) -> Range<T>", Description: "Range construction", Trait: "", Precedence: PrecRange, Assoc: AssocLeft, CanOverride: false, Category: "Range"},
 
 	// Logical (built-in, Bool only)
 	{Symbol: "&&", Signature: "(Bool, Bool) -> Bool", Description: "Logical AND", Trait: "", Precedence: PrecLogicAnd, Assoc: AssocLeft, CanOverride: false, Category: "Logical"},

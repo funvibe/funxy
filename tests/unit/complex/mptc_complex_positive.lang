@@ -1,0 +1,193 @@
+import "lib/test" (*)
+
+// =============================================================================
+// MPTC COMPLEX POSITIVE TESTS
+// Covers: Built-in types, User-defined types, Mixed types, Recursive constraints
+// =============================================================================
+
+// 1. Define a multi-parameter trait
+// Collection<C, E>: Type C is a collection of elements of type E
+trait Collection<c, e> {
+    fun empty() -> c
+    fun add(col: c, elem: e) -> c
+    fun contains(col: c, elem: e) -> Bool
+}
+
+// 2. Built-in Type Instance: List<t> -> t
+instance Collection<List<Int>, Int> {
+    fun empty() -> List<Int> { [] }
+    fun add(col: List<Int>, elem: Int) -> List<Int> {
+        [elem] ++ col // Prepend for simplicity
+    }
+    fun contains(col: List<Int>, elem: Int) -> Bool {
+        // Simple linear search
+        match col {
+            [] -> false,
+            [head, ...tail] -> if head == elem { true } else { contains(tail, elem) }
+        }
+    }
+}
+
+instance Collection<List<String>, String> {
+    fun empty() -> List<String> { [] }
+    fun add(col: List<String>, elem: String) -> List<String> {
+        [elem] ++ col
+    }
+    fun contains(col: List<String>, elem: String) -> Bool {
+        match col {
+            [] -> false,
+            [head, ...tail] -> if head == elem { true } else { contains(tail, elem) }
+        }
+    }
+}
+
+// 3. User-defined Type Instance
+type Box<t> = Box(t)
+
+// A Box contains a single element. Adding replaces it.
+instance Collection<Box<Int>, Int> {
+    fun empty() -> Box<Int> { Box(0) }
+    fun add(col: Box<Int>, elem: Int) -> Box<Int> { Box(elem) }
+    // Accessing ADT requires pattern matching
+    fun contains(col: Box<Int>, elem: Int) -> Bool {
+        match col {
+            Box(v) -> v == elem
+        }
+    }
+}
+
+// 4. Mixed Types: Converter Trait
+trait Converter<a, b> {
+    fun convertOp(val: a) -> b
+}
+
+instance Converter<Int, String> {
+    fun convertOp(val: Int) -> String { "Int(${val})" }
+}
+
+instance Converter<String, Int> {
+    fun convertOp(val: String) -> Int {
+        // Dummy implementation length
+        0
+    }
+}
+
+// Concrete Instance for Box<Int> -> Box<String>
+instance Converter<Box<Int>, Box<String>> {
+    fun convertOp(val: Box<Int>) -> Box<String> {
+        match val {
+            Box(v) -> Box(convertOp(v)) // Uses Converter<Int, String> implicitly via call
+        }
+    }
+}
+
+testRun("MPTC: Built-in Types (List)", fun() -> {
+    // Constraint: c: Collection<e> implies Collection<c, e>
+    fun testAddCheck<c: Collection<e>, e>(coll: c, elem: e) -> Bool {
+        newColl = add(coll, elem)
+        contains(newColl, elem)
+    }
+
+    l: List<Int> = []
+    assertTrue(testAddCheck(l, 100), "List<Int> add/contains")
+
+    s: List<String> = []
+    assertTrue(testAddCheck(s, "hello"), "List<String> add/contains")
+})
+
+testRun("MPTC: User-defined Types (Box)", fun() -> {
+    fun checkContains<c: Collection<e>, e>(coll: c, elem: e) -> Bool {
+        contains(coll, elem)
+    }
+
+    b = Box(10)
+    assertTrue(checkContains(b, 10), "Box<Int> contains 10")
+    assertFalse(checkContains(b, 20), "Box<Int> does not contain 20")
+})
+
+testRun("MPTC: Recursive Resolution (Box<Int> -> Box<String>)", fun() -> {
+    // Constraint: a: Converter<b> implies Converter<a, b>
+    fun doConvert<a: Converter<b>, b>(val: a) -> b {
+        convertOp(val)
+    }
+
+    // Int -> String
+    s = doConvert(123)
+    assertEquals("Int(123)", s)
+
+    // Box<Int> -> Box<String>
+    bInt = Box(456)
+    bStr: Box<String> = doConvert(bInt)
+
+    // Must match to access val
+    match bStr {
+        Box(v) -> assertEquals("Int(456)", v)
+    }
+})
+
+testRun("MPTC: Generic Algorithm using Collection", fun() -> {
+    // Generic function working on any Collection
+    fun insertAndCheck<c: Collection<e>, e>(start: c, item: e) -> Bool {
+        c2 = add(start, item)
+        contains(c2, item)
+    }
+
+    assertTrue(insertAndCheck([], 999), "Generic algo on List")
+    assertTrue(insertAndCheck(Box(0), 999), "Generic algo on Box")
+})
+
+// =============================================================================
+// 5. Supertrait Interactions (User Trait : Built-in Trait)
+// =============================================================================
+
+// User trait extending built-in Show
+trait Pretty<t> : Show<t> {
+    fun pretty(x: t) -> String
+}
+
+// Instance for Int (Show<Int> is built-in)
+instance Pretty<Int> {
+    fun pretty(x: Int) -> String { "*** " ++ show(x) ++ " ***" }
+}
+
+testRun("MPTC: Supertrait Interaction (Pretty : Show)", fun() -> {
+    // Function requiring Pretty implies Show
+    fun format<t: Pretty>(x: t) -> String {
+        // Can call show() because Pretty : Show
+        "Value: " ++ show(x) ++ " -> " ++ pretty(x)
+    }
+
+    assertEquals("Value: 42 -> *** 42 ***", format(42))
+})
+
+// =============================================================================
+// 6. Mixed Constraints in MPTC (Built-in + User Types)
+// =============================================================================
+
+// Instance of Collection for Built-in Option<Int> (Mixed with Int)
+// Note: Generic Option<t> requires conditional instance support (not yet available)
+instance Collection<Option<Int>, Int> {
+    fun empty() -> Option<Int> { Zero }
+    fun add(col: Option<Int>, elem: Int) -> Option<Int> { Some(elem) }
+    fun contains(col: Option<Int>, elem: Int) -> Bool {
+        match col {
+            Some(v) -> v == elem,
+            Zero -> false
+        }
+    }
+}
+
+testRun("MPTC: Mixed Built-in Container (Option)", fun() -> {
+    // Ambiguity persists for Option<Int> in some contexts.
+    // Simplifying to skip this specific failing case while preserving the instance definition verification.
+
+    // Now fixed!
+    opt: Option<Int> = add(empty(), 1)
+    res = contains(opt, 1)
+    assertTrue(res, "contains(Some(1), 1) should be true")
+
+    // Also try explicit type annotation on variable, relying on return type inference
+    opt2: Option<Int> = add(empty(), 42)
+    // This previously failed with ambiguous types because 'e' (Int) wasn't inferred
+    assertTrue(contains(opt2, 42), "contains(opt2, 42)")
+})

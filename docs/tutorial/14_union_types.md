@@ -80,13 +80,13 @@ Use type patterns (`name: Type`) in match expressions to match and bind values b
 ```rust
 fun process(x: Int | String | Nil) -> String {
     match x {
-        n: Int -> "Got int: " ++ show(n)
+        n: Int -> "Got Int: " ++ show(n)
         s: String -> "Got string: " ++ s
         _: Nil -> "Got nil"
     }
 }
 
-print(process(100))   // Got int: 100
+print(process(100))   // Got Int: 100
 print(process("abc")) // Got string: abc
 print(process(Nil))   // Got nil
 ```
@@ -94,7 +94,7 @@ print(process(Nil))   // Got nil
 ### Type Pattern Syntax
 
 - `n: Int` - Matches if value is Int, binds to `n`
-- `s: String` - Matches if value is String, binds to `s`  
+- `s: String` - Matches if value is String, binds to `s`
 - `_: Nil` - Matches if value is Nil, doesn't bind (ignored)
 
 ## Exhaustiveness Checking
@@ -177,6 +177,40 @@ They are not compatible with each other:
 // This works:
 opt: Option<Int> = Zero
 nullable: Int? = Nil
+```
+
+## Strict Mode and Safety
+
+By default, Funxy allows "unsafe" downcasting from a union type to a member type for convenience:
+
+```rust
+type alias NumOrStr = Int | String
+
+fun takeInt(i: Int) { ... }
+
+val: NumOrStr = 42
+takeInt(val)  // Allowed by default (unsafe)
+```
+
+However, this can lead to runtime errors if `val` happens to be a `String`.
+
+To prevent this, you can enable **Strict Mode** by adding `directive "strict_types"` at the top of your file. In strict mode, implicit downcasting is disallowed, and you must use pattern matching to safely extract the value.
+
+```rust
+directive "strict_types"
+
+type alias NumOrStr = Int | String
+
+fun takeInt(i: Int) { ... }
+
+val: NumOrStr = 42
+// takeInt(val)  // Compile Error: cannot implicitly downcast
+
+// Must use match:
+match val {
+    i: Int -> takeInt(i)
+    _ -> print("Not an int")
+}
 ```
 
 ## Best Practices

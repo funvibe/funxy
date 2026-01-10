@@ -424,9 +424,9 @@ print(p.x)  // 10
 ## Generics with Records
 
 ```rust
-type Box<T> = { value: T }
+type Box<t> = { value: t }
 
-fun makeBox<T>(v: T) -> Box<T> {
+fun makeBox<t>(v: t) -> Box<t> {
     { value: v }
 }
 

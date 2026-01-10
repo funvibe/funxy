@@ -85,10 +85,10 @@ func (e *DiagnosticError) Error() string {
 	}
 
 	/*
-	phaseStr := ""
-	if e.Phase != "" {
-		phaseStr = fmt.Sprintf("[%s] ", e.Phase)
-	}
+		phaseStr := ""
+		if e.Phase != "" {
+			phaseStr = fmt.Sprintf("[%s] ", e.Phase)
+		}
 	*/
 	phaseStr := ""
 

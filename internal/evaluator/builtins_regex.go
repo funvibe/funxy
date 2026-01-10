@@ -330,4 +330,3 @@ func SetRegexBuiltinTypes(builtins map[string]*Builtin) {
 		}
 	}
 }
-

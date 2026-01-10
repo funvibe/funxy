@@ -1,5 +1,5 @@
 // Empty record test
-type Empty = {}
+type EmptyRecord = {}
 
 // Empty record value using new syntax (implicit in expression context)
 e = {}
@@ -7,8 +7,8 @@ e = {}
 // Check type
 print(getType(e))
 
-// Assign to Empty type
-em: Empty = {}
+// Assign to EmptyRecord type
+em: EmptyRecord = {}
 print(getType(em))
 
 // Non-empty record

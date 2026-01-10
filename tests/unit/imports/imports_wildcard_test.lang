@@ -12,7 +12,7 @@ testWildcard = fun() {
     myId: ID = 123
 
     // Check functions
-    res = identity(10)
+    res = myIdentity(10)
 
     // Check pattern matching
     val = match d1 {

@@ -3,6 +3,7 @@ package ast
 import (
 	"math/big"
 	"github.com/funvibe/funxy/internal/token"
+	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // TokenProvider is an interface for any AST node that can provide its primary token.
@@ -21,6 +22,7 @@ type Node interface {
 type Statement interface {
 	Node
 	statementNode()
+	GetToken() token.Token
 }
 
 // Expression is a Node that represents an expression.
@@ -29,6 +31,18 @@ type Expression interface {
 	expressionNode()
 	GetToken() token.Token
 }
+
+// DirectiveStatement represents a compiler directive.
+// directive "name"
+type DirectiveStatement struct {
+	Token token.Token // The 'directive' token
+	Name  string      // The directive name (e.g., "strict_types")
+}
+
+func (ds *DirectiveStatement) Accept(v Visitor)      { v.VisitDirectiveStatement(ds) }
+func (ds *DirectiveStatement) statementNode()        {}
+func (ds *DirectiveStatement) TokenLiteral() string  { return ds.Token.Lexeme }
+func (ds *DirectiveStatement) GetToken() token.Token { return ds.Token }
 
 // Program is the root node of every AST our parser produces.
 type Program struct {
@@ -111,8 +125,10 @@ func (is *ImportStatement) GetToken() token.Token { return is.Token }
 
 // Identifier represents an identifier, e.g., a variable name.
 type Identifier struct {
-	Token token.Token // the token.IDENT token
-	Value string
+	Token          token.Token // the token.IDENT token
+	Value          string
+	TypeVarMapping map[string]typesystem.Type // Mapping from generic var name to fresh var (e.g. "T" -> "t1")
+	Constraints    []*TypeConstraint          // Constraints for implicit type params (e.g. List<t: Show>)
 }
 
 func (i *Identifier) Accept(v Visitor)      { v.VisitIdentifier(i) }
@@ -244,10 +260,12 @@ func (ie *IndexExpression) GetToken() token.Token { return ie.Token }
 
 // MemberExpression represents dot access, e.g. obj.field or obj?.field
 type MemberExpression struct {
-	Token      token.Token // The '.' or '?.' token
-	Left       Expression
-	Member     *Identifier
-	IsOptional bool // true for ?. (optional chaining)
+	Token       token.Token // The '.' or '?.' token
+	Left        Expression
+	Member      *Identifier
+	IsOptional  bool       // true for ?. (optional chaining)
+	Dictionary  Expression // For dictionary passing: the dictionary instance
+	MethodIndex int        // For dictionary passing: index in the vtable
 }
 
 func (me *MemberExpression) Accept(v Visitor)      { v.VisitMemberExpression(me) }
@@ -364,6 +382,7 @@ func (bs *BlockStatement) GetToken() token.Token { return bs.Token }
 type TypeConstraint struct {
 	TypeVar string
 	Trait   string // The name of the Trait
+	Args    []Type // For MPTC: [T1, T2...]
 }
 
 // FunctionStatement represents a function definition.
@@ -371,15 +390,16 @@ type TypeConstraint struct {
 // Or extension method: fun (recv: Type) name(...) ...
 // Or operator method in trait: operator (+)(a: T, b: T) -> T
 type FunctionStatement struct {
-	Token       token.Token // The 'fun' token or 'operator' token
-	Name        *Identifier
-	Operator    string            // For trait operator methods: "+", "-", "==", "<", etc.
-	Receiver    *Parameter        // Optional receiver for extension methods
-	TypeParams  []*Identifier     // Generic parameters e.g. <T, U>
-	Constraints []*TypeConstraint // T: Show
-	Parameters  []*Parameter
-	ReturnType  Type // Can be nil if inferred. But user syntax has it.
-	Body        *BlockStatement
+	Token         token.Token // The 'fun' token or 'operator' token
+	Name          *Identifier
+	Operator      string            // For trait operator methods: "+", "-", "==", "<", etc.
+	Receiver      *Parameter        // Optional receiver for extension methods
+	TypeParams    []*Identifier     // Generic parameters e.g. <T, U>
+	Constraints   []*TypeConstraint // T: Show
+	Parameters    []*Parameter
+	WitnessParams []string // New: Names of implicit dictionary parameters
+	ReturnType    Type     // Can be nil if inferred. But user syntax has it.
+	Body          *BlockStatement
 }
 
 type Parameter struct {
@@ -399,10 +419,11 @@ func (fs *FunctionStatement) GetToken() token.Token { return fs.Token }
 // FunctionLiteral represents an anonymous function (lambda).
 // fun(x, y) -> x + y
 type FunctionLiteral struct {
-	Token      token.Token // The 'fun' token
-	Parameters []*Parameter
-	ReturnType Type            // Optional return type
-	Body       *BlockStatement // We normalize body to a block
+	Token         token.Token // The 'fun' token
+	Parameters    []*Parameter
+	WitnessParams []string        // New: Names of implicit dictionary parameters (e.g. "$dict_T_Show")
+	ReturnType    Type            // Optional return type
+	Body          *BlockStatement // We normalize body to a block
 }
 
 func (fl *FunctionLiteral) Accept(v Visitor)      { v.VisitFunctionLiteral(fl) }
@@ -526,10 +547,14 @@ func (pe *PatternAssignExpression) GetToken() token.Token { return pe.Token }
 
 // CallExpression represents a function call, e.g., print(x, y)
 type CallExpression struct {
-	Token     token.Token // The '(' token
-	Function  Expression  // Identifier or FunctionLiteral
-	Arguments []Expression
-	IsTail    bool // Set by Analyzer if this call is in a tail position
+	Token         token.Token // The '(' token
+	Function      Expression  // Identifier or FunctionLiteral
+	Arguments     []Expression
+	IsTail        bool                       // Set by Analyzer if this call is in a tail position
+	Witness       interface{}                // DEPRECATED: Old witness system
+	Witnesses     []Expression               // New: Explicit dictionary arguments passed BEFORE regular args
+	Instantiation map[string]typesystem.Type // Concrete types for generic parameters (e.g. "T" -> Int)
+	TypeArgs      []typesystem.Type          // Type arguments for data constructors (e.g. [String, Int] for Result<String, Int>)
 }
 
 func (ce *CallExpression) Accept(v Visitor)      { v.VisitCallExpression(ce) }
@@ -547,6 +572,19 @@ func (se *SpreadExpression) Accept(v Visitor)      { v.VisitSpreadExpression(se)
 func (se *SpreadExpression) expressionNode()       {}
 func (se *SpreadExpression) TokenLiteral() string  { return se.Token.Lexeme }
 func (se *SpreadExpression) GetToken() token.Token { return se.Token }
+
+// RangeExpression represents a range, e.g., 1..10 or 1, 2..10.
+type RangeExpression struct {
+	Token token.Token // The '..' token
+	Start Expression
+	Next  Expression // Optional step (second element)
+	End   Expression
+}
+
+func (re *RangeExpression) Accept(v Visitor)      { v.VisitRangeExpression(re) }
+func (re *RangeExpression) expressionNode()       {}
+func (re *RangeExpression) TokenLiteral() string  { return re.Token.Lexeme }
+func (re *RangeExpression) GetToken() token.Token { return re.Token }
 
 // TypeApplicationExpression represents applying types to a generic function/identifier.
 // E.g. foo<Int>(...)
@@ -629,6 +667,18 @@ func (ft *FunctionType) typeNode()             {}
 func (ft *FunctionType) TokenLiteral() string  { return ft.Token.Lexeme }
 func (ft *FunctionType) GetToken() token.Token { return ft.Token }
 
+// ForallType represents a Rank-N polymorphic type: forall A B. A -> B
+type ForallType struct {
+	Token token.Token   // The 'forall' token
+	Vars  []*Identifier // Type parameters
+	Type  Type          // The inner type
+}
+
+func (ft *ForallType) Accept(v Visitor)      { v.VisitForallType(ft) }
+func (ft *ForallType) typeNode()             {}
+func (ft *ForallType) TokenLiteral() string  { return ft.Token.Lexeme }
+func (ft *ForallType) GetToken() token.Token { return ft.Token }
+
 // UnionType represents a union type, e.g. Int | String | Nil
 // Also used for T? which desugars to T | Nil
 type UnionType struct {
@@ -680,6 +730,7 @@ type TraitDeclaration struct {
 	Token       token.Token          // 'trait'
 	Name        *Identifier          // 'Show'
 	TypeParams  []*Identifier        // ['T']
+	Constraints []*TypeConstraint    // [t: Numeric]
 	SuperTraits []Type               // [Equal<T>] - inherited traits
 	Signatures  []*FunctionStatement // Method signatures
 }
@@ -694,12 +745,16 @@ func (td *TraitDeclaration) GetToken() token.Token { return td.Token }
 // instance Functor<Result, E> { ... } -- HKT with extra type params
 // instance sql.Model User { ... } -- Qualified trait name
 type InstanceDeclaration struct {
-	Token      token.Token          // 'instance'
-	ModuleName *Identifier          // Optional: module name for qualified trait (e.g., 'sql' in 'sql.Model')
-	TraitName  *Identifier          // 'Show' or 'Model' (was ClassName)
-	Target     Type                 // 'Int' or '(List a)' or 'Maybe Int' or 'Result' for HKT
-	TypeParams []*Identifier        // Extra type params like E in Functor<Result, E>
-	Methods    []*FunctionStatement // Implementations
+	Token       token.Token          // 'instance'
+	ModuleName  *Identifier          // Optional: module name for qualified trait (e.g., 'sql' in 'sql.Model')
+	TraitName   *Identifier          // 'Show' or 'Model' (was ClassName)
+	Args        []Type               // Multi-parameter type class arguments (e.g. Convert<A, B>)
+	TypeParams  []*Identifier        // Extra type params like E in Functor<Result, E>
+	Constraints []*TypeConstraint    // Constraints on the instance (e.g. instance Show a => Show (List a))
+	Methods     []*FunctionStatement // Implementations
+
+	// Analyzed Data (populated by Analyzer)
+	AnalyzedRequirements []typesystem.Constraint // Constraints derived from usage/params
 }
 
 func (id *InstanceDeclaration) Accept(v Visitor)      { v.VisitInstanceDeclaration(id) }
@@ -813,10 +868,11 @@ func (p *ListPattern) patternNode()          {}
 func (p *ListPattern) TokenLiteral() string  { return p.Token.Lexeme }
 func (p *ListPattern) GetToken() token.Token { return p.Token }
 
-// RecordPattern: { x: p1, y: p2 }
+// RecordPattern: { x: p1, y: p2 } or Point { x: p1, y: p2 }
 type RecordPattern struct {
-	Token  token.Token // '{'
-	Fields map[string]Pattern
+	Token    token.Token // '{' or type name token
+	TypeName string      // Optional type name (e.g., "Point" in Point { x: p1 })
+	Fields   map[string]Pattern
 }
 
 func (p *RecordPattern) Accept(v Visitor)      { v.VisitRecordPattern(p) }

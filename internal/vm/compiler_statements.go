@@ -5,6 +5,7 @@ import (
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"strings"
 )
 
 // compileStatement compiles a statement
@@ -43,6 +44,9 @@ func (c *Compiler) compileStatement(stmt ast.Statement) error {
 	case *ast.InstanceDeclaration:
 		return c.compileInstanceDeclaration(s)
 
+	case *ast.DirectiveStatement:
+		return nil
+
 	default:
 		return fmt.Errorf("unknown statement type: %T", stmt)
 	}
@@ -51,6 +55,12 @@ func (c *Compiler) compileStatement(stmt ast.Statement) error {
 // compileFunctionStatement compiles a function definition
 func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 	name := stmt.Name.Value
+
+	// Register generic functions for monomorphization
+	if len(stmt.TypeParams) > 0 {
+		c.functionRegistry[name] = stmt
+	}
+
 	line := stmt.Token.Line
 
 	hasReceiver := stmt.Receiver != nil
@@ -78,6 +88,11 @@ func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 	funcCompiler := newFunctionCompiler(c, name, arity)
 	funcCompiler.function.IsVariadic = isVariadic
 	funcCompiler.function.RequiredArity = requiredArity
+
+	// If local function, declare variable first to support recursion
+	if c.scopeDepth > 0 || c.funcType == TYPE_FUNCTION {
+		c.addLocal(name, c.slotCount)
+	}
 
 	for i, param := range allParams {
 		funcCompiler.addLocal(param.Name.Value, i)
@@ -135,6 +150,12 @@ func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 	fn.UpvalueCount = funcCompiler.upvalueCount
 	fn.TypeInfo = buildFunctionTypeFromStatement(stmt)
 
+	// Save local variable names for debugging
+	fn.LocalNames = make([]string, funcCompiler.localCount)
+	for i := 0; i < funcCompiler.localCount; i++ {
+		fn.LocalNames[i] = funcCompiler.locals[i].Name
+	}
+
 	fnIdx := c.currentChunk().AddConstant(fn)
 	c.emit(OP_CLOSURE, line)
 	c.currentChunk().Write(byte(fnIdx>>8), line)
@@ -150,12 +171,15 @@ func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 	}
 	c.slotCount++
 
-	c.emit(OP_DUP, line)
-	c.slotCount++
-	nameIdx := c.currentChunk().AddConstant(&stringConstant{Value: name})
-	c.emit(OP_SET_GLOBAL, line)
-	c.currentChunk().Write(byte(nameIdx>>8), line)
-	c.currentChunk().Write(byte(nameIdx), line)
+	if c.scopeDepth > 0 || c.funcType == TYPE_FUNCTION {
+		// Local function - already added to locals for recursion
+	} else {
+		nameIdx := c.currentChunk().AddConstant(&stringConstant{Value: name})
+		c.emit(OP_SET_GLOBAL, line)
+		c.currentChunk().Write(byte(nameIdx>>8), line)
+		c.currentChunk().Write(byte(nameIdx), line)
+		c.registerGlobal(name)
+	}
 
 	if hasReceiver {
 		// Register as extension method
@@ -228,6 +252,17 @@ func (c *Compiler) compileTypeDeclaration(stmt *ast.TypeDeclarationStatement) er
 			underlyingType := c.astTypeToTypesystemType(stmt.TargetType)
 			if underlyingType != nil {
 				c.typeAliases[typeName] = underlyingType
+
+				// Emit OP_REGISTER_TYPE_ALIAS for runtime checks
+				typeObj := &evaluator.TypeObject{TypeVal: underlyingType}
+				c.emitConstant(typeObj, line)
+				c.slotCount++
+
+				nameIdx := c.currentChunk().AddConstant(&stringConstant{Value: typeName})
+				c.emit(OP_REGISTER_TYPE_ALIAS, line)
+				c.currentChunk().Write(byte(nameIdx>>8), line)
+				c.currentChunk().Write(byte(nameIdx), line)
+				c.slotCount-- // consumes typeObj
 			}
 		}
 		return nil
@@ -299,19 +334,28 @@ func (c *Compiler) compileInstanceDeclaration(stmt *ast.InstanceDeclaration) err
 	line := stmt.Token.Line
 	traitName := stmt.TraitName.Value
 
-	typeName := ""
-	switch t := stmt.Target.(type) {
-	case *ast.NamedType:
-		typeName = t.Name.Value
-	case *ast.FunctionType:
-		typeName = "Function"
-	case *ast.TupleType:
-		typeName = "Tuple"
-	case *ast.RecordType:
-		typeName = "Record"
-	default:
-		return fmt.Errorf("unsupported type in instance declaration: %T", stmt.Target)
+	if len(stmt.Args) == 0 {
+		return fmt.Errorf("instance declaration missing arguments")
 	}
+
+	var typeNames []string
+	for _, arg := range stmt.Args {
+		var tName string
+		switch t := arg.(type) {
+		case *ast.NamedType:
+			tName = t.Name.Value
+		case *ast.FunctionType:
+			tName = "Function"
+		case *ast.TupleType:
+			tName = "Tuple"
+		case *ast.RecordType:
+			tName = "Record"
+		default:
+			return fmt.Errorf("unsupported type in instance declaration: %T", arg)
+		}
+		typeNames = append(typeNames, tName)
+	}
+	typeName := strings.Join(typeNames, "_")
 
 	for _, method := range stmt.Methods {
 		methodName := method.Name.Value

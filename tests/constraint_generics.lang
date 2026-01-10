@@ -1,30 +1,30 @@
 // Test: Constraint generics
-// fun display<T: Show>(x: T) -> String
+// fun display<t: Printable>(x: t) -> String
 
-trait Show<T> {
-    fun show(val: T) -> String
+trait Printable<t> {
+    fun format(val: t) -> String
 }
 
-instance Show Int {
-    fun show(val: Int) -> String {
+instance Printable Int {
+    fun format(val: Int) -> String {
         "int"
     }
 }
 
-instance Show Bool {
-    fun show(val: Bool) -> String {
+instance Printable Bool {
+    fun format(val: Bool) -> String {
         if val { "true" } else { "false" }
     }
 }
 
-// Constrained function - T must implement Show
-fun display<T: Show>(x: T) -> String {
-    show(x)
+// Constrained function - t must implement Printable
+fun display<t: Printable>(x: t) -> String {
+    format(x)
 }
 
 // Test with Int - works
 print(display(42))
 
-// Test with Bool - works  
+// Test with Bool - works
 print(display(true))
 print(display(false))

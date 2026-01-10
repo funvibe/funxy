@@ -9,9 +9,9 @@ import (
 
 func TestGenericTypeParsing(t *testing.T) {
 	input := `
-	type MyOption<T> = Option<T>
-	type MyResult<T, E> = Ok T | Err E
-	
+	type alias MyOption<t> = Option<t>
+	type MyResult<t, e> = Ok t | Err e
+
 	fun foo(x: Option<Int>) {}
 	fun bar(x: MyResult<Int, String>) {}
 	`

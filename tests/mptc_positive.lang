@@ -1,0 +1,44 @@
+// Test: Multi-Parameter Type Class (MPTC)
+// Define a trait Convert<From, To> and implement it for specific pairs
+
+trait Convert<a, b> {
+    fun convert(val: a) -> b
+}
+
+// Instance 1: Int -> String
+instance Convert<Int, String> {
+    fun convert(val: Int) -> String { "Int" }
+}
+
+// Instance 2: Bool -> Int
+instance Convert<Bool, Int> {
+    fun convert(val: Bool) -> Int { 1 }
+}
+
+// Generic function requiring Convert trait
+// convert<a, b>(x: a) -> b
+// Constraint syntax: a: Convert<b> - 'a' is first param (From), 'b' is argument (To)
+
+// Using standard syntax: fun name<Generics>(args)
+fun doConvert<to, from: Convert<to>>(x: from) -> to {
+    convert(x)
+}
+
+// Should work: Int implements Convert<String>
+// from=Int, to=String.
+// Int: Convert<String>.
+
+// Explicit type application not fully supported yet in expressions,
+// relying on inference.
+// doConvert(42) -> x is Int. from=Int.
+// Constraint: Int: Convert<to>.
+// Solver finds instance Convert<Int, String>. So to=String.
+// Returns String.
+s: String = doConvert(42)
+
+// Direct usage
+s2: String = convert(42)
+i: Int = convert(true)
+print(s)
+print(s2)
+print(i)

@@ -11,20 +11,14 @@ import (
 // If the type is a TCon and has a registered alias, returns the underlying type.
 // Otherwise returns the original type unchanged.
 func resolveTypeAlias(t typesystem.Type, table *symbols.SymbolTable) typesystem.Type {
+	if table != nil {
+		return table.ResolveTypeAlias(t)
+	}
+	// Fallback logic if table is nil
 	// First try to unwrap TCon.UnderlyingType
 	if tCon, ok := t.(typesystem.TCon); ok {
 		if tCon.UnderlyingType != nil {
 			return typesystem.UnwrapUnderlying(t)
-		}
-		// Check if there's a registered type alias
-		if underlyingType, ok := table.GetTypeAlias(tCon.Name); ok {
-			return underlyingType
-		}
-		// For qualified types (e.g., math.Vector), try resolving without module prefix
-		if tCon.Module != "" {
-			if underlyingType, ok := table.GetTypeAlias(tCon.Module + "." + tCon.Name); ok {
-				return underlyingType
-			}
 		}
 	}
 	return t
@@ -88,7 +82,7 @@ func isImplementationInSourceModule(ctx *InferenceContext, traitName string, t t
 		t = localType
 	}
 
-	return modTable.IsImplementationExists(traitName, t)
+	return modTable.IsImplementationExists(traitName, []typesystem.Type{t})
 }
 
 // lookupExtensionMethodInSourceModule looks up an extension method in the module
@@ -186,6 +180,28 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 	// Resolve type aliases: if leftType is a TCon, check if it's an alias
 	leftType = resolveTypeAlias(leftType, table)
 
+	// If leftType is still a TVar, check ExpectedTypes context for potential resolution
+	// This helps with code like: r = pure(5); r >>= ...
+	if tv, ok := leftType.(typesystem.TVar); ok {
+		// Only check if left is an identifier
+		if ident, ok := n.Left.(*ast.Identifier); ok {
+			// Find symbol to get the definition node
+			sym, found := table.Find(ident.Value)
+			if found && sym.DefinitionNode != nil {
+				// Check ExpectedTypes using the definition node
+				if expectedType, hasExpected := ctx.ExpectedTypes[sym.DefinitionNode]; hasExpected {
+					// Unify the TVar with the expected type
+					subst, err := typesystem.Unify(tv, expectedType)
+					if err == nil {
+						totalSubst = subst.Compose(totalSubst)
+						leftType = expectedType.Apply(totalSubst)
+						originalType = leftType
+					}
+				}
+			}
+		}
+	}
+
 	// Handle optional chaining (?.)
 	if n.IsOptional {
 		return inferOptionalChain(ctx, n, leftType, totalSubst, table, inferFn)
@@ -194,7 +210,8 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 	// 1. Check Record Field
 	if tRec, ok := leftType.(typesystem.TRecord); ok {
 		if fieldType, ok := tRec.Fields[n.Member.Value]; ok {
-			return fieldType, totalSubst, nil
+			instType, _ := instantiateMemberType(ctx, n, fieldType, table)
+			return instType, totalSubst, nil
 		} else if tRec.IsOpen {
 			// Row Polymorphism: Inferred from TVar usage.
 			// We generate a substitution to refine the record type.
@@ -251,6 +268,65 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 				return newFieldType, totalSubst, nil
 			} else {
 				return ctx.FreshVar(), totalSubst, nil
+			}
+		}
+	}
+
+	// 1.5 Check Trait Method (Dictionary Passing)
+	// Check if the member name corresponds to a method of a trait that the type implements.
+	if traitName, ok := table.GetTraitForMethod(n.Member.Value); ok {
+		// Get trait method signature (Generic)
+		if methodType, ok := table.GetTraitMethodType(n.Member.Value); ok {
+			// Check if leftType implements traitName
+			// We need to resolve the witness to be sure (and to get the dictionary)
+			// SolveWitness checks implementation and ambiguity.
+
+			// We need the concrete type for witness resolution
+			concreteType := leftType.Apply(totalSubst)
+
+			// For MPTC, we need to know WHICH argument this type corresponds to?
+			// Usually dot notation is for the FIRST argument (Receiver).
+			// So we assume Left is Arg[0].
+
+			// Resolving Witness
+			resolvedArgs := []typesystem.Type{concreteType}
+			// Check if trait has > 1 param.
+			typeParams, _ := table.GetTraitTypeParams(traitName)
+			if len(typeParams) > 1 {
+				// MPTC: We can't solve witness with just Receiver yet (unless other params are fixed/default).
+				// We skip VTable optimization for MPTC member access for now?
+				// Or we report error "MPTC method syntax x.method() not supported, use Trait.method(x, ...)"?
+				// Haskell doesn't support dot notation for MPTC easily either.
+				// Let's assume single param for dot notation for now.
+			} else {
+				// Solve Witness
+				witness, err := ctx.SolveWitness(n, traitName, resolvedArgs, table)
+				if err == nil {
+					// Found Witness!
+					n.Dictionary = witness
+					idx, _ := table.GetTraitMethodIndex(traitName, n.Member.Value)
+					n.MethodIndex = idx
+
+					// Return type: The method type with receiver applied (Extension method style)
+					// Instantiate generics
+					freshType := InstantiateWithContext(ctx, methodType)
+					if tFunc, ok := freshType.(typesystem.TFunc); ok && len(tFunc.Params) > 0 {
+						recvParam := tFunc.Params[0]
+						subst, err := typesystem.Unify(recvParam, leftType)
+						if err == nil {
+							totalSubst = subst.Compose(totalSubst)
+							newParams := make([]typesystem.Type, len(tFunc.Params)-1)
+							for i, p := range tFunc.Params[1:] {
+								newParams[i] = p.Apply(subst)
+							}
+							return typesystem.TFunc{
+								Params:     newParams,
+								ReturnType: tFunc.ReturnType.Apply(subst),
+								IsVariadic: tFunc.IsVariadic,
+							}, totalSubst, nil
+						}
+					}
+				}
 			}
 		}
 	}
@@ -343,7 +419,8 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 		if resolvedType, ok := table.ResolveType(tCon.Name); ok {
 			if tRec, ok := resolvedType.(typesystem.TRecord); ok {
 				if fieldType, ok := tRec.Fields[n.Member.Value]; ok {
-					return fieldType, totalSubst, nil
+					instType, _ := instantiateMemberType(ctx, n, fieldType, table)
+					return instType, totalSubst, nil
 				}
 			}
 
@@ -499,6 +576,9 @@ func inferIndexExpression(ctx *InferenceContext, n *ast.IndexExpression, table *
 	leftType = leftType.Apply(totalSubst)
 	indexType = indexType.Apply(totalSubst)
 
+	// Expand type aliases (e.g., IntMap<String> -> Map<Int, String>)
+	leftType = typesystem.ExpandTypeAlias(leftType)
+
 	// Handle Map indexing: map[key] -> Option<V>
 	if tApp, ok := leftType.(typesystem.TApp); ok {
 		if tCon, ok := tApp.Constructor.(typesystem.TCon); ok && tCon.Name == config.MapTypeName && len(tApp.Args) == 2 {
@@ -579,7 +659,7 @@ func inferIndexExpression(ctx *InferenceContext, n *ast.IndexExpression, table *
 // F<A>?.field -> F<B> where B is the type of the field
 func inferOptionalChain(ctx *InferenceContext, n *ast.MemberExpression, leftType typesystem.Type, totalSubst typesystem.Subst, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
 	// Check that leftType implements Optional trait
-	if !table.IsImplementationExists("Optional", leftType) {
+	if !CheckTraitImplementation(leftType, "Optional", table) {
 		return nil, nil, inferErrorf(n, "optional chaining (?.) requires type implementing Optional, got %s", leftType)
 	}
 
@@ -656,7 +736,8 @@ func inferMemberOnType(ctx *InferenceContext, n *ast.MemberExpression, baseType 
 	// Check Record Field
 	if tRec, ok := resolvedType.(typesystem.TRecord); ok {
 		if fieldType, ok := tRec.Fields[n.Member.Value]; ok {
-			return fieldType, totalSubst, nil
+			instType, _ := instantiateMemberType(ctx, n, fieldType, table)
+			return instType, totalSubst, nil
 		}
 	}
 
@@ -713,4 +794,21 @@ func inferMemberOnType(ctx *InferenceContext, n *ast.MemberExpression, baseType 
 	}
 
 	return nil, nil, inferErrorf(n, "type %s has no field or method '%s'", baseType, n.Member.Value)
+}
+
+func instantiateMemberType(ctx *InferenceContext, n *ast.MemberExpression, memberType typesystem.Type, table *symbols.SymbolTable) (typesystem.Type, typesystem.Subst) {
+	// Check context for Rank-N expectation
+	// If the context expects a polytype (Forall), and the member is a polytype,
+	// do NOT instantiate it. Pass it as is.
+	if expectedType, ok := ctx.ExpectedTypes[n]; ok {
+		// Resolve alias if any
+		resolved := resolveTypeAlias(expectedType, table)
+		if _, isExpectedForall := resolved.(typesystem.TForall); isExpectedForall {
+			// Also check if the member itself is a Forall
+			if _, isMemForall := memberType.(typesystem.TForall); isMemForall {
+				return memberType, nil
+			}
+		}
+	}
+	return InstantiateGenericsWithSubst(ctx, memberType)
 }

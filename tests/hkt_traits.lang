@@ -5,8 +5,8 @@
 // Test 1: Non-HKT trait (T used directly, kind *)
 // ===========================================================================
 
-trait Printable<T> {
-    fun display(x: T) -> String
+trait Printable<t> {
+    fun display(x: t) -> String
 }
 
 // Should work with concrete type - no kind restriction
@@ -26,21 +26,21 @@ print(display("hello"))  // string
 // ===========================================================================
 
 // Note: Functor is now built-in, so we test with a custom HKT trait
-trait Container<C> {
-    fun contents<A>(c: C<A>) -> A
+trait Container<c> {
+    fun contents(con: c<a>) -> a
 }
 
 // Should work with Option (kind * -> *)
 instance Container<Option> {
-    fun contents<A>(c: Option<A>) -> A {
-        match c { Some(x) -> x; Zero -> panic("empty") }
+    fun contents(con: Option<a>) -> a {
+        match con { Some(x) -> x; Zero -> panic("empty") }
     }
 }
 
 // Should work with List (kind * -> *)
 instance Container<List> {
-    fun contents<A>(c: List<A>) -> A {
-        match c { [x, _...] -> x; [] -> panic("empty") }
+    fun contents(con: List<a>) -> a {
+        match con { [x, ..._] -> x; [] -> panic("empty") }
     }
 }
 
@@ -51,15 +51,15 @@ print(contents([10, 20]))  // 10
 // Test 3: HKT trait with * -> * -> * (two type params like Bifunctor)
 // ===========================================================================
 
-trait Bifunctor<B> {
-    fun bimap<A, C, D, E>(f: (A) -> C, g: (D) -> E, x: B<A, D>) -> B<C, E>
+trait Bifunctor<b> {
+    fun bimap(f: (a) -> c, g: (d) -> e, x: b<a, d>) -> b<c, e>
 }
 
 // Result has kind * -> * -> * with Result<E, A> (error first, success last)
 instance Bifunctor<Result> {
     // B<A, D> = Result<A, D> where A is first param (error), D is second param (success)
     // f: (A) -> C maps error, g: (D) -> E maps success
-    fun bimap<A, C, D, E>(f: (A) -> C, g: (D) -> E, x: Result<A, D>) -> Result<C, E> {
+    fun bimap(f: (a) -> c, g: (d) -> e, x: Result<a, d>) -> Result<c, e> {
         match x {
             Ok(d) -> Ok(g(d))      // success (D) transformed by g
             Fail(a) -> Fail(f(a))  // error (A) transformed by f

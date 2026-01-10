@@ -92,7 +92,7 @@ Supported formats:
 - `%x`: Hexadecimal
 - `%s`: String
 
-### `charFromCode(int)` → `Char`
+### `charFromCode(Int)` → `Char`
 
 Converts an integer to a character (by ASCII/Unicode code):
 

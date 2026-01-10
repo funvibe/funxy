@@ -1,0 +1,263 @@
+// ============================================================================
+// Stage 1: MPTC Resolution (Fixing problem 6)
+// Verify we can distinguish instances based on all parameters
+// Using Custom Types to ensure no builtin bias
+// ============================================================================
+
+import "lib/list" (head)
+import "lib/map" (mapNew, mapPut)
+
+type UserID = UID(Int)
+type UserName = UName(String)
+type UserData = UData(Bool)
+
+// Helper instances for debugging
+instance Show UserID { fun show(u: UserID) -> String { match u { UID(i) -> "ID(" ++ show(i) ++ ")" } } }
+instance Show UserName { fun show(u: UserName) -> String { match u { UName(s) -> "Name(" ++ s ++ ")" } } }
+instance Show UserData { fun show(u: UserData) -> String { match u { UData(b) -> "Data(" ++ show(b) ++ ")" } } }
+
+// MPTC Trait
+trait Lookup<k, v> {
+    fun fetch(key: k) -> v
+}
+
+// Instance 1: ID -> Name
+instance Lookup<UserID, UserName> {
+    fun fetch(id: UserID) -> UserName {
+        match id { UID(i) -> UName("User" ++ show(i)) }
+    }
+}
+
+// Instance 2: ID -> Data
+instance Lookup<UserID, UserData> {
+    fun fetch(ident: UserID) -> UserData {
+        match ident { UID(i) -> UData(i > 0) }
+    }
+}
+
+fun testMPTC() {
+    print("--- Stage 1: MPTC with User Types ---")
+    ident = UID(42)
+
+    // Dispatch based on return type context
+    // This requires the resolver to look at both Key (UserID) and Value (UserName/UserData)
+    // to find the correct dictionary.
+    name: UserName = fetch(ident)
+    print(show(name)) // Name(User42)
+
+    data: UserData = fetch(ident)
+    print(show(data)) // Data(true)
+}
+
+// ============================================================================
+// Stage 2: Instance Requirements & Constructor Ordering (Fixing 7 & 8)
+// Verify handling of Mismatched Constraints vs Type Params
+// ============================================================================
+
+trait ComplexCheck<t> {
+    fun check(x: t) -> String
+}
+
+// Custom type requiring multiple constraints
+type Entity<t> = Ent(t)
+
+// Constraint: t must be Show AND Equal
+// This tests if we generate a constructor expecting 2 dictionaries (Show, Equal)
+// even though there is only 1 type parameter 't'.
+instance ComplexCheck Entity<t: Show, Equal> {
+    fun check(e: Entity<t>) -> String {
+        match e {
+            Ent(x) -> {
+                // Use Equal
+                isEq = x == x
+                // Use Show
+                "Entity(" ++ show(x) ++ ", eq=" ++ show(isEq) ++ ")"
+            }
+        }
+    }
+}
+
+// Custom Map wrapper to test subset constraints
+type MyMap<k, v> = MM(Map<k, v>)
+
+trait MapShow<t> {
+    fun showMap(x: t) -> String
+}
+
+// Constraint only on 'v' (Show), 'k' is unconstrained
+// This tests if the constructor correctly maps the available 'Show v' dictionary
+// to the instance requirement, skipping 'k'.
+instance MapShow MyMap<k, v: Show> {
+    fun showMap(m: MyMap<k, v>) -> String {
+        // We just prove we can construct it
+        "MyMap(Values:Show)"
+    }
+}
+
+fun testConstraints() {
+    print("--- Stage 2: Complex Constraints ---")
+
+    // Test Case A: Multiple constraints
+    e = Ent(UID(100)) // UserID implements Show and Equal (impl above/derived)
+    // We need to ensure UserID has Equal. It does not by default unless we derived it?
+    // We implemented Show UserID above. Let's add Equal UserID.
+    instance Equal UserID { operator (==)(a: UserID, b: UserID) -> Bool { match (a,b) { (UID(x), UID(y)) -> x == y } } }
+
+    print(check(e))
+
+    // Test Case B: Subset constraints
+    // Key=UserID (No Show constraint needed for key in MapShow), Value=UserID (Needs Show)
+    rawMap = mapNew()
+    // mapPut(rawMap, UID(1), UID(2)) // mapPut requires Hash/Eq on key usually?
+    // Let's assume mapPut works or use String keys for simplicity in raw map
+    mm = MM(rawMap)
+
+    // We invoke showMap on MyMap<String, UserID>.
+    // It requires Show<UserID>.
+    print(showMap(mm))
+}
+
+// ============================================================================
+// Stage 3 & 4: Deep Nesting & Custom Composition (Fixing 4 & 10)
+// Verify "Tree of Calls" and removal of objectToString hack
+// ============================================================================
+
+// Recursive type structure
+type Tree<t> = Leaf(t) | Node(List<Tree<t>>)
+
+// Recursive Show instance
+instance Show Tree<t: Show> {
+    fun show(x: Tree<t>) -> String {
+        match x {
+            Leaf(v) -> "L(" ++ show(v) ++ ")"
+            Node(list) -> "N(" ++ show(list) ++ ")"
+        }
+    }
+}
+
+fun testDeepComposition() {
+    print("--- Stage 3 & 4: Deep Composition ---")
+
+    // Tree<UserID>
+    // Show Tree<UserID> uses Show List<Tree<UserID>>
+    // which uses Show Tree<UserID> (recursive)
+    // which uses Show UserID (base)
+
+    t = Node([Leaf(UID(1)), Node([Leaf(UID(2))])])
+    print(show(t))
+    // Expected: N([L(ID(1)), N([L(ID(2))])])
+    // If objectToString hack is used, it might fail on Tree type or print internal representation
+}
+
+// ============================================================================
+// Stage 5: "Context Matching" - Generic Dependencies
+// ============================================================================
+
+type Box<a> = Box(a)
+
+trait Transformer<a, b> {
+    fun transform(x: a) -> b
+}
+
+instance Transformer<Int, String> {
+    fun transform(x: Int) -> String { show(x) }
+}
+
+// Generic instance: Transform Box<a> to Box<b> if Transform a to b exists
+// Note: We need a way to express constraints on MPTC.
+// "instance Transformer Box<a> Box<b> where Transformer a b"
+// Current syntax limitation: can we put constraints on multiple params?
+// If not, we use the constraint on 'a' that refers to 'b' or vice versa?
+// Actually, generic instance declaration for MPTC might need explicit `where` or `Context =>` syntax.
+// Assuming we can use: instance Transformer<Box<a>, Box<b>> { ... } and inference finds requirements?
+// Or: instance Transformer<Box<a: Transformer<b>>, Box<b>> ? No, circular.
+//
+// Let's test the implicit resolution: use `transform(v)` inside.
+// Analyzer should deduce: need `Transformer<a, b>`.
+instance Transformer<Box<a>, Box<b>> {
+    fun transform(x: Box<a>) -> Box<b> {
+        match x { Box(v) -> Box(transform(v)) }
+    }
+}
+
+fun testGenericDependency() {
+    print("--- Stage 5: Generic Dependency ---")
+    b = Box(123) // Box<Int>
+
+    // Target: Box<String>
+    // Requires Transformer<Box<Int>, Box<String>>
+    // -> Requires Transformer<Int, String> (which exists)
+    res: Box<String> = transform(b)
+
+    match res {
+        Box(s) -> print("Transformed: " ++ s)
+    }
+}
+
+// ============================================================================
+// Stage 6: Hardcore Mutual Recursion & Complex Constraints
+// ============================================================================
+
+// Two mutually recursive types
+type Expr<t> = Val(t) | Add(Expr<t>, Expr<t>) | Wrap(Term<t>)
+type Term<t> = Factor(Expr<t>)
+
+// Mutually recursive traits
+trait Eval<t> { fun eval(x: t) -> Int }
+trait Pretty<t> { fun pretty(x: t) -> String }
+
+// Instance for Expr requires Eval<t> AND Pretty<t>
+// AND requires Eval<Term<t>> and Pretty<Term<t>>
+instance Eval Expr<t: Eval, Pretty> {
+    fun eval(e: Expr<t>) -> Int {
+        match e {
+            Val(v) -> eval(v)
+            Add(l, r) -> eval(l) + eval(r)
+            Wrap(t) -> eval(t) // Indirect recursion
+        }
+    }
+}
+
+instance Pretty Expr<t: Eval, Pretty> {
+    fun pretty(e: Expr<t>) -> String {
+        match e {
+            Val(v) -> pretty(v)
+            Add(l, r) -> "(" ++ pretty(l) ++ " + " ++ pretty(r) ++ ")"
+            Wrap(t) -> "{" ++ pretty(t) ++ "}"
+        }
+    }
+}
+
+// Instance for Term requires Eval<Expr<t>> (Mutual)
+instance Eval Term<t: Eval, Pretty> {
+    fun eval(tm: Term<t>) -> Int {
+        match tm { Factor(e) -> eval(e) }
+    }
+}
+
+instance Pretty Term<t: Eval, Pretty> {
+    fun pretty(tm: Term<t>) -> String {
+        match tm { Factor(e) -> pretty(e) }
+    }
+}
+
+// Base instances
+instance Eval Int { fun eval(x: Int) -> Int { x } }
+instance Pretty Int { fun pretty(x: Int) -> String { show(x) } }
+
+fun testHardcore() {
+    print("--- Stage 6: Hardcore Mutual Recursion ---")
+
+    // Expr<Int>
+    // Wrap(Factor(Val(10))) -> Expr -> Term -> Expr -> Val
+    e = Add(Val(5), Wrap(Factor(Val(10))))
+
+    print("Eval: " ++ show(eval(e)))     // 15
+    print("Pretty: " ++ pretty(e))       // (5 + {10})
+}
+
+testMPTC()
+testConstraints()
+testDeepComposition()
+testGenericDependency()
+testHardcore()

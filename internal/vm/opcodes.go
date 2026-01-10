@@ -6,10 +6,10 @@ type Opcode byte
 
 const (
 	// Stack manipulation
-	OP_CONST Opcode = iota // Push constant from pool
-	OP_POP                 // Discard top of stack
-	OP_POP_BELOW           // Discard item below top N items: [..., val, a, b] -> [..., a, b]
-	OP_DUP                 // Duplicate top of stack
+	OP_CONST     Opcode = iota // Push constant from pool
+	OP_POP                     // Discard top of stack
+	OP_POP_BELOW               // Discard item below top N items: [..., val, a, b] -> [..., a, b]
+	OP_DUP                     // Duplicate top of stack
 
 	// Arithmetic
 	OP_ADD // +
@@ -21,26 +21,26 @@ const (
 	OP_NEG // Unary minus
 
 	// Bitwise operations
-	OP_BAND   // &
-	OP_BOR    // |
-	OP_BXOR   // ^
-	OP_BNOT         // ~ (unary)
-	OP_LEN          // len (unary)
+	OP_BAND          // &
+	OP_BOR           // |
+	OP_BXOR          // ^
+	OP_BNOT          // ~ (unary)
+	OP_LEN           // len (unary)
 	OP_INTERP_CONCAT // string interpolation concat
-	OP_LSHIFT // <<
-	OP_RSHIFT // >>
+	OP_LSHIFT        // <<
+	OP_RSHIFT        // >>
 
 	// List/String operations
 	OP_CONCAT // ++
 	OP_CONS   // ::
 
 	// Comparison
-	OP_EQ  // ==
-	OP_NE  // !=
-	OP_LT  // <
-	OP_LE  // <=
-	OP_GT  // >
-	OP_GE  // >=
+	OP_EQ // ==
+	OP_NE // !=
+	OP_LT // <
+	OP_LE // <=
+	OP_GT // >
+	OP_GE // >=
 
 	// Logic
 	OP_NOT // !
@@ -64,52 +64,53 @@ const (
 	OP_RETURN    // Return from function
 
 	// Closures (Phase 6)
-	OP_CLOSURE      // Create closure
-	OP_GET_UPVALUE  // Get captured variable
-	OP_SET_UPVALUE  // Set captured variable
+	OP_CLOSURE       // Create closure
+	OP_GET_UPVALUE   // Get captured variable
+	OP_SET_UPVALUE   // Set captured variable
 	OP_CLOSE_UPVALUE // Close upvalue when leaving scope
 
 	// Data structures (Phase 7)
-	OP_MAKE_LIST   // Create list
-	OP_MAKE_RECORD // Create record
-	OP_MAKE_TUPLE  // Create tuple
-	OP_MAKE_MAP    // Create map
-	OP_SPREAD                // Spread list/tuple elements
-	OP_UNWRAP_OR_RETURN      // Unwrap Option/Result or early return
-	OP_MATCH_STRING_PATTERN  // Match string pattern with captures (legacy)
-	OP_MATCH_STRING_EXTRACT  // Match string, pop input, push bool + captures
-	OP_TRAIT_OP              // Trait-based operator dispatch
-	OP_EVAL_STMT             // Evaluate AST statement via evaluator
-	OP_TUPLE_SLICE           // Get slice of tuple: [tuple, start] -> [slice]
-	OP_LIST_SLICE            // Get slice of list: [list, start] -> [slice]
-	OP_CHECK_TUPLE_LEN_GE    // Check tuple length >= N (for spread patterns)
-	OP_SPREAD_ARG            // Mark argument as spread (to be unpacked)
-	OP_CALL_SPREAD           // Call with spread arguments
-	OP_COMPOSE               // Function composition: f ,, g
-	OP_REGISTER_TRAIT        // Register trait method: [closure] traitIdx typeIdx methodIdx
-	OP_CALL_TRAIT            // Call trait method for operator
-	OP_DEFAULT               // Get default value for type
+	OP_MAKE_LIST            // Create list
+	OP_MAKE_RECORD          // Create record
+	OP_MAKE_TUPLE           // Create tuple
+	OP_MAKE_MAP             // Create map
+	OP_SPREAD               // Spread list/tuple elements
+	OP_UNWRAP_OR_RETURN     // Unwrap Option/Result or early return
+	OP_MATCH_STRING_PATTERN // Match string pattern with captures (legacy)
+	OP_MATCH_STRING_EXTRACT // Match string, pop input, push bool + captures
+	OP_TRAIT_OP             // Trait-based operator dispatch
+	OP_EVAL_STMT            // Evaluate AST statement via evaluator
+	OP_TUPLE_SLICE          // Get slice of tuple: [tuple, start] -> [slice]
+	OP_LIST_SLICE           // Get slice of list: [list, start] -> [slice]
+	OP_CHECK_TUPLE_LEN_GE   // Check tuple length >= N (for spread patterns)
+	OP_SPREAD_ARG           // Mark argument as spread (to be unpacked)
+	OP_CALL_SPREAD          // Call with spread arguments
+	OP_COMPOSE              // Function composition: f ,, g
+	OP_REGISTER_TRAIT       // Register trait method: [closure] traitIdx typeIdx methodIdx
+	OP_CALL_TRAIT           // Call trait method for operator
+	OP_DEFAULT              // Get default value for type
 	OP_GET_FIELD            // Get record field
 	OP_GET_INDEX            // Get list/map element
 	OP_OPTIONAL_CHAIN_FIELD // Optional chaining: obj?.field
 
 	// Pattern matching (Phase 7)
-	OP_CHECK_TAG       // Check DataInstance.Name == constant, push bool
-	OP_GET_DATA_FIELD  // Get DataInstance.Fields[index], push value
-	OP_CHECK_LIST_LEN  // Check list length (==, >=), push bool
-	OP_GET_LIST_REST   // Get rest of list from index
-	OP_CHECK_TYPE      // Check if value is of given type
-	OP_SET_FIELD       // Set field in record
-	OP_SET_INDEX       // Set element in list/map
-	OP_CALL_METHOD     // Call method on object (extension methods or field access + call)
-	OP_COALESCE            // Null coalescing: push (unwrapped, true) or (original, false)
-	OP_MAKE_ITER           // Convert iterable to iterator (handles Iter trait)
-	OP_SET_TYPE_NAME       // Set TypeName on RecordInstance (for type annotations)
-	OP_SET_LIST_ELEM_TYPE  // Set ElementType on List (for List<T> annotations)
-	OP_ITER_NEXT           // Get next item from iterator (handles both index-based and lazy)
-	OP_GET_LIST_ELEM   // Get list element by index
-	OP_CHECK_TUPLE_LEN // Check tuple length, push bool
-	OP_GET_TUPLE_ELEM  // Get tuple element by index
+	OP_CHECK_TAG          // Check DataInstance.Name == constant, push bool
+	OP_GET_DATA_FIELD     // Get DataInstance.Fields[index], push value
+	OP_CHECK_LIST_LEN     // Check list length (==, >=), push bool
+	OP_GET_LIST_REST      // Get rest of list from index
+	OP_CHECK_TYPE         // Check if value is of given type
+	OP_SET_FIELD          // Set field in record
+	OP_SET_INDEX          // Set element in list/map
+	OP_CALL_METHOD        // Call method on object (extension methods or field access + call)
+	OP_COALESCE           // Null coalescing: push (unwrapped, true) or (original, false)
+	OP_MAKE_ITER          // Convert iterable to iterator (handles Iter trait)
+	OP_SET_TYPE_NAME      // Set TypeName on RecordInstance (for type annotations)
+	OP_SET_LIST_ELEM_TYPE // Set ElementType on List (for List<T> annotations)
+	OP_ITER_NEXT          // Get next item from iterator (handles both index-based and lazy)
+	OP_GET_LIST_ELEM      // Get list element by index
+	OP_CHECK_TUPLE_LEN    // Check tuple length, push bool
+	OP_GET_TUPLE_ELEM     // Get tuple element by index
+	OP_RANGE              // Create range object: [start, next?, end] -> [range]
 
 	// Special
 	OP_NIL   // Push nil
@@ -125,7 +126,8 @@ const (
 
 	OP_EXTEND_RECORD // Extend record with new fields: [base, key, val, ...] -> [new_record]
 
-	OP_REGISTER_EXTENSION // Register extension method: [closure] typeNameIdx methodNameIdx
+	OP_REGISTER_EXTENSION  // Register extension method: [closure] typeNameIdx methodNameIdx
+	OP_REGISTER_TYPE_ALIAS // Register type alias: [typeObject] nameIdx
 
 	// Halt
 	OP_HALT // Stop execution
@@ -136,10 +138,10 @@ const (
 
 // OpcodeNames maps opcodes to their string names (for debugging)
 var OpcodeNames = map[Opcode]string{
-	OP_CONST: "CONST",
-	OP_POP:   "POP",
+	OP_CONST:     "CONST",
+	OP_POP:       "POP",
 	OP_POP_BELOW: "POP_BELOW",
-	OP_DUP:   "DUP",
+	OP_DUP:       "DUP",
 
 	OP_ADD: "ADD",
 	OP_SUB: "SUB",
@@ -149,14 +151,14 @@ var OpcodeNames = map[Opcode]string{
 	OP_POW: "POW",
 	OP_NEG: "NEG",
 
-	OP_BAND:   "BAND",
-	OP_BOR:    "BOR",
-	OP_BXOR:   "BXOR",
+	OP_BAND:          "BAND",
+	OP_BOR:           "BOR",
+	OP_BXOR:          "BXOR",
 	OP_BNOT:          "BNOT",
 	OP_LEN:           "LEN",
 	OP_INTERP_CONCAT: "INTERP_CONCAT",
 	OP_LSHIFT:        "LSHIFT",
-	OP_RSHIFT: "RSHIFT",
+	OP_RSHIFT:        "RSHIFT",
 
 	OP_CONCAT: "CONCAT",
 	OP_CONS:   "CONS",
@@ -190,10 +192,10 @@ var OpcodeNames = map[Opcode]string{
 	OP_SET_UPVALUE:   "SET_UPVALUE",
 	OP_CLOSE_UPVALUE: "CLOSE_UPVALUE",
 
-	OP_MAKE_LIST:   "MAKE_LIST",
-	OP_MAKE_RECORD: "MAKE_RECORD",
-	OP_MAKE_TUPLE:  "MAKE_TUPLE",
-	OP_MAKE_MAP:    "MAKE_MAP",
+	OP_MAKE_LIST:            "MAKE_LIST",
+	OP_MAKE_RECORD:          "MAKE_RECORD",
+	OP_MAKE_TUPLE:           "MAKE_TUPLE",
+	OP_MAKE_MAP:             "MAKE_MAP",
 	OP_SPREAD:               "SPREAD",
 	OP_UNWRAP_OR_RETURN:     "UNWRAP_OR_RETURN",
 	OP_MATCH_STRING_PATTERN: "MATCH_STRING_PATTERN",
@@ -227,6 +229,7 @@ var OpcodeNames = map[Opcode]string{
 	OP_GET_LIST_ELEM:      "GET_LIST_ELEM",
 	OP_CHECK_TUPLE_LEN:    "CHECK_TUPLE_LEN",
 	OP_GET_TUPLE_ELEM:     "GET_TUPLE_ELEM",
+	OP_RANGE:              "RANGE",
 
 	OP_NIL:   "NIL",
 	OP_TRUE:  "TRUE",
@@ -236,12 +239,11 @@ var OpcodeNames = map[Opcode]string{
 	OP_SET_TYPE_CONTEXT:   "SET_TYPE_CONTEXT",
 	OP_CLEAR_TYPE_CONTEXT: "CLEAR_TYPE_CONTEXT",
 
-	OP_EXTEND_RECORD: "EXTEND_RECORD",
-	OP_REGISTER_EXTENSION: "REGISTER_EXTENSION",
+	OP_EXTEND_RECORD:       "EXTEND_RECORD",
+	OP_REGISTER_EXTENSION:  "REGISTER_EXTENSION",
+	OP_REGISTER_TYPE_ALIAS: "REGISTER_TYPE_ALIAS",
 
-	OP_HALT: "HALT",
+	OP_HALT:      "HALT",
 	OP_AUTO_CALL: "AUTO_CALL",
 	OP_FORMATTER: "FORMATTER",
 }
-
-

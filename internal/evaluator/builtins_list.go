@@ -43,6 +43,7 @@ func ListBuiltins() map[string]*Builtin {
 		"dropWhile": {Fn: builtinDropWhile, Name: "dropWhile"},
 		"partition": {Fn: builtinPartition, Name: "partition"},
 		"forEach":   {Fn: builtinForEach, Name: "forEach"},
+		"append":    {Fn: builtinAppend, Name: "append"},
 	}
 }
 
@@ -524,6 +525,13 @@ func builtinUnzip(e *Evaluator, args ...Object) Object {
 
 // sort: List<T> -> List<T> (for Order types)
 func builtinSort(e *Evaluator, args ...Object) Object {
+	// FIX: Strip witness if present (parity with VM/Compiler which passes dictionaries)
+	if len(args) > 1 {
+		if _, ok := args[0].(*Dictionary); ok {
+			args = args[1:]
+		}
+	}
+
 	if len(args) != 1 {
 		return newError("sort expects 1 argument, got %d", len(args))
 	}
@@ -814,6 +822,27 @@ func builtinForEach(e *Evaluator, args ...Object) Object {
 	return &Nil{}
 }
 
+// append: (List<T>, T) -> List<T>
+func builtinAppend(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("append expects 2 arguments, got %d", len(args))
+	}
+	list, ok := args[0].(*List)
+	if !ok {
+		return newError("append expects a list as first argument, got %s", args[0].Type())
+	}
+	elem := args[1]
+
+	// Create new list with appended element
+	// We must copy because lists are immutable
+	original := list.ToSlice()
+	result := make([]Object, len(original)+1)
+	copy(result, original)
+	result[len(original)] = elem
+
+	return newList(result)
+}
+
 // objectsEqual compares two objects for equality
 func objectsEqual(a, b Object) bool {
 	switch av := a.(type) {
@@ -946,6 +975,7 @@ func SetListBuiltinTypes(builtins map[string]*Builtin) {
 		"sort":      typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: listT},
 		"sortBy":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.TFunc{Params: []typesystem.Type{T, T}, ReturnType: typesystem.Int}}, ReturnType: listT},
 		"range":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.Int}}},
+		"append":    typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: listT},
 	}
 
 	for name, typ := range types {

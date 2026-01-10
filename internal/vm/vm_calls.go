@@ -41,6 +41,11 @@ func (vm *VM) callValue(callee Value, argCount int) error {
 
 // callBuiltinClosure calls a native Go function wrapped as BuiltinClosure
 func (vm *VM) callBuiltinClosure(bc *BuiltinClosure, argCount int) error {
+	// Clear nextImplicitContext if set, as builtins don't consume it
+	if vm.nextImplicitContext != "" {
+		vm.nextImplicitContext = ""
+	}
+
 	args := make([]evaluator.Object, argCount)
 	for i := argCount - 1; i >= 0; i-- {
 		args[i] = vm.pop().AsObject() // Unbox arguments for builtin
@@ -68,7 +73,7 @@ func (vm *VM) executeDefaultChunk(chunk *Chunk, parentClosure *ObjClosure) (Valu
 		Upvalues: parentClosure.Upvalues,
 	}
 
-	savedFrame := vm.frame
+	// savedFrame := vm.frame
 	savedFrameCount := vm.frameCount
 	savedSp := vm.sp
 
@@ -91,22 +96,34 @@ func (vm *VM) executeDefaultChunk(chunk *Chunk, parentClosure *ObjClosure) (Valu
 	vm.frame.base = vm.sp
 	vm.frame.chunk = chunk
 
-    // Inherit implicit context
-    if savedFrame != nil {
-        vm.frame.ImplicitTypeContext = savedFrame.ImplicitTypeContext
-    }
-    vm.frame.ExplicitTypeContextDepth = len(vm.typeContextStack)
+	// Inherit implicit context
+	if savedFrameCount > 0 {
+		vm.frame.ImplicitTypeContext = vm.frames[savedFrameCount-1].ImplicitTypeContext
+	} else {
+		vm.frame.ImplicitTypeContext = ""
+	}
+	vm.frame.ExplicitTypeContextDepth = len(vm.typeContextStack)
 
 	for {
 		result, done, err := vm.step()
 		if err != nil {
-			vm.frame = savedFrame
+			// Restore frame safely
+			if savedFrameCount > 0 {
+				vm.frame = &vm.frames[savedFrameCount-1]
+			} else {
+				vm.frame = nil
+			}
 			vm.frameCount = savedFrameCount
 			vm.sp = savedSp
 			return NilVal(), err
 		}
 		if done {
-			vm.frame = savedFrame
+			// Restore frame safely
+			if savedFrameCount > 0 {
+				vm.frame = &vm.frames[savedFrameCount-1]
+			} else {
+				vm.frame = nil
+			}
 			vm.frameCount = savedFrameCount
 			vm.sp = savedSp
 			return result, nil
@@ -204,6 +221,8 @@ func (vm *VM) callClosure(closure *ObjClosure, argCount int) error {
 	// Inherit implicit context from current frame (caller)
 	if vm.frame != nil {
 		frame.ImplicitTypeContext = vm.frame.ImplicitTypeContext
+	} else {
+		frame.ImplicitTypeContext = ""
 	}
 	// If nextImplicitContext is set (e.g. by OP_TRAIT_OP), override/use it
 	if vm.nextImplicitContext != "" {
@@ -242,6 +261,14 @@ func (vm *VM) tailCallClosure(closure *ObjClosure, argCount int) error {
 	if argCount < fn.RequiredArity {
 		// Can't TCO partial application, use regular call
 		return vm.callClosure(closure, argCount)
+	}
+
+	// Consume nextImplicitContext if set (similar to callClosure)
+	// Even though we are reusing the frame, we might need to update the context
+	// if this tail call was triggered by a trait dispatch.
+	if vm.nextImplicitContext != "" {
+		vm.frame.ImplicitTypeContext = vm.nextImplicitContext
+		vm.nextImplicitContext = ""
 	}
 
 	if argCount > fn.Arity && !fn.IsVariadic {
@@ -286,6 +313,16 @@ func (vm *VM) tailCallClosure(closure *ObjClosure, argCount int) error {
 
 // callBuiltin calls a built-in function
 func (vm *VM) callBuiltin(builtin *evaluator.Builtin, argCount int) error {
+	// Clear nextImplicitContext if set, as builtins don't consume it
+	// and we don't want it to leak to subsequent calls (e.g. adjacent testRun calls)
+	if vm.nextImplicitContext != "" {
+		vm.nextImplicitContext = ""
+	}
+	// Also ensure we don't leak context OUT of the builtin (e.g. from inner calls)
+	defer func() {
+		vm.nextImplicitContext = ""
+	}()
+
 	args := make([]evaluator.Object, argCount)
 	for i := 0; i < argCount; i++ {
 		args[i] = vm.stack[vm.sp-argCount+i].AsObject()
@@ -347,15 +384,6 @@ func (vm *VM) callBuiltin(builtin *evaluator.Builtin, argCount int) error {
 		if file == "" {
 			file = vm.currentFile
 		}
-		// Trim path to just filename
-		if idx := len(file) - 1; idx >= 0 {
-			for i := idx; i >= 0; i-- {
-				if file[i] == '/' || file[i] == '\\' {
-					file = file[i+1:]
-					break
-				}
-			}
-		}
 		eval.CallStack = []evaluator.CallFrame{{File: file, Line: line}}
 	}
 	result := builtin.Fn(eval, args...)
@@ -376,35 +404,43 @@ func (vm *VM) callBuiltin(builtin *evaluator.Builtin, argCount int) error {
 
 // callConstructor handles ADT constructor calls
 func (vm *VM) callConstructor(ctor *evaluator.Constructor, argCount int) error {
-	if argCount > ctor.Arity {
-		return vm.runtimeError("constructor %s expects %d arguments, got %d", ctor.Name, ctor.Arity, argCount)
+	// Extract TypeArgs from leading TypeObject arguments (Reified Generics)
+	var typeArgs []typesystem.Type
+	var valueArgs []evaluator.Object
+	var actualArgCount int
+
+	// Check leading arguments for TypeObjects
+	for i := 0; i < argCount; i++ {
+		arg := vm.stack[vm.sp-argCount+i].AsObject()
+		if typeObj, ok := arg.(*evaluator.TypeObject); ok {
+			typeArgs = append(typeArgs, typeObj.TypeVal)
+		} else {
+			valueArgs = append(valueArgs, arg)
+			actualArgCount++
+		}
+	}
+
+	if actualArgCount > ctor.Arity {
+		return vm.runtimeError("constructor %s expects %d arguments, got %d", ctor.Name, ctor.Arity, actualArgCount)
 	}
 
 	// Partial application: fewer args than arity
-	if argCount < ctor.Arity {
-		args := make([]evaluator.Object, argCount)
-		for i := 0; i < argCount; i++ {
-			args[i] = vm.stack[vm.sp-argCount+i].AsObject()
-		}
+	if actualArgCount < ctor.Arity {
 		partial := &evaluator.PartialApplication{
 			Constructor:     ctor,
-			AppliedArgs:     args,
-			RemainingParams: ctor.Arity - argCount,
+			AppliedArgs:     valueArgs,
+			RemainingParams: ctor.Arity - actualArgCount,
 		}
 		vm.sp -= argCount + 1
 		vm.push(ObjVal(partial))
 		return nil
 	}
 
-	fields := make([]evaluator.Object, argCount)
-	for i := 0; i < argCount; i++ {
-		fields[i] = vm.stack[vm.sp-argCount+i].AsObject()
-	}
-
 	result := &evaluator.DataInstance{
 		Name:     ctor.Name,
-		Fields:   fields,
+		Fields:   valueArgs,
 		TypeName: ctor.TypeName,
+		TypeArgs: typeArgs,
 	}
 
 	vm.sp -= argCount + 1
@@ -413,8 +449,39 @@ func (vm *VM) callConstructor(ctor *evaluator.Constructor, argCount int) error {
 	return nil
 }
 
-// callTypeObject handles type application like List(Int)
+// callTypeObject handles type application like List(Int) or value construction like Sum({x:1})
 func (vm *VM) callTypeObject(typeObj *evaluator.TypeObject, argCount int) error {
+	// Check for value construction/casting
+	isConstruction := false
+	if argCount > 0 {
+		firstArg := vm.stack[vm.sp-argCount].AsObject()
+		if _, ok := firstArg.(*evaluator.TypeObject); !ok {
+			isConstruction = true
+		}
+	}
+
+	if isConstruction {
+		if argCount != 1 {
+			return vm.runtimeError("type constructor expects 1 argument, got %d", argCount)
+		}
+		val := vm.stack[vm.sp-1].AsObject()
+
+		if rec, ok := val.(*evaluator.RecordInstance); ok {
+			newRec := &evaluator.RecordInstance{
+				Fields:   rec.Fields,
+				TypeName: evaluator.ExtractTypeConstructorName(typeObj.TypeVal),
+			}
+			vm.sp -= 2 // Pop func + arg
+			vm.push(ObjectToValue(newRec))
+			return nil
+		}
+
+		// Just return the value if not record (cast/alias)
+		vm.sp -= 2
+		vm.push(ObjectToValue(val))
+		return nil
+	}
+
 	typeArgs := make([]typesystem.Type, argCount)
 	for i := 0; i < argCount; i++ {
 		arg := vm.stack[vm.sp-argCount+i].AsObject()
@@ -604,6 +671,29 @@ func (vm *VM) callBoundMethod(bm *evaluator.BoundMethod, argCount int) error {
 
 // callClassMethod calls a trait method natively
 func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
+	// Check for hidden type hint argument (injected by Compiler/VM)
+	// pure(val, TypeHint) -> pure(val) with context TypeHint
+	var explicitTypeHint typesystem.Type
+
+	if cm.Arity >= 0 && argCount == cm.Arity+1 {
+		lastArg := vm.peek(0)
+		if typeObj, ok := lastArg.AsObject().(*evaluator.TypeObject); ok {
+			explicitTypeHint = typeObj.TypeVal
+			vm.pop() // Remove hint from stack
+			argCount--
+		} else if list, ok := lastArg.AsObject().(*evaluator.List); ok {
+			// Legacy string hint logic
+			if evaluator.IsStringList(list) {
+				str := evaluator.ListToString(list)
+				if str != "" || list.Len() == 0 {
+					explicitTypeHint = typesystem.TCon{Name: str}
+					vm.pop()
+					argCount--
+				}
+			}
+		}
+	}
+
 	if argCount < 1 && cm.Arity > 0 {
 		return vm.runtimeError("%s expects at least 1 argument", cm.Name)
 	}
@@ -614,7 +704,17 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 	// For nullary methods, we rely on type context or defaults
 	if argCount == 0 {
 		ctx := vm.getTypeContext()
-		if ctx != "" {
+
+		// Prioritize explicit hint if available
+		if explicitTypeHint != nil {
+			typeName := evaluator.ExtractTypeConstructorName(explicitTypeHint)
+			method = vm.LookupTraitMethodAny(cm.ClassName, typeName, cm.Name)
+			if method != nil {
+				resolvedType = typeName
+			}
+		}
+
+		if method == nil && ctx != "" {
 			method = vm.LookupTraitMethodAny(cm.ClassName, ctx, cm.Name)
 			if method != nil {
 				resolvedType = ctx
@@ -642,15 +742,27 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 			// Found implementation (vm closure or builtin)
 			// Need to call it.
 			// Stack has [ClassMethod]. We need to replace it with [Method].
-			vm.pop() // pop ClassMethod
+			vm.pop()                       // pop ClassMethod
 			vm.push(ObjectToValue(method)) // push Method (boxed or value?)
 			// We should probably convert method to Value if it's an object
 			// vm.push(ObjectToValue(method))
 
+			// Push witness on evaluator (Proposal 002)
+			if explicitTypeHint != nil {
+				vm.getEvaluator().PushWitness(map[string][]typesystem.Type{"Applicative": {explicitTypeHint}})
+				// Witness will be popped when the builtin call completes
+				// For VM, we rely on the builtin to properly manage witness stack
+			}
+
 			if resolvedType != "" {
 				vm.nextImplicitContext = resolvedType
 			}
-			return vm.callValue(ObjectToValue(method), 0)
+			result := vm.callValue(ObjectToValue(method), 0)
+			// Pop witness after call completes
+			if explicitTypeHint != nil {
+				vm.getEvaluator().PopWitness()
+			}
+			return result
 		}
 
 		// Fallback to evaluator if not found in VM registry
@@ -671,6 +783,8 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 	for i := 0; i < argCount; i++ {
 		arg := vm.peek(argCount - 1 - i)
 		typeName := vm.getTypeName(arg)
+
+		// Fallback to standard lookup (legacy single arg)
 		method = vm.LookupTraitMethodAny(cm.ClassName, typeName, cm.Name)
 		if method != nil {
 			resolvedType = typeName
@@ -678,8 +792,54 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 		}
 	}
 
+	// Try Fuzzy MPTC lookup using all available arguments + context
+	// This is now the preferred path for complex dispatch
+	if argCount > 0 {
+		// Collect arguments
+		args := make([]evaluator.Object, argCount)
+		for i := 0; i < argCount; i++ {
+			args[i] = vm.peek(argCount - 1 - i).AsObject()
+		}
+
+		// Use context if available to disambiguate
+		ctx := vm.getTypeContext()
+		fuzzyMethod := vm.LookupTraitMethodFuzzy(cm.ClassName, cm.Name, args, ctx)
+
+		// If fuzzy lookup found something, PREFER it over single-arg lookup
+		// especially if we found nothing before, or if the fuzzy match is "better" (handled by score)
+		if fuzzyMethod != nil {
+			method = fuzzyMethod
+			// resolvedType? Fuzzy lookup abstracts the key.
+			// We might need it for nextImplicitContext, but usually MPTC methods don't rely on it for inner calls
+			// as much as single-dispatch.
+		}
+	}
+
 	// If not found, try type context (from type annotation)
 	ctx := vm.getTypeContext()
+
+	// If still not found, check trait defaults FIRST for arg type (before using context)
+	// This ensures that default implementations are used for types without explicit override
+	// We do this BEFORE "Context Dispatch" because direct arg type is more specific than context.
+	if method == nil && argCount > 0 {
+		argTypeName := vm.getTypeName(vm.peek(argCount - 1))
+		defaultKey := cm.ClassName + "." + cm.Name
+		if defaultFn, ok := vm.traitDefaults[defaultKey]; ok && argTypeName != "" {
+			// JIT compile the default method for the argument type
+			closure, err := vm.compileTraitDefault(defaultFn, cm.ClassName, argTypeName)
+			if err == nil && closure != nil {
+				// Register for future use
+				vm.RegisterTraitMethod(cm.ClassName, argTypeName, cm.Name, closure)
+				method = closure
+				resolvedType = argTypeName
+			}
+		}
+	}
+
+	// 1. Try Context Dispatch (Dynamic)
+	// This prioritizes Implicit Context (from >>=) which getTypeContext returns first.
+	// This allows dynamic dispatch to override static hints (like from TypeMap/inference) when necessary.
+	// But ONLY if we haven't found a method yet (e.g. from defaults above).
 	if method == nil && ctx != "" {
 		method = vm.LookupTraitMethodAny(cm.ClassName, ctx, cm.Name)
 		if method != nil {
@@ -687,27 +847,34 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 		}
 	}
 
-	// If still not found, check trait defaults
-	if method == nil {
-		// Get type name for registering the compiled default
-		argTypeName := ""
-		if argCount > 0 {
-			argTypeName = vm.getTypeName(vm.peek(argCount - 1))
+	// 2. Prioritize explicit hint if available (Static)
+	if method == nil && explicitTypeHint != nil {
+		typeName := evaluator.ExtractTypeConstructorName(explicitTypeHint)
+		method = vm.LookupTraitMethodAny(cm.ClassName, typeName, cm.Name)
+		if method != nil {
+			resolvedType = typeName
 		}
-		if argTypeName == "" && ctx != "" {
-			argTypeName = ctx
-		}
+	}
 
-		// Try to find and compile trait default
+	// Use context for nullary methods or if no default was found for arg type
+	if method == nil && ctx != "" {
+		method = vm.LookupTraitMethodAny(cm.ClassName, ctx, cm.Name)
+		if method != nil {
+			resolvedType = ctx
+		}
+	}
+
+	// Last resort: check trait defaults with context type
+	if method == nil && ctx != "" {
 		defaultKey := cm.ClassName + "." + cm.Name
-		if defaultFn, ok := vm.traitDefaults[defaultKey]; ok && argTypeName != "" {
-			// JIT compile the default method
-			closure, err := vm.compileTraitDefault(defaultFn, cm.ClassName, argTypeName)
+		if defaultFn, ok := vm.traitDefaults[defaultKey]; ok {
+			// JIT compile the default method for the context type
+			closure, err := vm.compileTraitDefault(defaultFn, cm.ClassName, ctx)
 			if err == nil && closure != nil {
 				// Register for future use
-				vm.RegisterTraitMethod(cm.ClassName, argTypeName, cm.Name, closure)
+				vm.RegisterTraitMethod(cm.ClassName, ctx, cm.Name, closure)
 				method = closure
-				resolvedType = argTypeName
+				resolvedType = ctx
 			}
 		}
 	}
@@ -721,6 +888,15 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 		vm.pop()
 
 		eval := vm.getEvaluator()
+		// Sync TypeContextStack from VM to Evaluator
+		// Copy slice to avoid sharing issues
+		if len(vm.typeContextStack) > 0 {
+			eval.TypeContextStack = make([]string, len(vm.typeContextStack))
+			copy(eval.TypeContextStack, vm.typeContextStack)
+		} else {
+			eval.TypeContextStack = nil
+		}
+
 		result := eval.ApplyFunction(cm, args)
 		if err, ok := result.(*evaluator.Error); ok {
 			return fmt.Errorf("%s", err.Message)
@@ -730,10 +906,21 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 	}
 
 	vm.stack[vm.sp-argCount-1] = ObjectToValue(method)
+
+	// Push witness on evaluator (Proposal 002)
+	if explicitTypeHint != nil {
+		vm.getEvaluator().PushWitness(map[string][]typesystem.Type{"Applicative": {explicitTypeHint}})
+	}
+
 	if resolvedType != "" {
 		vm.nextImplicitContext = resolvedType
 	}
-	return vm.callValue(ObjectToValue(method), argCount)
+	result := vm.callValue(ObjectToValue(method), argCount)
+	// Pop witness after call completes
+	if explicitTypeHint != nil {
+		vm.getEvaluator().PopWitness()
+	}
+	return result
 }
 
 // callVMComposedFunction calls a composed function natively
@@ -743,7 +930,7 @@ func (vm *VM) callVMComposedFunction(fn *VMComposedFunction, argCount int) error
 	}
 
 	arg := vm.pop() // Value
-	vm.pop() // Function object
+	vm.pop()        // Function object
 
 	gResult, err := vm.callAndGetResult(ObjectToValue(fn.G), arg)
 	if err != nil {

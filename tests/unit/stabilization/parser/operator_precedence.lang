@@ -1,0 +1,247 @@
+// =============================================================================
+// Stabilization Test: Operator Precedence and Associativity
+// =============================================================================
+// Tests that operators are parsed with correct precedence and associativity.
+// Incorrect parsing here causes silent bugs where code "works" but gives wrong results.
+
+import "lib/test" (testRun, assertEquals, assertTrue, assertFalse, assert)
+
+// =============================================================================
+// ARITHMETIC PRECEDENCE
+// =============================================================================
+
+testRun("Precedence: * before +", \ -> {
+    // 2 + 3 * 4 should be 2 + (3 * 4) = 14, not (2 + 3) * 4 = 20
+    assertEquals(14, 2 + 3 * 4, "2 + 3 * 4")
+    assertEquals(14, 3 * 4 + 2, "3 * 4 + 2")
+})
+
+testRun("Precedence: / before -", \ -> {
+    // 10 - 6 / 2 should be 10 - (6 / 2) = 7, not (10 - 6) / 2 = 2
+    assertEquals(7, 10 - 6 / 2, "10 - 6 / 2")
+    // 6 / 2 - 10 + 10 = 3 - 10 + 10 = 3 (left-to-right)
+    assertEquals(3, 6 / 2 - 10 + 10, "6 / 2 - 10 + 10")
+})
+
+testRun("Precedence: % same as * and /", \ -> {
+    // 10 + 7 % 3 should be 10 + (7 % 3) = 11
+    assertEquals(11, 10 + 7 % 3, "10 + 7 % 3")
+    // 7 % 3 * 2 should be (7 % 3) * 2 = 2 (left-to-right)
+    assertEquals(2, 7 % 3 * 2, "7 % 3 * 2")
+})
+
+testRun("Precedence: ** (power) highest", \ -> {
+    // 2 * 3 ** 2 should be 2 * (3 ** 2) = 18, not (2 * 3) ** 2 = 36
+    assertEquals(18, 2 * 3 ** 2, "2 * 3 ** 2")
+    // 2 + 3 ** 2 should be 2 + 9 = 11
+    assertEquals(11, 2 + 3 ** 2, "2 + 3 ** 2")
+})
+
+testRun("Associativity: ** left-associative", \ -> {
+    // ** is left-associative: 2 ** 3 ** 2 = (2 ** 3) ** 2 = 64
+    assertEquals(64, 2 ** 3 ** 2, "2 ** 3 ** 2 left-assoc")
+})
+
+testRun("Precedence: unary minus vs **", \ -> {
+    // Unary minus binds to its operand first: -2 ** 2 = (-2) ** 2 = 4
+    assertEquals(4, -2 ** 2, "-2 ** 2 = (-2) ** 2")
+    // To negate the result, use parens:
+    assertEquals(-4, -(2 ** 2), "-(2 ** 2)")
+    assertEquals(4, (-2) ** 2, "(-2) ** 2")
+})
+
+testRun("Associativity: - left-to-right", \ -> {
+    // 10 - 5 - 3 should be (10 - 5) - 3 = 2, not 10 - (5 - 3) = 8
+    assertEquals(2, 10 - 5 - 3, "10 - 5 - 3")
+})
+
+testRun("Associativity: / left-to-right", \ -> {
+    // 24 / 4 / 2 should be (24 / 4) / 2 = 3, not 24 / (4 / 2) = 12
+    assertEquals(3, 24 / 4 / 2, "24 / 4 / 2")
+})
+
+// =============================================================================
+// COMPARISON PRECEDENCE
+// =============================================================================
+
+testRun("Precedence: arithmetic before comparison", \ -> {
+    // 2 + 3 < 10 should be (2 + 3) < 10 = true
+    assertTrue(2 + 3 < 10, "2 + 3 < 10")
+    // 10 > 2 * 3 should be 10 > (2 * 3) = 10 > 6 = true
+    assertTrue(10 > 2 * 3, "10 > 2 * 3")
+})
+
+testRun("Precedence: comparison before logical", \ -> {
+    // 1 < 2 && 3 < 4 should be (1 < 2) && (3 < 4) = true
+    assertTrue(1 < 2 && 3 < 4, "1 < 2 && 3 < 4")
+    // Not 1 < (2 && 3) < 4 which would be nonsense
+})
+
+testRun("Precedence: == and != same level", \ -> {
+    // These should parse correctly
+    assertTrue(1 == 1, "1 == 1")
+    assertTrue(1 != 2, "1 != 2")
+    assertFalse(1 == 2, "1 == 2")
+    assertFalse(1 != 1, "1 != 1")
+})
+
+testRun("Precedence: comparison operators same level", \ -> {
+    // All comparison operators should have same precedence
+    assertTrue(1 < 2, "1 < 2")
+    assertTrue(2 > 1, "2 > 1")
+    assertTrue(1 <= 1, "1 <= 1")
+    assertTrue(1 >= 1, "1 >= 1")
+    assertTrue(1 <= 2, "1 <= 2")
+    assertTrue(2 >= 1, "2 >= 1")
+})
+
+// =============================================================================
+// LOGICAL PRECEDENCE
+// =============================================================================
+
+testRun("Precedence: && before ||", \ -> {
+    // true || false && false should be true || (false && false) = true
+    assertTrue(true || false && false, "true || false && false")
+    // false && true || true should be (false && true) || true = true
+    assertTrue(false && true || true, "false && true || true")
+})
+
+testRun("Precedence: ! highest among logical", \ -> {
+    // !false && true should be (!false) && true = true
+    assertTrue(!false && true, "!false && true")
+    // !true || true should be (!true) || true = true
+    assertTrue(!true || true, "!true || true")
+})
+
+testRun("Associativity: && left-to-right", \ -> {
+    // Test that && is left-to-right by checking order of evaluation
+    // false && x && y should not evaluate x or y
+    // We test the result of complex expressions instead
+    assertFalse(false && true && true, "false && true && true")
+    assertTrue(true && true && true, "true && true && true")
+    assertFalse(true && false && true, "true && false && true")
+})
+
+testRun("Associativity: || left-to-right", \ -> {
+    // Test that || is left-to-right by checking order of evaluation
+    assertTrue(true || false || false, "true || false || false")
+    assertTrue(false || true || false, "false || true || false")
+    assertFalse(false || false || false, "false || false || false")
+})
+
+// =============================================================================
+// FUNCTION APPLICATION PRECEDENCE
+// =============================================================================
+
+testRun("Precedence: function call highest", \ -> {
+    fun double(x) { x * 2 }
+    // double 3 + 1 should be (double(3)) + 1 = 7, not double(3 + 1) = 8
+    assertEquals(7, double(3) + 1, "double(3) + 1")
+})
+
+testRun("Precedence: method call with arithmetic", \ -> {
+    list = [1, 2, 3]
+    // list.len() + 1 should be 4
+    assertEquals(4, len(list) + 1, "len(list) + 1")
+})
+
+// =============================================================================
+// PIPELINE PRECEDENCE
+// =============================================================================
+
+testRun("Precedence: |> pipeline", \ -> {
+    fun add1(x) { x + 1 }
+    fun mul2(x) { x * 2 }
+    // 5 |> add1 |> mul2 should be mul2(add1(5)) = 12
+    assertEquals(12, 5 |> add1 |> mul2, "5 |> add1 |> mul2")
+})
+
+// Note: <| operator requires UserOpPipeLeft trait, skipping for now
+// testRun("Precedence: <| reverse pipeline", \ -> {
+//     fun add1(x) { x + 1 }
+//     fun mul2(x) { x * 2 }
+//     assertEquals(12, mul2 <| add1 <| 5, "mul2 <| add1 <| 5")
+// })
+
+testRun("Precedence: pipeline vs arithmetic", \ -> {
+    fun add1(x) { x + 1 }
+    // 2 + 3 |> add1 should be add1(2 + 3) = 6
+    assertEquals(6, 2 + 3 |> add1, "2 + 3 |> add1")
+})
+
+// =============================================================================
+// COMPOSITION PRECEDENCE
+// =============================================================================
+
+testRun("Precedence: ,, composition", \ -> {
+    fun add1(x) { x + 1 }
+    fun mul2(x) { x * 2 }
+
+    // (add1 ,, mul2) is right-to-left composition: x -> add1(mul2(x))
+    // So (add1 ,, mul2)(5) = add1(mul2(5)) = add1(10) = 11
+    f = add1 ,, mul2
+    assertEquals(11, f(5), "(add1 ,, mul2)(5)")
+})
+
+// =============================================================================
+// CONS OPERATOR
+// =============================================================================
+
+testRun("Precedence: :: cons operator", \ -> {
+    // 1 :: 2 :: [3] should be 1 :: (2 :: [3]) = [1, 2, 3]
+    assertEquals([1, 2, 3], 1 :: 2 :: [3], "1 :: 2 :: [3]")
+})
+
+testRun("Precedence: :: vs arithmetic", \ -> {
+    // 1 + 2 :: [3] should be (1 + 2) :: [3] = [3, 3]
+    assertEquals([3, 3], 1 + 2 :: [3], "1 + 2 :: [3]")
+})
+
+// =============================================================================
+// STRING CONCATENATION
+// =============================================================================
+
+testRun("Precedence: ++ string concat", \ -> {
+    // "a" ++ "b" ++ "c" should be "abc"
+    assertEquals("abc", "a" ++ "b" ++ "c", "string concat")
+})
+
+testRun("Precedence: ++ vs comparison", \ -> {
+    // "a" ++ "b" == "ab" should be ("a" ++ "b") == "ab" = true
+    assertTrue("a" ++ "b" == "ab", "concat then compare")
+})
+
+// =============================================================================
+// COMPLEX EXPRESSIONS
+// =============================================================================
+
+testRun("Complex: mixed arithmetic", \ -> {
+    // 2 + 3 * 4 ** 2 - 10 / 2 = 2 + 3 * 16 - 5 = 2 + 48 - 5 = 45
+    assertEquals(45, 2 + 3 * 4 ** 2 - 10 / 2, "complex arithmetic")
+})
+
+testRun("Complex: mixed logical and comparison", \ -> {
+    x = 5
+    // x > 0 && x < 10 || x == 100
+    assertTrue(x > 0 && x < 10 || x == 100, "range check")
+    // !(x < 0) && x != 0
+    assertTrue(!(x < 0) && x != 0, "negative check")
+})
+
+testRun("Complex: parentheses override", \ -> {
+    // (2 + 3) * 4 = 20, not 14
+    assertEquals(20, (2 + 3) * 4, "(2 + 3) * 4")
+    // 2 * (3 + 4) = 14, not 10
+    assertEquals(14, 2 * (3 + 4), "2 * (3 + 4)")
+    // ((2 + 3) * (4 + 5)) = 45
+    assertEquals(45, (2 + 3) * (4 + 5), "nested parens")
+})
+
+testRun("Complex: deeply nested", \ -> {
+    result = ((1 + 2) * (3 + 4)) - ((5 - 6) * (7 - 8))
+    // (3 * 7) - ((-1) * (-1)) = 21 - 1 = 20
+    assertEquals(20, result, "deeply nested")
+})
+
+print("=== Operator Precedence Tests Complete ===")
+

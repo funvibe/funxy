@@ -48,6 +48,17 @@ Numeric types and operations in Funxy.
 | Less than or equal | `a <= b` |
 | Greater than or equal | `a >= b` |
 
+### Implicit Conversion
+
+Funxy supports implicit conversion between `Int` and `Float` in arithmetic and comparison operations.
+When an operation involves both an `Int` and a `Float`, the `Int` is automatically promoted to `Float`.
+
+```rust
+1 + 2.5      // 3.5 (Float)
+10 * 0.5     // 5.0 (Float)
+4 < 4.5      // true
+```
+
 ### Bitwise Operations (Int only)
 
 | Operation | Syntax |

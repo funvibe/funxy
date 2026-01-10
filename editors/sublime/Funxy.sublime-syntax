@@ -25,6 +25,12 @@ contexts:
   comments:
     - match: //.*$
       scope: comment.line.double-slash.funxy
+    - match: /\*
+      scope: comment.block.funxy
+      push:
+        - meta_scope: comment.block.funxy
+        - match: \*/
+          pop: true
 
   strings:
     - match: '"'
@@ -74,7 +80,7 @@ contexts:
       scope: constant.numeric.integer.funxy
 
   keywords:
-    - match: \b(fun|type|alias|match|if|else|for|while|in|break|continue|package|import|as)\b
+    - match: \b(fun|type|alias|match|if|else|for|while|in|break|continue|package|import|as|directive)\b
       scope: keyword.control.funxy
     - match: \b(export|trait|instance|operator|async|await)\b
       scope: keyword.other.funxy
@@ -88,7 +94,7 @@ contexts:
       scope: entity.name.type.funxy
 
   builtins:
-    - match: \b(print|show|len|read|getType|default|panic|id|const|fst|snd|map|filter|foldl|foldr|head|tail|range|intToFloat|floatToInt|charToCode|charFromCode|sprintf)\b
+    - match: \b(print|write|panic|debug|trace|len|lenBytes|show|read|intToFloat|floatToInt|sprintf|getType|typeOf|id|kindOf|debugType|debugRepr|const|default|fmap|pure|mempty|append|fst|snd|map|filter|foldl|foldr|head|tail|range|charToCode|charFromCode)\b
       scope: support.function.builtin.funxy
 
   operators:

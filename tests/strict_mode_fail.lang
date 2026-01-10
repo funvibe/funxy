@@ -1,0 +1,10 @@
+directive "strict_types"
+
+type alias MyUnion = Int | String
+
+fun takeInt(x: Int) { x }
+
+fun main() {
+    u: MyUnion = 10
+    takeInt(u) // Should fail compilation
+}

@@ -3,6 +3,7 @@ package evaluator
 import (
 	"fmt"
 	"math/big"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -20,8 +21,29 @@ func init() {
 	}
 }
 
-// astTypeToTypesystem converts ast.Type to typesystem.Type for runtime type display
-func astTypeToTypesystem(t ast.Type) typesystem.Type {
+// RegisterExtensionMethods registers built-in extension methods on the evaluator
+func (e *Evaluator) RegisterExtensionMethods() {
+	// Option
+	optionMethods := OptionBuiltins()
+	if _, ok := e.ExtensionMethods["Option"]; !ok {
+		e.ExtensionMethods["Option"] = make(map[string]Object)
+	}
+	for name, builtin := range optionMethods {
+		e.ExtensionMethods["Option"][name] = builtin
+	}
+
+	// Result
+	resultMethods := ResultBuiltins()
+	if _, ok := e.ExtensionMethods["Result"]; !ok {
+		e.ExtensionMethods["Result"] = make(map[string]Object)
+	}
+	for name, builtin := range resultMethods {
+		e.ExtensionMethods["Result"][name] = builtin
+	}
+}
+
+// ASTTypeToTypesystem converts ast.Type to typesystem.Type for runtime type display
+func ASTTypeToTypesystem(t ast.Type) typesystem.Type {
 	if t == nil {
 		return typesystem.TCon{Name: "?"}
 	}
@@ -32,7 +54,7 @@ func astTypeToTypesystem(t ast.Type) typesystem.Type {
 		}
 		args := []typesystem.Type{}
 		for _, arg := range tt.Args {
-			args = append(args, astTypeToTypesystem(arg))
+			args = append(args, ASTTypeToTypesystem(arg))
 		}
 		return typesystem.TApp{
 			Constructor: typesystem.TCon{Name: tt.Name.Value},
@@ -41,27 +63,32 @@ func astTypeToTypesystem(t ast.Type) typesystem.Type {
 	case *ast.TupleType:
 		elems := []typesystem.Type{}
 		for _, el := range tt.Types {
-			elems = append(elems, astTypeToTypesystem(el))
+			elems = append(elems, ASTTypeToTypesystem(el))
 		}
 		return typesystem.TTuple{Elements: elems}
 	case *ast.FunctionType:
 		params := []typesystem.Type{}
 		for _, p := range tt.Parameters {
-			params = append(params, astTypeToTypesystem(p))
+			params = append(params, ASTTypeToTypesystem(p))
 		}
 		return typesystem.TFunc{
 			Params:     params,
-			ReturnType: astTypeToTypesystem(tt.ReturnType),
+			ReturnType: ASTTypeToTypesystem(tt.ReturnType),
 		}
 	case *ast.RecordType:
 		fields := make(map[string]typesystem.Type)
 		for k, v := range tt.Fields {
-			fields[k] = astTypeToTypesystem(v)
+			fields[k] = ASTTypeToTypesystem(v)
 		}
 		return typesystem.TRecord{Fields: fields}
 	default:
 		return typesystem.TCon{Name: "?"}
 	}
+}
+
+// astTypeToTypesystem is a deprecated alias for ASTTypeToTypesystem
+func astTypeToTypesystem(t ast.Type) typesystem.Type {
+	return ASTTypeToTypesystem(t)
 }
 
 var Builtins = map[string]*Builtin{
@@ -187,19 +214,7 @@ var Builtins = map[string]*Builtin{
 			return e.nativeBoolToBooleanObject(checkType(val, expectedTypeObj.TypeVal))
 		},
 	},
-	config.ShowFuncName: {
-		Name: config.ShowFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.Char}},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("wrong number of arguments to show. got=%d, want=1", len(args))
-			}
-			return stringToList(objectToString(args[0]))
-		},
-	},
+	// show is now a trait method (Show trait), registered in RegisterFPTraits
 	config.IdFuncName: {
 		Name: config.IdFuncName,
 		TypeInfo: typesystem.TFunc{
@@ -398,7 +413,10 @@ var Builtins = map[string]*Builtin{
 			location := "?"
 			if len(e.CallStack) > 0 {
 				frame := e.CallStack[len(e.CallStack)-1]
-				location = fmt.Sprintf("%s:%d", frame.File, frame.Line)
+				file := frame.File
+				// Extract just the filename without directory path
+				file = filepath.Base(file)
+				location = fmt.Sprintf("%s:%d", file, frame.Line)
 			}
 			_, _ = fmt.Fprintf(e.Out, "[DEBUG %s] %s : %s\n", location, val.Inspect(), typeName)
 			return &Nil{}
@@ -420,7 +438,10 @@ var Builtins = map[string]*Builtin{
 			location := "?"
 			if len(e.CallStack) > 0 {
 				frame := e.CallStack[len(e.CallStack)-1]
-				location = fmt.Sprintf("%s:%d", frame.File, frame.Line)
+				file := frame.File
+				// Extract just the filename without directory path
+				file = filepath.Base(file)
+				location = fmt.Sprintf("%s:%d", file, frame.Line)
 			}
 			_, _ = fmt.Fprintf(e.Out, "[TRACE %s] %s : %s\n", location, val.Inspect(), typeName)
 			return val // Return the value for pipe chains
@@ -483,7 +504,96 @@ var Builtins = map[string]*Builtin{
 			return &TypeObject{TypeVal: t}
 		},
 	},
-	// Note: default() is handled specially in evalCallExpression to avoid init cycle
+	"optionT":    {Name: "optionT", Fn: builtinOptionT, TypeInfo: getOptionTConstructorType()},
+	"resultT":    {Name: "resultT", Fn: builtinResultT, TypeInfo: getResultTConstructorType()},
+	"runOptionT": {Name: "runOptionT", Fn: builtinRunOptionT, TypeInfo: getRunOptionTType()},
+	"runResultT": {Name: "runResultT", Fn: builtinRunResultT, TypeInfo: getRunResultTType()},
+
+	// Reflection
+	"kindOf":    {Name: "kindOf", Fn: builtinKindOf, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}},
+	"debugType": {Name: "debugType", Fn: builtinDebugType, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}},
+	"debugRepr": {Name: "debugRepr", Fn: builtinDebugRepr, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}},
+}
+
+// Helpers for type info construction
+func getOptionTConstructorType() typesystem.Type {
+	return typesystem.TFunc{
+		Params: []typesystem.Type{
+			typesystem.TApp{
+				Constructor: typesystem.TVar{Name: "M"},
+				Args: []typesystem.Type{
+					typesystem.TApp{
+						Constructor: typesystem.TCon{Name: config.OptionTypeName},
+						Args:        []typesystem.Type{typesystem.TVar{Name: "A"}},
+					},
+				},
+			},
+		},
+		ReturnType: typesystem.TApp{
+			Constructor: typesystem.TCon{Name: "OptionT"},
+			Args:        []typesystem.Type{typesystem.TVar{Name: "M"}, typesystem.TVar{Name: "A"}},
+		},
+	}
+}
+
+func getResultTConstructorType() typesystem.Type {
+	return typesystem.TFunc{
+		Params: []typesystem.Type{
+			typesystem.TApp{
+				Constructor: typesystem.TVar{Name: "M"},
+				Args: []typesystem.Type{
+					typesystem.TApp{
+						Constructor: typesystem.TCon{Name: config.ResultTypeName},
+						Args:        []typesystem.Type{typesystem.TVar{Name: "E"}, typesystem.TVar{Name: "A"}},
+					},
+				},
+			},
+		},
+		ReturnType: typesystem.TApp{
+			Constructor: typesystem.TCon{Name: "ResultT"},
+			Args:        []typesystem.Type{typesystem.TVar{Name: "M"}, typesystem.TVar{Name: "E"}, typesystem.TVar{Name: "A"}},
+		},
+	}
+}
+
+func getRunOptionTType() typesystem.Type {
+	return typesystem.TFunc{
+		Params: []typesystem.Type{
+			typesystem.TApp{
+				Constructor: typesystem.TCon{Name: "OptionT"},
+				Args:        []typesystem.Type{typesystem.TVar{Name: "M"}, typesystem.TVar{Name: "A"}},
+			},
+		},
+		ReturnType: typesystem.TApp{
+			Constructor: typesystem.TVar{Name: "M"},
+			Args: []typesystem.Type{
+				typesystem.TApp{
+					Constructor: typesystem.TCon{Name: config.OptionTypeName},
+					Args:        []typesystem.Type{typesystem.TVar{Name: "A"}},
+				},
+			},
+		},
+	}
+}
+
+func getRunResultTType() typesystem.Type {
+	return typesystem.TFunc{
+		Params: []typesystem.Type{
+			typesystem.TApp{
+				Constructor: typesystem.TCon{Name: "ResultT"},
+				Args:        []typesystem.Type{typesystem.TVar{Name: "M"}, typesystem.TVar{Name: "E"}, typesystem.TVar{Name: "A"}},
+			},
+		},
+		ReturnType: typesystem.TApp{
+			Constructor: typesystem.TVar{Name: "M"},
+			Args: []typesystem.Type{
+				typesystem.TApp{
+					Constructor: typesystem.TCon{Name: config.ResultTypeName},
+					Args:        []typesystem.Type{typesystem.TVar{Name: "E"}, typesystem.TVar{Name: "A"}},
+				},
+			},
+		},
+	}
 }
 
 // objectToString converts any object to its string representation
@@ -538,6 +648,16 @@ func getDefaultValue(t typesystem.Type) Object {
 			return &Nil{}
 		case config.ListTypeName:
 			return newList([]Object{})
+		case "String":
+			return newList([]Object{}) // Return generic empty list to match VM behavior (prints as [])
+		case "Bytes":
+			return &Bytes{data: []byte{}}
+		case "Bits":
+			return &Bits{data: []byte{}, length: 0}
+		case "Uuid":
+			return &DataInstance{TypeName: "Uuid", Fields: []Object{}} // Or default UUID
+		case "Map":
+			return NewMap()
 		}
 	case typesystem.TApp:
 		if con, ok := typ.Constructor.(typesystem.TCon); ok {
@@ -724,6 +844,60 @@ func GetBuiltinsList() map[string]Object {
 
 // RegisterBuiltins registers built-in functions and types into the environment.
 func RegisterBuiltins(env *Environment) {
+	// Internal builtin for dictionary creation (Analyzer usage)
+	env.Set("__make_dictionary", &Builtin{
+		Name: "__make_dictionary",
+		TypeInfo: typesystem.TFunc{
+			// We can be loose with types here as it's internal
+			Params:     []typesystem.Type{typesystem.TCon{Name: "String"}, typesystem.TCon{Name: "List"}, typesystem.TCon{Name: "List"}},
+			ReturnType: typesystem.TCon{Name: "Dictionary"},
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 3 {
+				return newError("__make_dictionary expects 3 arguments, got %d", len(args))
+			}
+
+			// 1. Name
+			nameList, ok := args[0].(*List)
+			if !ok {
+				return newError("__make_dictionary arg 1 (name) must be String/List<Char>")
+			}
+			name := ListToString(nameList)
+
+			// 2. Methods
+			var methods []Object
+			if tuple, ok := args[1].(*Tuple); ok {
+				methods = tuple.Elements
+			} else if list, ok := args[1].(*List); ok {
+				// Fallback for homogeneous lists or if empty
+				methods = list.ToSlice()
+			} else {
+				return newError("__make_dictionary arg 2 (methods) must be Tuple or List")
+			}
+
+			// 3. Supers
+			supersList, ok := args[2].(*List)
+			if !ok {
+				return newError("__make_dictionary arg 3 (supers) must be List")
+			}
+			supersSlice := supersList.ToSlice()
+			supers := make([]*Dictionary, len(supersSlice))
+			for i, s := range supersSlice {
+				dict, ok := s.(*Dictionary)
+				if !ok {
+					return newError("__make_dictionary arg 3 (supers) must contain Dictionaries")
+				}
+				supers[i] = dict
+			}
+
+			return &Dictionary{
+				TraitName: name,
+				Methods:   methods,
+				Supers:    supers,
+			}
+		},
+	})
+
 	// Built-in types
 	env.Set("Int", &TypeObject{TypeVal: typesystem.TCon{Name: "Int"}})
 	env.Set("Float", &TypeObject{TypeVal: typesystem.TCon{Name: "Float"}})
@@ -739,7 +913,7 @@ func RegisterBuiltins(env *Environment) {
 		Constructor: typesystem.TCon{Name: config.ListTypeName},
 		Args:        []typesystem.Type{typesystem.TCon{Name: "Char"}},
 	}
-	env.Set("String", &TypeObject{TypeVal: stringType})
+	env.Set("String", &TypeObject{TypeVal: stringType, Alias: "String"})
 
 	// Built-in ADTs
 	// Result
@@ -750,10 +924,12 @@ func RegisterBuiltins(env *Environment) {
 	// Option
 	env.Set(config.OptionTypeName, &TypeObject{TypeVal: typesystem.TCon{Name: config.OptionTypeName}})
 	env.Set(config.SomeCtorName, &Constructor{Name: config.SomeCtorName, TypeName: config.OptionTypeName, Arity: 1})
+	// Zero is a nullary constructor (constant), not a function
 	env.Set(config.ZeroCtorName, &DataInstance{Name: config.ZeroCtorName, Fields: []Object{}, TypeName: config.OptionTypeName})
 
 	// Json ADT
 	env.Set("Json", &TypeObject{TypeVal: typesystem.TCon{Name: "Json"}})
+	// JNull is a nullary constructor (constant), not a function
 	env.Set("JNull", &DataInstance{Name: "JNull", Fields: []Object{}, TypeName: "Json"})
 	env.Set("JBool", &Constructor{Name: "JBool", TypeName: "Json", Arity: 1})
 	env.Set("JNum", &Constructor{Name: "JNum", TypeName: "Json", Arity: 1})
@@ -773,6 +949,213 @@ func RegisterBuiltins(env *Environment) {
 
 	// Map type
 	env.Set("Map", &TypeObject{TypeVal: typesystem.TCon{Name: "Map"}})
+
+	// Reader<E, A>
+	// Type: Reader
+	env.Set("Reader", &TypeObject{TypeVal: typesystem.TCon{Name: "Reader"}})
+	// Constructor: reader(fn)
+	env.Set("reader", &Constructor{Name: "reader", TypeName: "Reader", Arity: 1})
+	// runReader(r, e)
+	env.Set("runReader", &Builtin{
+		Name: "runReader",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 2 {
+				return newError("runReader expects 2 arguments, got %d", len(args))
+			}
+			r := args[0]
+			envVal := args[1]
+			// Check if r is Reader
+			di, ok := r.(*DataInstance)
+			if !ok || di.TypeName != "Reader" || len(di.Fields) != 1 {
+				return newError("runReader expects a Reader")
+			}
+			fn := di.Fields[0]
+			return e.ApplyFunction(fn, []Object{envVal})
+		},
+	})
+
+	// Identity<T>
+	// Type: Identity
+	env.Set("Identity", &TypeObject{TypeVal: typesystem.TCon{Name: "Identity"}})
+	// Constructor: identity(val)
+	env.Set("identity", &Constructor{Name: "identity", TypeName: "Identity", Arity: 1})
+	// runIdentity(i)
+	env.Set("runIdentity", &Builtin{
+		Name: "runIdentity",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("runIdentity expects 1 argument")
+			}
+			i := args[0]
+			di, ok := i.(*DataInstance)
+			if !ok || di.TypeName != "Identity" || len(di.Fields) != 1 {
+				return newError("runIdentity expects an Identity")
+			}
+			return di.Fields[0]
+		},
+	})
+
+	// State<S, A>
+	// Type: State
+	env.Set("State", &TypeObject{TypeVal: typesystem.TCon{Name: "State"}})
+	// Constructor: state(fn)
+	env.Set("state", &Constructor{Name: "state", TypeName: "State", Arity: 1})
+	// runState(s, init)
+	env.Set("runState", &Builtin{
+		Name: "runState",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 2 {
+				return newError("runState expects 2 arguments")
+			}
+			s := args[0]
+			init := args[1]
+			di, ok := s.(*DataInstance)
+			if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
+				return newError("runState expects a State, got %s (TypeName=%s)", s.Inspect(), getTypeName(s))
+			}
+			fn := di.Fields[0]
+			return e.ApplyFunction(fn, []Object{init})
+		},
+	})
+	// evalState(s, init) -> val
+	env.Set("evalState", &Builtin{
+		Name: "evalState",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 2 {
+				return newError("evalState expects 2 arguments")
+			}
+			s := args[0]
+			init := args[1]
+			di, ok := s.(*DataInstance)
+			if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
+				return newError("evalState expects a State")
+			}
+			fn := di.Fields[0]
+			res := e.ApplyFunction(fn, []Object{init})
+			if isError(res) {
+				return res
+			}
+			// Result is (val, state) tuple
+			tuple, ok := res.(*Tuple)
+			if !ok || len(tuple.Elements) != 2 {
+				return newError("State function must return (value, state) tuple")
+			}
+			return tuple.Elements[0]
+		},
+	})
+	// execState(s, init) -> state
+	env.Set("execState", &Builtin{
+		Name: "execState",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 2 {
+				return newError("execState expects 2 arguments")
+			}
+			s := args[0]
+			init := args[1]
+			di, ok := s.(*DataInstance)
+			if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
+				return newError("execState expects a State")
+			}
+			fn := di.Fields[0]
+			res := e.ApplyFunction(fn, []Object{init})
+			if isError(res) {
+				return res
+			}
+			// Result is (val, state) tuple
+			tuple, ok := res.(*Tuple)
+			if !ok || len(tuple.Elements) != 2 {
+				return newError("State function must return (value, state) tuple")
+			}
+			return tuple.Elements[1]
+		},
+	})
+	// sGet() -> State (\s -> (s, s))
+	env.Set("sGet", &Builtin{
+		Name: "sGet",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			fn := &Builtin{
+				Name: "get_state",
+				Fn: func(ev *Evaluator, callArgs ...Object) Object {
+					if len(callArgs) != 1 {
+						return newError("State function expects 1 argument")
+					}
+					s := callArgs[0]
+					return &Tuple{Elements: []Object{s, s}}
+				},
+			}
+			return &DataInstance{Name: "state", TypeName: "State", Fields: []Object{fn}}
+		},
+	})
+	// sPut(s) -> State (\_ -> ((), s))
+	env.Set("sPut", &Builtin{
+		Name: "sPut",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("sPut expects 1 argument")
+			}
+			newState := args[0]
+			fn := &Builtin{
+				Name: "put_state",
+				Fn: func(ev *Evaluator, callArgs ...Object) Object {
+					return &Tuple{Elements: []Object{&Nil{}, newState}}
+				},
+			}
+			return &DataInstance{Name: "state", TypeName: "State", Fields: []Object{fn}}
+		},
+	})
+
+	// Writer<W, A>
+	// Type: Writer
+	env.Set("Writer", &TypeObject{TypeVal: typesystem.TCon{Name: "Writer"}})
+	// Constructor: writer(val, log)
+	env.Set("writer", &Constructor{Name: "writer", TypeName: "Writer", Arity: 2})
+	// runWriter(w) -> (val, log)
+	env.Set("runWriter", &Builtin{
+		Name: "runWriter",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("runWriter expects 1 argument")
+			}
+			w := args[0]
+			di, ok := w.(*DataInstance)
+			if !ok || di.TypeName != "Writer" || len(di.Fields) != 2 {
+				return newError("runWriter expects a Writer")
+			}
+			val := di.Fields[0]
+			log := di.Fields[1]
+			return &Tuple{Elements: []Object{val, log}}
+		},
+	})
+	// execWriter(w) -> log
+	env.Set("execWriter", &Builtin{
+		Name: "execWriter",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("execWriter expects 1 argument")
+			}
+			w := args[0]
+			di, ok := w.(*DataInstance)
+			if !ok || di.TypeName != "Writer" || len(di.Fields) != 2 {
+				return newError("execWriter expects a Writer")
+			}
+			return di.Fields[1]
+		},
+	})
+	// wTell(log) -> Writer((), log)
+	env.Set("wTell", &Builtin{
+		Name: "wTell",
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("wTell expects 1 argument")
+			}
+			log := args[0]
+			return &DataInstance{
+				Name:     "writer",
+				TypeName: "Writer",
+				Fields:   []Object{&Nil{}, log},
+			}
+		},
+	})
 
 	// Register all builtin functions from the Builtins map
 	for name, builtin := range Builtins {
@@ -913,4 +1296,42 @@ func parseStringToType(s string, t typesystem.Type) Object {
 	default:
 		return makeZero()
 	}
+}
+
+// OptionT constructor
+func builtinOptionT(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("optionT expects 1 argument")
+	}
+	return &DataInstance{Name: "OptionT", TypeName: "OptionT", Fields: []Object{args[0]}}
+}
+
+// ResultT constructor
+func builtinResultT(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("resultT expects 1 argument")
+	}
+	return &DataInstance{Name: "ResultT", TypeName: "ResultT", Fields: []Object{args[0]}}
+}
+
+// runOptionT
+func builtinRunOptionT(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("runOptionT expects 1 argument")
+	}
+	if di, ok := args[0].(*DataInstance); ok && di.TypeName == "OptionT" && len(di.Fields) == 1 {
+		return di.Fields[0]
+	}
+	return newError("runOptionT expects OptionT")
+}
+
+// runResultT
+func builtinRunResultT(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("runResultT expects 1 argument")
+	}
+	if di, ok := args[0].(*DataInstance); ok && di.TypeName == "ResultT" && len(di.Fields) == 1 {
+		return di.Fields[0]
+	}
+	return newError("runResultT expects ResultT")
 }

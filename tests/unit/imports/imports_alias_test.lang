@@ -8,7 +8,7 @@ testAlias = fun() {
     d1 = s.Con1(10)
 
     // Check function via alias
-    res = s.identity(5)
+    res = s.myIdentity(5)
     assertEquals(res, 5, "Qualified function call")
 
     // Pattern matching with qualified names might be tricky or not supported syntax-wise

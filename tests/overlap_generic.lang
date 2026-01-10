@@ -3,12 +3,12 @@
 // instance MyCmp Int - specific instance for Int
 // These overlap because Int is included in "all types A"
 
-trait MyCmp<T> {
-    fun cmp(x: T, y: T) -> Bool
+trait MyCmp<t> {
+    fun cmp(x: t, y: t) -> Bool
 }
 
-instance MyCmp A {
-    fun cmp(x: A, y: A) -> Bool { true }
+instance MyCmp a {
+    fun cmp(x: a, y: a) -> Bool { true }
 }
 
 instance MyCmp Int {

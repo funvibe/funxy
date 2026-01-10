@@ -1,0 +1,24 @@
+// Test: MPTC with mixed Kinds
+// Container<Val, Box> where Val: *, Box: * -> *
+
+trait Container<v, b> {
+    fun wrapC(x: v) -> b<v>
+}
+
+// Int (*), List (* -> *) - OK
+instance Container<Int, List> {
+    fun wrapC(x) { [x] }
+}
+
+// Int (*), Option (* -> *) - OK
+instance Container<Int, Option> {
+    fun wrapC(x) { Some(x) }
+}
+
+// Check usage
+l: List<Int> = wrapC(42)
+o: Option<Int> = wrapC(10)
+
+print(l)
+print(o)
+

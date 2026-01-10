@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 9:23 [A003]: type error: type Int has kind *, but trait Container requires kind (* -> *) for parameter f (type constructor)

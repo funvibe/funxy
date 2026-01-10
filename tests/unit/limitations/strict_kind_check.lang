@@ -1,0 +1,13 @@
+import "lib/test" (*)
+
+// Test: Strict Kind Check (Lite)
+// Type annotations must have kind * (Star).
+
+testRun("Feature: Strict Kind Check", fun() -> {
+    // List has kind * -> *. It cannot be used as a value type.
+    x: List = [] // Uncommenting this should cause compile error: type annotation must be type (kind *), got kind (* -> *)
+
+    // Valid usage
+    y: List<Int> = []
+})
+

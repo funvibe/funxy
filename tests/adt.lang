@@ -1,5 +1,5 @@
 type Shape = Circle Int | Rectangle Int Int
-type MyList<T> = End | Cons T (MyList<T>)
+type MyList<t> = End | Cons t (MyList<t>)
 
 c = Circle(10)
 r = Rectangle(20, 30)

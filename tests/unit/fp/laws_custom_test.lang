@@ -9,21 +9,21 @@ import "lib/test" (*)
 // Custom Maybe type (different from built-in Option)
 // =============================================
 
-type Maybe<A> = Just A | Nothing
+type Maybe<a> = Just a | Nothing
 
 instance Functor Maybe {
-    fun fmap(f: (A) -> B, ma: Maybe<A>) -> Maybe<B> {
+    fun fmap(f: (a) -> b, ma: Maybe<a>) -> Maybe<b> {
         match ma {
             Nothing -> Nothing
-            Just(a) -> Just(f(a))
+            Just(val) -> Just(f(val))
         }
     }
 }
 
 instance Applicative Maybe {
-    fun pure(a: A) -> Maybe<A> { Just(a) }
-    
-    operator (<*>)(mf: Maybe<(A) -> B>, ma: Maybe<A>) -> Maybe<B> {
+    fun pure(val: a) -> Maybe<a> { Just(val) }
+
+    operator (<*>)(mf: Maybe<(a) -> b>, ma: Maybe<a>) -> Maybe<b> {
         match mf {
             Nothing -> Nothing
             Just(f) -> fmap(f, ma)
@@ -32,36 +32,37 @@ instance Applicative Maybe {
 }
 
 instance Monad Maybe {
-    operator (>>=)(ma: Maybe<A>, f: (A) -> Maybe<B>) -> Maybe<B> {
+    operator (>>=)(ma: Maybe<a>, f: (a) -> Maybe<b>) -> Maybe<b> {
         match ma {
             Nothing -> Nothing
-            Just(a) -> f(a)
+            Just(val) -> f(val)
         }
     }
 }
 
-instance Semigroup Maybe {
-    operator (<>)(a: Maybe<A>, b: Maybe<A>) -> Maybe<A> {
-        match a {
-            Nothing -> b
-            Just(_) -> a
+instance Semigroup Maybe<a> {
+    operator (<>)(lhs: Maybe<a>, rhs: Maybe<a>) -> Maybe<a> {
+        match lhs {
+            Nothing -> rhs
+            Just(_) -> lhs
         }
     }
 }
 
-instance Monoid Maybe {
-    fun mempty() -> Maybe<A> { Nothing }
+instance Monoid Maybe<a> {
+    fun mempty() -> Maybe<a> { Nothing }
 }
+
 
 // =============================================
 // Custom Either type (different from built-in Result)
 // Either<L, R> - L is "left" (error), R is "right" (success)
 // =============================================
 
-type Either<L, R> = Left L | Right R
+type Either<l, r> = Left l | Right r
 
-instance Functor Either {
-    fun fmap(f: (A) -> B, ea: Either<E, A>) -> Either<E, B> {
+instance Functor Either<e> {
+    fun fmap(f: (a) -> b, ea: Either<e, a>) -> Either<e, b> {
         match ea {
             Left(e) -> Left(e)
             Right(a) -> Right(f(a))
@@ -69,10 +70,10 @@ instance Functor Either {
     }
 }
 
-instance Applicative Either {
-    fun pure(a: A) -> Either<E, A> { Right(a) }
-    
-    operator (<*>)(ef: Either<E, (A) -> B>, ea: Either<E, A>) -> Either<E, B> {
+instance Applicative Either<e> {
+    fun pure(a: a) -> Either<e, a> { Right(a) }
+
+    operator (<*>)(ef: Either<e, (a) -> b>, ea: Either<e, a>) -> Either<e, b> {
         match ef {
             Left(e) -> Left(e)
             Right(f) -> fmap(f, ea)
@@ -80,8 +81,8 @@ instance Applicative Either {
     }
 }
 
-instance Monad Either {
-    operator (>>=)(ea: Either<E, A>, f: (A) -> Either<E, B>) -> Either<E, B> {
+instance Monad Either<e> {
+    operator (>>=)(ea: Either<e, a>, f: (a) -> Either<e, b>) -> Either<e, b> {
         match ea {
             Left(e) -> Left(e)
             Right(a) -> f(a)
@@ -90,31 +91,31 @@ instance Monad Either {
 }
 
 // =============================================
-// Custom Identity type (simplest monad)
+// Custom MyIdentity type (simplest monad)
 // =============================================
 
-type Identity<A> = Id A
+type MyIdentity<a> = Id a
 
-instance Functor Identity {
-    fun fmap(f: (A) -> B, ia: Identity<A>) -> Identity<B> {
+instance Functor MyIdentity {
+    fun fmap(f: (a) -> b, ia: MyIdentity<a>) -> MyIdentity<b> {
         match ia {
             Id(a) -> Id(f(a))
         }
     }
 }
 
-instance Applicative Identity {
-    fun pure(a: A) -> Identity<A> { Id(a) }
-    
-    operator (<*>)(idf: Identity<(A) -> B>, ia: Identity<A>) -> Identity<B> {
+instance Applicative MyIdentity {
+    fun pure(a: a) -> MyIdentity<a> { Id(a) }
+
+    operator (<*>)(idf: MyIdentity<(a) -> b>, ia: MyIdentity<a>) -> MyIdentity<b> {
         match idf {
             Id(f) -> fmap(f, ia)
         }
     }
 }
 
-instance Monad Identity {
-    operator (>>=)(ia: Identity<A>, f: (A) -> Identity<B>) -> Identity<B> {
+instance Monad MyIdentity {
+    operator (>>=)(ia: MyIdentity<a>, f: (a) -> MyIdentity<b>) -> MyIdentity<b> {
         match ia {
             Id(a) -> f(a)
         }
@@ -134,14 +135,14 @@ fun maybeAddTen(x: Int) -> Maybe<Int> { Just(x + 10) }
 fun eitherDouble(x: Int) -> Either<String, Int> { Right(x * 2) }
 fun eitherAddTen(x: Int) -> Either<String, Int> { Right(x + 10) }
 
-fun idDouble(x: Int) -> Identity<Int> { Id(x * 2) }
-fun idAddTen(x: Int) -> Identity<Int> { Id(x + 10) }
+fun idDouble(x: Int) -> MyIdentity<Int> { Id(x * 2) }
+fun idAddTen(x: Int) -> MyIdentity<Int> { Id(x + 10) }
 
 // =============================================
 // Maybe Laws Tests
 // =============================================
 
-testRun("Maybe Functor Identity", fun() -> {
+testRun("Maybe Functor MyIdentity", fun() -> {
     x = Just(42)
     result = fmap(id, x)
     assert(result == x)
@@ -154,7 +155,7 @@ testRun("Maybe Functor Composition", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Applicative Identity", fun() -> {
+testRun("Maybe Applicative MyIdentity", fun() -> {
     v = Just(42)
     idFn: Maybe<(Int) -> Int> = pure(id)
     result = idFn <*> v
@@ -169,7 +170,7 @@ testRun("Maybe Applicative Homomorphism", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Monad Left Identity", fun() -> {
+testRun("Maybe Monad Left MyIdentity", fun() -> {
     a = 21
     f = maybeDouble
     left = (pure(a) : Maybe<Int>) >>= f
@@ -177,7 +178,7 @@ testRun("Maybe Monad Left Identity", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Monad Right Identity", fun() -> {
+testRun("Maybe Monad Right MyIdentity", fun() -> {
     m = Just(42)
     result = m >>= pure
     assert(result == m)
@@ -201,14 +202,14 @@ testRun("Maybe Semigroup Associativity", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Monoid Left Identity", fun() -> {
+testRun("Maybe Monoid Left MyIdentity", fun() -> {
     x = Just(42)
     empty: Maybe<Int> = Nothing
     result = empty <> x
     assert(result == x)
 })
 
-testRun("Maybe Monoid Right Identity", fun() -> {
+testRun("Maybe Monoid Right MyIdentity", fun() -> {
     x = Just(42)
     empty: Maybe<Int> = Nothing
     result = x <> empty
@@ -219,13 +220,13 @@ testRun("Maybe Monoid Right Identity", fun() -> {
 // Either Laws Tests
 // =============================================
 
-testRun("Either Functor Identity - Right", fun() -> {
+testRun("Either Functor MyIdentity - Right", fun() -> {
     x: Either<String, Int> = Right(42)
     result = fmap(id, x)
     assert(result == x)
 })
 
-testRun("Either Functor Identity - Left", fun() -> {
+testRun("Either Functor MyIdentity - Left", fun() -> {
     x: Either<String, Int> = Left("error")
     result = fmap(id, x)
     assert(result == x)
@@ -238,7 +239,7 @@ testRun("Either Functor Composition", fun() -> {
     assert(left == right)
 })
 
-testRun("Either Monad Left Identity", fun() -> {
+testRun("Either Monad Left MyIdentity", fun() -> {
     a = 21
     f = eitherDouble
     left = (pure(a) : Either<String, Int>) >>= f
@@ -246,13 +247,13 @@ testRun("Either Monad Left Identity", fun() -> {
     assert(left == right)
 })
 
-testRun("Either Monad Right Identity - Right", fun() -> {
+testRun("Either Monad Right MyIdentity - Right", fun() -> {
     m: Either<String, Int> = Right(42)
     result = m >>= pure
     assert(result == m)
 })
 
-testRun("Either Monad Right Identity - Left", fun() -> {
+testRun("Either Monad Right MyIdentity - Left", fun() -> {
     m: Either<String, Int> = Left("error")
     result = m >>= pure
     assert(result == m)
@@ -268,44 +269,44 @@ testRun("Either Monad Associativity", fun() -> {
 })
 
 // =============================================
-// Identity Laws Tests
+// MyIdentity Laws Tests
 // =============================================
 
-testRun("Identity Functor Identity", fun() -> {
+testRun("MyIdentity Functor MyIdentity", fun() -> {
     x = Id(42)
     result = fmap(id, x)
     assert(result == x)
 })
 
-testRun("Identity Functor Composition", fun() -> {
+testRun("MyIdentity Functor Composition", fun() -> {
     x = Id(5)
     left = fmap(double ,, addTen, x)
     right = fmap(double, fmap(addTen, x))
     assert(left == right)
 })
 
-testRun("Identity Applicative Identity", fun() -> {
+testRun("MyIdentity Applicative MyIdentity", fun() -> {
     v = Id(42)
-    idFn: Identity<(Int) -> Int> = pure(id)
+    idFn: MyIdentity<(Int) -> Int> = pure(id)
     result = idFn <*> v
     assert(result == v)
 })
 
-testRun("Identity Monad Left Identity", fun() -> {
+testRun("MyIdentity Monad Left MyIdentity", fun() -> {
     a = 21
     f = idDouble
-    left = (pure(a) : Identity<Int>) >>= f
+    left = (pure(a) : MyIdentity<Int>) >>= f
     right = f(a)
     assert(left == right)
 })
 
-testRun("Identity Monad Right Identity", fun() -> {
+testRun("MyIdentity Monad Right MyIdentity", fun() -> {
     m = Id(42)
     result = m >>= pure
     assert(result == m)
 })
 
-testRun("Identity Monad Associativity", fun() -> {
+testRun("MyIdentity Monad Associativity", fun() -> {
     m = Id(5)
     f = idDouble
     g = idAddTen

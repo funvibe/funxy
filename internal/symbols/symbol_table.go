@@ -2,18 +2,35 @@ package symbols
 
 import (
 	"fmt"
+	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
+	"sync"
 )
 
 type SymbolKind int
+
+type ScopeType int
+
+const (
+	ScopePrelude ScopeType = iota // Built-in symbols (types, functions, traits)
+	ScopeGlobal                   // User code top-level
+	ScopeFunction
+	ScopeBlock
+)
+
+// Singleton prelude table containing all built-in symbols
+var (
+	preludeTable *SymbolTable
+	preludeOnce  sync.Once
+)
 
 const (
 	VariableSymbol SymbolKind = iota
 	TypeSymbol
 	ConstructorSymbol
-	TraitSymbol // New: Symbol for a Trait (Type Class)
+	TraitSymbol  // New: Symbol for a Trait (Type Class)
 	ModuleSymbol // New: Symbol for a Module
 )
 
@@ -25,6 +42,7 @@ type Symbol struct {
 	IsConstant     bool            // True if defined with :- (immutable)
 	UnderlyingType typesystem.Type // For type aliases: the underlying type (e.g., TRecord for type Vector = {...})
 	OriginModule   string          // Module where symbol was originally defined (for re-export conflict detection)
+	DefinitionNode ast.Node        // The AST node where this symbol was defined (for scoped lookups)
 }
 
 // GetTypeForUnification returns the underlying type for unification/field access.
@@ -41,10 +59,19 @@ func (s Symbol) IsTypeAlias() bool {
 	return s.Kind == TypeSymbol && s.UnderlyingType != nil
 }
 
+// InstanceDef represents a registered trait instance
+type InstanceDef struct {
+	TraitName       string
+	TargetTypes     []typesystem.Type
+	ConstructorName string                  // Name of the dictionary constructor or global instance
+	Requirements    []typesystem.Constraint // Constraints for generic instances
+}
+
 type SymbolTable struct {
-	store    map[string]Symbol
-	types    map[string]typesystem.Type
-	outer    *SymbolTable
+	store     map[string]Symbol
+	types     map[string]typesystem.Type
+	outer     *SymbolTable
+	scopeType ScopeType // Type of this scope
 
 	// Trait methods registry: MethodName -> TraitName
 	// e.g. "show" -> "Show"
@@ -53,6 +80,9 @@ type SymbolTable struct {
 	// Trait type parameter registry: TraitName -> TypeParamNames
 	// e.g. "Show" -> ["a"]
 	traitTypeParams map[string][]string
+
+	// Trait type parameter kinds: TraitName -> ParamName -> Kind
+	traitTypeParamKinds map[string]map[string]typesystem.Kind
 
 	// Trait inheritance registry: TraitName -> [SuperTraitName]
 	// e.g. "Order" -> ["Equal"]
@@ -70,8 +100,8 @@ type SymbolTable struct {
 	// e.g. "+" -> "Add", "==" -> "Equal"
 	operatorTraits map[string]string
 
-	// Implementations registry: TraitName -> [Type]
-	implementations map[string][]typesystem.Type
+	// Implementations registry: TraitName -> [InstanceDef]
+	implementations map[string][]InstanceDef
 
 	// Instance method signatures: TraitName -> TypeName -> MethodName -> Type
 	// Stores specialized method signatures for each instance
@@ -101,6 +131,17 @@ type SymbolTable struct {
 	// For type alias `type Vector = { x: Int, y: Int }`, stores Vector -> TRecord
 	// The main types map stores TCon{Name: "Vector"} for proper module tagging
 	typeAliases map[string]typesystem.Type
+
+	// TraitMethodIndices maps TraitName -> MethodName -> Index in the Dictionary.
+	// Used for O(1) method lookup from a Dictionary.
+	TraitMethodIndices map[string]map[string]int
+
+	// EvidenceTable maps a lookup key (e.g. "Show<Int>") to the name of the global variable
+	// holding the Dictionary instance.
+	EvidenceTable map[string]string
+
+	// StrictMode enabled via directive
+	StrictMode bool
 }
 
 type Constraint struct {
@@ -112,13 +153,15 @@ func NewEmptySymbolTable() *SymbolTable {
 	return &SymbolTable{
 		store:               make(map[string]Symbol),
 		types:               make(map[string]typesystem.Type),
+		scopeType:           ScopeGlobal, // Default to global
 		traitMethods:        make(map[string]string),
 		traitTypeParams:     make(map[string][]string),
+		traitTypeParamKinds: make(map[string]map[string]typesystem.Kind),
 		traitSuperTraits:    make(map[string][]string),
 		traitDefaultMethods: make(map[string]map[string]bool),
 		traitAllMethods:     make(map[string][]string),
 		operatorTraits:      make(map[string]string),
-		implementations:     make(map[string][]typesystem.Type),
+		implementations:     make(map[string][]InstanceDef),
 		instanceMethods:     make(map[string]map[string]map[string]typesystem.Type),
 		extensionMethods:    make(map[string]map[string]typesystem.Type),
 		genericTypeParams:   make(map[string][]string),
@@ -127,13 +170,36 @@ func NewEmptySymbolTable() *SymbolTable {
 		kinds:               make(map[string]typesystem.Kind),
 		moduleAliases:       make(map[string]string),
 		typeAliases:         make(map[string]typesystem.Type),
+		TraitMethodIndices:  make(map[string]map[string]int),
+		EvidenceTable:       make(map[string]string),
 	}
 }
 
+// GetPrelude returns the singleton prelude SymbolTable containing all built-in symbols.
+// This table is shared across all compilation units.
+func GetPrelude() *SymbolTable {
+	preludeOnce.Do(func() {
+		preludeTable = NewEmptySymbolTable()
+		preludeTable.scopeType = ScopePrelude
+		preludeTable.InitBuiltins()
+	})
+	return preludeTable
+}
+
+// NewSymbolTable creates a new user-level SymbolTable with prelude as parent scope.
+// Built-in symbols are accessible via scope chain but cannot be redefined.
 func NewSymbolTable() *SymbolTable {
+	prelude := GetPrelude()
 	st := NewEmptySymbolTable()
-	st.InitBuiltins()
+	st.outer = prelude
+	st.scopeType = ScopeGlobal
 	return st
+}
+
+// ResetPrelude resets the prelude singleton (for testing only).
+func ResetPrelude() {
+	preludeOnce = sync.Once{}
+	preludeTable = nil
 }
 
 func (st *SymbolTable) InitBuiltins() {
@@ -158,7 +224,15 @@ func (st *SymbolTable) InitBuiltins() {
 		Args:        []typesystem.Type{typesystem.TCon{Name: "Char"}},
 	}
 	st.DefineType("String", stringType, prelude)
+	// Register as alias so matchTypeWithSubst can resolve it
+	st.RegisterTypeAlias("String", stringType)
 	st.RegisterKind("String", typesystem.Star)
+
+	// Bytes and Bits are built-in types (available in prelude)
+	st.DefineType("Bytes", typesystem.TCon{Name: "Bytes"}, prelude)
+	st.RegisterKind("Bytes", typesystem.Star)
+	st.DefineType("Bits", typesystem.TCon{Name: "Bits"}, prelude)
+	st.RegisterKind("Bits", typesystem.Star)
 
 	// Built-in ADTs for error handling
 	// type Result e t = Ok t | Fail e  (like Haskell's Either e a)
@@ -189,22 +263,54 @@ func (st *SymbolTable) InitBuiltins() {
 	st.RegisterVariant(config.OptionTypeName, config.SomeCtorName)
 	st.RegisterVariant(config.OptionTypeName, config.ZeroCtorName)
 
+	// Reader :: * -> * -> *
+	st.DefineType("Reader", typesystem.TCon{Name: "Reader"}, prelude)
+	st.RegisterKind("Reader", typesystem.MakeArrow(typesystem.Star, typesystem.Star, typesystem.Star))
+
+	// Identity :: * -> *
+	st.DefineType("Identity", typesystem.TCon{Name: "Identity"}, prelude)
+	st.RegisterKind("Identity", typesystem.KArrow{Left: typesystem.Star, Right: typesystem.Star})
+
+	// State :: * -> * -> *
+	st.DefineType("State", typesystem.TCon{Name: "State"}, prelude)
+	st.RegisterKind("State", typesystem.MakeArrow(typesystem.Star, typesystem.Star, typesystem.Star))
+
+	// Writer :: * -> * -> *
+	st.DefineType("Writer", typesystem.TCon{Name: "Writer"}, prelude)
+	st.RegisterKind("Writer", typesystem.MakeArrow(typesystem.Star, typesystem.Star, typesystem.Star))
+
 	// Note: SqlValue, Uuid, Logger, Task, Date types are registered via virtual packages on import
 	// They are NOT available without importing the corresponding lib/* package
 }
 
-func NewEnclosedSymbolTable(outer *SymbolTable) *SymbolTable {
+func NewEnclosedSymbolTable(outer *SymbolTable, scopeType ScopeType) *SymbolTable {
 	st := NewEmptySymbolTable()
 	st.outer = outer
+	st.scopeType = scopeType
 	// Inherit registries references or copy?
 	// Trait definitions are global, so we can lookup in outer.
 	// But defining new ones? Usually global.
 	return st
 }
 
+// Outer returns the outer scope symbol table
+func (s *SymbolTable) Outer() *SymbolTable {
+	return s.outer
+}
+
+// IsFunctionScope returns true if this symbol table corresponds to a function scope.
+func (s *SymbolTable) IsFunctionScope() bool {
+	return s.scopeType == ScopeFunction
+}
+
 // IsGlobalScope returns true if this symbol table is the root (global) scope.
 func (s *SymbolTable) IsGlobalScope() bool {
-	return s.outer == nil
+	return s.scopeType == ScopeGlobal
+}
+
+// Parent returns the outer symbol table (if any)
+func (s *SymbolTable) Parent() *SymbolTable {
+	return s.outer
 }
 
 func (s *SymbolTable) DefineModule(name string, moduleType typesystem.Type) {
@@ -241,11 +347,19 @@ func (s *SymbolTable) DefineTypePending(name string, t typesystem.Type, origin s
 
 func (s *SymbolTable) DefinePendingTrait(name string, origin string) {
 	s.store[name] = Symbol{Name: name, Type: nil, Kind: TraitSymbol, IsPending: true, OriginModule: origin}
-	s.implementations[name] = []typesystem.Type{}
+	s.implementations[name] = []InstanceDef{}
 }
 
 func (s *SymbolTable) Define(name string, t typesystem.Type, origin string) {
 	s.store[name] = Symbol{Name: name, Type: t, Kind: VariableSymbol, IsConstant: false, OriginModule: origin}
+}
+
+// SetDefinitionNode updates the DefinitionNode for an existing symbol in the current scope
+func (s *SymbolTable) SetDefinitionNode(name string, node ast.Node) {
+	if sym, ok := s.store[name]; ok {
+		sym.DefinitionNode = node
+		s.store[name] = sym
+	}
 }
 
 func (s *SymbolTable) DefineConstant(name string, t typesystem.Type, origin string) {
@@ -267,14 +381,14 @@ func (s *SymbolTable) DefineTypeAlias(name string, nominalType, underlyingType t
 	// it carries the alias information needed for unwrapping.
 	if tCon, ok := nominalType.(typesystem.TCon); ok {
 		tCon.UnderlyingType = underlyingType
-		nominalType = tCon  // Assign back since Go structs are value types
+		nominalType = tCon // Assign back since Go structs are value types
 	}
 
 	s.store[name] = Symbol{
 		Name:           name,
-		Type:           nominalType,      // TCon for trait lookup (with UnderlyingType set)
+		Type:           nominalType, // TCon for trait lookup (with UnderlyingType set)
 		Kind:           TypeSymbol,
-		UnderlyingType: underlyingType,   // TRecord for field access
+		UnderlyingType: underlyingType, // TRecord for field access
 		OriginModule:   origin,
 	}
 	// Also register in typeAliases for lookup
@@ -305,6 +419,20 @@ func (s *SymbolTable) ResolveTypeAlias(t typesystem.Type) typesystem.Type {
 	return s.resolveTypeAliasWithCycleCheck(t, make(map[string]bool))
 }
 
+// ResolveTCon retrieves the canonical TCon definition from the symbol table.
+// This is used to refresh stale TCon values (passed by value) that may be missing
+// UnderlyingType or TypeParams fields.
+func (s *SymbolTable) ResolveTCon(name string) (typesystem.TCon, bool) {
+	sym, ok := s.Find(name)
+	if !ok {
+		return typesystem.TCon{}, false
+	}
+	if tCon, ok := sym.Type.(typesystem.TCon); ok {
+		return tCon, true
+	}
+	return typesystem.TCon{}, false
+}
+
 func (s *SymbolTable) resolveTypeAliasWithCycleCheck(t typesystem.Type, visited map[string]bool) typesystem.Type {
 	switch ty := t.(type) {
 	case typesystem.TCon:
@@ -322,6 +450,13 @@ func (s *SymbolTable) resolveTypeAliasWithCycleCheck(t typesystem.Type, visited 
 				return sym.Type
 			}
 			return t
+		}
+
+		// Optimization: if the TCon already has UnderlyingType set (e.g. from BuildType), use it.
+		if ty.UnderlyingType != nil {
+			visited[lookupName] = true
+			defer delete(visited, lookupName)
+			return s.resolveTypeAliasWithCycleCheck(ty.UnderlyingType, visited)
 		}
 
 		// Check if this TCon is a type alias
@@ -369,12 +504,12 @@ func (s *SymbolTable) resolveTypeAliasWithCycleCheck(t typesystem.Type, visited 
 								// Unwrap!
 								return s.resolveTypeAliasWithCycleCheck(tCon.UnderlyingType, visited)
 							}
-                            // Try to look up using the module alias logic below if this fails?
+							// Try to look up using the module alias logic below if this fails?
 							if tCon.Name == ty.Name {
 								// If we found a TCon with same name and no underlying type,
-                                // and we are trying to resolve it, maybe we should try the package name lookup?
-                                // Because maybe the TCon in the module record is just a reference, but the alias
-                                // registration has the underlying type.
+								// and we are trying to resolve it, maybe we should try the package name lookup?
+								// Because maybe the TCon in the module record is just a reference, but the alias
+								// registration has the underlying type.
 							}
 						} else {
 							// Not a TCon (e.g. TRecord), return it directly
@@ -400,7 +535,60 @@ func (s *SymbolTable) resolveTypeAliasWithCycleCheck(t typesystem.Type, visited 
 
 		return t
 	case typesystem.TApp:
-		// Resolve constructor and args recursively
+		// For parameterized type aliases, check if the constructor is an alias with type params
+		// If so, we need to substitute the args into the underlying type, not just recursively resolve
+		if tCon, ok := ty.Constructor.(typesystem.TCon); ok {
+			// Get the type params for this TCon
+			typeParams, hasParams := s.GetTypeParams(tCon.Name)
+
+			// Check if this is a type alias with an underlying type
+			lookupName := tCon.Name
+			if tCon.Module != "" {
+				lookupName = tCon.Module + "." + tCon.Name
+			}
+
+			var underlying typesystem.Type
+			var hasUnderlying bool
+
+			// Try GetTypeAlias first
+			if u, ok := s.GetTypeAlias(lookupName); ok {
+				underlying = u
+				hasUnderlying = true
+			} else if tCon.Module != "" {
+				// Try without module prefix
+				if u, ok := s.GetTypeAlias(tCon.Name); ok {
+					underlying = u
+					hasUnderlying = true
+				}
+			}
+
+			// If we have both type params and an underlying type, perform substitution
+			if hasUnderlying && hasParams && len(typeParams) == len(ty.Args) {
+				// Cycle detection
+				if visited[lookupName] {
+					// Return TApp as-is to avoid infinite recursion
+					return t
+				}
+				visited[lookupName] = true
+				defer delete(visited, lookupName)
+
+				// Build substitution map: T -> Int, etc.
+				subst := make(typesystem.Subst)
+				for i, param := range typeParams {
+					// Resolve the argument type recursively first
+					resolvedArg := s.resolveTypeAliasWithCycleCheck(ty.Args[i], visited)
+					subst[param] = resolvedArg
+				}
+
+				// Apply substitution to the underlying type
+				substituted := underlying.Apply(subst)
+
+				// Recursively resolve the substituted type (in case it contains more aliases)
+				return s.resolveTypeAliasWithCycleCheck(substituted, visited)
+			}
+		}
+
+		// Fallback: Resolve constructor and args recursively (for non-alias TApp)
 		resolvedCon := s.resolveTypeAliasWithCycleCheck(ty.Constructor, visited)
 		resolvedArgs := make([]typesystem.Type, len(ty.Args))
 		for i, arg := range ty.Args {
@@ -448,8 +636,27 @@ func (s *SymbolTable) DefineTrait(name string, typeParams []string, superTraits 
 	// Only initialize implementations list if it doesn't exist yet
 	// This prevents losing implementations when trait is re-defined during multi-pass analysis
 	if _, exists := s.implementations[name]; !exists {
-		s.implementations[name] = []typesystem.Type{}
+		s.implementations[name] = []InstanceDef{}
 	}
+}
+
+func (s *SymbolTable) RegisterTraitTypeParamKind(traitName, paramName string, k typesystem.Kind) {
+	if s.traitTypeParamKinds[traitName] == nil {
+		s.traitTypeParamKinds[traitName] = make(map[string]typesystem.Kind)
+	}
+	s.traitTypeParamKinds[traitName][paramName] = k
+}
+
+func (s *SymbolTable) GetTraitTypeParamKind(traitName, paramName string) (typesystem.Kind, bool) {
+	if kinds, ok := s.traitTypeParamKinds[traitName]; ok {
+		if k, ok := kinds[paramName]; ok {
+			return k, true
+		}
+	}
+	if s.outer != nil {
+		return s.outer.GetTraitTypeParamKind(traitName, paramName)
+	}
+	return nil, false
 }
 
 func (s *SymbolTable) GetTraitSuperTraits(name string) ([]string, bool) {
@@ -548,12 +755,21 @@ func (s *SymbolTable) GetOptionalUnwrapReturnType(t typesystem.Type) (typesystem
 	// Look for instance-specific unwrap signature
 	unwrapType, ok := s.GetInstanceMethodType("Optional", typeName, "unwrap")
 	if ok {
+		// Instantiate if Polytype
+		if poly, ok := unwrapType.(typesystem.TForall); ok {
+			subst := make(typesystem.Subst)
+			for _, tv := range poly.Vars {
+				subst[tv.Name] = typesystem.TVar{Name: tv.Name + "_inst"}
+			}
+			unwrapType = poly.Type.Apply(subst)
+		}
+
 		// Found instance-specific signature, unify to get concrete return type
 		funcType, ok := unwrapType.(typesystem.TFunc)
 		if ok && len(funcType.Params) == 1 {
 			// Rename type vars to avoid conflicts
-			renamedParam := renameTypeVars(funcType.Params[0], "inst")
-			renamedReturn := renameTypeVars(funcType.ReturnType, "inst")
+			renamedParam := RenameTypeVars(funcType.Params[0], "inst")
+			renamedReturn := RenameTypeVars(funcType.ReturnType, "inst")
 
 			// Unify concrete type with parameter
 			subst, err := typesystem.Unify(t, renamedParam)
@@ -566,10 +782,19 @@ func (s *SymbolTable) GetOptionalUnwrapReturnType(t typesystem.Type) (typesystem
 	// Fallback to generic trait method
 	genericUnwrap, ok := s.GetTraitMethodType("unwrap")
 	if ok {
+		// Instantiate if Polytype
+		if poly, ok := genericUnwrap.(typesystem.TForall); ok {
+			subst := make(typesystem.Subst)
+			for _, tv := range poly.Vars {
+				subst[tv.Name] = typesystem.TVar{Name: tv.Name + "_gen"}
+			}
+			genericUnwrap = poly.Type.Apply(subst)
+		}
+
 		funcType, ok := genericUnwrap.(typesystem.TFunc)
 		if ok && len(funcType.Params) == 1 {
-			renamedParam := renameTypeVars(funcType.Params[0], "gen")
-			renamedReturn := renameTypeVars(funcType.ReturnType, "gen")
+			renamedParam := RenameTypeVars(funcType.Params[0], "gen")
+			renamedReturn := RenameTypeVars(funcType.ReturnType, "gen")
 
 			subst, err := typesystem.Unify(t, renamedParam)
 			if err == nil {
@@ -622,13 +847,13 @@ func (s *SymbolTable) GetAllOperatorTraits() map[string]string {
 }
 
 // GetAllImplementations returns a copy of all trait implementations
-func (s *SymbolTable) GetAllImplementations() map[string][]typesystem.Type {
-	result := make(map[string][]typesystem.Type)
+func (s *SymbolTable) GetAllImplementations() map[string][]InstanceDef {
+	result := make(map[string][]InstanceDef)
 
 	// Get from outer first
 	if s.outer != nil {
 		for k, v := range s.outer.GetAllImplementations() {
-			result[k] = append([]typesystem.Type(nil), v...) // copy slice
+			result[k] = append([]InstanceDef(nil), v...) // copy slice
 		}
 	}
 
@@ -640,46 +865,155 @@ func (s *SymbolTable) GetAllImplementations() map[string][]typesystem.Type {
 	return result
 }
 
-func (s *SymbolTable) RegisterImplementation(traitName string, t typesystem.Type) error {
-	// Validate that trait exists
+func (s *SymbolTable) RegisterImplementation(traitName string, args []typesystem.Type, requirements []typesystem.Constraint, evidenceName string) error {
+	// Validate that trait exists (search entire scope chain)
 	if !s.TraitExists(traitName) {
 		panic(fmt.Sprintf("RegisterImplementation: trait %q does not exist", traitName))
 	}
 
-	// Check for overlap
-	if impls, ok := s.implementations[traitName]; ok {
-		for _, existing := range impls {
-			// Check if t overlaps with existing
-			// We use UnifyAllowExtra or just Unify.
-			// If Unify succeeds, it means there is a substitution that makes them equal.
-			// Which implies overlap.
-			// We need fresh copies? typesystem.Unify modifies substitutions if passed?
-			// Unify returns substitution. It doesn't modify input types usually (unless Apply is called).
-			// But it might rely on type variable names.
-			// Instance types usually have different type variable names (or same names but different scopes).
-			// To be safe, we should rename variables in one of them to be disjoint.
-			// e.g. "List a" vs "List a".
-			// renameVariables(t)
+	// Check for overlap across ALL scopes (local + parents)
+	allImpls := s.GetAllImplementations()[traitName]
+	for _, existingDef := range allImpls {
+		if len(existingDef.TargetTypes) != len(args) {
+			continue // Arity mismatch, shouldn't happen for same trait
+		}
 
-			tRenamed := renameTypeVars(t, "new")
-			_, err := typesystem.Unify(existing, tRenamed)
-			if err == nil {
-				return fmt.Errorf("overlapping instances for trait %s: %s and %s", traitName, existing, t)
+		// Check overlap for all args
+		overlap := true
+		for i, arg := range args {
+			tRenamed := RenameTypeVars(arg, "new")
+			_, err := typesystem.Unify(existingDef.TargetTypes[i], tRenamed)
+			if err != nil {
+				overlap = false
+				break
 			}
 		}
-		s.implementations[traitName] = append(s.implementations[traitName], t)
-		return nil
-	} else if s.outer != nil {
-		return s.outer.RegisterImplementation(traitName, t)
+
+		if overlap {
+			// Format error message: if single arg, print it directly to match old tests
+			var existStr, newStr string
+			if len(existingDef.TargetTypes) == 1 {
+				existStr = existingDef.TargetTypes[0].String()
+				newStr = args[0].String()
+			} else {
+				existStr = fmt.Sprintf("%v", existingDef.TargetTypes)
+				newStr = fmt.Sprintf("%v", args)
+			}
+			return fmt.Errorf("overlapping instances for trait %s: %s and %s", traitName, existStr, newStr)
+		}
 	}
-	// Trait not found?
-	// Should have been defined. But if we can't find it, we can't register.
-	// Maybe Define it implicitly? No.
-	return fmt.Errorf("trait %s not defined", traitName)
+
+	// Register in CURRENT scope (not outer) - instances are scoped to where they're declared
+	// We create a new InstanceDef
+	s.implementations[traitName] = append(s.implementations[traitName], InstanceDef{
+		TraitName:       traitName,
+		TargetTypes:     args,
+		Requirements:    requirements,
+		ConstructorName: evidenceName,
+	})
+	return nil
 }
 
-func (s *SymbolTable) IsImplementationExists(traitName string, t typesystem.Type) bool {
-	// Collect types to check: original type + resolved alias if applicable
+// FindMatchingImplementation finds an instance definition that matches the given arguments.
+// It returns the InstanceDef and the substitution map derived from unification.
+func (s *SymbolTable) FindMatchingImplementation(traitName string, args []typesystem.Type) (*InstanceDef, typesystem.Subst, error) {
+	// Check local implementations
+	if impls, ok := s.implementations[traitName]; ok {
+		for i := range impls {
+			implDef := &impls[i] // Pointer to avoid copy
+			if len(implDef.TargetTypes) != len(args) {
+				continue
+			}
+
+			// Try to unify all args
+			totalSubst := make(typesystem.Subst)
+			match := true
+
+			// Rename instance vars to avoid collision with args vars
+			// But args are concrete usually. Instance types are generic.
+			// We rename instance types.
+
+			renamedTargetTypes := make([]typesystem.Type, len(implDef.TargetTypes))
+			for j, t := range implDef.TargetTypes {
+				renamedTargetTypes[j] = RenameTypeVars(t, "inst")
+			}
+
+			for j, implArg := range renamedTargetTypes {
+				// We want to match: implArg (generic) matches args[j] (concrete)
+				// Unify(implArg, arg) -> subst that maps generic to concrete
+				// Handle aliases: try to unify with alias expansion if direct unification fails
+				subst, err := typesystem.Unify(implArg, args[j])
+				if err != nil {
+					// Retry with expanded aliases
+					argExpanded := s.ResolveTypeAlias(args[j])
+					implArgExpanded := s.ResolveTypeAlias(implArg)
+
+					// Try combinations
+					if argExpanded != args[j] {
+						subst, err = typesystem.Unify(implArg, argExpanded)
+					}
+					if err != nil && implArgExpanded != implArg {
+						subst, err = typesystem.Unify(implArgExpanded, args[j])
+					}
+					if err != nil && argExpanded != args[j] && implArgExpanded != implArg {
+						subst, err = typesystem.Unify(implArgExpanded, argExpanded)
+					}
+				}
+
+				if err != nil {
+					match = false
+					break
+				}
+				totalSubst = subst.Compose(totalSubst)
+			}
+
+			if match {
+				return implDef, totalSubst, nil
+			}
+		}
+	}
+
+	// Check outer scope
+	if s.outer != nil {
+		return s.outer.FindMatchingImplementation(traitName, args)
+	}
+
+	return nil, nil, fmt.Errorf("implementation not found")
+}
+
+func (s *SymbolTable) IsImplementationExists(traitName string, args []typesystem.Type) bool {
+	// Check local implementations
+	if impls, ok := s.implementations[traitName]; ok {
+		for _, implDef := range impls {
+			if len(implDef.TargetTypes) != len(args) {
+				continue
+			}
+
+			match := true
+			for i, implArg := range implDef.TargetTypes {
+				// Check arg[i] against implArg[i]
+				if !s.matchesTypeOrAlias(implArg, args[i]) {
+					match = false
+					break
+				}
+			}
+
+			if match {
+				return true
+			}
+		}
+	}
+
+	// Always check outer scope (don't short-circuit if local didn't match)
+	if s.outer != nil {
+		return s.outer.IsImplementationExists(traitName, args)
+	}
+	return false
+}
+
+// matchesTypeOrAlias checks if `t` matches `impl` (considering aliases for t and impl)
+// Refactored from original IsImplementationExists logic
+func (s *SymbolTable) matchesTypeOrAlias(impl, t typesystem.Type) bool {
 	typesToCheck := []typesystem.Type{t}
 
 	// If t is a TCon, check if it's a type alias and add underlying type
@@ -696,36 +1030,61 @@ func (s *SymbolTable) IsImplementationExists(traitName string, t typesystem.Type
 		}
 	}
 
-	if impls, ok := s.implementations[traitName]; ok {
-		for _, impl := range impls {
-			implRenamed := renameTypeVars(impl, "exist")
+	// Also check if impl is an alias
+	implsToCheck := []typesystem.Type{impl}
+	if tCon, ok := impl.(typesystem.TCon); ok {
+		if underlying, ok := s.GetTypeAlias(tCon.Name); ok {
+			implsToCheck = append(implsToCheck, underlying)
+		}
+	}
 
-			// Try to match against all collected types
-			for _, typeToCheck := range typesToCheck {
-				_, err := typesystem.Unify(implRenamed, typeToCheck)
-				if err == nil {
+	for _, implCandidate := range implsToCheck {
+		implRenamed := RenameTypeVars(implCandidate, "exist")
+
+		for _, typeToCheck := range typesToCheck {
+			_, err := typesystem.Unify(implRenamed, typeToCheck)
+			if err == nil {
+				return true
+			}
+		}
+	}
+
+	// HKT: For type constructors like Result, check if t's constructor matches impl
+	if implCon, ok := impl.(typesystem.TCon); ok {
+		for _, typeToCheck := range typesToCheck {
+			// Direct check: Type IS the constructor (e.g. Writer)
+			if tCon, ok := typeToCheck.(typesystem.TCon); ok {
+				if implCon.Name == tCon.Name {
 					return true
 				}
 			}
+			// Partially applied check: Type is TApp (e.g. Writer<IntList>)
+			if tApp, ok := typeToCheck.(typesystem.TApp); ok {
+				// Check the immediate constructor first
+				if tAppCon, ok := tApp.Constructor.(typesystem.TCon); ok {
+					if implCon.Name == tAppCon.Name {
+						return true
+					}
+				}
+				// Unwrap all args to get to the base constructor
+				base := tApp.Constructor
+				for {
+					if nestedApp, ok := base.(typesystem.TApp); ok {
+						base = nestedApp.Constructor
+					} else {
+						break
+					}
+				}
 
-			// HKT: For type constructors like Result, check if t's constructor matches impl
-			if implCon, ok := impl.(typesystem.TCon); ok {
-				for _, typeToCheck := range typesToCheck {
-					if tApp, ok := typeToCheck.(typesystem.TApp); ok {
-						if tAppCon, ok := tApp.Constructor.(typesystem.TCon); ok {
-							if implCon.Name == tAppCon.Name {
-								return true
-							}
-						}
+				if tAppCon, ok := base.(typesystem.TCon); ok {
+					if implCon.Name == tAppCon.Name {
+						return true
 					}
 				}
 			}
 		}
-		return false
 	}
-	if s.outer != nil {
-		return s.outer.IsImplementationExists(traitName, t)
-	}
+
 	return false
 }
 
@@ -764,8 +1123,8 @@ func recordsEqual(a, b typesystem.TRecord) bool {
 	return true
 }
 
-// Helper to rename type variables to avoid collisions during Unify checks
-func renameTypeVars(t typesystem.Type, suffix string) typesystem.Type {
+// RenameTypeVars renames type variables to avoid collisions during Unify checks
+func RenameTypeVars(t typesystem.Type, suffix string) typesystem.Type {
 	// We can use Apply with a substitution that maps every TVar to TVar + suffix
 	vars := t.FreeTypeVariables()
 	subst := make(typesystem.Subst)
@@ -777,7 +1136,9 @@ func renameTypeVars(t typesystem.Type, suffix string) typesystem.Type {
 
 // RegisterInstanceMethod stores a specialized method signature for a trait instance.
 // For example, for instance Optional<Result<T, E>>, we store:
-//   unwrap: Result<T, E> -> T
+//
+//	unwrap: Result<T, E> -> T
+//
 // This allows correct inner type extraction for any type, not just Args[0].
 func (s *SymbolTable) RegisterInstanceMethod(traitName, typeName, methodName string, methodType typesystem.Type) {
 	if s.instanceMethods[traitName] == nil {
@@ -817,11 +1178,20 @@ func getTypeConstructorName(t typesystem.Type) string {
 	}
 }
 
-func (s *SymbolTable) Find(name string) (Symbol, bool) {
+// FindWithScope returns the symbol and the scope where it was defined
+func (s *SymbolTable) FindWithScope(name string) (Symbol, *SymbolTable, bool) {
 	sym, ok := s.store[name]
-	if !ok && s.outer != nil {
-		return s.outer.Find(name)
+	if ok {
+		return sym, s, true
 	}
+	if s.outer != nil {
+		return s.outer.FindWithScope(name)
+	}
+	return Symbol{}, nil, false
+}
+
+func (s *SymbolTable) Find(name string) (Symbol, bool) {
+	sym, _, ok := s.FindWithScope(name)
 	return sym, ok
 }
 
@@ -1133,7 +1503,7 @@ func (s *SymbolTable) FindMatchingRecordAlias(recordType typesystem.TRecord) typ
 		if sym.Kind == TypeSymbol && sym.IsTypeAlias() {
 			// Check if underlying type matches the record structure
 			if underlying, ok := sym.UnderlyingType.(typesystem.TRecord); ok {
-				if recordStructuresMatch(recordType, underlying) {
+				if recordsEqual(recordType, underlying) {
 					// Return the nominal type (TCon)
 					return sym.Type
 				}
@@ -1149,80 +1519,75 @@ func (s *SymbolTable) FindMatchingRecordAlias(recordType typesystem.TRecord) typ
 	return nil
 }
 
-// recordStructuresMatch checks if two record types have the same structure
-func recordStructuresMatch(r1, r2 typesystem.TRecord) bool {
-	if len(r1.Fields) != len(r2.Fields) {
-		return false
+func (s *SymbolTable) RegisterTraitMethodIndex(traitName, methodName string, index int) {
+	if s.TraitMethodIndices[traitName] == nil {
+		s.TraitMethodIndices[traitName] = make(map[string]int)
 	}
-
-	for key, type1 := range r1.Fields {
-		type2, exists := r2.Fields[key]
-		if !exists {
-			return false
-		}
-		// Check if types match structurally
-		if !typesEqual(type1, type2) {
-			return false
-		}
-	}
-
-	return true
+	s.TraitMethodIndices[traitName][methodName] = index
 }
 
-// typesEqual checks if two types are structurally equal
-func typesEqual(t1, t2 typesystem.Type) bool {
-	switch t1 := t1.(type) {
-	case typesystem.TCon:
-		if t2, ok := t2.(typesystem.TCon); ok {
-			return t1.Name == t2.Name && t1.Module == t2.Module
+func (s *SymbolTable) GetTraitMethodIndex(traitName, methodName string) (int, bool) {
+	if indices, ok := s.TraitMethodIndices[traitName]; ok {
+		if idx, ok := indices[methodName]; ok {
+			return idx, true
 		}
-	case typesystem.TVar:
-		if t2, ok := t2.(typesystem.TVar); ok {
-			return t1.Name == t2.Name
+	}
+	if s.outer != nil {
+		return s.outer.GetTraitMethodIndex(traitName, methodName)
+	}
+	return -1, false
+}
+
+func (s *SymbolTable) RegisterEvidence(key string, varName string) {
+	s.EvidenceTable[key] = varName
+}
+
+func (s *SymbolTable) GetEvidence(key string) (string, bool) {
+	if name, ok := s.EvidenceTable[key]; ok {
+		return name, true
+	}
+	if s.outer != nil {
+		return s.outer.GetEvidence(key)
+	}
+	return "", false
+}
+
+// Ensure Dictionary type is available
+func (s *SymbolTable) InitDictionaryType() {
+	s.DefineType("Dictionary", typesystem.TCon{Name: "Dictionary"}, "prelude")
+	s.RegisterKind("Dictionary", typesystem.Star)
+}
+
+// FreeTypeVariables returns a set of all type variables free in the symbol table (and parents)
+func (s *SymbolTable) FreeTypeVariables() map[typesystem.TVar]bool {
+	free := make(map[typesystem.TVar]bool)
+	s.collectFreeTypeVariables(free)
+	return free
+}
+
+func (s *SymbolTable) collectFreeTypeVariables(free map[typesystem.TVar]bool) {
+	for _, sym := range s.store {
+		if sym.Type != nil {
+			for _, tv := range sym.Type.FreeTypeVariables() {
+				free[tv] = true
+			}
 		}
-	case typesystem.TApp:
-		if t2, ok := t2.(typesystem.TApp); ok {
-			if !typesEqual(t1.Constructor, t2.Constructor) {
-				return false
-			}
-			if len(t1.Args) != len(t2.Args) {
-				return false
-			}
-			for i := range t1.Args {
-				if !typesEqual(t1.Args[i], t2.Args[i]) {
-					return false
-				}
-			}
-			return true
-		}
-	case typesystem.TRecord:
-		if t2, ok := t2.(typesystem.TRecord); ok {
-			return recordStructuresMatch(t1, t2)
-		}
-	case typesystem.TFunc:
-		if t2, ok := t2.(typesystem.TFunc); ok {
-			if len(t1.Params) != len(t2.Params) {
-				return false
-			}
-			for i := range t1.Params {
-				if !typesEqual(t1.Params[i], t2.Params[i]) {
-					return false
-				}
-			}
-			return typesEqual(t1.ReturnType, t2.ReturnType)
-		}
-	case typesystem.TTuple:
-		if t2, ok := t2.(typesystem.TTuple); ok {
-			if len(t1.Elements) != len(t2.Elements) {
-				return false
-			}
-			for i := range t1.Elements {
-				if !typesEqual(t1.Elements[i], t2.Elements[i]) {
-					return false
-				}
-			}
-			return true
-		}
+	}
+	if s.outer != nil {
+		s.outer.collectFreeTypeVariables(free)
+	}
+}
+
+func (s *SymbolTable) SetStrictMode(enabled bool) {
+	s.StrictMode = enabled
+}
+
+func (s *SymbolTable) IsStrictMode() bool {
+	if s.StrictMode {
+		return true
+	}
+	if s.outer != nil {
+		return s.outer.IsStrictMode()
 	}
 	return false
 }

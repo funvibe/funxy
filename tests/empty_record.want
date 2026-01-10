@@ -1,4 +1,4 @@
 type({  })
-type(Empty)
+type(EmptyRecord)
 1
 type(Nil)

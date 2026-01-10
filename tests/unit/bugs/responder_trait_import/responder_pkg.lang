@@ -14,8 +14,8 @@ type Response = {
     body: ResponseBody
 }
 
-trait Responder<T> {
-    fun toResponse(val: T) -> Response
+trait Responder<t> {
+    fun toResponse(val: t) -> Response
 }
 
 instance Responder String {

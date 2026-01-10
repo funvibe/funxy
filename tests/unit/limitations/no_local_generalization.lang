@@ -1,0 +1,16 @@
+import "lib/test" (*)
+
+// Test: No Local Let Generalization
+// Local bindings without explicit forall annotation should be monomorphic.
+
+testRun("Feature: No Implicit Generalization", fun() -> {
+    // This definition is monomorphic (t1 -> t1)
+    my_id = fun(x) { x }
+
+    // First use fixes t1 ~ Int
+    _ = my_id(1)
+
+    // Second use should FAIL compilation because t1 is fixed to Int
+    _ = my_id("hello") // Uncommenting this should cause compile error: argument 1 type mismatch: (Int) vs String
+})
+

@@ -1,0 +1,80 @@
+import "lib/test" (testRun, assertEquals, assertTrue)
+
+// 1. Function Constraints (Existing syntax, validation)
+// =============================================================================
+
+fun doubleAndShow<t: Numeric, Show>(val: t) -> String {
+    res = val + val
+    show(res)
+}
+
+testRun("Unified: Function Constraints", \ -> {
+    assertEquals("4", doubleAndShow(2), "Int satisfies Numeric + Show")
+    assertEquals("3", doubleAndShow(1.5), "Float satisfies Numeric + Show")
+})
+
+
+// 2. Trait Constraints (Proposed syntax)
+// =============================================================================
+
+// Single constraint
+trait MyNumTrait<t: Numeric> {
+    fun myDouble(x: t) -> t { x + x }
+}
+
+instance MyNumTrait Int {}
+
+testRun("Unified: Trait Single Constraint", \ -> {
+    assertEquals(20, myDouble(10), "Trait with single constraint")
+})
+
+// Multiple constraints
+trait MyRichTrait<t: Numeric, Show> {
+    fun richOp(x: t) -> String {
+        show(x + x)
+    }
+}
+
+instance MyRichTrait Int {}
+
+testRun("Unified: Trait Multiple Constraints", \ -> {
+    assertEquals("40", richOp(20), "Trait with multiple constraints")
+})
+
+// 3. Rank-N Types Constraints (Proposed syntax)
+// =============================================================================
+
+// Generic identity that requires Numeric (e.g. for math ops inside)
+fun polyInc<n: Numeric>(x: n) -> n { x + x }
+
+// Higher-order function expecting a constrained polymorphic function
+// Syntax: forall t: Constraint. Type
+fun applyPolyOp(op: forall t: Numeric. (t) -> t, x: Int, y: Float) -> (Int, Float) {
+    (op(x), op(y))
+}
+
+testRun("Unified: Rank-N Constraints", \ -> {
+    (i, f) = applyPolyOp(polyInc, 10, 2.5)
+    assertEquals(20, i, "Rank-N Int application")
+    assertEquals(5.0, f, "Rank-N Float application")
+})
+
+// 4. Conditional Instances (Proposed syntax)
+// =============================================================================
+
+trait MyContainer<t> {
+    fun getValue(c: t) -> String
+}
+
+// Instance with constraint on type parameter
+// Implements MyContainer for List<t> ONLY IF t implements Show
+instance MyContainer List<t: Show> {
+    fun getValue(c: List<t>) -> String {
+        "List with Show elements"
+    }
+}
+
+testRun("Unified: Conditional Instance", \ -> {
+    l = [1, 2, 3]
+    assertEquals("List with Show elements", getValue(l), "Conditional instance resolution")
+})

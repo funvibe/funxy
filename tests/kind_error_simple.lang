@@ -1,0 +1,7 @@
+// Test: Kind Mismatch (* vs * -> *)
+
+type alias MyInt = Int
+
+instance Functor MyInt { // Error: MyInt is *, Functor requires * -> *
+    fun fmap(f, x) { 0 }
+}

@@ -45,7 +45,7 @@ testRun("High order functions", \ -> {
 })
 
 testRun("Variadic lambda", \ -> {
-    sum = \nums... -> {
+    sum = \...nums -> {
         // Simple manual sum since foldl might not be imported/available in this context without stdlib deps
         total = 0
         for n in nums {

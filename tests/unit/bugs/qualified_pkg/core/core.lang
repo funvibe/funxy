@@ -7,16 +7,16 @@ type Entity = MkEntity { id: Int, name: String, version: Int }
 type Status = Active | Inactive | Pending { reason: String }
 
 // Core trait
-trait Validator<T> {
-    fun validate(val: T) -> Bool
-    fun getMessage(val: T) -> String
-    fun getErrors(val: T) -> List<String>
+trait Validator<t> {
+    fun validate(val: t) -> Bool
+    fun getMessage(val: t) -> String
+    fun getErrors(val: t) -> List<String>
 }
 
 // Core trait with default methods
-trait Auditable<T> {
-    fun audit(val: T) -> String
-    fun timestamp(val: T) -> Int { 0 }
+trait Auditable<t> {
+    fun audit(val: t) -> String
+    fun timestamp(val: t) -> Int { 0 }
 }
 
 // Extension method

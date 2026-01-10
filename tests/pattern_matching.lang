@@ -9,7 +9,7 @@ fun testListPatterns() {
 
     // Head/Tail match
     match [1, 2, 3] {
-        [x, xs...] -> {
+        [x, ...xs] -> {
             if x == 1 {
                 // xs should be [2, 3]
                 match xs {
@@ -28,7 +28,7 @@ fun testListPatterns() {
         [] -> print("List Empty Match: Pass")
         _ -> print("List Empty Match: Fail")
     }
-    
+
     // Complex nested list match
     match [[1, 2], [3, 4]] {
         [[1, a], [b, 4]] -> {
@@ -74,7 +74,7 @@ fun testRecordPatterns() {
         }
         _ -> print("Nested Record Match: Fail")
     }
-    
+
     // Partial match
     match { x: 1, y: 2, z: 3 } {
         { x: 1, z: 3 } -> print("Partial Record Match: Pass")
@@ -95,7 +95,7 @@ fun testTuplePatterns() {
     }
 
     match (1, 2, 3) {
-        (1, rest...) -> {
+        (1, ...rest) -> {
             // rest should be (2, 3)
             if rest == (2, 3) {
                 print("Tuple Spread Match: Pass")

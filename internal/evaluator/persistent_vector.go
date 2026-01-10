@@ -275,10 +275,10 @@ func (v *PersistentVector) doAssoc(level uint, node *pvNode, i int, val Object) 
 
 // gobPersistentVector is a serializable representation of PersistentVector
 type gobPersistentVector struct {
-	Count  int
-	Shift  uint
-	Root   *gobPvNode
-	Tail   []Object
+	Count int
+	Shift uint
+	Root  *gobPvNode
+	Tail  []Object
 }
 
 // gobPvNode is a serializable representation of pvNode

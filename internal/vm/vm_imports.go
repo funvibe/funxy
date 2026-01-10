@@ -152,8 +152,6 @@ func (vm *VM) compileAndExecuteModule(mod *modules.Module) (*evaluator.RecordIns
 		modVM.traitDefaults = mod.TraitDefaults
 	}
 
-
-
 	pendingImports := compiler.GetPendingImports()
 	if err := modVM.ProcessImports(pendingImports); err != nil {
 		return nil, fmt.Errorf("import error in module %s: %v", mod.Name, err)

@@ -3,7 +3,6 @@ package analyzer
 import (
 	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
-	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
@@ -21,131 +20,136 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 	case *ast.NamedType:
 		name := t.Name.Value
 
-	// 0. Check for qualified type names (e.g., "module.Type")
-	// These should NOT be treated as type variables even if they start with lowercase
-	isQualified := strings.Contains(name, ".")
+		// 0. Check for qualified type names (e.g., "module.Type")
+		// These should NOT be treated as type variables even if they start with lowercase
+		isQualified := strings.Contains(name, ".")
 
-	// For qualified names, return TCon with module info AND underlying type
-	// This preserves nominal type for extension method lookup while allowing unification
-	if isQualified {
-		parts := strings.SplitN(name, ".", 2)
-		if len(parts) == 2 {
-			moduleName := parts[0]
-			typeName := parts[1]
+		// For qualified names, return TCon with module info AND underlying type
+		// This preserves nominal type for extension method lookup while allowing unification
+		if isQualified {
+			parts := strings.SplitN(name, ".", 2)
+			if len(parts) == 2 {
+				moduleName := parts[0]
+				typeName := parts[1]
 
-			// Resolve underlying type via symbol table
-			var underlyingType typesystem.Type
-			if table != nil {
-				if resolved, ok := table.ResolveType(name); ok {
-					underlyingType = resolved
+				// Resolve underlying type via symbol table
+				var underlyingType typesystem.Type
+				if table != nil {
+					if resolved, ok := table.ResolveType(name); ok {
+						underlyingType = resolved
+					}
 				}
-			}
 
-			tBase := typesystem.TCon{Name: typeName, Module: moduleName, UnderlyingType: underlyingType}
+				tBase := typesystem.TCon{Name: typeName, Module: moduleName, UnderlyingType: underlyingType}
 
-			// Handle generic arguments
-			if len(t.Args) > 0 {
-				args := []typesystem.Type{}
-				for _, arg := range t.Args {
-					args = append(args, BuildType(arg, table, errs))
+				// Handle generic arguments
+				if len(t.Args) > 0 {
+					args := []typesystem.Type{}
+					for _, arg := range t.Args {
+						args = append(args, BuildType(arg, table, errs))
+					}
+					return typesystem.TApp{Constructor: tBase, Args: args}
 				}
-				return typesystem.TApp{Constructor: tBase, Args: args}
+				return tBase
 			}
-			return tBase
 		}
-	}
 
-	// 1. Check if Type Variable or Rigid Type Parameter
-	isTypeParam := false
-	var typeParamType typesystem.Type
-	if table != nil && !isQualified {
-		if sym, ok := table.Find(name); ok && sym.Kind == symbols.TypeSymbol {
-			// Skip type parameter detection for type aliases - they should resolve to underlying type
-			if !sym.IsTypeAlias() {
-				switch symType := sym.Type.(type) {
-				case typesystem.TVar:
-					isTypeParam = true
-					typeParamType = symType
-				case typesystem.TCon:
-					// Check if this is a rigid type parameter (TCon with same name)
-					// This happens during body analysis where type params are registered as TCon
-					if symType.Name == name && symType.Module == "" {
-						// Could be a rigid type parameter - check if it looks like a type param name
-						// (single uppercase letter or short uppercase name)
-						if len(name) <= 2 || (len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z') {
+		// 1. Check if Type Variable or Rigid Type Parameter
+		isTypeParam := false
+		var typeParamType typesystem.Type
+		if table != nil && !isQualified {
+			// Check if defined in symbol table
+			if sym, ok := table.Find(name); ok && sym.Kind == symbols.TypeSymbol {
+				// Skip type parameter detection for type aliases - they should resolve to underlying type
+				if !sym.IsTypeAlias() {
+					switch symType := sym.Type.(type) {
+					case typesystem.TVar:
+						isTypeParam = true
+						typeParamType = symType
+					case typesystem.TCon:
+						// Check if this is a rigid type parameter (TCon with same name)
+						// This happens during body analysis where type params are registered as TCon
+						if symType.Name == name && symType.Module == "" {
 							isTypeParam = true
 							typeParamType = symType
 						}
 					}
 				}
-			}
-		}
-	}
-	// If uppercase name is NOT found in symbol table:
-	// - Short names (1-2 chars like T, A, E) -> type variable (generic parameter)
-	// - Long names (3+ chars) that are NOT in symbol table -> error (undefined type)
-	// This prevents using types like Uuid without importing lib/uuid
-	if !isTypeParam && !isQualified && len(name) > 0 && unicode.IsUpper(rune(name[0])) && table != nil {
-		// Check if this type is defined anywhere
-		_, isDefined := table.Find(name)
-		_, isType := table.ResolveType(name)
-		if !isDefined && !isType {
-			// Types that require import (not in prelude)
-			requiresImport := map[string]string{
-				"Uuid":     "lib/uuid",
-				"Logger":   "lib/log",
-				"Task":     "lib/task",
-				"SqlValue": "lib/sql",
-				"SqlDB":    "lib/sql",
-				"SqlTx":    "lib/sql",
-				"Date":     "lib/sql",
-			}
-
-			if pkg, needsImport := requiresImport[name]; needsImport {
-				// This type requires import
-				*errs = append(*errs, diagnostics.NewError(
-					diagnostics.ErrA006, // Undefined symbol
-					t.GetToken(),
-					fmt.Sprintf("type '%s' requires import \"%s\"", name, pkg),
-				))
-				return typesystem.TCon{Name: name} // Return TCon anyway to continue checking
-			} else if len(name) <= 2 {
-				// Short name not found -> treat as type variable (T, A, E, etc.)
+			} else if len(name) > 0 && unicode.IsLower(rune(name[0])) {
+				// Implicit Generic Discovery (Case Sensitivity Rule)
+				// If it starts with lowercase and is NOT in the symbol table,
+				// treat it as a new Type Variable and register it in the current scope.
 				isTypeParam = true
-				typeParamType = typesystem.TVar{Name: name}
-			}
-			// Else: unknown long type name - let it through, might be defined elsewhere
-		}
-	}
+				tVar := typesystem.TVar{Name: name}
+				typeParamType = tVar
 
-	if isTypeParam {
-		// HKT: If type parameter has arguments, create TApp with type param as constructor
-		// Example: F<A> where F is a type parameter -> TApp{Constructor: F, Args: [A]}
-		if len(t.Args) > 0 {
-			args := []typesystem.Type{}
-			for _, arg := range t.Args {
-				args = append(args, BuildType(arg, table, errs))
-			}
-			return typesystem.TApp{
-				Constructor: typeParamType,
-				Args:        args,
-			}
-		}
-		return typeParamType
-	}
-
-		// 2. Check if "String" (special case alias)
-		if name == "String" {
-			return typesystem.TApp{
-				Constructor: typesystem.TCon{Name: config.ListTypeName},
-				Args:        []typesystem.Type{typesystem.TCon{Name: "Char"}},
+				// Register in table to reuse in this scope (e.g. map(a -> b, List<a>))
+				table.DefineType(name, tVar, "")
 			}
 		}
 
-		// 3. Check Symbol Table for Alias Resolution
+		// If uppercase name is NOT found in symbol table:
+		// Strictly enforce "Uppercase = Concrete Type" rule.
+		// It MUST be defined (or be a built-in).
+		if !isTypeParam && !isQualified && len(name) > 0 && unicode.IsUpper(rune(name[0])) && table != nil {
+			// Check if this type is defined anywhere
+			_, isDefined := table.Find(name)
+			_, isType := table.ResolveType(name)
+
+			if !isDefined && !isType {
+				// Types that require import (not in prelude)
+				requiresImport := map[string]string{
+					"Uuid":     "lib/uuid",
+					"Logger":   "lib/log",
+					"Task":     "lib/task",
+					"SqlValue": "lib/sql",
+					"SqlDB":    "lib/sql",
+					"SqlTx":    "lib/sql",
+					"Date":     "lib/date",
+					"Json":     "lib/json",
+				}
+				if pkg, needsImport := requiresImport[name]; needsImport {
+					if errs != nil {
+						*errs = append(*errs, diagnostics.NewError(
+							diagnostics.ErrA006,
+							t.GetToken(),
+							fmt.Sprintf("type '%s' requires import \"%s\"", name, pkg),
+						))
+					}
+				} else {
+					// Error: Undeclared type
+					if errs != nil {
+						*errs = append(*errs, diagnostics.NewError(
+							diagnostics.ErrA002,
+							t.GetToken(),
+							name,
+						))
+					}
+					// Fallback to unknown TCon to avoid cascading panics
+					return typesystem.TCon{Name: name}
+				}
+			}
+		}
+
+		if isTypeParam {
+			// If it has arguments, it's Higher-Kinded Type application (e.g. F<A>)
+			if len(t.Args) > 0 {
+				args := []typesystem.Type{}
+				for _, arg := range t.Args {
+					args = append(args, BuildType(arg, table, errs))
+				}
+				return typesystem.TApp{Constructor: typeParamType, Args: args}
+			}
+			return typeParamType
+		}
+
+		// 2. Built-in types check (if not shadowed)
+		// ...
+
+		// 3. Resolve Type Alias
 		if table != nil {
 			if resolved, ok := table.ResolveType(name); ok {
-				// Check if it is an Alias (resolved != TCon(name))
+				// Check if it's a TCon with the same name (not an alias, but the type itself)
 				isAlias := true
 				if tCon, ok := resolved.(typesystem.TCon); ok && tCon.Name == name {
 					isAlias = false
@@ -189,34 +193,57 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 						currentKind = arrow.Right
 					}
 
-				// If it has arguments, perform substitution.
-				if len(args) > 0 {
-					if params, ok := table.GetTypeParams(name); ok {
-						if len(params) == len(args) {
-							subst := typesystem.Subst{}
-							for i, p := range params {
-								subst[p] = args[i]
+					// If it has arguments, return TApp instead of substituted TCon
+					// This ensures correct recursive resolution using ResolveTypeAlias
+					if len(args) > 0 {
+						// Look up the actual TCon definition to preserve TypeParams and UnderlyingType
+						tCon := typesystem.TCon{Name: name}
+						if sym, ok := table.Find(name); ok && sym.Kind == symbols.TypeSymbol {
+							if realTCon, ok := sym.Type.(typesystem.TCon); ok {
+								tCon = realTCon
 							}
-							appliedResolved := resolved.Apply(subst)
-							return typesystem.TCon{Name: name, UnderlyingType: appliedResolved}
 						}
+
+						if params, ok := table.GetTypeParams(name); ok {
+							if len(params) == len(args) {
+								return typesystem.TApp{Constructor: tCon, Args: args}
+							}
+						}
+						// If params mismatch, fall through or return TApp anyway?
+						// Return TApp so Unify can handle it (and maybe fail on arity)
+						return typesystem.TApp{Constructor: tCon, Args: args}
 					}
-					// If generic params missing or count mismatch, return TCon with underlying
+
+					// Return TCon with underlying type for nominal type preservation (non-generic alias)
 					return typesystem.TCon{Name: name, UnderlyingType: resolved}
-				}
-				// Return TCon with underlying type for nominal type preservation
-				return typesystem.TCon{Name: name, UnderlyingType: resolved}
 				}
 			}
 		}
 
 		// 4. Default: TCon
-		tBase := typesystem.TCon{Name: name}
+		var tBase typesystem.Type = typesystem.TCon{Name: name}
 
 		// Attempt to preserve TCon info from Symbol Table (Module, UnderlyingType)
 		if table != nil {
-			if resolved, ok := table.ResolveType(name); ok {
+			if sym, ok := table.Find(name); ok && sym.Kind == symbols.TypeSymbol {
+				tBase = sym.Type
+				// Handle case where TypeSymbol holds TType wrapper (e.g. for types used as values)
+				// We want the underlying type definition
+				if tType, ok := tBase.(typesystem.TType); ok {
+					tBase = tType.Type
+				}
+			} else if resolved, ok := table.ResolveType(name); ok {
+				// Fallback: Check ResolveType (handles types shadowed by constructors)
 				if tCon, ok := resolved.(typesystem.TCon); ok && tCon.Name == name {
+					tBase = tCon
+				}
+			}
+
+			// Ensure Kind is set correctly (crucial for KindCheck)
+			if tCon, ok := tBase.(typesystem.TCon); ok {
+				// Always update Kind from registry if available, as TCon might be stale or missing it
+				if k, ok := table.GetKind(name); ok {
+					tCon.KindVal = k
 					tBase = tCon
 				}
 			}
@@ -301,8 +328,40 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 			types = append(types, BuildType(ut, table, errs))
 		}
 		return typesystem.NormalizeUnion(types)
+
+	case *ast.ForallType:
+		var vars []typesystem.TVar
+		var innerTable *symbols.SymbolTable
+		if table != nil {
+			innerTable = symbols.NewEnclosedSymbolTable(table, symbols.ScopeFunction)
+		}
+
+		var constraints []typesystem.Constraint
+		for _, p := range t.Vars {
+			tv := typesystem.TVar{Name: p.Value}
+			vars = append(vars, tv)
+			if innerTable != nil {
+				innerTable.DefineType(p.Value, tv, "")
+			}
+
+			for _, c := range p.Constraints {
+				constraints = append(constraints, typesystem.Constraint{
+					TypeVar: p.Value,
+					Trait:   c.Trait,
+					Args:    []typesystem.Type{},
+				})
+			}
+		}
+
+		return typesystem.TForall{
+			Vars:        vars,
+			Constraints: constraints,
+			Type:        BuildType(t.Type, innerTable, errs),
+		}
+
+	default:
+		return typesystem.TCon{Name: "Unknown"}
 	}
-	return typesystem.TCon{Name: "Unknown"}
 }
 
 func GetKind(t typesystem.Type, table *symbols.SymbolTable) typesystem.Kind {
@@ -336,6 +395,14 @@ func GetKind(t typesystem.Type, table *symbols.SymbolTable) typesystem.Kind {
 			}
 		}
 		return k
+	case typesystem.TFunc:
+		return typesystem.Star
+	case typesystem.TRecord:
+		return typesystem.Star
+	case typesystem.TTuple:
+		return typesystem.Star
+	case typesystem.TForall:
+		return typesystem.Star // ? or Kind of body?
 	}
 	return typesystem.Star
 }

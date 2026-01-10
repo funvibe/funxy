@@ -1,20 +1,20 @@
-trait Show<T> {
-  fun show(val: T) -> String
+trait Printable<t> {
+  fun format(val: t) -> String
 }
 
-instance Show (List<Int>) {
-  fun show(val: List<Int>) -> String {
+instance Printable (List<Int>) {
+  fun format(val: List<Int>) -> String {
     "List of Ints"
   }
 }
 
 l = [1, 2]
-print(show(l))
+print(format(l))
 
-instance Show (Int, Int) {
-  fun show(val: (Int, Int)) -> String {
+instance Printable (Int, Int) {
+  fun format(val: (Int, Int)) -> String {
     "Tuple of Ints"
   }
 }
 t = (1, 2)
-print(show(t))
+print(format(t))

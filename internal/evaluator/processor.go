@@ -30,7 +30,7 @@ func (ep *EvaluatorProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.P
 	eval.TraitDefaults = ctx.TraitDefaults   // Pass trait defaults from analyzer
 	eval.OperatorTraits = ctx.OperatorTraits // Pass operator -> trait mappings
 	eval.TypeMap = ctx.TypeMap               // Pass inferred types from analyzer
-	
+
 	// Set BaseDir and CurrentFile from ctx.FilePath
 	if ctx.FilePath != "" {
 		dir := filepath.Dir(ctx.FilePath)
@@ -44,7 +44,7 @@ func (ep *EvaluatorProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.P
 	env := NewEnvironment()
 	RegisterBuiltins(env)
 	RegisterFPTraits(eval, env) // Register FP traits (Semigroup, Monoid, Functor, Applicative, Monad)
-	eval.GlobalEnv = env // Store for default implementations
+	eval.GlobalEnv = env        // Store for default implementations
 
 	result := eval.Eval(ctx.AstRoot, env)
 	if result != nil && result.Type() == ERROR_OBJ {
@@ -52,7 +52,7 @@ func (ep *EvaluatorProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.P
 		if err, ok := result.(*Error); ok {
 			tok := token.Token{Line: err.Line, Column: err.Column}
 			errMsg := err.Message
-			
+
 			// Add stack trace if available
 			if len(err.StackTrace) > 0 {
 				errMsg += "\nStack trace:"
@@ -64,7 +64,7 @@ func (ep *EvaluatorProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.P
 					errMsg += "\n  at " + file + ":" + formatInt(frame.Line) + " (called " + frame.Name + ")"
 				}
 			}
-			
+
 			ctx.Errors = append(ctx.Errors, diagnostics.NewError(
 				diagnostics.ErrR001,
 				tok,
@@ -81,4 +81,3 @@ func (ep *EvaluatorProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.P
 
 	return ctx
 }
-

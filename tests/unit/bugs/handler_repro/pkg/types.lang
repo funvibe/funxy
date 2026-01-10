@@ -1,4 +1,4 @@
 package pkg
 
-type Handler = (Int) -> Int
+type alias Handler = (Int) -> Int
 

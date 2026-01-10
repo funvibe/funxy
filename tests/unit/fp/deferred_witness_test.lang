@@ -1,0 +1,45 @@
+import "lib/test" (testRun, assertEquals)
+
+// Tests for Proposal 002 Extension: Deferred Witness Resolution
+// These tests demonstrate that we can infer the Monad instance
+// based on later usage in the same function, without explicit annotation.
+
+testRun("Deferred Witness: Infer from usage (>>=)", fun() -> {
+  // 1. pure(10) creates a fresh type variable ?M for the return type M<Int>
+  // Analyzer records a PendingWitness for this call.
+  x = pure(10)
+
+  // 2. Usage with (>>=) where result is List implies ?M must be List.
+  // pure(10) >>= \_ -> [20]
+  // The inference engine unifies ?M with List.
+  y = x >>= fun(_) -> [20]
+
+  // 3. At end of function, ResolvePendingWitnesses runs.
+  // It sees ?M is now List. It generates the witness for pure(10).
+
+  assertEquals(y, [20], "Should infer List from usage")
+})
+
+testRun("Deferred Witness: Return type inference", fun() -> {
+    f = fun() -> List<Int> {
+        // pure(1) creates ?M
+        p = pure(1)
+        // Returning p matches function return type List<Int>
+        // Unification sets ?M = List
+        p
+    }
+
+    assertEquals(f(), [1], "Should infer List from return type")
+})
+
+testRun("Deferred Witness: Transitive inference", fun() -> {
+    // A chain of dependencies
+    a = pure(1) // ?M
+    b = pure(2) // ?M2
+
+    // a >>= \_ -> b >>= \_ -> [3]
+    // implies ?M = ?M2 = List
+    res = a >>= fun(_) -> (b >>= fun(_) -> [3])
+
+    assertEquals(res, [3], "Should infer List transitively")
+})

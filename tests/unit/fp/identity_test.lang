@@ -1,0 +1,42 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+testRun("Identity Monad", \ -> {
+    // Identity<Int>
+    id1 = identity(10)
+
+    // Test runIdentity
+    assertEquals(10, runIdentity(id1), "runIdentity")
+
+    // Test Functor (fmap)
+    // fmap (*2) id1 => Identity(20)
+    id2 = fmap(\x -> x * 2, id1)
+    assertEquals(20, runIdentity(id2), "fmap")
+
+    // Test Applicative
+    // pure(5) => Identity(5)
+    // Need type annotation to select Identity applicative
+    p: Identity<Int> = pure(5)
+    assertEquals(5, runIdentity(p), "pure")
+
+    // (<*>)
+    // idf = Identity(\x -> x + 1)
+    idf = identity(\x -> x + 1)
+    // idx = Identity(10)
+    idx = identity(10)
+    // res = idf <*> idx => Identity(11)
+    resApp = idf <*> idx
+    assertEquals(11, runIdentity(resApp), "applicative <*>")
+
+    // Test Monad (>>=)
+    // id1 >>= \x -> identity(x + 5)
+    resBind = id1 >>= \x -> identity(x + 5)
+    assertEquals(15, runIdentity(resBind), "monad >>=")
+
+    // Monad chain
+    resChain = id1 >>= \x ->
+               identity(x * 2) >>= \y ->
+               identity(x + y)
+    // x=10, y=20, res=30
+    assertEquals(30, runIdentity(resChain), "monad chain")
+})
+

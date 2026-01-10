@@ -1,0 +1,102 @@
+
+import "lib/test" (testRun, assert, assertEquals)
+
+testRun("State Monad Basics", \ -> {
+    // state(\s -> (val, newState))
+    // Simple counter: get state, return it, increment state
+    // Type: State<Int, Int>
+    tick = state(\s -> (s, s + 1))
+
+    // Test runState
+    // Initial state 0 -> (0, 1)
+    res1 = runState(tick, 0)
+    assertEquals(0, res1[0], "runState value")
+    assertEquals(1, res1[1], "runState state")
+
+    // Test evalState -> 0
+    assertEquals(0, evalState(tick, 0), "evalState")
+
+    // Test execState -> 1
+    assertEquals(1, execState(tick, 0), "execState")
+})
+
+testRun("State Primitives", \ -> {
+    // sGet() -> (s, s)
+    // sPut(x) -> ((), x)
+
+    // op = get >>= \s -> put (s + 10)
+    op = sGet() >>= \s -> sPut(s + 10)
+
+    // Initial 5 -> Final 15. Value should be () (Nil)
+    res = runState(op, 5)
+    // res[0] is Nil
+    assertEquals(15, res[1], "sGet/sPut state")
+})
+
+testRun("State Functor", \ -> {
+    // fmap
+    st = state(\s -> (10, s))
+    // fmap (*2) st -> (20, s)
+    st2 = fmap(\x -> x * 2, st)
+
+    res = runState(st2, 100)
+    assertEquals(20, res[0], "fmap value")
+    assertEquals(100, res[1], "fmap state preserved")
+})
+
+testRun("State Applicative", \ -> {
+    // pure(x) -> \s -> (x, s)
+    // Need annotation for pure
+    p: State<Int, Int> = pure(42)
+
+    res = runState(p, 0)
+    assertEquals(42, res[0], "pure value")
+    assertEquals(0, res[1], "pure state")
+
+    // (<*>)
+    // sf = state(\s -> (\x -> x+1, s+1)) // Effect: inc state
+    sf = state(\s -> (\x -> x + 1, s + 1))
+    // sx = state(\s -> (10, s+2)) // Effect: add 2 to state
+    sx = state(\s -> (10, s + 2))
+
+    // res = sf <*> sx
+    // sequence: run sf (s) -> (f, s1), run sx (s1) -> (x, s2), return (f(x), s2)
+    // s=0 -> s1=1 -> s2=3. val = 10+1 = 11.
+    resApp = sf <*> sx
+    resRun = runState(resApp, 0)
+    assertEquals(11, resRun[0], "applicative value")
+    assertEquals(3, resRun[1], "applicative state accumulated")
+})
+
+testRun("State Monad", \ -> {
+    // Chain operations
+    // stack push/pop simulation using List as state
+    // Type: State<List<Int>, Int>
+
+    pop = state(\s -> match s {
+        [h, ...t] -> (h, t),
+        [] -> (0, [])
+    })
+
+    push = \x -> state(\s -> ((), [x, ...s]))
+
+    // op: pop 2 items, sum them, push result
+    op = pop >>= \a ->
+         pop >>= \b ->
+         push(a + b)
+
+    // Initial stack: [10, 20, 30]
+    // pop -> 10, stack [20, 30]
+    // pop -> 20, stack [30]
+    // push(30) -> stack [30, 30]
+    // Return value of push is ()
+
+    stack = [10, 20, 30]
+    finalRes = runState(op, stack)
+    finalStack = finalRes[1]
+
+    assertEquals(30, finalStack[0], "stack top")
+    assertEquals(30, finalStack[1], "stack second")
+    assertEquals(2, len(finalStack), "stack length")
+})
+

@@ -17,14 +17,6 @@ testRun("record pattern explicit assignment", fun() {
     assertEquals(y, 40, "y should be 40")
 })
 
-// 3. Destructuring in function parameters (if supported via same mechanism)
-// Note: Function params usually use IdentifierPattern, but full patterns might be supported
-// Funxy supports patterns in params? Let's test if it works.
-// fun f({x: a}) { a } -- parser supports this?
-// Parser.parseParameter -> expect IDENT. So no, function params are identifiers only currently.
-// Checking parser/parser.go:373 type Parameter struct { Name *Identifier ... }
-// So only assignment and match/case support patterns.
-
 // 4. Nested patterns
 testRun("nested record pattern assignment", fun() {
     p = { a: { b: 50 }, c: 60 }

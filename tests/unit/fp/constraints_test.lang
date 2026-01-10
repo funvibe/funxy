@@ -1,0 +1,52 @@
+import "lib/test" (testRun, assertEquals, assertSome)
+
+fun combine_three<t: Semigroup>(a: t, b: t, c: t) -> t {
+    a <> b <> c
+}
+
+testRun("Constraints: Monoid String", fun() {
+    // String implements Monoid (concatenation)
+    res = combine_three("Hello", ", ", "World")
+    assertEquals(res, "Hello, World")
+})
+
+testRun("Constraints: Monoid List", fun() {
+    // List implements Monoid (concatenation)
+    res = combine_three([1], [2], [3])
+    assertEquals(res, [1, 2, 3])
+})
+
+type Sum = { val: Int }
+
+instance Semigroup Sum {
+    operator (<>)(a: Sum, b: Sum) -> Sum {
+        Sum({ val: a.val + b.val })
+    }
+}
+
+instance Monoid Sum {
+    fun mempty() { Sum({ val: 0 }) }
+}
+
+testRun("Constraints: Monoid Sum (Wrapper)", fun() {
+    s1 = Sum({ val: 10 })
+    s2 = Sum({ val: 20 })
+    s3 = Sum({ val: 30 })
+
+    res = combine_three(s1, s2, s3)
+    assertEquals(res.val, 60)
+})
+
+testRun("Deferred Constraints in Lambda", fun() {
+    gFun = fun(m) {
+        m >>= fun(x) { pure(x + 1) }
+    }
+
+    // Usage 1: List
+    resList = gFun([1, 2])
+    assertEquals(resList, [2, 3])
+
+    // Usage 2: Option
+    resOpt = gFun(Some(10))
+    assertSome(resOpt)
+})

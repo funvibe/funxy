@@ -1,0 +1,139 @@
+// ==========================================
+// Scoping Rules & Semantics Tests
+// ==========================================
+
+print("--- 1. Block Scope Mutation (No Shadowing) ---")
+
+x = 10
+print(x) // 10
+
+{
+    // This looks like a new declaration, but 'x' exists in outer scope.
+    // So this acts as mutation of outer 'x'.
+    x = 20
+    print(x) // 20
+}
+
+print(x) // 20 (mutated by block)
+
+{
+    // Nested block mutation
+    {
+        x = 30
+    }
+}
+print(x) // 30
+
+print("--- 2. Closure Mutation ---")
+
+fun makeCounter() {
+    count = 0
+
+    fun inc() {
+        // 'count' is captured from 'makeCounter' scope.
+        // Mutation is allowed here.
+        count = count + 1
+        count
+    }
+
+    fun get() {
+        count
+    }
+
+    [inc, get]
+}
+
+// Destructuring list of functions
+c1 = makeCounter()
+inc1 = c1[0]
+get1 = c1[1]
+
+print(get1()) // 0
+print(inc1()) // 1
+print(inc1()) // 2
+print(get1()) // 2
+
+// New counter instance should be independent
+c2 = makeCounter()
+inc2 = c2[0]
+get2 = c2[1]
+
+print(get2()) // 0
+print(inc2()) // 1
+print(get1()) // 2 (affected only by first counter)
+
+print("--- 3. Deeply Nested Closures ---")
+
+fun level1() {
+    a = 1
+    fun level2() {
+        b = 2
+        fun level3() {
+            c = 3
+            fun mutation() {
+                a = a + 10
+                b = b + 20
+                c = c + 30
+                [a, b, c]
+            }
+            mutation
+        }
+        level3()
+    }
+    level2()
+}
+
+mutator = level1()
+print(mutator()) // [11, 22, 33]
+print(mutator()) // [21, 42, 63] (accumulated mutation)
+
+print("--- 4. Parameter Shadowing ---")
+
+g = 100
+
+// Function parameters create NEW variables, so they CAN shadow globals
+// (or rather, they are distinct new variables in the local scope)
+fun paramShadow(g) {
+    g = g + 1 // Mutates the local parameter 'g', not the global
+    g
+}
+
+print(paramShadow(50)) // 51
+print(g) // 100 (global unchanged)
+
+print("--- 5. Local Variable Shadowing Global (Explicit) ---")
+// Generally `x = ...` mutates if x exists.
+// But inside a function, we want locals.
+// If we define a local that clashes with global, it's an error (as per docs).
+// But we can force a local if we use a different name :)
+// Or if we use `var` or similar keyword? No, language uses implicit declaration.
+// So we cannot easily declare a local `g` if `g` is global, EXCEPT via parameters.
+
+// Let's verify that parameters indeed isolate the scope
+fun paramIsolation(x) {
+    fun inner() {
+        x = x + 1 // Mutates parameter 'x'
+        x
+    }
+    inner()
+}
+
+print(paramIsolation(10)) // 11
+
+print("--- 6. Complex Flow & Mutation ---")
+
+sum = 0
+i = 0
+// 'for' loops are blocks?
+// The language spec for 'for' usually implies a block.
+// Let's check if 'i' declared outside is mutated inside.
+
+for i < 5 {
+    sum = sum + i
+    i = i + 1 // Mutates outer 'i'
+}
+print(sum) // 0+1+2+3+4 = 10
+print(i)   // 5
+
+print("All scoping semantics tests passed!")
+

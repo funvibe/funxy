@@ -1,0 +1,5 @@
+Pair(1, true)
+true
+false
+Box(10)
+Pair(Pair(1, true), Pair(2, false))

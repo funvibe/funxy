@@ -26,7 +26,7 @@ testRun("Tuple destructuring", \ -> {
     // Spread
     t2 = (1, 2, 3, 4)
     res2 = match t2 {
-        (h, t...) -> h
+        (h, ...t) -> h
         _ -> 0
     }
     assertEquals(1, res2, "Tuple spread head")
@@ -36,7 +36,7 @@ testRun("List destructuring", \ -> {
     l = [1, 2, 3]
     res = match l {
         [] -> "empty"
-        [h, t...] -> h
+        [h, ...t] -> h
     }
     assertEquals(1, res, "List head match")
 

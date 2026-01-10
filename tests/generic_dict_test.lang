@@ -1,0 +1,59 @@
+// Generic Dictionary Test
+import "lib/test" (*)
+
+// 1. Setup Traits
+trait MyShow<t> {
+  fun myShow(x: t) -> String
+}
+
+trait MyEq<t> {
+  fun myEq(a: t, b: t) -> Bool
+}
+
+// Ord implies Eq
+trait MyOrd<t> : MyEq<t> {
+  fun myCompare(a: t, b: t) -> Int // -1, 0, 1
+}
+
+// 2. Base Instances (Int)
+instance MyShow Int {
+  fun myShow(x: Int) -> String { "IntVal" } // Simple string to verify
+}
+
+instance MyEq Int {
+  fun myEq(a: Int, b: Int) -> Bool { a == b }
+}
+
+instance MyOrd Int {
+  fun myCompare(a: Int, b: Int) -> Int {
+    if a < b { -1 } else { if a > b { 1 } else { 0 } }
+  }
+}
+
+// 3. Generic Instance (List<T>)
+// Requires MyShow T. Using inline constraint syntax if '=>' is not supported.
+instance MyShow List<t: MyShow> {
+  fun myShow(xs: List<t>) -> String {
+    "List<" ++ "T" ++ ">" // Simplified
+  }
+}
+
+// 4. Test Function using Generic Instance
+fun getListShow<t: MyShow>(xs: List<t>) -> String {
+  myShow(xs)
+}
+
+// 5. Test Function using Super Trait Extraction
+// Expects MyOrd, uses MyEq (extracted from MyOrd)
+fun checkEq<t: MyOrd>(a: t, b: t) -> Bool {
+  myEq(a, b) // This should find MyEq witness via MyOrd witness
+}
+
+testRun("Generic Instance & Super Traits", fun() {
+  // Testing Generic Instance
+  assertEquals(getListShow([1, 2, 3]), "List<T>", "Generic Instance Resolution")
+
+  // Testing Super Trait Extraction
+  assertEquals(checkEq(10, 10), true, "Super Trait Extraction (true)")
+  assertEquals(checkEq(10, 20), false, "Super Trait Extraction (false)")
+})

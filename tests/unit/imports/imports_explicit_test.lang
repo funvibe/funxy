@@ -1,4 +1,4 @@
-import "./source" (Data, identity)
+import "./source" (Data, myIdentity)
 import "lib/test" (assert, assertEquals, testRun)
 
 testExplicit = fun() {
@@ -17,7 +17,7 @@ testExplicit = fun() {
     assertEquals(res, 10, "Pattern match Con1")
 
     // Check explicitly imported function
-    assertEquals(identity(5), 5, "identity func")
+    assertEquals(myIdentity(5), 5, "identity func")
 }
 
 testRun("imports explicit", testExplicit)

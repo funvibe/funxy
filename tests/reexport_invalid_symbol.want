@@ -1,0 +1,3 @@
+Processing failed with errors:
+- error at 1:61 [A006]: undefined symbol: 'cannot re-export 'notExported' from 'source': symbol not exported by source module'
+

@@ -1,0 +1,52 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+testRun("Reader Monad", \ -> {
+    // Reader<Env, Int>
+    // Env is Int
+
+    // reader(\e -> e + 1)
+    r1 = reader(\e -> e + 1)
+
+    // Test runReader
+    assertEquals(11, runReader(r1, 10), "runReader")
+
+    // Test Functor (fmap)
+    // fmap (*2) r1 => \e -> (e+1)*2
+    r2 = fmap(\x -> x * 2, r1)
+    assertEquals(22, runReader(r2, 10), "fmap")
+
+    // Test Applicative
+    // pure(5) => \e -> 5
+    // Explicit type annotation enables dispatch to Reader.pure
+    p = pure(5)
+    assertEquals(5, runReader(p, 100), "pure")
+
+    // (<*>)
+    // rf = \e -> \x -> x + e
+    rf = reader(\e -> \x -> x + e)
+    // rx = \e -> e * 2
+    rx = reader(\e -> e * 2)
+    // res = rf <*> rx => \e -> (e + (e*2)) = 3e
+    resApp = rf <*> rx
+    assertEquals(30, runReader(resApp, 10), "applicative <*>)")
+
+    // Test Monad (>>=)
+    // r1 >>= \x -> reader(\e -> x + e)
+    // r1(10) = 11.
+    // f(11) = reader(\e -> 11 + e)
+    // run (f(11)) 10 = 11 + 10 = 21
+    resBind = r1 >>= \x -> reader(\e -> x + e)
+    assertEquals(21, runReader(resBind, 10), "monad >>=")
+
+    // Monad chain
+    // r1(10) -> 11
+    // reader(\e -> e * 2)(10) -> 20
+    // pure(11 + 20) -> 31
+    // Note: pure needs context or annotation.
+    // Here we use the constructor explicitly for the last step.
+    resChain = r1 >>= \x ->
+               reader(\e -> e * 2) >>= \y ->
+               reader(\_ -> x + y)
+
+    assertEquals(31, runReader(resChain, 10), "monad chain")
+})

@@ -1,4 +1,4 @@
 Processing failed with errors:
 - error [R001]: runtime error: ERROR at 7:4: wrong number of arguments: expected 2, got 0
 Stack trace:
-  at partial_zero_args_error:7 (called add)
+  at tests/partial_zero_args_error:7 (called add)

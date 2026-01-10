@@ -1,28 +1,29 @@
 // Type Classes (Traits) test
 
 // Define a type class
-trait Show<T> {
-  fun show(val: T) -> String
+trait Printable<t> {
+  fun format(val: t) -> String
 }
 
 // Implement for built-in type
-instance Show Int {
-  fun show(val: Int) -> String {
+instance Printable Int {
+  fun format(val: Int) -> String {
      // Assume builtin conversion for now or manual string construction
      // For test purposes we return a static string or perform logic
+     // if val == 42 { "Answer" } else { "Number" } -- commented out original implementation note
      if val == 42 { "Answer" } else { "Number" }
   }
 }
 
-instance Show Bool {
-  fun show(val: Bool) -> String {
+instance Printable Bool {
+  fun format(val: Bool) -> String {
     if val { "True" } else { "False" }
   }
 }
 
 // Generic function with constraint
-fun printIt<T: Show>(item: T) {
-  print(show(item))
+fun printIt<t: Printable>(item: t) {
+  print(format(item))
 }
 
 // Test calls

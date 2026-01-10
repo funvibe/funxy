@@ -1,0 +1,45 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+type MySum = MakeSum Int
+
+// Workaround for parser issue with nested generics in variable type annotation
+type alias IntList = List<Int>
+
+instance Semigroup MySum {
+  operator (<>)(a: MySum, b: MySum) -> MySum {
+      match (a, b) {
+          (MakeSum(x), MakeSum(y)) -> MakeSum(x + y)
+      }
+  }
+}
+
+instance Monoid MySum {
+  fun mempty() -> MySum { MakeSum(0) }
+}
+
+testRun("Writer with explicit Monoid (MySum)", fun() -> {
+  // Annotation is crucial here for pure to know it should use MySum
+  w: Writer<MySum, Int> = pure(10)
+
+  // Check value and log
+  (val, log) = runWriter(w)
+
+  assertEquals(val, 10, "Value should match")
+
+  // Check log is MakeSum(0)
+  match log {
+    MakeSum(v) -> assertEquals(v, 0, "Log should be zero")
+  }
+})
+
+testRun("Writer with default Monoid (List)", fun() -> {
+   // Explicit annotation needed for type checker and runtime dispatch
+   // Default List monoid uses List<Object> (or List<Char> if string context?)
+   // Using alias IntList to avoid nested <> in annotation parsing issue
+   w2 : Writer<IntList, Int> = pure(20)
+
+   (val, log) = runWriter(w2)
+
+   assertEquals(val, 20, "Value should match")
+   assert(isEmpty(log), "Log should be empty list")
+})

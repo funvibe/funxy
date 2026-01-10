@@ -598,18 +598,18 @@ func SetBytesBuiltinTypes(builtins map[string]*Builtin) {
 		"bytesFromBin":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
 		"bytesFromOct":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
 
-		"bytesSlice":      typesystem.TFunc{Params: []typesystem.Type{bytesType, intType, intType}, ReturnType: bytesType},
+		"bytesSlice": typesystem.TFunc{Params: []typesystem.Type{bytesType, intType, intType}, ReturnType: bytesType},
 
-		"bytesToString":   typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: resultStringType},
-		"bytesToList":     typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: listIntType},
-		"bytesToHex":      typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
-		"bytesToBin":      typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
-		"bytesToOct":      typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
+		"bytesToString": typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: resultStringType},
+		"bytesToList":   typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: listIntType},
+		"bytesToHex":    typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
+		"bytesToBin":    typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
+		"bytesToOct":    typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
 
-		"bytesConcat":     typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: bytesType},
+		"bytesConcat": typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: bytesType},
 
 		"bytesEncodeInt":   typesystem.TFunc{Params: []typesystem.Type{intType, intType, stringType}, ReturnType: bytesType, DefaultCount: 1}, // endianness optional
-		"bytesDecodeInt":   typesystem.TFunc{Params: []typesystem.Type{bytesType, stringType}, ReturnType: intType, DefaultCount: 1}, // endianness optional
+		"bytesDecodeInt":   typesystem.TFunc{Params: []typesystem.Type{bytesType, stringType}, ReturnType: intType, DefaultCount: 1},          // endianness optional
 		"bytesEncodeFloat": typesystem.TFunc{Params: []typesystem.Type{floatType, intType}, ReturnType: bytesType},
 		"bytesDecodeFloat": typesystem.TFunc{Params: []typesystem.Type{bytesType, intType}, ReturnType: resultFloatType},
 

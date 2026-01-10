@@ -1,0 +1,196 @@
+// Comprehensive tests for new constraint syntax: t: Trait1, Trait2, Trait3
+
+// === Traits ===
+
+trait Stringify<t> {
+    fun stringify(x: t) -> String
+}
+
+trait Compare<t> {
+    fun compare(a: t, b: t) -> Bool
+}
+
+trait Hashable<t> {
+    fun hash(x: t) -> Int
+}
+
+// === Instances for Int ===
+
+instance Stringify Int {
+    fun stringify(x) { show(x) }
+}
+
+instance Compare Int {
+    fun compare(a, b) { a == b }
+}
+
+instance Hashable Int {
+    fun hash(x) { x }
+}
+
+// === Instances for String ===
+
+instance Stringify String {
+    fun stringify(x) { x }
+}
+
+instance Compare String {
+    fun compare(a, b) { a == b }
+}
+
+instance Hashable String {
+    fun hash(x) { len(x) }
+}
+
+// === Instances for Bool ===
+
+instance Stringify Bool {
+    fun stringify(x) { if x { "true" } else { "false" } }
+}
+
+instance Compare Bool {
+    fun compare(a, b) { a == b }
+}
+
+// Note: Bool does NOT implement Hashable
+
+// ============================================================================
+// Test 1: Single type variable with multiple constraints
+// ============================================================================
+
+print("=== Test 1: Single type variable, multiple constraints ===")
+
+fun processOne<t: Stringify, Compare>(x: t, y: t) -> String {
+    if compare(x, y) {
+        sprintf("Same: %s", stringify(x))
+    } else {
+        sprintf("Different: %s vs %s", stringify(x), stringify(y))
+    }
+}
+
+print(processOne(42, 42))
+print(processOne(1, 2))
+print(processOne("hello", "hello"))
+print(processOne("a", "b"))
+
+// ============================================================================
+// Test 2: Single type variable with three constraints
+// ============================================================================
+
+print("=== Test 2: Three constraints ===")
+
+fun processThree<t: Stringify, Compare, Hashable>(x: t, y: t) -> String {
+    h = hash(x)
+    if compare(x, y) {
+        sprintf("same, hash=%d", h)
+    } else {
+        sprintf("diff: %s vs %s, hash=%d", stringify(x), stringify(y), h)
+    }
+}
+
+print(processThree(42, 42))
+print(processThree(1, 2))
+print(processThree("hello", "hello"))
+print(processThree("a", "bb"))
+
+// ============================================================================
+// Test 3: Two type variables, each with single constraint
+// ============================================================================
+
+print("=== Test 3: Two type variables, single constraint each ===")
+
+fun formatPair<a: Stringify, b: Stringify>(x: a, y: b) -> String {
+    sa = stringify(x)
+    sb = stringify(y)
+    sprintf("(%s, %s)", sa, sb)
+}
+
+print(formatPair(42, "hello"))
+print(formatPair(true, 100))
+print(formatPair("a", "b"))
+
+// ============================================================================
+// Test 4: Two type variables, one with multiple constraints
+// ============================================================================
+
+print("=== Test 4: Two type variables, one with multiple constraints ===")
+
+fun checkAndFormat<a: Stringify, Compare, b: Stringify>(x: a, y: a, z: b) -> String {
+    result = if compare(x, y) { "same" } else { "different" }
+    sprintf("%s and %s are %s, also: %s", stringify(x), stringify(y), result, stringify(z))
+}
+
+print(checkAndFormat(1, 1, "tag"))
+print(checkAndFormat(1, 2, true))
+
+// ============================================================================
+// Test 5: Two type variables, both with multiple constraints
+// ============================================================================
+
+print("=== Test 5: Two type variables, both with multiple constraints ===")
+
+fun dualCompare<a: Stringify, Compare, b: Stringify, Compare>(x1: a, x2: a, y1: b, y2: b) -> String {
+    aMatch = compare(x1, x2)
+    bMatch = compare(y1, y2)
+    sprintf("a: %s (%s), b: %s (%s)",
+        stringify(x1),
+        if aMatch { "=" } else { "!=" },
+        stringify(y1),
+        if bMatch { "=" } else { "!=" })
+}
+
+print(dualCompare(1, 1, "a", "a"))
+print(dualCompare(1, 2, "a", "b"))
+print(dualCompare(42, 42, "x", "y"))
+
+// ============================================================================
+// Test 6: Three type variables with mixed constraints
+// ============================================================================
+
+print("=== Test 6: Three type variables, mixed constraints ===")
+
+fun tripleFormat<a: Stringify, b: Stringify, Compare, c: Stringify>(x: a, y1: b, y2: b, z: c) -> String {
+    yResult = if compare(y1, y2) { "same" } else { "diff" }
+    sprintf("[%s] [%s %s %s] [%s]", stringify(x), stringify(y1), yResult, stringify(y2), stringify(z))
+}
+
+print(tripleFormat(100, "a", "a", true))
+print(tripleFormat(200, "a", "b", false))
+
+// ============================================================================
+// Test 7: Constraints with built-in traits
+// ============================================================================
+
+print("=== Test 7: Built-in traits ===")
+
+fun showAndCompare<t: Show, Order>(a: t, b: t) -> String {
+    cmp = if a < b { "<" } else if a > b { ">" } else { "=" }
+    sprintf("%s %s %s", show(a), cmp, show(b))
+}
+
+print(showAndCompare(1, 2))
+print(showAndCompare(5, 5))
+print(showAndCompare(10, 3))
+print(showAndCompare("apple", "banana"))
+
+// ============================================================================
+// Test 8: Complex example - sorting with Show
+// ============================================================================
+
+print("=== Test 8: Complex example ===")
+
+fun minmax<t: Show, Order>(a: t, b: t) -> (t, t) {
+    if a < b { (a, b) } else { (b, a) }
+}
+
+fun formatRange<t: Show, Order>(a: t, b: t) -> String {
+    (minVal, maxVal) = minmax(a, b)
+    sprintf("[%s .. %s]", show(minVal), show(maxVal))
+}
+
+print(formatRange(10, 5))
+print(formatRange(1, 100))
+print(formatRange("z", "a"))
+
+print("=== All constraint syntax tests passed ===")
+

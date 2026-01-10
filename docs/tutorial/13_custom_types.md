@@ -55,7 +55,7 @@ Parameters for generic ADTs are listed in angle brackets after the type name.
 
 ```rust
 // Option is built-in, but custom ADTs look like:
-type MyOption<T> = MySome(T) | MyNone
+type MyOption<t> = MySome(t) | MyNone
 
 x = MySome(42)
 y = MyNone
@@ -66,7 +66,7 @@ Recursive ADTs are supported (e.g., for Lists or Trees).
 
 ```rust
 // List is built-in, but custom recursive ADTs look like:
-type MyList<T> = MyCons((T, MyList<T>)) | MyEmpty
+type MyList<t> = MyCons((t, MyList<t>)) | MyEmpty
 
 list = MyCons((1, MyCons((2, MyEmpty))))
 print(list)
@@ -92,7 +92,7 @@ typeOf(name, String)  // true
 For checking parameterized types, use **parentheses** (not angle brackets!):
 
 ```rust
-type MyOption<T> = Yes T | NoVal
+type MyOption<t> = Yes t | NoVal
 
 o = Yes(42)
 

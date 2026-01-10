@@ -18,6 +18,11 @@
         {
           "name": "comment.line.double-slash.funxy",
           "match": "//.*$"
+        },
+        {
+          "name": "comment.block.funxy",
+          "begin": "/\\*",
+          "end": "\\*/"
         }
       ]
     },
@@ -168,7 +173,7 @@
       "patterns": [
         {
           "name": "keyword.control.funxy",
-          "match": "\\b(if|else|match|for|while|in|break|continue|package|import|as)\\b"
+          "match": "\\b(if|else|match|for|while|in|break|continue|package|import|as|directive)\\b"
         },
         {
           "name": "keyword.declaration.funxy",
@@ -276,7 +281,7 @@
         },
         {
           "name": "support.function.builtin.funxy",
-          "match": "\\b(print|panic|typeOf|getType|show|read|intToFloat|floatToInt|sprintf)\\b"
+          "match": "\\b(print|write|panic|debug|trace|len|lenBytes|show|read|intToFloat|floatToInt|sprintf|getType|typeOf|id|kindOf|debugType|debugRepr|const|default|fmap|pure|mempty|append)\\b"
         }
       ]
     },

@@ -29,7 +29,7 @@ print(result4)  // 10
 // List operations
 fun head(xs: List<Int>) -> Int {
     match xs {
-        [x, rest...] -> x
+        [x, ...rest] -> x
         [] -> 0
     }
 }
@@ -37,7 +37,7 @@ fun head(xs: List<Int>) -> Int {
 fun sum(xs: List<Int>) -> Int {
     match xs {
         [] -> 0
-        [x, rest...] -> x + sum(rest)
+        [x, ...rest] -> x + sum(rest)
     }
 }
 
@@ -53,7 +53,7 @@ fun reverse(xs: List<Int>) -> List<Int> {
     fun go(acc, remaining) {
         match remaining {
             [] -> acc
-            [x, rest...] -> go(x :: acc, rest)
+            [x, ...rest] -> go(x :: acc, rest)
         }
     }
     go([], xs)

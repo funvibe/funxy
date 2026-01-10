@@ -1,0 +1,8 @@
+// Test reflection builtins
+print(kindOf(List))        // Expected: * -> *
+print(kindOf(Int))         // Expected: *
+print(kindOf([1, 2, 3]))   // Expected: *
+print(kindOf(Result))      // Expected: * -> * -> *
+
+print(debugType([1, 2]))   // Expected: (List Int)
+print(debugType(Ok(1)))    // Expected: (Result t14 Int)

@@ -60,7 +60,7 @@ You can also use the spread operator `...` in tuple patterns to match the rest o
 ```rust
 t = (1, 2, 3, 4)
 match t {
-    (head, tail...) -> {
+    (head, ...tail) -> {
         print(head) // 1
         print(tail) // (2, 3, 4)
     }
@@ -75,7 +75,7 @@ Lists can be matched structurally.
 l = [1, 2, 3]
 match l {
     [] -> print("Empty"),
-    [head, tail...] -> {
+    [head, ...tail] -> {
         print(head) // 1
         print(tail) // [2, 3]
     }
@@ -125,7 +125,7 @@ Patterns can be nested arbitrarily deep.
 list = [1, 2, 3]
 
 match list {
-    [1, x, rest...] -> print(x)  // Matches [1, 2, 3], x binds to 2
+    [1, x, ...rest] -> print(x)  // Matches [1, 2, 3], x binds to 2
     _ -> print("No match")
 }
 ```
@@ -134,7 +134,7 @@ Nested spread patterns:
 
 ```rust
 match (1, [2, 3]) {
-    (x, [y, z...]) -> {
+    (x, [y, ...z]) -> {
         print(x) // 1
         print(y) // 2
         print(z) // [3]
@@ -198,8 +198,8 @@ fun comparePair(pair: (Int, Int)) -> String {
 fun findFirstPositive(xs: List<Int>) -> Option<Int> {
     match xs {
         [] -> Zero
-        [x, rest...] if x > 0 -> Some(x)
-        [_, rest...] -> findFirstPositive(rest)
+        [x, ...rest] if x > 0 -> Some(x)
+        [_, ...rest] -> findFirstPositive(rest)
     }
 }
 

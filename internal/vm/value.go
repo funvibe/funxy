@@ -112,6 +112,13 @@ func (v Value) IsObj() bool   { return v.Type == ValObj }
 // Equality check
 func (v Value) Equals(other Value) bool {
 	if v.Type != other.Type {
+		// Implicit Int -> Float conversion
+		if v.Type == ValInt && other.Type == ValFloat {
+			return float64(v.AsInt()) == other.AsFloat()
+		}
+		if v.Type == ValFloat && other.Type == ValInt {
+			return v.AsFloat() == float64(other.AsInt())
+		}
 		return false
 	}
 	switch v.Type {
@@ -194,4 +201,3 @@ func (v Value) Hash() uint32 {
 		return 0
 	}
 }
-

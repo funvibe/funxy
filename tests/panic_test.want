@@ -3,4 +3,4 @@ Processing failed with errors:
 - error [R001]: runtime error: ERROR at 5:10: negative value
 Stack trace:
   at risky:5 (called panic)
-  at panic_test:14 (called risky)
+  at tests/panic_test:14 (called risky)

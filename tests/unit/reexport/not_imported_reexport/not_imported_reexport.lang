@@ -1,0 +1,12 @@
+package not_imported_reexport (localFn, source(area))
+
+// Source module exports: Shape, Circle, Square, area
+// But we only import Circle - NOT area
+// Then we try to re-export "area" which is valid in source but wasn't imported
+
+import "../source" (Circle)
+
+fun localFn() -> Int {
+    42
+}
+

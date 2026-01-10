@@ -1,8 +1,8 @@
 import "lib/test" (testRun, assertEquals)
 
 // Define a trait
-trait MyShow<T> {
-    fun myShow(val: T) -> String
+trait MyShow<t> {
+    fun myShow(val: t) -> String
 }
 
 // Implement for Int
@@ -19,7 +19,7 @@ instance MyShow Bool {
     }
 }
 
-fun display<T: MyShow>(val: T) -> String {
+fun display<t: MyShow>(val: t) -> String {
     myShow(val)
 }
 
@@ -29,9 +29,9 @@ testRun("Trait implementation", \ -> {
 })
 
 // Trait with default implementation
-trait DefaultEq<T> {
-    fun eq(a: T, b: T) -> Bool
-    fun neq(a: T, b: T) -> Bool {
+trait DefaultEq<t> {
+    fun eq(a: t, b: t) -> Bool
+    fun neq(a: t, b: t) -> Bool {
         if eq(a, b) { false } else { true }
     }
 }

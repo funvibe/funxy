@@ -1,37 +1,37 @@
 // Test: Multiple constraints error
-// Bool implements Show but NOT Cmp
+// Bool implements Printable but NOT Cmp
 
-trait Show<T> {
-    fun show(val: T) -> String
+trait Printable<t> {
+    fun format(val: t) -> String
 }
 
-trait Cmp<T> {
-    fun cmp(a: T, b: T) -> Bool
+trait Cmp<t> {
+    fun cmp(a: t, b: t) -> Bool
 }
 
-// Only Show for Bool, NOT Cmp
-instance Show Bool {
-    fun show(val: Bool) -> String { 
-        if val { "true" } else { "false" } 
+// Only Printable for Bool, NOT Cmp
+instance Printable Bool {
+    fun format(val: Bool) -> String {
+        if val { "true" } else { "false" }
     }
 }
 
-// Both Show and Cmp for Int
-instance Show Int {
-    fun show(val: Int) -> String { "int" }
+// Both Printable and Cmp for Int
+instance Printable Int {
+    fun format(val: Int) -> String { "int" }
 }
 
 instance Cmp Int {
     fun cmp(a: Int, b: Int) -> Bool { a == b }
 }
 
-// Function requires BOTH Show AND Cmp
-fun process<T: Show, T: Cmp>(x: T, y: T) -> String {
-    if cmp(x, y) { show(x) } else { "different" }
+// Function requires BOTH Printable AND Cmp
+fun process<t: Printable, Cmp>(x: t, y: t) -> String {
+    if cmp(x, y) { format(x) } else { "different" }
 }
 
 // Works - Int implements both
 print(process(1, 1))
 
-// ERROR - Bool implements Show but NOT Cmp
+// ERROR - Bool implements Printable but NOT Cmp
 print(process(true, false))

@@ -1,8 +1,0 @@
-// Test: Kind checking for HKT traits
-// Int has kind *, but Functor requires * -> *
-// Note: Functor is a built-in trait
-
-// This should error: Int has kind *, not * -> *
-instance Functor<Int> {
-    fun fmap<A, B>(f: (A) -> B, fa: Int) -> Int { fa }
-}

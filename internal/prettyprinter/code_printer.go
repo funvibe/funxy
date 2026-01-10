@@ -354,8 +354,19 @@ func (p *CodePrinter) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 func (p *CodePrinter) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	p.write("instance ")
 	p.write(n.TraitName.Value)
-	p.write(" ")
-	n.Target.Accept(p)
+	if len(n.Args) > 1 {
+		p.write("<")
+		for i, arg := range n.Args {
+			if i > 0 {
+				p.write(", ")
+			}
+			arg.Accept(p)
+		}
+		p.write(">")
+	} else if len(n.Args) == 1 {
+		p.write(" ")
+		n.Args[0].Accept(p)
+	}
 	p.write(" {\n")
 	for _, method := range n.Methods {
 		method.Accept(p)
@@ -1018,8 +1029,58 @@ func (p *CodePrinter) VisitUnionType(n *ast.UnionType) {
 	}
 }
 
+func (p *CodePrinter) VisitForallType(n *ast.ForallType) {
+	p.write("forall")
+	for _, param := range n.Vars {
+		p.write(" ")
+		param.Accept(p)
+	}
+	p.write(". ")
+	n.Type.Accept(p)
+}
+
 func (p *CodePrinter) VisitMemberExpression(n *ast.MemberExpression) {
 	n.Left.Accept(p)
 	p.write(".")
 	p.write(n.Member.Value)
+}
+
+func (p *CodePrinter) VisitListComprehension(n *ast.ListComprehension) {
+	p.write("[")
+	n.Output.Accept(p)
+	p.write(" | ")
+	for i, clause := range n.Clauses {
+		if i > 0 {
+			p.write(", ")
+		}
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			c.Pattern.Accept(p)
+			p.write(" <- ")
+			c.Iterable.Accept(p)
+		case *ast.CompFilter:
+			c.Condition.Accept(p)
+		}
+	}
+	p.write("]")
+}
+
+func (p *CodePrinter) VisitRangeExpression(n *ast.RangeExpression) {
+	if n.Next != nil {
+		p.write("(")
+		n.Start.Accept(p)
+		p.write(", ")
+		n.Next.Accept(p)
+		p.write(")")
+	} else {
+		n.Start.Accept(p)
+	}
+	p.write("..")
+	n.End.Accept(p)
+}
+
+func (p *CodePrinter) VisitDirectiveStatement(n *ast.DirectiveStatement) {
+	p.write("directive \"")
+	p.write(n.Name)
+	p.write("\"\n")
 }

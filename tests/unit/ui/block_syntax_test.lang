@@ -1,0 +1,71 @@
+import "kit/ui" (*)
+import "lib/string" (stringIndexOf)
+import "lib/test" (*)
+
+fun stringContains(needle, haystack) {
+    match stringIndexOf(haystack, needle) {
+        Some(_) -> true
+        Zero -> false
+    }
+}
+
+testRun("Block syntax - div { ... }", fun() {
+    node = div {
+        text("Hello")
+        span { text("World") }
+    }
+    rendered = render(node)
+    assert(rendered |> stringContains("Hello"), "contains Hello")
+    assert(rendered |> stringContains("World"), "contains World")
+    assert(rendered |> stringContains("<div>"), "contains div tag")
+    assert(rendered |> stringContains("</div>"), "contains closing div tag")
+})
+
+testRun("Block syntax - nested blocks", fun() {
+    node = div {
+        h1 { text("Title") }
+        div {
+            p { text("Paragraph 1") }
+            p { text("Paragraph 2") }
+        }
+    }
+    rendered = render(node)
+    assert(rendered |> stringContains("Title"), "contains Title")
+    assert(rendered |> stringContains("Paragraph 1"), "contains Paragraph 1")
+    assert(rendered |> stringContains("Paragraph 2"), "contains Paragraph 2")
+})
+
+testRun("Block syntax - with attributes", fun() {
+    node = div({class: "container"}) {
+        h1 { text("Header") }
+        p { text("Content") }
+    }
+    rendered = render(node)
+    assert(rendered |> stringContains("class=\"container\""), "contains class attribute")
+    assert(rendered |> stringContains("Header"), "contains Header")
+    assert(rendered |> stringContains("Content"), "contains Content")
+})
+
+testRun("Block syntax - empty block", fun() {
+    node = div { }
+    rendered = render(node)
+    assert(rendered |> stringContains("<div></div>"), "empty div renders correctly")
+})
+
+testRun("Block syntax - single child", fun() {
+    node = div {
+        text("Single")
+    }
+    rendered = render(node)
+    assert(rendered |> stringContains("Single"), "contains single child")
+})
+
+testRun("Block syntax - member access", fun() {
+    node = div {
+        text("Hello")
+        span { text("World") }
+    }
+    rendered = render(node)
+    assert(rendered |> stringContains("Hello"), "contains Hello")
+    assert(rendered |> stringContains("World"), "contains World")
+})

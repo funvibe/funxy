@@ -1,0 +1,8 @@
+package cycle_a (valA)
+
+import "../cycle_b"
+
+valA = 1
+// valRef = cycle_b.valB
+// Accessing imported symbol from cycle should work if headers analyzed
+

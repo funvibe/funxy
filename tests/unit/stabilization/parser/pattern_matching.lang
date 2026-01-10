@@ -1,0 +1,358 @@
+// =============================================================================
+// Stabilization Test: Pattern Matching
+// =============================================================================
+// Tests all forms of pattern matching syntax.
+// Pattern matching is complex and parser bugs here cause runtime surprises.
+
+import "lib/test" (testRun, assertEquals, assertTrue, assertFalse)
+
+// Types must be defined at module level
+type PmPoint = { x: Int, y: Int }
+type PmPerson = { name: String, age: Int }
+type PmStatus = { code: Int, msg: String }
+
+// =============================================================================
+// BASIC PATTERNS
+// =============================================================================
+
+testRun("Pattern: literal Int", \ -> {
+    f = \x -> match x {
+        0 -> "zero"
+        1 -> "one"
+        _ -> "other"
+    }
+    assertEquals("zero", f(0), "match 0")
+    assertEquals("one", f(1), "match 1")
+    assertEquals("other", f(42), "match other")
+})
+
+testRun("Pattern: literal String", \ -> {
+    f = \s -> match s {
+        "hello" -> 1
+        "world" -> 2
+        _ -> 0
+    }
+    assertEquals(1, f("hello"), "match hello")
+    assertEquals(2, f("world"), "match world")
+    assertEquals(0, f("other"), "match other")
+})
+
+testRun("Pattern: literal Bool", \ -> {
+    f = \b -> match b {
+        true -> "yes"
+        false -> "no"
+    }
+    assertEquals("yes", f(true), "match true")
+    assertEquals("no", f(false), "match false")
+})
+
+testRun("Pattern: wildcard", \ -> {
+    f = \x -> match x {
+        _ -> "anything"
+    }
+    assertEquals("anything", f(42), "wildcard int")
+    assertEquals("anything", f("str"), "wildcard str")
+    assertEquals("anything", f([1,2,3]), "wildcard list")
+})
+
+testRun("Pattern: variable binding", \ -> {
+    f = \x -> match x {
+        n -> n * 2
+    }
+    assertEquals(84, f(42), "binding")
+})
+
+// =============================================================================
+// TUPLE PATTERNS
+// =============================================================================
+
+testRun("Pattern: tuple 2", \ -> {
+    f = \t -> match t {
+        (a, b) -> a + b
+    }
+    assertEquals(5, f((2, 3)), "tuple2 sum")
+})
+
+testRun("Pattern: tuple 3", \ -> {
+    f = \t -> match t {
+        (a, b, c) -> a + b + c
+    }
+    assertEquals(6, f((1, 2, 3)), "tuple3 sum")
+})
+
+testRun("Pattern: nested tuple", \ -> {
+    f = \t -> match t {
+        ((a, b), (c, d)) -> a + b + c + d
+    }
+    assertEquals(10, f(((1, 2), (3, 4))), "nested tuple")
+})
+
+testRun("Pattern: tuple with literals", \ -> {
+    f = \t -> match t {
+        (0, y) -> "zero first: " ++ show(y)
+        (x, 0) -> "zero second: " ++ show(x)
+        (x, y) -> "both: " ++ show(x) ++ ", " ++ show(y)
+    }
+    assertEquals("zero first: 5", f((0, 5)), "zero first")
+    assertEquals("zero second: 5", f((5, 0)), "zero second")
+    assertEquals("both: 3, 4", f((3, 4)), "both")
+})
+
+testRun("Pattern: tuple with wildcard", \ -> {
+    f = \t -> match t {
+        (x, _) -> x
+    }
+    assertEquals(42, f((42, "ignored")), "ignore second")
+})
+
+// =============================================================================
+// LIST PATTERNS
+// =============================================================================
+
+testRun("Pattern: empty list", \ -> {
+    f = \l -> match l {
+        [] -> "empty"
+        _ -> "not empty"
+    }
+    assertEquals("empty", f([]), "empty list")
+    assertEquals("not empty", f([1]), "not empty")
+})
+
+testRun("Pattern: single element", \ -> {
+    f = \l -> match l {
+        [x] -> "single: " ++ show(x)
+        _ -> "other"
+    }
+    assertEquals("single: 42", f([42]), "single")
+    assertEquals("other", f([]), "not single empty")
+    assertEquals("other", f([1, 2]), "not single multi")
+})
+
+testRun("Pattern: exact length", \ -> {
+    f = \l -> match l {
+        [a, b] -> a + b
+        [a, b, c] -> a + b + c
+        _ -> 0
+    }
+    assertEquals(3, f([1, 2]), "length 2")
+    assertEquals(6, f([1, 2, 3]), "length 3")
+    assertEquals(0, f([1]), "length 1")
+})
+
+testRun("Pattern: head :: tail", \ -> {
+    fun sumList(l) {
+        match l {
+            [] -> 0
+            [h, ...t] -> h + sumList(t)
+        }
+    }
+    assertEquals(6, sumList([1, 2, 3]), "recursive sum")
+})
+
+testRun("Pattern: first two elements", \ -> {
+    f = \l -> match l {
+        [a, b, ...rest] -> (a, b, len(rest))
+        _ -> (0, 0, 0)
+    }
+    assertEquals((1, 2, 2), f([1, 2, 3, 4]), "first two")
+    assertEquals((1, 2, 0), f([1, 2]), "exactly two")
+    assertEquals((0, 0, 0), f([1]), "too short")
+})
+
+testRun("Pattern: list with literal", \ -> {
+    f = \l -> match l {
+        [0, ...rest] -> "starts with zero"
+        [1, ...rest] -> "starts with one"
+        _ -> "other"
+    }
+    assertEquals("starts with zero", f([0, 1, 2]), "starts 0")
+    assertEquals("starts with one", f([1, 2, 3]), "starts 1")
+    assertEquals("other", f([2, 3, 4]), "starts other")
+})
+
+// =============================================================================
+// ADT PATTERNS (using built-in Option/Result)
+// =============================================================================
+
+testRun("Pattern: Option", \ -> {
+    f = \opt -> match opt {
+        Some(x) -> x * 2
+        Zero -> 0
+    }
+    assertEquals(84, f(Some(42)), "Some")
+    assertEquals(0, f(Zero), "Zero")
+})
+
+testRun("Pattern: Result", \ -> {
+    f = \res -> match res {
+        Ok(x) -> "success: " ++ show(x)
+        Fail(e) -> "error: " ++ e
+    }
+    assertEquals("success: 42", f(Ok(42)), "Ok")
+    assertEquals("error: oops", f(Fail("oops")), "Fail")
+})
+
+testRun("Pattern: nested ADT", \ -> {
+    f = \opt -> match opt {
+        Some(Some(x)) -> "double some: " ++ show(x)
+        Some(Zero) -> "some zero"
+        Zero -> "zero"
+    }
+    assertEquals("double some: 42", f(Some(Some(42))), "nested some")
+    assertEquals("some zero", f(Some(Zero)), "some zero")
+    assertEquals("zero", f(Zero), "zero")
+})
+
+// =============================================================================
+// RECORD PATTERNS (using field access instead of destructuring)
+// =============================================================================
+
+testRun("Pattern: record via field access", \ -> {
+    // Note: Record destructuring patterns `{ x: x }` may not be supported
+    // Using field access after matching the type
+    f = \p -> p.x + p.y
+    assertEquals(5, f(PmPoint { x: 2, y: 3 }), "record field access")
+})
+
+testRun("Pattern: record with ADT wrapper", \ -> {
+    f = \opt -> match opt {
+        Some(p) -> p.name
+        Zero -> "unknown"
+    }
+    assertEquals("Alice", f(Some(PmPerson { name: "Alice", age: 30 })), "record in Option")
+    assertEquals("unknown", f(Zero), "none")
+})
+
+// =============================================================================
+// GUARDS
+// =============================================================================
+
+testRun("Guard: simple condition", \ -> {
+    classify = \n -> match n {
+        x if x < 0 -> "negative"
+        x if x == 0 -> "zero"
+        x if x > 0 -> "positive"
+    }
+    assertEquals("negative", classify(-5), "guard negative")
+    assertEquals("zero", classify(0), "guard zero")
+    assertEquals("positive", classify(5), "guard positive")
+})
+
+testRun("Guard: with pattern", \ -> {
+    f = \t -> match t {
+        (x, y) if x == y -> "equal"
+        (x, y) if x < y -> "first smaller"
+        (x, y) -> "first larger"
+    }
+    assertEquals("equal", f((3, 3)), "guard equal")
+    assertEquals("first smaller", f((2, 5)), "guard smaller")
+    assertEquals("first larger", f((5, 2)), "guard larger")
+})
+
+testRun("Guard: list with condition", \ -> {
+    f = \l -> match l {
+        [h, ...t] if h > 10 -> "big head"
+        [h, ...t] if h < 0 -> "negative head"
+        [h, ...t] -> "normal head"
+        [] -> "empty"
+    }
+    assertEquals("big head", f([20, 1, 2]), "guard big")
+    assertEquals("negative head", f([-5, 1, 2]), "guard negative")
+    assertEquals("normal head", f([5, 1, 2]), "guard normal")
+    assertEquals("empty", f([]), "guard empty")
+})
+
+testRun("Guard: multiple conditions", \ -> {
+    classify = \p -> match p {
+        (x, y) if x > 0 && y > 0 -> "Q1"
+        (x, y) if x < 0 && y > 0 -> "Q2"
+        (x, y) if x < 0 && y < 0 -> "Q3"
+        (x, y) if x > 0 && y < 0 -> "Q4"
+        _ -> "axis"
+    }
+    assertEquals("Q1", classify((1, 1)), "quadrant 1")
+    assertEquals("Q2", classify((-1, 1)), "quadrant 2")
+    assertEquals("Q3", classify((-1, -1)), "quadrant 3")
+    assertEquals("Q4", classify((1, -1)), "quadrant 4")
+    assertEquals("axis", classify((0, 5)), "on axis")
+})
+
+testRun("Or pattern workaround", \ -> {
+    // Workaround: use multiple cases or function
+    isVowelLower = \c -> c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u'
+    assertTrue(isVowelLower('a'), "vowel a")
+    assertTrue(isVowelLower('e'), "vowel e")
+    assertFalse(isVowelLower('b'), "not vowel b")
+})
+
+// =============================================================================
+// COMPLEX PATTERNS
+// =============================================================================
+
+testRun("Complex: list of tuples", \ -> {
+    fun sumFirst(l) {
+        match l {
+            [] -> 0
+            [(x, _), ...rest] -> x + sumFirst(rest)
+        }
+    }
+    assertEquals(6, sumFirst([(1, "a"), (2, "b"), (3, "c")]), "sum first")
+})
+
+testRun("Complex: Option in tuple", \ -> {
+    f = \t -> match t {
+        (Some(x), Some(y)) -> x + y
+        (Some(x), Zero) -> x
+        (Zero, Some(y)) -> y
+        (Zero, Zero) -> 0
+    }
+    assertEquals(5, f((Some(2), Some(3))), "both some")
+    assertEquals(2, f((Some(2), Zero)), "first some")
+    assertEquals(3, f((Zero, Some(3))), "second some")
+    assertEquals(0, f((Zero, Zero)), "both zero")
+})
+
+testRun("Complex: pattern with computation", \ -> {
+    f = \t -> match t {
+        (x, y) if x + y > 10 -> "big sum"
+        (x, y) if x * y > 20 -> "big product"
+        _ -> "small"
+    }
+    assertEquals("big sum", f((6, 6)), "sum > 10")
+    assertEquals("big product", f((5, 5)), "product > 20")
+    assertEquals("small", f((2, 3)), "small")
+})
+
+// =============================================================================
+// EXHAUSTIVENESS (these should work without warning)
+// =============================================================================
+
+testRun("Exhaustive: bool", \ -> {
+    f = \b -> match b {
+        true -> 1
+        false -> 0
+    }
+    assertEquals(1, f(true), "exhaust true")
+    assertEquals(0, f(false), "exhaust false")
+})
+
+testRun("Exhaustive: option", \ -> {
+    f = \o -> match o {
+        Some(x) -> x
+        Zero -> 0
+    }
+    assertEquals(42, f(Some(42)), "exhaust some")
+    assertEquals(0, f(Zero), "exhaust zero")
+})
+
+testRun("Exhaustive: with wildcard", \ -> {
+    f = \n -> match n {
+        0 -> "zero"
+        1 -> "one"
+        _ -> "other"
+    }
+    assertEquals("zero", f(0), "exhaust wildcard 0")
+    assertEquals("other", f(999), "exhaust wildcard other")
+})
+
+print("=== Pattern Matching Tests Complete ===")

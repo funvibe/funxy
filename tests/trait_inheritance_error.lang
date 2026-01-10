@@ -2,12 +2,12 @@
 
 type Ordering = Lt | Eq | Gt
 
-trait Cmp<T> {
-    fun cmp(a: T, b: T) -> Bool
+trait Cmp<t> {
+    fun cmp(a: t, b: t) -> Bool
 }
 
-trait Ord<T> : Cmp<T> {
-    fun compare(a: T, b: T) -> Ordering
+trait Ord<t> : Cmp<t> {
+    fun compare(a: t, b: t) -> Ordering
 }
 
 // Try to implement Ord WITHOUT implementing Cmp first - should fail

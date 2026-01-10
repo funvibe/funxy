@@ -46,14 +46,16 @@ func registerShowTrait(e *Evaluator, env *Environment) {
 
 	// Register instances for all standard types
 	types := []string{
-		"Int", "Float", "Bool", "Char", "String", 
-		"List", "Map", "Option", "Result", 
-		"Type", "Nil", "Bytes", "Bits", 
+		"Int", "Float", "Bool", "Char", "String",
+		"List", "Map", "Option", "Result",
+		"Type", "Nil", "Bytes", "Bits",
 		"BigInt", "Rational", "Function",
 		"Tuple", "Task",
+		// Add concrete types that were missing in analyzer/builtins.go but good to have
+		"Uuid", "Reader", "Identity", "State", "Writer", "OptionT", "ResultT",
 	}
 
-	// Also register for specific DataInstance types if needed, 
+	// Also register for specific DataInstance types if needed,
 	// but usually they fall back to their ADT type name.
 	// For example, "Option" covers Some/Zero if RuntimeType() returns Option.
 
@@ -64,12 +66,62 @@ func registerShowTrait(e *Evaluator, env *Environment) {
 			},
 		}
 	}
-	
-	// Register for "Tuple" (special handling might be needed if RuntimeType uses TTuple)
-	// RuntimeType for Tuple returns TTuple which has no name?
-	// TTuple.String() returns (T1, T2).
-	// vm.getTypeName calls t.Name.
-	// If it's TTuple, Name is empty?
-	// Let's check getTypeName in VM or evaluator.
-}
 
+	// Register Dictionary Evidence for Show
+	// We need to register globals like $impl_Show_Int, $ctor_Show_List, etc.
+	// These are used by the new dictionary passing system.
+
+	// registerDictionaryEvidence registers a global dictionary for a type
+	registerDictionaryEvidence := func(trait, typeName string, methods []Object, isGeneric bool) {
+		var name string
+		if isGeneric {
+			name = "$ctor_" + trait + "_" + typeName
+		} else {
+			name = "$impl_" + trait + "_" + typeName
+		}
+
+		if isGeneric {
+			// For generics (List, Option...), we need a constructor function
+			// $ctor_Show_List(dict_a_Show) -> Dictionary
+			ctor := &Builtin{
+				Name: name,
+				Fn: func(eval *Evaluator, args ...Object) Object {
+					// We construct a new dictionary that uses the inner dictionary (args[0])
+					// Ideally, we should compose the methods.
+					// For Show List<T>, we need show(xs) which uses show(x).
+
+					// For generic types like List<T>, we return a dictionary where the 'show' method
+					// relies on objectToString. Since objectToString is implemented to recursively
+					// handle lists and other collections (calling String() on elements),
+					// it correctly handles nested types without needing explicit composition
+					// of inner dictionaries here.
+
+					return &Dictionary{
+						TraitName: trait,
+						Methods:   methods,
+						// We don't attach supers for Show currently
+					}
+				},
+			}
+			env.Set(name, ctor)
+		} else {
+			// For concrete types (Int, Bool...), we register a constant Dictionary
+			dict := &Dictionary{
+				TraitName: trait,
+				Methods:   methods,
+			}
+			env.Set(name, dict)
+		}
+	}
+
+	for _, typeName := range types {
+		// Determine if generic
+		isGeneric := false
+		switch typeName {
+		case "List", "Map", "Option", "Result", "Tuple", "Task":
+			isGeneric = true
+		}
+
+		registerDictionaryEvidence(traitName, typeName, []Object{genericShow}, isGeneric)
+	}
+}

@@ -50,8 +50,8 @@ testRun("JSON ADT parsing", \ -> {
     }
 })
 
+type Config = { port: Int, host: String }
 testRun("Record round-trip", \ -> {
-    type Config = { port: Int, host: String }
     cfg = { port: 8080, host: "localhost" }
 
     encoded = jsonEncode(cfg)

@@ -1,14 +1,12 @@
+// Test spread pattern matching on variable length tuples (...args)
 
-// Test spread pattern matching on variable length tuples (args...)
-
-fun sum(args...) {
+fun sum(...args) {
     match args {
         () -> 0,
-        (x, xs...) -> x + sum(xs...)
+        (x, ...xs) -> x + sum(...xs)
     }
 }
 
 // Usage
 res = sum(1, 2, 3)
 print(res)
-

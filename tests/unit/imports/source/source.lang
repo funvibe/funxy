@@ -13,7 +13,7 @@ type Config = {
 type alias ID = Int
 
 // Function
-identity = fun(x: Int) -> Int { x }
+myIdentity = fun(x: Int) -> Int { x }
 
 // Constructor helper
 makeCon1 = fun(x: Int) -> Data { Con1(x) }

@@ -1,0 +1,128 @@
+import "lib/test" (*)
+import "lib/list" (map, filter, foldl)
+
+// Helper functions for testing
+fun double(x) { x * 2 }
+fun add(a, b) { a + b }
+fun sub(a, b) { a - b }
+fun triple_add(a, b, c) { a + b + c }
+fun format(prefix, val, suffix) { prefix ++ val ++ suffix }
+
+testRun("Basic pipe: x |> f", \ -> {
+    res = 10 |> double
+    assert(res == 20, "10 |> double should be 20")
+})
+
+testRun("Pipe to last arg: x |> f(a)", \ -> {
+    // 10 |> add(5) -> add(5, 10) -> 5 + 10 = 15
+    res = 10 |> add(5)
+    assert(res == 15, "10 |> add(5) should be 15")
+
+    // Order matters for subtraction
+    // 5 |> sub(10) -> sub(10, 5) -> 10 - 5 = 5
+    res2 = 5 |> sub(10)
+    assert(res2 == 5, "5 |> sub(10) should be 5 (10 - 5)")
+})
+
+testRun("Pipe with placeholder: x |> f(_, b)", \ -> {
+    // 10 |> sub(_, 5) -> sub(10, 5) -> 10 - 5 = 5
+    res = 10 |> sub(_, 5)
+    assert(res == 5, "10 |> sub(_, 5) should be 5")
+
+    // 5 |> sub(10, _) -> sub(10, 5) -> 10 - 5 = 5
+    res2 = 5 |> sub(10, _)
+    assert(res2 == 5, "5 |> sub(10, _) should be 5")
+})
+
+testRun("Complex placeholder positions", \ -> {
+    // x |> f(a, _, c) -> f(a, x, c)
+    // 2 |> triple_add(1, _, 3) -> triple_add(1, 2, 3) -> 6
+    res = 2 |> triple_add(1, _, 3)
+    assert(res == 6, "2 |> triple_add(1, _, 3) should be 6")
+
+    // x |> f(_, b, c) -> f(x, b, c)
+    res2 = 1 |> triple_add(_, 2, 3)
+    assert(res2 == 6, "1 |> triple_add(_, 2, 3) should be 6")
+
+    // x |> f(a, b, _) -> f(a, b, x)
+    res3 = 3 |> triple_add(1, 2, _)
+    assert(res3 == 6, "3 |> triple_add(1, 2, _) should be 6")
+})
+
+testRun("Chaining pipes", \ -> {
+    // 1 |> add(2) |> double -> (add(2, 1) -> 3) |> double -> 6
+    res = 1
+        |> add(2)
+        |> double
+    assert(res == 6, "chaining failed")
+
+    // Mixed implicit and placeholder
+    // 10 |> sub(20, _) |> sub(_, 5)
+    // sub(20, 10) -> 10
+    // sub(10, 5) -> 5
+    res2 = 10 |> sub(20, _) |> sub(_, 5)
+    assert(res2 == 5, "mixed chaining failed")
+})
+
+testRun("Pipe with lambdas", \ -> {
+    res = 10 |> (\x -> x * 3)
+    assert(res == 30, "pipe with lambda failed")
+
+    res2 = 5 |> (\x, y -> x - y)(10, _)
+    assert(res2 == 5, "pipe with lambda placeholder failed: (\\x,y -> x-y)(10, 5) -> 5")
+
+    // Implicit last arg with lambda call
+    // 5 |> (\a, b -> a - b)(10) -> (\a, b -> a - b)(10, 5) -> 10 - 5 = 5
+    res3 = 5 |> (\a, b -> a - b)(10)
+    assert(res3 == 5, "pipe with lambda implicit last arg failed")
+})
+
+testRun("List operations chaining", \ -> {
+    res = [1, 2, 3, 4, 5]
+        |> filter(\x -> x % 2 == 0)   // [2, 4] (filter takes list as second arg)
+        |> map(\x -> x * 10)          // [20, 40] (map takes list as second arg)
+        |> foldl(add, 0)              // 60 (foldl takes list as third arg, oops check foldl sig)
+
+    // foldl signature in builtins/lib/list usually: foldl(fn, acc, list)
+    // implicit pipe puts list at end: foldl(add, 0, prev) -> correct
+
+    assert(res == 60, "list operations chaining failed")
+})
+
+testRun("Expression in pipe arguments", \ -> {
+    // 5 |> add(2 * 3) -> add(6, 5) -> 11
+    res = 5 |> add(2 * 3)
+    assert(res == 11, "expression in pipe arg failed")
+
+    // 5 |> sub(20 / 2, _) -> sub(10, 5) -> 5
+    res2 = 5 |> sub(20 / 2, _)
+    assert(res2 == 5, "expression in pipe placeholder arg failed")
+})
+
+testRun("Pipe with strings", \ -> {
+    // "world" |> format("hello ", _, "!") -> "hello world!"
+    res = "world" |> format("hello ", _, "!")
+    assert(res == "hello world!", "string format pipe failed")
+})
+
+testRun("Nested pipes (precedence)", \ -> {
+    // Should be parsed as (1 |> double) + (2 |> double) -> 2 + 4 = 6
+    // Assuming |> has higher precedence than +?
+    // Let's check precedence. Usually |> is very low, lower than +.
+    // If |> is lower than +, then 1 |> double + 2 |> double means 1 |> (double + 2) ... error
+    // Wait, parser/parser.go says PIPE_PREC is low but above assignment.
+    // precedences[token.PIPE_GT] = PIPE_PREC
+    // precedences[token.PLUS] = SUM
+    // SUM > PIPE_PREC.
+    // So 1 |> double + 2 parses as 1 |> (double + 2).
+    // This requires parens.
+
+    res = (1 |> double) + (2 |> double)
+    assert(res == 6, "nested pipe with parens failed")
+
+    // Test right associativity? No, |> is left associative usually.
+    // x |> f |> g == (x |> f) |> g
+    res2 = 10 |> double |> double
+    assert(res2 == 40, "left associativity failed")
+})
+

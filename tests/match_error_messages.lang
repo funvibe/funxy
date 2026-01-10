@@ -13,7 +13,7 @@ result1 = match x {
 print(result1)
 
 // === 2. Option match - exhaustive ===
-type MyOption<T> = MySome T | MyZero
+type MyOption<t> = MySome t | MyZero
 
 opt = MySome(10)
 result2 = match opt {

@@ -1,23 +1,23 @@
 // Test: Multiple trait inheritance
-// trait Print<T> : Show<T>, Cmp<T>
+// trait Print<t> : Stringify<t>, Cmp<t>
 
 // Base traits
-trait Show<T> {
-    fun show(val: T) -> String
+trait Stringify<t> {
+    fun stringify(val: t) -> String
 }
 
-trait Cmp<T> {
-    fun cmp(a: T, b: T) -> Bool
+trait Cmp<t> {
+    fun cmp(a: t, b: t) -> Bool
 }
 
 // Derived trait inheriting from both
-trait Print<T> : Show<T>, Cmp<T> {
-    fun format(val: T) -> String
+trait Print<t> : Stringify<t>, Cmp<t> {
+    fun format(val: t) -> String
 }
 
-// Implement Show for Int
-instance Show Int {
-    fun show(val: Int) -> String {
+// Implement Stringify for Int
+instance Stringify Int {
+    fun stringify(val: Int) -> String {
         "Int"
     }
 }
@@ -37,7 +37,7 @@ instance Print Int {
 }
 
 // Test usage
-print(show(42))
+print(stringify(42))
 print(cmp(1, 1))
 print(cmp(1, 2))
 print(format(100))

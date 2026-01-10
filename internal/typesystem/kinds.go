@@ -15,9 +15,19 @@ type KStar struct{}
 
 func (k KStar) String() string { return "*" }
 func (k KStar) Equal(other Kind) bool {
+	if _, ok := other.(KWildcard); ok {
+		return true
+	}
 	_, ok := other.(KStar)
 	return ok
 }
+
+// KWildcard represents a kind that matches any other kind.
+// Used for built-ins like typeOf that accept any Type<T> regardless of T's kind.
+type KWildcard struct{}
+
+func (k KWildcard) String() string        { return "?" }
+func (k KWildcard) Equal(other Kind) bool { return true }
 
 // KArrow represents a higher-kinded type (k1 -> k2).
 type KArrow struct {
@@ -30,6 +40,9 @@ func (k KArrow) String() string {
 }
 
 func (k KArrow) Equal(other Kind) bool {
+	if _, ok := other.(KWildcard); ok {
+		return true
+	}
 	o, ok := other.(KArrow)
 	if !ok {
 		return false
@@ -38,6 +51,7 @@ func (k KArrow) Equal(other Kind) bool {
 }
 
 var Star Kind = KStar{}
+var AnyKind Kind = KWildcard{}
 
 // Helper to create N-ary arrows
 // e.g. List a -> * -> *

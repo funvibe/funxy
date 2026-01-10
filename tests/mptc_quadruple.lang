@@ -1,0 +1,19 @@
+// Test: 4-parameter Type Class
+trait Quad<a, b, c, d> {
+    fun run(w: a, x: b, y: c, z: d) -> String
+}
+
+instance Quad<Int, Int, Int, Int> {
+    fun run(w: a, x: b, y: c, z: d) -> String { "All-Int" }
+}
+
+instance Quad<Int, String, Bool, Int> {
+    fun run(w: a, x: b, y: c, z: d) -> String { "Mixed" }
+}
+
+res1: String = run(1, 2, 3, 4)
+res2: String = run(1, "s", true, 4)
+
+print(res1)
+print(res2)
+

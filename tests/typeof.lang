@@ -10,7 +10,7 @@ if typeOf(y, Bool) {
   print(2)
 }
 
-type MyOption<T> = Yes T | NoVal
+type MyOption<t> = Yes t | NoVal
 
 o = Yes(1)
 if typeOf(o, MyOption) {

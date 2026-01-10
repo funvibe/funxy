@@ -81,7 +81,7 @@ print(not_tail_let(100))  // Small number - would stack overflow with deep recur
 
 // 10. Call in list literal - NOT tail position
 fun list_not_tail(n) {
-    if n == 0 { [] } else { [n, list_not_tail(n - 1)...] }
+    if n == 0 { [] } else { [n, ...list_not_tail(n - 1)] }
 }
 print(list_not_tail(10))
 

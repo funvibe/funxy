@@ -1,3 +1,2 @@
-3.141592653589793
-3.141592653589793
-
+Processing failed with errors:
+- error at 2:17 [A004]: redefinition of symbol: 'duplicate import: module 'lib/math' already imported'

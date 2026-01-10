@@ -136,9 +136,9 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 		freshCtorType := InstantiateWithContext(ctx, sym.Type)
 		totalSubst := typesystem.Subst{}
 
-	if tFunc, ok := freshCtorType.(typesystem.TFunc); ok {
-		subst, err := typesystem.Unify(expectedType, tFunc.ReturnType)
-		if err != nil {
+		if tFunc, ok := freshCtorType.(typesystem.TFunc); ok {
+			subst, err := typesystem.Unify(expectedType, tFunc.ReturnType)
+			if err != nil {
 				return nil, inferErrorf(p, "pattern type mismatch: expected %s, got %s (%s)", expectedType, tFunc.ReturnType, p.Name.Value)
 			}
 			totalSubst = subst.Compose(totalSubst)
@@ -147,10 +147,10 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 				return nil, inferErrorf(p, "constructor %s expects %d arguments, got %d", p.Name.Value, len(tFunc.Params), len(p.Elements))
 			}
 
-		for i, el := range p.Elements {
-			// Apply current substitution to parameter type
-			paramType := tFunc.Params[i].Apply(totalSubst)
-			s, err := inferPattern(ctx, el, paramType, table)
+			for i, el := range p.Elements {
+				// Apply current substitution to parameter type
+				paramType := tFunc.Params[i].Apply(totalSubst)
+				s, err := inferPattern(ctx, el, paramType, table)
 				if err != nil {
 					return nil, err
 				}
@@ -204,11 +204,13 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 
 		if hasSpread {
 			spreadPat := p.Elements[fixedCount].(*ast.SpreadPattern)
-			s, err := inferPattern(ctx, spreadPat.Pattern, listType.Apply(totalSubst), table)
-			if err != nil {
-				return nil, err
+			if spreadPat.Pattern != nil {
+				s, err := inferPattern(ctx, spreadPat.Pattern, listType.Apply(totalSubst), table)
+				if err != nil {
+					return nil, err
+				}
+				totalSubst = s.Compose(totalSubst)
 			}
-			totalSubst = s.Compose(totalSubst)
 		}
 
 		return totalSubst, nil
@@ -326,11 +328,13 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 
 			if hasSpread {
 				spreadPat := p.Elements[fixedCount].(*ast.SpreadPattern)
-				s, err := inferPattern(ctx, spreadPat.Pattern, checkType.Apply(totalSubst), table)
-				if err != nil {
-					return nil, err
+				if spreadPat.Pattern != nil {
+					s, err := inferPattern(ctx, spreadPat.Pattern, checkType.Apply(totalSubst), table)
+					if err != nil {
+						return nil, err
+					}
+					totalSubst = s.Compose(totalSubst)
 				}
-				totalSubst = s.Compose(totalSubst)
 			}
 			return totalSubst, nil
 		}
@@ -366,11 +370,13 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 				}
 				restType := typesystem.TTuple{Elements: finalRest}
 
-				s, err := inferPattern(ctx, spreadPat.Pattern, restType, table)
-				if err != nil {
-					return nil, err
+				if spreadPat.Pattern != nil {
+					s, err := inferPattern(ctx, spreadPat.Pattern, restType, table)
+					if err != nil {
+						return nil, err
+					}
+					totalSubst = s.Compose(totalSubst)
 				}
-				totalSubst = s.Compose(totalSubst)
 				return totalSubst, nil
 			}
 
@@ -411,11 +417,13 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 					}
 
 					spreadPat := p.Elements[fixedCount].(*ast.SpreadPattern)
-					s, err := inferPattern(ctx, spreadPat.Pattern, ctx.FreshVar(), table)
-					if err != nil {
-						return nil, err
+					if spreadPat.Pattern != nil {
+						s, err := inferPattern(ctx, spreadPat.Pattern, ctx.FreshVar(), table)
+						if err != nil {
+							return nil, err
+						}
+						totalSubst = s.Compose(totalSubst)
 					}
-					totalSubst = s.Compose(totalSubst)
 
 					return totalSubst, nil
 
@@ -495,7 +503,9 @@ func (w *walker) VisitRecordPattern(n *ast.RecordPattern) {
 }
 
 func (w *walker) VisitSpreadPattern(n *ast.SpreadPattern) {
-	n.Pattern.Accept(w)
+	if n.Pattern != nil {
+		n.Pattern.Accept(w)
+	}
 }
 
 func (w *walker) VisitTypePattern(n *ast.TypePattern) {

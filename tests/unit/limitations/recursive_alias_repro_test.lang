@@ -1,0 +1,119 @@
+import "lib/test" (*)
+
+// Recursive Type Aliases
+// These should work: type aliases that reference themselves
+
+// 1. Simple recursive type alias
+type Tree = { val: Int, children: List<Tree> }
+
+testRun("Recursive Type Alias: Tree", fun() -> {
+    // Create a tree structure
+    leaf: Tree = { val: 1, children: [] }
+    node: Tree = { val: 2, children: [leaf] }
+    root: Tree = { val: 3, children: [node, leaf] }
+
+    // Type checking should work
+    tree: Tree = root
+    assertEquals(3, tree.val)
+    assertEquals(2, tree.children[0].val)
+    assertEquals(1, tree.children[0].children[0].val)
+
+    // getType should return Tree
+    assertEquals(getType(tree), getType(root))
+})
+
+// 2. Recursive type alias with generic parameter
+type alias Node<t> = { value: t, next: Option<Node<t>> }
+
+testRun("Recursive Type Alias: Generic Node", fun() -> {
+    // Create a linked list using recursive type alias
+    node1: Node<Int> = { value: 1, next: Some({ value: 2, next: Zero }) }
+    assertEquals(1, node1.value)
+    assertEquals(2, node1.next.unwrap().value)
+
+    // Type checking should work
+    node2: Node<String> = { value: "a", next: Some({ value: "b", next: Zero }) }
+    assertEquals("a", node2.value)
+    assertEquals("b", node2.next.unwrap().value)
+})
+
+// 3. Mutually recursive type aliases
+type alias A = List<B>
+type alias B = List<A>
+
+// 4. Recursive type alias in function signature
+testRun("Recursive Type Alias: Function Signature", fun() -> {
+    // Function accepting recursive type
+    fun sumTree(tree: Tree) -> Int {
+        sum = tree.val
+        for child in tree.children {
+            sum = sum + sumTree(child)
+        }
+        sum
+    }
+
+    leaf: Tree = { val: 1, children: [] }
+    node: Tree = { val: 2, children: [leaf] }
+    root: Tree = { val: 3, children: [node, leaf] }
+
+    result = sumTree(root)
+    assertEquals(7, result) // 3 + 2 + 1 + 1
+})
+
+// 5. Recursive type alias with records
+type alias Person = { name: String, friends: List<Person> }
+
+testRun("Recursive Type Alias: Person with Friends", fun() -> {
+    alice: Person = { name: "Alice", friends: [] }
+    bob: Person = { name: "Bob", friends: [alice] }
+    charlie: Person = { name: "Charlie", friends: [alice, bob] }
+
+    assertEquals("Charlie", charlie.name)
+    assertEquals("Alice", charlie.friends[0].name)
+    assertEquals("Bob", charlie.friends[1].name)
+    assertEquals("Alice", charlie.friends[1].friends[0].name)
+})
+
+// 6. Recursive type alias returning itself
+testRun("Recursive Type Alias: Return Type", fun() -> {
+    fun makeTree(val: Int, children: List<Tree>) -> Tree {
+        { val: val, children: children }
+    }
+
+    leaf = makeTree(1, [])
+    node = makeTree(2, [leaf])
+    root = makeTree(3, [node])
+
+    assertEquals(3, root.val)
+    assertEquals(2, root.children[0].val)
+    assertEquals(1, root.children[0].children[0].val)
+})
+
+// 7. Deeply nested recursive type alias
+testRun("Recursive Type Alias: Deep Nesting", fun() -> {
+    // Create deeply nested tree
+    level4 = { val: 4, children: [] }
+    level3 = { val: 3, children: [level4] }
+    level2 = { val: 2, children: [level3] }
+    level1 = { val: 1, children: [level2] }
+
+    tree: Tree = level1
+    assertEquals(1, tree.val)
+    assertEquals(2, tree.children[0].val)
+    assertEquals(3, tree.children[0].children[0].val)
+    assertEquals(4, tree.children[0].children[0].children[0].val)
+})
+
+// 8. Recursive type alias with multiple fields referencing itself
+type alias GraphNode = { id: Int, neighbors: List<GraphNode>, data: String }
+
+testRun("Recursive Type Alias: GraphNode", fun() -> {
+    node1: GraphNode = { id: 1, neighbors: [], data: "node1" }
+    node2: GraphNode = { id: 2, neighbors: [node1], data: "node2" }
+    node3: GraphNode = { id: 3, neighbors: [node1, node2], data: "node3" }
+
+    assertEquals(3, node3.id)
+    assertEquals("node3", node3.data)
+    assertEquals(2, node3.neighbors[1].id)
+    assertEquals("node2", node3.neighbors[1].data)
+})

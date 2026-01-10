@@ -2,7 +2,7 @@ import "lib/test" (*)
 
 // =============================================
 // COMPREHENSIVE USER TRAIT TEST
-// 
+//
 // This test validates:
 // 1. User-defined traits with operators (UserOpCombine, UserOpChoose)
 // 2. User-defined traits with methods
@@ -50,8 +50,8 @@ testRun("UserOpCombine - associativity", fun() -> {
 // PART 2: User trait with methods
 // =============================================
 
-trait Stringify<T> {
-    fun stringify(x: T) -> String
+trait Stringify<t> {
+    fun stringify(x: t) -> String
 }
 
 instance Stringify Text {
@@ -80,13 +80,13 @@ testRun("Stringify trait - Int", fun() -> {
 // =============================================
 
 // Base trait
-trait Showable<T> {
-    fun display(x: T) -> String
+trait Showable<t> {
+    fun display(x: t) -> String
 }
 
 // Child trait inherits from Showable
-trait Printable<T> : Showable<T> {
-    fun format(x: T) -> String
+trait Printable<t> : Showable<t> {
+    fun format(x: t) -> String
 }
 
 type Item = MkItem String Int
@@ -177,9 +177,9 @@ testRun("Multiple operators - mixed usage", fun() -> {
 // PART 5: Generic trait with constraints
 // =============================================
 
-trait Summable<T> {
-    fun add(a: T, b: T) -> T
-    fun zero() -> T
+trait Summable<t> {
+    fun add(a: t, b: t) -> t
+    fun zero() -> t
 }
 
 instance Summable Int {
@@ -198,14 +198,14 @@ instance Summable Score {
 fun sumInts(list: List<Int>) -> Int {
     match list {
         [] -> (zero() : Int)
-        [x, xs...] -> add(x, sumInts(xs))
+        [x, ...xs] -> add(x, sumInts(xs))
     }
 }
 
 fun sumScores(list: List<Score>) -> Score {
     match list {
         [] -> (zero() : Score)
-        [x, xs...] -> add(x, sumScores(xs))
+        [x, ...xs] -> add(x, sumScores(xs))
     }
 }
 
@@ -224,11 +224,11 @@ testRun("Summable trait - Score list", fun() -> {
 // PART 6: Trait with default implementation
 // =============================================
 
-trait Describable<T> {
-    fun describe(x: T) -> String
-    
+trait Describable<t> {
+    fun describe(x: t) -> String
+
     // Default implementation
-    fun longDescribe(x: T) -> String {
+    fun longDescribe(x: t) -> String {
         "Description: " ++ describe(x)
     }
 }
@@ -297,7 +297,7 @@ instance Summable Counter {
 fun sumCounters(list: List<Counter>) -> Counter {
     match list {
         [] -> (zero() : Counter)
-        [x, xs...] -> add(x, sumCounters(xs))
+        [x, ...xs] -> add(x, sumCounters(xs))
     }
 }
 
@@ -305,15 +305,15 @@ testRun("Complex - Counter with multiple traits", fun() -> {
     c1 = MkCounter(10, "a")
     c2 = MkCounter(20, "b")
     c3 = MkCounter(30, "c")
-    
+
     // Use <> operator
     combined = c1 <> c2
     assertEquals(counterValue(combined), 30)
     assertEquals(counterLabel(combined), "a+b")
-    
+
     // Use stringify
     assertEquals(stringify(c1), "a=10")
-    
+
     // Use sumCounters (uses Summable which uses <>)
     list = [c1, c2, c3]
     total = sumCounters(list)
@@ -339,11 +339,3 @@ testRun("Operator as function - (<|>)", fun() -> {
     result = choose(s1, s2)
     assertEquals(getScore(result), 100)
 })
-
-// =============================================
-// SUMMARY
-// =============================================
-
-print("=== Comprehensive User Trait Test ===")
-print("All tests completed successfully!")
-

@@ -1,0 +1,74 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+// ==========================================
+// Higher-Order Unification (HOU) Tests
+// ==========================================
+
+// 1. Test List inference
+// pure(10) -> M<Int>. Context expects List<Int>.
+// Should infer M = List.
+fun takeList(l: List<Int>) -> Int {
+    match l {
+        [h, ...t] -> h,
+        [] -> 0
+    }
+}
+
+testRun("HOU: Infer List from function arg", \ -> {
+    // Without HOU, this would require `pure(10) : List<Int>` or similar annotation
+    // because pure returns generic M<A>.
+    res = takeList(pure(10))
+    assertEquals(10, res, "List inference works")
+})
+
+// 2. Test State inference (Partial Application)
+// pure("ok") -> M<String>. Context expects State<Int, String>.
+// Should infer M = State<Int>.
+fun takeState(s: State<Int, String>) -> String {
+    // Just run it with dummy state
+    res = runState(s, 0)
+    res[0]
+}
+
+testRun("HOU: Infer State from function arg", \ -> {
+    res = takeState(pure("ok"))
+    assertEquals("ok", res, "State inference works (partial app)")
+})
+
+// 3. Test Reader inference
+// pure(100) -> M<Int>. Context expects Reader<String, Int>.
+// Should infer M = Reader<String>.
+fun takeReader(r: Reader<String, Int>) -> Int {
+    runReader(r, "env")
+}
+
+testRun("HOU: Infer Reader from function arg", \ -> {
+    res = takeReader(pure(100))
+    assertEquals(100, res, "Reader inference works")
+})
+
+// 4. Test Variable Assignment Inference
+// x: List<Int> = pure(1)
+
+testRun("HOU: Infer from variable annotation", \ -> {
+    // Explicit type on variable should guide inference for RHS
+    list: List<Int> = pure(1)
+
+    assertEquals(1, list[0], "List variable annotation works")
+
+    // Try with State
+    st: State<Int, Int> = pure(42)
+    res = runState(st, 0)
+    assertEquals(42, res[0], "State variable annotation works")
+})
+
+// 5. Test Return Type Inference
+// fun getList() -> List<Int> { pure(1) }
+fun makeList() -> List<Int> {
+    pure(99)
+}
+
+testRun("HOU: Infer from return type", \ -> {
+    l = makeList()
+    assertEquals(99, l[0], "Return type inference works")
+})

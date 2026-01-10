@@ -9,8 +9,8 @@ fun customNotFoundHandler(ctx) -> Result<String, web.Response> {
     Ok(web.resHtml(
         ui.div(
             [
-                ui.h1(ui.text("404 - Page Not Found")),
-                ui.p(ui.text("The page " ++ ctx.req.path ++ " does not exist"))
+                ui.h1([ui.text("404 - Page Not Found")]),
+                ui.p([ui.text("The page " ++ ctx.req.path ++ " does not exist")])
             ]
         )
     ))

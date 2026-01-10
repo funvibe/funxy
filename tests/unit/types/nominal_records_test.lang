@@ -56,7 +56,7 @@ testRun("Recursive/Forward Types", fun() {
 })
 
 // 3. Generic Nominal Records
-type Box<T> = { value: T }
+type Box<t> = { value: t }
 
 testRun("Generic Nominal Records", fun() {
     b1: Box<Int> = { value: 10 }

@@ -1,0 +1,43 @@
+// Test: Complex MPTC Dispatch
+// This tests cases that require full argument inspection, not just Arg1 + ReturnType
+
+// 1. Dispatch by Second Argument (where Arg1 is same)
+trait Dispatch<a, b> {
+    fun dispatch(x: a, y: b) -> String
+}
+
+instance Dispatch<Int, String> {
+    fun dispatch(x: Int, y: String) -> String { "Int-String" }
+}
+
+instance Dispatch<Int, Bool> {
+    fun dispatch(x: Int, y: Bool) -> String { "Int-Bool" }
+}
+
+// Both return String, both start with Int.
+// VM MUST look at 2nd arg to distinguish.
+res1: String = dispatch(1, "s")
+res2: String = dispatch(1, true)
+
+print(res1)
+print(res2)
+
+// 2. Triple Parameter Dispatch
+trait Triple<a, b, c> {
+    fun combine(x: a, y: b, z: c) -> String
+}
+
+instance Triple<Int, Int, Int> {
+    fun combine(x: Int, y: Int, z: Int) -> String { "3-Ints" }
+}
+
+instance Triple<Int, String, Int> {
+    fun combine(x: Int, y: String, z: Int) -> String { "Int-String-Int" }
+}
+
+res3: String = combine(1, 2, 3)
+res4: String = combine(1, "s", 3)
+
+print(res3)
+print(res4)
+

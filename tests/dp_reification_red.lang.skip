@@ -1,0 +1,15 @@
+// Limitation 1: No Reification / Type Erasure
+// We expect runtime types to carry generic arguments, but they don't.
+// This test is expected to FAIL.
+
+r: Result<String, Int> = Ok(1)
+t = debugType(r)
+print("Type: " ++ t)
+
+if t == "Result" {
+    print("FAIL: Type is erased (Result)")
+    // We want Result<String, Int> or similar
+    panic("Test failed: Type Erasure detected")
+} else {
+    print("SUCCESS: Type preserved")
+}

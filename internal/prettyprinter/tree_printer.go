@@ -169,8 +169,13 @@ func (p *TreePrinter) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 func (p *TreePrinter) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	p.writeIndent()
 	p.write("Instance: ")
-	p.write(n.TraitName.Value + " ")
-	n.Target.Accept(p)
+	p.write(n.TraitName.Value)
+	if len(n.Args) > 0 {
+		for _, arg := range n.Args {
+			p.write(" ")
+			arg.Accept(p)
+		}
+	}
 	p.write("\n")
 	p.indent++
 	for _, m := range n.Methods {
@@ -802,6 +807,25 @@ func (p *TreePrinter) VisitUnionType(n *ast.UnionType) {
 	p.indent--
 }
 
+func (p *TreePrinter) VisitForallType(n *ast.ForallType) {
+	p.write("ForallType\n")
+	p.indent++
+	p.writeIndent()
+	p.write("Vars: ")
+	for i, v := range n.Vars {
+		if i > 0 {
+			p.write(", ")
+		}
+		p.write(v.Value)
+	}
+	p.write("\n")
+	p.writeIndent()
+	p.write("Body: ")
+	n.Type.Accept(p)
+	p.write("\n")
+	p.indent--
+}
+
 func (p *TreePrinter) VisitMemberExpression(n *ast.MemberExpression) {
 	p.write("MemberAccess\n")
 	p.indent++
@@ -812,4 +836,57 @@ func (p *TreePrinter) VisitMemberExpression(n *ast.MemberExpression) {
 	p.writeIndent()
 	p.write("Field: " + n.Member.Value + "\n")
 	p.indent--
+}
+
+func (p *TreePrinter) VisitListComprehension(n *ast.ListComprehension) {
+	p.write("ListComprehension\n")
+	p.indent++
+	p.writeIndent()
+	p.write("Output: ")
+	n.Output.Accept(p)
+	p.write("\n")
+	p.writeIndent()
+	p.write("Clauses:\n")
+	p.indent++
+	for _, clause := range n.Clauses {
+		p.writeIndent()
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			p.write("Generator: ")
+			c.Pattern.Accept(p)
+			p.write(" <- ")
+			c.Iterable.Accept(p)
+		case *ast.CompFilter:
+			p.write("Filter: ")
+			c.Condition.Accept(p)
+		}
+		p.write("\n")
+	}
+	p.indent--
+	p.indent--
+}
+
+func (p *TreePrinter) VisitRangeExpression(n *ast.RangeExpression) {
+	p.write("Range\n")
+	p.indent++
+	p.writeIndent()
+	p.write("Start: ")
+	n.Start.Accept(p)
+	p.write("\n")
+	if n.Next != nil {
+		p.writeIndent()
+		p.write("Next: ")
+		n.Next.Accept(p)
+		p.write("\n")
+	}
+	p.writeIndent()
+	p.write("End: ")
+	n.End.Accept(p)
+	p.write("\n")
+	p.indent--
+}
+
+func (p *TreePrinter) VisitDirectiveStatement(n *ast.DirectiveStatement) {
+	p.writeIndent()
+	p.write("Directive: " + n.Name + "\n")
 }

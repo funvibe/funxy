@@ -4,36 +4,36 @@ Generics allow you to write code that works with different types, increasing fle
 
 ## Naming Convention
 
-**Important**: Type parameters must start with an **uppercase letter**.
+**Important**: Type parameters must start with a **lowercase letter**.
 
 ```rust
-// ✓ T, U are uppercase - correct
-fun swap<T, U>(pair: (T, U)) -> (U, T) {
+// ✓ t, u are lowercase - correct
+fun swap<t, u>(pair: (t, u)) -> (u, t) {
     (a, b) = pair
     (b, a)
 }
 
-// ✗ Lowercase type parameters would be an error:
-// fun swap<t, u>(pair: (t, u)) -> (u, t) { ... }
+// ✗ Uppercase type parameters would be an error:
+// fun swap<T, U>(pair: (T, U)) -> (U, T) { ... }
 print(swap((1, "hello")))  // ("hello", 1)
 ```
 
 This follows the language-wide convention:
-- **Uppercase**: types, constructors, traits, type parameters (`Int`, `Some`, `Order`, `T`)
-- **Lowercase**: values, functions, variables (`myVar`, `calculate`, `x`)
+- **Uppercase**: types, constructors, traits (`Int`, `Some`, `Order`)
+- **Lowercase**: values, functions, variables, type parameters (`myVar`, `calculate`, `x`, `t`)
 
 ## Generic Functions
 
-You can define functions that accept type parameters using angle brackets `<T>`.
+You can define functions that accept type parameters using angle brackets `<t>`.
 
 ```rust
-// Identity function working on any type T
-fun id<T>(x: T) -> T {
+// Identity function working on any type t
+fun id<t>(x: t) -> t {
     x
 }
 
-n = id(42)       // T is Int
-s = id("hello")  // T is String
+n = id(42)       // t is Int
+s = id("hello")  // t is String
 print(n)         // 42
 print(s)         // "hello"
 ```
@@ -44,7 +44,7 @@ Type declarations can also be generic. Type parameters are listed in angle brack
 
 ```rust
 // A simple wrapper type
-type Box<T> = { value: T }
+type Box<t> = { value: t }
 
 b = { value: 10 }  // Box<Int>
 print(b.value)     // 10
@@ -55,9 +55,9 @@ print(b.value)     // 10
 The type system infers concrete types at call sites:
 
 ```rust
-fun id<T>(x: T) -> T { x }
+fun id<t>(x: t) -> t { x }
 
-id(42)      // T inferred as Int
-id("hello") // T inferred as String
+id(42)      // t inferred as Int
+id("hello") // t inferred as String
 ```
 

@@ -1,0 +1,63 @@
+trait Eq<t> {
+    fun eq(x: t, y: t) -> Bool
+}
+
+instance Eq<Int> {
+    fun eq(x: Int, y: Int) -> Bool { x == y }
+}
+
+instance Eq<Bool> {
+    fun eq(x: Bool, y: Bool) -> Bool { x == y }
+}
+
+type Pair<a, b> = P(a, b)
+
+instance Show<Pair<a: Show, b: Show>> {
+    fun show(p: Pair<a, b>) -> String {
+        match p {
+            P(x, y) -> "Pair(" ++ show(x) ++ ", " ++ show(y) ++ ")"
+        }
+    }
+}
+
+instance Eq<Pair<a: Eq, b: Eq>> {
+    fun eq(p1: Pair<a, b>, p2: Pair<a, b>) -> Bool {
+        match p1 {
+            P(x1, y1) -> match p2 {
+                P(x2, y2) -> eq(x1, x2) && eq(y1, y2)
+            }
+        }
+    }
+}
+
+type Box<a> = B(a)
+
+trait SuperShow<t> {
+    fun superShow(x: t) -> String
+}
+
+instance SuperShow<Box<a: Show, Eq>> {
+    fun superShow(b: Box<a>) -> String {
+        match b {
+            B(x) -> if eq(x, x) { "Box(" ++ show(x) ++ ")" } else { "Invalid" }
+        }
+    }
+}
+
+fun main() {
+    p1 = P(1, true)
+    p2 = P(1, true)
+    p3 = P(2, false)
+
+    print(show(p1))
+    print(eq(p1, p2))
+    print(eq(p1, p3))
+
+    b = B(10)
+    print(superShow(b))
+
+    nested = P(p1, p3)
+    print(show(nested))
+}
+
+main()

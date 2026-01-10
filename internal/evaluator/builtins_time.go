@@ -86,11 +86,10 @@ func SetTimeBuiltinTypes(builtins map[string]*Builtin) {
 		"sleep":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
 		"sleepMs": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
 	}
-	
+
 	for name, typ := range types {
 		if b, ok := builtins[name]; ok {
 			b.TypeInfo = typ
 		}
 	}
 }
-

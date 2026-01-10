@@ -133,4 +133,3 @@ func wrapBuildTypeError(errs []*diagnostics.DiagnosticError) error {
 	}
 	return nil
 }
-

@@ -37,11 +37,11 @@ func TestAnalyzer_Exhaustiveness(t *testing.T) {
 		{
 			name: "ADT Exhaustive Match",
 			input: `
-			type Option<T> = Some T | None
-			x: Option<Int> = Some(10)
+			type MyOption<t> = MySome t | MyNone
+			x: MyOption<Int> = MySome(10)
 			match x {
-				Some(y) -> y
-				None -> 0
+				MySome(y) -> y
+				MyNone -> 0
 			}
 			`,
 			expected: nil,
@@ -49,13 +49,13 @@ func TestAnalyzer_Exhaustiveness(t *testing.T) {
 		{
 			name: "ADT Non-Exhaustive Match",
 			input: `
-			type Option<T> = Some T | None
-			x: Option<Int> = Some(10)
+			type MyOption<t> = MySome t | MyNone
+			x: MyOption<Int> = MySome(10)
 			match x {
-				Some(y) -> y
+				MySome(y) -> y
 			}
 			`,
-			expected: []string{"Missing cases: [None]"},
+			expected: []string{"Missing cases: [MyNone]"},
 		},
 		{
 			name: "Bool Exhaustive Match",
@@ -92,7 +92,7 @@ func TestAnalyzer_Exhaustiveness(t *testing.T) {
 				t.Fatalf("Parser errors: %v", ctx.Errors)
 			}
 
-			a := analyzer.New(symbols.NewEmptySymbolTable())
+			a := analyzer.New(symbols.NewSymbolTable())
 			errs := a.Analyze(prog)
 
 			if len(tt.expected) == 0 {
@@ -114,4 +114,3 @@ func TestAnalyzer_Exhaustiveness(t *testing.T) {
 		})
 	}
 }
-

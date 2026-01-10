@@ -18,7 +18,7 @@ fun testTypeReassign() {
 }
 
 // 4. Reassign local Trait
-trait MyTrait<T> {}
+trait MyTrait<t> {}
 fun testTraitReassign() {
     MyTrait = 1
 }
@@ -42,8 +42,8 @@ fun testAliasReassign() {
 }
 
 // 8. Reassign Trait Method
-trait DisplayTrait<T> {
-    fun display(val: T) -> String
+trait DisplayTrait<t> {
+    fun display(val: t) -> String
 }
 
 fun testTraitMethodReassign() {

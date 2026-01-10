@@ -1,4 +1,4 @@
-type MyOption<T> = MyJust T | MyNothing
+type MyOption<t> = MyJust t | MyNothing
 
 x = MyJust(10)
 y = MyNothing

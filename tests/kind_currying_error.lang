@@ -1,0 +1,9 @@
+// Test: Kind Mismatch in Currying
+// Functor expects * -> *
+// Result is * -> * -> *
+type MyResult<e, r> = MyFail e | MyOk r
+
+instance Functor MyResult { // Error: MyResult is * -> * -> *, too many holes
+    fun fmap(f, x) { x }
+}
+

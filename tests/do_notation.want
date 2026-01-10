@@ -1,0 +1,13 @@
+=== Do Notation Tests ===
+Test 1 PASS: 30
+Test 2 PASS: short-circuited correctly
+Test 3 PASS: 10
+Test 4 PASS: 20
+Test 5: List do-notation
+[11, 21, 12, 22, 13, 23]
+Test 6 PASS: 6
+Side effect
+Test 7 PASS: 10
+Test 8: Custom Monad (Box)
+Test 8 PASS: 30
+=== Do Notation Tests Complete ===

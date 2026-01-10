@@ -1,0 +1,3 @@
+Processing failed with errors:
+- error at 1:52 [A006]: undefined symbol: 'cannot re-export 'area': symbol not found in current scope'
+

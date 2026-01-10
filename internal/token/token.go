@@ -50,26 +50,26 @@ const (
 	LSHIFT    TokenType = "<<"
 	RSHIFT    TokenType = ">>"
 
-	ELLIPSIS  TokenType = "..."
-	QUESTION        TokenType = "?"
-	NULL_COALESCE   TokenType = "??"  // Optional null coalescing
-	OPTIONAL_CHAIN  TokenType = "?."  // Optional chaining
-	CONCAT         TokenType = "++"  // List/String concatenation
-	CONS      TokenType = "::"  // Cons (prepend to list)
-	PIPE_GT   TokenType = "|>"  // Pipe operator
-	COMPOSE   TokenType = ",,"  // Function composition (right-to-left)
+	ELLIPSIS       TokenType = "..."
+	QUESTION       TokenType = "?"
+	NULL_COALESCE  TokenType = "??" // Optional null coalescing
+	OPTIONAL_CHAIN TokenType = "?." // Optional chaining
+	CONCAT         TokenType = "++" // List/String concatenation
+	CONS           TokenType = "::" // Cons (prepend to list)
+	PIPE_GT        TokenType = "|>" // Pipe operator
+	COMPOSE        TokenType = ",," // Function composition (right-to-left)
 
 	// User-definable operators (fixed slots)
-	USER_OP_COMBINE TokenType = "<>"   // UserOpCombine trait
-	USER_OP_CHOOSE  TokenType = "<|>"  // UserOpChoose trait
-	USER_OP_APPLY   TokenType = "<*>"  // UserOpApply trait
-	USER_OP_BIND    TokenType = ">>="  // UserOpBind trait (Monad bind)
-	USER_OP_MAP     TokenType = "<$>"  // UserOpMap trait
-	USER_OP_CONS    TokenType = "<:>"  // UserOpCons trait
-	USER_OP_SWAP    TokenType = "<~>"  // UserOpSwap trait
-	USER_OP_IMPLY   TokenType = "=>"   // UserOpImply trait
-	USER_OP_APP       TokenType = "$"    // Function application (built-in)
-	USER_OP_PIPE_LEFT TokenType = "<|"   // UserOpPipeLeft trait
+	USER_OP_COMBINE   TokenType = "<>"  // UserOpCombine trait
+	USER_OP_CHOOSE    TokenType = "<|>" // UserOpChoose trait
+	USER_OP_APPLY     TokenType = "<*>" // UserOpApply trait
+	USER_OP_BIND      TokenType = ">>=" // UserOpBind trait (Monad bind)
+	USER_OP_MAP       TokenType = "<$>" // UserOpMap trait
+	USER_OP_CONS      TokenType = "<:>" // UserOpCons trait
+	USER_OP_SWAP      TokenType = "<~>" // UserOpSwap trait
+	USER_OP_IMPLY     TokenType = "=>"  // UserOpImply trait
+	USER_OP_APP       TokenType = "$"   // Function application (built-in)
+	USER_OP_PIPE_LEFT TokenType = "<|"  // UserOpPipeLeft trait
 
 	LT  TokenType = "<"
 	GT  TokenType = ">"
@@ -82,51 +82,55 @@ const (
 	OR     TokenType = "||"
 
 	// Delimiters
-	LPAREN        TokenType = "("
-	RPAREN        TokenType = ")"
-	LBRACE        TokenType = "{"
-	RBRACE        TokenType = "}"
-	LBRACKET      TokenType = "["
-	RBRACKET      TokenType = "]"
+	LPAREN         TokenType = "("
+	RPAREN         TokenType = ")"
+	LBRACE         TokenType = "{"
+	RBRACE         TokenType = "}"
+	LBRACKET       TokenType = "["
+	RBRACKET       TokenType = "]"
 	PERCENT_LBRACE TokenType = "%{" // Map literal start
-	COMMA         TokenType = ","
-	COLON_MINUS TokenType = ":-"
-	COLON       TokenType = ":"
-	DOT         TokenType = "."
+	COMMA          TokenType = ","
+	COLON_MINUS    TokenType = ":-"
+	COLON          TokenType = ":"
+	DOT            TokenType = "."
+	DOT_DOT        TokenType = ".."
 
 	// Keywords
-	TYPE     TokenType = "TYPE"
-	ALIAS    TokenType = "ALIAS"
-	IF       TokenType = "IF"
-	ELSE     TokenType = "ELSE"
-	TRUE     TokenType = "TRUE"
-	FALSE    TokenType = "FALSE"
-	NIL      TokenType = "NIL"
-	MATCH    TokenType = "MATCH"
-	FUN      TokenType = "FUN"
-	OPERATOR TokenType = "OPERATOR" // Operator method in trait
-	TRAIT    TokenType = "TRAIT"    // Type Class definition
-	INSTANCE TokenType = "INSTANCE" // Type Class implementation
-	FOR      TokenType = "FOR"
-	IN       TokenType = "IN"
-	BREAK    TokenType = "BREAK"
-	CONTINUE TokenType = "CONTINUE"
-	PACKAGE  TokenType = "PACKAGE"
-	IMPORT   TokenType = "IMPORT"
-	WHERE    TokenType = "WHERE"  // Constraint clause
+	TYPE      TokenType = "TYPE"
+	ALIAS     TokenType = "ALIAS"
+	IF        TokenType = "IF"
+	ELSE      TokenType = "ELSE"
+	TRUE      TokenType = "TRUE"
+	FALSE     TokenType = "FALSE"
+	NIL       TokenType = "NIL"
+	MATCH     TokenType = "MATCH"
+	FUN       TokenType = "FUN"
+	OPERATOR  TokenType = "OPERATOR" // Operator method in trait
+	TRAIT     TokenType = "TRAIT"    // Type Class definition
+	INSTANCE  TokenType = "INSTANCE" // Type Class implementation
+	FOR       TokenType = "FOR"
+	IN        TokenType = "IN"
+	BREAK     TokenType = "BREAK"
+	CONTINUE  TokenType = "CONTINUE"
+	PACKAGE   TokenType = "PACKAGE"
+	IMPORT    TokenType = "IMPORT"
+	DO        TokenType = "DO"     // do notation
+	FORALL    TokenType = "FORALL" // forall a. T
+	DIRECTIVE TokenType = "DIRECTIVE"
 
 	// Special symbols
 	ARROW      TokenType = "->"
 	UNDERSCORE TokenType = "_"
 	BACKSLASH  TokenType = "\\"
+	L_ARROW    TokenType = "<-"
 
 	// Identifiers & literals
-	IDENT_UPPER TokenType = "IDENT_UPPER" // List, Triangle, Int
-	IDENT_LOWER TokenType = "IDENT_LOWER" // a, myVar
-	INT         TokenType = "INT"
-	FLOAT       TokenType = "FLOAT"
-	BIG_INT     TokenType = "BIG_INT"  // 100n
-	RATIONAL    TokenType = "RATIONAL" // 12.34r
+	IDENT_UPPER   TokenType = "IDENT_UPPER" // List, Triangle, Int
+	IDENT_LOWER   TokenType = "IDENT_LOWER" // a, myVar
+	INT           TokenType = "INT"
+	FLOAT         TokenType = "FLOAT"
+	BIG_INT       TokenType = "BIG_INT"  // 100n
+	RATIONAL      TokenType = "RATIONAL" // 12.34r
 	STRING        TokenType = "STRING"
 	INTERP_STRING TokenType = "INTERP_STRING" // String with ${...} interpolations
 	FORMAT_STRING TokenType = "FORMAT_STRING" // %".2f" - Format string literal
@@ -144,27 +148,29 @@ const (
 )
 
 var keywords = map[string]TokenType{
-	"type":     TYPE,
-	"alias":    ALIAS,
-	"if":       IF,
-	"else":     ELSE,
-	"true":     TRUE,
-	"false":    FALSE,
-	"nil":      NIL,
-	"match":    MATCH,
-	"fun":      FUN,
-	"operator": OPERATOR,
-	"trait":    TRAIT,
-	"instance": INSTANCE,
-	"for":      FOR,
-	"in":       IN,
-	"break":    BREAK,
-	"continue": CONTINUE,
-	"package":  PACKAGE,
-	"import":   IMPORT,
-	"where":    WHERE,
-	"_":        UNDERSCORE,
-	"while":    FOR,
+	"type":      TYPE,
+	"alias":     ALIAS,
+	"if":        IF,
+	"else":      ELSE,
+	"true":      TRUE,
+	"false":     FALSE,
+	"nil":       NIL,
+	"match":     MATCH,
+	"fun":       FUN,
+	"operator":  OPERATOR,
+	"trait":     TRAIT,
+	"instance":  INSTANCE,
+	"for":       FOR,
+	"in":        IN,
+	"break":     BREAK,
+	"continue":  CONTINUE,
+	"package":   PACKAGE,
+	"import":    IMPORT,
+	"_":         UNDERSCORE,
+	"while":     FOR,
+	"do":        DO,
+	"forall":    FORALL,
+	"directive": DIRECTIVE,
 }
 
 // LookupIdent checks the keywords table to see whether the given identifier

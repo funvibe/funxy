@@ -1,0 +1,147 @@
+import "lib/test" (*)
+
+// Row Polymorphism width Subtyping
+testRun("Row Polymorphism: Subtyping", fun() -> {
+    take_x = fun(rec: { x: Int }) -> Int {
+        rec.x
+    }
+
+    full_rec = { x: 10, y: 20 }
+
+    // This calls take_x. If subtyping exists, it works.
+    res = take_x(full_rec)
+    assert(res == 10, "Width subtyping should allow this")
+
+    // 2. Return preservation
+    fun id_x(rec: { x: Int }) -> { x: Int } {
+        rec
+    }
+
+    res_rec = id_x(full_rec)
+    assertEquals(10, res_rec.x, "Width subtyping should allow this")
+    assertEquals(20, res_rec.y, "Row polymorphism should preserve extra fields")
+})
+
+type Point = { x: Int, y: Int }
+
+// Row Polymorphism with type aliases
+testRun("Row Polymorphism: Type Aliases", fun() -> {
+    // Function accepting base record type
+    fun get_x(rec: { x: Int }) -> Int {
+        rec.x
+    }
+
+    point = { x: 5, y: 7 }
+
+    // Should work: Point has x field
+    res = get_x(point)
+    assert(res == 5, "Type alias should work with row polymorphism")
+
+    // Function returning base type but preserving extra fields
+    fun id_with_x(rec: { x: Int }) -> { x: Int } {
+        rec
+    }
+
+    result = id_with_x(point)
+    assertEquals(5, result.x, "Should preserve x")
+    assertEquals(7, result.y, "Row polymorphism should preserve y from Point")
+})
+
+type Base = { x: Int }
+
+// Row Polymorphism with extended records
+testRun("Row Polymorphism: Extended Records", fun() -> {
+
+    // Function accepting base
+    fun process_base(rec: { x: Int }) -> { x: Int } {
+        rec
+    }
+
+    // Extended record (has x and y)
+    extended = { x: 100, y: 200, z: 300 }
+
+    result = process_base(extended)
+    assertEquals(100, result.x, "Should preserve x")
+    assertEquals(200, result.y, "Row polymorphism should preserve y")
+    assertEquals(300, result.z, "Row polymorphism should preserve z")
+
+    // Function that adds a field
+    fun add_field(rec: { x: Int }) -> { x: Int, name: String } {
+        { ...rec, name: "test" }
+    }
+
+    base_rec: Base = { x: 42 }
+    with_name = add_field(base_rec)
+    assertEquals(42, with_name.x, "Should preserve x")
+    assertEquals("test", with_name.name, "Should add name field")
+
+    // Test with extended input
+    extended_with_name = add_field(extended)
+    assertEquals(100, extended_with_name.x, "Should preserve x")
+    assertEquals(200, extended_with_name.y, "Row polymorphism should preserve y")
+    assertEquals(300, extended_with_name.z, "Row polymorphism should preserve z")
+    assertEquals("test", extended_with_name.name, "Should add name field")
+})
+
+// Row Polymorphism in nested structures
+testRun("Row Polymorphism: Nested Records", fun() -> {
+    // Function accepting record with nested record
+    fun process_nested(rec: { config: { host: String } }) -> { config: { host: String } } {
+        rec
+    }
+
+    full_config = {
+        config: { host: "localhost", port: 8080 },
+        env: "production"
+    }
+
+    result = process_nested(full_config)
+    assertEquals("localhost", result.config.host, "Should preserve nested host")
+    assertEquals(8080, result.config.port, "Row polymorphism should preserve nested port")
+    assertEquals("production", result.env, "Row polymorphism should preserve top-level env")
+})
+
+type TestPoint = { x: Int, y: Int }
+type Config = { name: String, value: Int }
+
+// Edge cases: spread without new fields and type alias preservation
+testRun("Row Polymorphism: Edge Cases", fun() -> {
+    point: TestPoint = { x: 1, y: 2 }
+
+    // Override existing field - should preserve TypeName
+    updated = { ...point, x: 10 }
+    assertEquals(getType(updated), getType(point), "Spread without new fields should preserve TypeName")
+    assertEquals(10, updated.x, "Should override x")
+    assertEquals(2, updated.y, "Should preserve y")
+
+    fun makeConfig(n: String, v: Int) -> Config {
+        { name: n, value: v }
+    }
+
+    cfg = makeConfig("test", 42)
+    // Create a Config directly to compare types
+    cfgDirect: Config = { name: "direct", value: 0 }
+    assertEquals(getType(cfg), getType(cfgDirect), "Function returning type alias should set TypeName")
+    assertEquals("test", cfg.name, "Should preserve name")
+    assertEquals(42, cfg.value, "Should preserve value")
+
+    // 3. Spread with new field from type alias - should use structural typing
+    extended_cfg = { ...cfg, extra: true }
+    // Should be structural type, not Config
+    cfgType = getType(extended_cfg)
+    assert(cfgType != getType(cfgDirect), "Extended record should use structural typing")
+    assertEquals("test", extended_cfg.name, "Should preserve name")
+    assertEquals(42, extended_cfg.value, "Should preserve value")
+    assertEquals(true, extended_cfg.extra, "Should have extra field")
+
+    // 4. Spread with new field preserves structural typing even after operations
+    // The extended record should remain structural, not convert to Config
+    extended_cfg2 = { ...extended_cfg, another: "field" }
+    extendedType = getType(extended_cfg2)
+    assert(extendedType != getType(cfgDirect), "Row Polymorphism: extended record should remain structural")
+    assertEquals("test", extended_cfg2.name, "Should preserve name")
+    assertEquals(42, extended_cfg2.value, "Should preserve value")
+    assertEquals(true, extended_cfg2.extra, "Should preserve extra field")
+    assertEquals("field", extended_cfg2.another, "Should have another field")
+})
+

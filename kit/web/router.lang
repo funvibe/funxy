@@ -46,7 +46,7 @@ fun insertChildSorted(children, newChild) {
 fun createChain(typ, seg, rest, handler) {
     match rest {
         [] -> MkNode(typ, seg, Some(handler), [])
-        [nextSeg, nextRest...] -> {
+        [nextSeg, ...nextRest] -> {
             nextSegInfo = if len(stringSplit(nextSeg, ":")) > 1 {
                 (Param, stringReplaceAll(nextSeg, ":", ""))
             } else if nextSeg == "*" {
@@ -87,7 +87,7 @@ fun insertNode(node, segments, handler) {
                 MkNode(t, s, _, children) -> MkNode(t, s, Some(handler), children)
             }
         }
-        [seg, rest...] -> {
+        [seg, ...rest] -> {
             match node {
                 MkNode(typ, s, h, children) -> {
                     nextSegInfo = if len(stringSplit(seg, ":")) > 1 {
@@ -159,7 +159,7 @@ fun setErrorHandler(r, handler) {
 fun searchChildren(children, seg, rest, params) {
     match children {
         [] -> Zero
-        [child, otherChildren...] -> {
+        [child, ...otherChildren] -> {
             match child {
                 MkNode(typ, childSeg, _, _) -> {
                     match typ {
@@ -210,7 +210,7 @@ fun matchNode(node, segments, params) {
                 }
             }
         }
-        [seg, rest...] -> {
+        [seg, ...rest] -> {
             match node {
                 MkNode(_, _, _, children) -> {
                     searchChildren(children, seg, rest, params)

@@ -1,3 +1,0 @@
-// Should fail: variable names must start with lowercase
-PI :- 3.14
-

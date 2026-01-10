@@ -13,27 +13,30 @@ print(false || true)   // true
 print(false || false)  // false
 
 // Short-circuit test
-counter = 0
+fun testShortCircuit() {
+    counter = 0
 
-fun incAndTrue() -> Bool {
-    counter = counter + 1
-    true
+    fun incAndTrue() -> Bool {
+        counter = counter + 1
+        true
+    }
+
+    // && short-circuits on false - should NOT call incAndTrue
+    result1 = false && incAndTrue()
+    print(counter)  // 0
+
+    // || short-circuits on true - should NOT call incAndTrue
+    result2 = true || incAndTrue()
+    print(counter)  // 0
+
+    // These WILL call incAndTrue
+    result3 = true && incAndTrue()
+    print(counter)  // 1
+
+    result4 = false || incAndTrue()
+    print(counter)  // 2
 }
-
-// && short-circuits on false - should NOT call incAndTrue
-result1 = false && incAndTrue()
-print(counter)  // 0
-
-// || short-circuits on true - should NOT call incAndTrue  
-result2 = true || incAndTrue()
-print(counter)  // 0
-
-// These WILL call incAndTrue
-result3 = true && incAndTrue()
-print(counter)  // 1
-
-result4 = false || incAndTrue()
-print(counter)  // 2
+testShortCircuit()
 
 // Combined with comparisons
 print((1 < 2) && (3 > 1))     // true

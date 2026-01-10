@@ -1,0 +1,82 @@
+import "lib/test" (testRun, assertEquals, assertTrue)
+import "lib/map" (mapNew, mapFromRecord, mapGet, mapPut, mapKeys, mapSize)
+import "lib/list" (forEach, length)
+import "lib/bytes" (bytesNew)
+
+testRun("Builtins: Debug & Trace", \ -> {
+    // trace returns the value
+    val = trace(42)
+    assertEquals(42, val, "trace passes value through")
+
+    // debug returns Nil
+    debug("debug message")
+    // assert(true, "debug runs")
+})
+
+testRun("Builtins: Map Creation", \ -> {
+    // mapNew
+    m1 = mapNew()
+    assertEquals(0, mapSize(m1), "mapNew creates empty map")
+
+    // mapFromRecord
+    rec = { x: 10, y: 20 }
+    m2 = mapFromRecord(rec)
+    assertEquals(2, mapSize(m2), "mapFromRecord size")
+
+    // Check keys/values (keys are strings)
+    optVal = mapGet(m2, "x")
+    // isSome might be issue, check unwrap directly
+    assertEquals(10, unwrap(optVal), "mapFromRecord value 'x'")
+})
+
+testRun("Builtins: List forEach", \ -> {
+    acc = 0
+    list = [1, 2, 3]
+
+    // forEach(fn, list)
+    forEach(\x -> {
+        acc = acc + x
+        Nil
+    }, list)
+
+    assertEquals(6, acc, "forEach allows side effects via closure mutation")
+})
+
+testRun("Builtins: Length Polymorphism", \ -> {
+    l1 = [1, 2, 3]
+    assertEquals(3, len(l1), "len(List)")
+
+    t1 = (1, 2)
+    assertEquals(2, len(t1), "len(Tuple)")
+
+    m1 = mapPut(mapNew(), "k", "v")
+    assertEquals(1, len(m1), "len(Map)")
+
+    // String length
+    s = "hello"
+    assertEquals(5, len(s), "len(String)")
+
+    // Bytes
+    b = bytesNew()
+    assertEquals(0, len(b), "len(Bytes)")
+})
+
+testRun("Builtins: Empty Tuple vs Nil", \ -> {
+    emptyTuple = ()
+    unitValue = Nil
+
+    t1 = show(getType(emptyTuple))
+    t2 = show(getType(unitValue))
+
+    // They must be different strings
+    // Expected: "type(())" vs "type(Nil)"
+    assertEquals("type(())", t1, "Type string for ()")
+    assertEquals("type(Nil)", t2, "Type string for Nil")
+
+    // Check lengths
+    assertEquals(0, len(emptyTuple), "Length of () is 0")
+
+    // Verify usage as value
+    t = (1, ())
+    assertEquals(2, len(t), "Nested empty tuple")
+})

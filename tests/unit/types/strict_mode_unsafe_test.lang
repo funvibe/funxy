@@ -1,0 +1,14 @@
+// Test strict mode disabled (unsafe usage allowed)
+
+import "lib/test" (testRun, assertEquals)
+
+type alias MyUnion = Int | String
+
+fun takeInt(x: Int) { x }
+
+testRun("Strict Mode Disabled: Unsafe usage allowed", fun() {
+    u: MyUnion = 10
+    // This should pass without strict mode directive
+    res = takeInt(u)
+    assertEquals(10, res)
+})

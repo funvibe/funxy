@@ -1,20 +1,20 @@
 // Test pure/mempty dispatch based on expected return type from TypeMap
 
 // Define Applicative trait with pure
-trait MyApplicative<F> {
-    fun myPure<A>(x: A) -> F<A>
+trait MyApplicative<f> {
+    fun myPure(x: a) -> f<a>
 }
 
 // Instance for Option
 instance MyApplicative<Option> {
-    fun myPure<A>(x: A) -> Option<A> {
+    fun myPure(x: a) -> Option<a> {
         Some(x)
     }
 }
 
 // Instance for List
 instance MyApplicative<List> {
-    fun myPure<A>(x: A) -> List<A> {
+    fun myPure(x: a) -> List<a> {
         [x]
     }
 }

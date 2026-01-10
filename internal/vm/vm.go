@@ -10,10 +10,35 @@ import (
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"path/filepath"
 	"strings"
 )
 
+// formatFilePath formats a file path for display in stack traces
+func formatFilePath(file string) string {
+	if file == "" {
+		return file
+	}
+
+	// Make path relative if it's absolute
+	if filepath.IsAbs(file) {
+		if wd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(wd, file); err == nil {
+				file = rel
+			}
+		}
+	}
+
+	// Remove .lang extension for display
+	if strings.HasSuffix(file, ".lang") {
+		file = file[:len(file)-5]
+	}
+
+	return file
+}
+
 var errEarlyReturn = errors.New("early return")
+var errDebugBreak = errors.New("debug break")
 
 // Initial sizes for stack and frames
 const InitialStackSize = 2048
@@ -23,7 +48,7 @@ const InitialFrameCount = 1024
 const StackGrowthIncrement = 1024
 const FrameGrowthIncrement = 512
 
-	// CallFrame represents a single ongoing function call
+// CallFrame represents a single ongoing function call
 type CallFrame struct {
 	closure *ObjClosure // The closure being executed
 	chunk   *Chunk      // The bytecode being executed (shortcut to closure.Function.Chunk)
@@ -78,11 +103,11 @@ type VM struct {
 	eval *evaluator.Evaluator
 
 	// Module loading support
-	loader         *modules.Loader                      // Module loader for resolving imports
-	baseDir        string                               // Base directory for resolving relative imports
-	currentFile    string                               // Current file name for error messages
-	moduleCache    *PersistentMap                       // Cache of compiled/executed modules
-	loadingModules map[string]bool                      // Modules currently being loaded (for cyclic detection)
+	loader         *modules.Loader // Module loader for resolving imports
+	baseDir        string          // Base directory for resolving relative imports
+	currentFile    string          // Current file name for error messages
+	moduleCache    *PersistentMap  // Cache of compiled/executed modules
+	loadingModules map[string]bool // Modules currently being loaded (for cyclic detection)
 
 	// Type context stack for ClassMethod dispatch
 	typeContextStack []string
@@ -95,13 +120,16 @@ type VM struct {
 
 	// Output writer (defaults to os.Stdout)
 	out io.Writer
+
+	// Debugger for debugging support
+	debugger *Debugger
 }
 
 // New creates a new VM instance
 func New() *VM {
 	return &VM{
-		stack:               make([]Value, 0, InitialStackSize), // Dynamic stack with initial capacity
-		frames:              make([]CallFrame, 0, InitialFrameCount),       // Dynamic frames with initial capacity
+		stack:               make([]Value, 0, InitialStackSize),      // Dynamic stack with initial capacity
+		frames:              make([]CallFrame, 0, InitialFrameCount), // Dynamic frames with initial capacity
 		globals:             NewModuleScope(),
 		traitMethods:        EmptyMap(),
 		extensionMethods:    EmptyMap(),
@@ -111,6 +139,7 @@ func New() *VM {
 		moduleCache:         EmptyMap(),
 		out:                 os.Stdout,
 		typeMap:             make(map[ast.Node]typesystem.Type),
+		debugger:            NewDebugger(),
 	}
 }
 
@@ -182,6 +211,119 @@ func (vm *VM) LookupTraitMethod(traitName, typeName, methodName string) *ObjClos
 	return nil
 }
 
+// LookupTraitMethodFuzzy finds a trait method by matching argument types against instance keys
+func (vm *VM) LookupTraitMethodFuzzy(traitName, methodName string, args []evaluator.Object, context string) evaluator.Object {
+	typeMapObj := vm.traitMethods.Get(traitName)
+	if typeMapObj == nil {
+		return nil
+	}
+	typeMap := typeMapObj.(*PersistentMap)
+
+	var bestMatch evaluator.Object
+	bestScore := -1
+
+	// Iterate over all keys in typeMap
+	typeMap.Range(func(key string, val evaluator.Object) bool {
+		// key is the instance type signature (e.g. "Int_String" or "Int")
+		parts := strings.Split(key, "_")
+
+		// Check match with args
+		match := true
+		score := 0
+
+		// Check args matches (Prefix)
+		argCount := len(args)
+		// We only check args we have. If key is longer, that's fine (partial match on key).
+		// If args are longer than key? Then key is too short, mismatch.
+		if argCount > len(parts) {
+			match = false
+		} else {
+			for i, arg := range args {
+				argType := vm.getTypeName(ObjectToValue(arg))
+				if parts[i] != argType {
+					match = false
+					break
+				}
+				score++ // +1 for each arg match
+			}
+		}
+
+		if match {
+			// Boost score if context matches any remaining part of the key
+			if context != "" && len(parts) > argCount {
+				for i := argCount; i < len(parts); i++ {
+					if parts[i] == context {
+						score++
+						break // Only count once
+					}
+				}
+			}
+
+			if score > bestScore {
+				methodMap := val.(*PersistentMap)
+				if closureObj := methodMap.Get(methodName); closureObj != nil {
+					bestMatch = closureObj
+					bestScore = score
+				}
+			}
+		}
+		return true
+	})
+
+	if bestMatch != nil {
+		return bestMatch
+	}
+
+	// Fallback: fuzzy search in builtinTraitMethods
+	// Key format: Trait.Type.Method
+	prefix := traitName + "."
+	suffix := "." + methodName
+
+	vm.builtinTraitMethods.Range(func(key string, val evaluator.Object) bool {
+		if strings.HasPrefix(key, prefix) && strings.HasSuffix(key, suffix) {
+			// Extract Type part: prefix<Type>suffix
+			typePart := key[len(prefix) : len(key)-len(suffix)]
+			parts := strings.Split(typePart, "_")
+
+			match := true
+			score := 0
+			argCount := len(args)
+
+			if argCount > len(parts) {
+				match = false
+			} else {
+				for i, arg := range args {
+					argType := vm.getTypeName(ObjectToValue(arg))
+					if parts[i] != argType {
+						match = false
+						break
+					}
+					score++
+				}
+			}
+
+			if match {
+				if context != "" && len(parts) > argCount {
+					for i := argCount; i < len(parts); i++ {
+						if parts[i] == context {
+							score++
+							break
+						}
+					}
+				}
+
+				if score > bestScore {
+					bestMatch = val
+					bestScore = score
+				}
+			}
+		}
+		return true
+	})
+
+	return bestMatch
+}
+
 // LookupTraitMethodAny finds a trait method, returning either ObjClosure or BuiltinClosure
 func (vm *VM) LookupTraitMethodAny(traitName, typeName, methodName string) evaluator.Object {
 	// First check compiled closures
@@ -208,8 +350,8 @@ func (vm *VM) LookupOperator(typeName, operator string) *ObjClosure {
 			if closureObj := methodMap.Get(methodName); closureObj != nil {
 				found = closureObj.(*ObjClosure)
 				return false // Stop iteration
+			}
 		}
-	}
 		return true // Continue iteration
 	})
 	return found
@@ -236,13 +378,14 @@ func (vm *VM) LookupBuiltinOperator(typeName, operator string) *BuiltinClosure {
 
 // getTypeContext returns the current type context for dispatch
 func (vm *VM) getTypeContext() string {
-	// 1. Check explicit context stack (from compiler)
+	// 1. Check implicit context from frame (from trait operators)
+	// Priority: Implicit > Explicit.
+	if vm.frame != nil && vm.frame.ImplicitTypeContext != "" {
+		return vm.frame.ImplicitTypeContext
+	}
+	// 2. Check explicit context stack (from compiler)
 	if len(vm.typeContextStack) > 0 {
 		return vm.typeContextStack[len(vm.typeContextStack)-1]
-	}
-	// 2. Check implicit context from frame (from trait operators)
-	if vm.frame != nil {
-		return vm.frame.ImplicitTypeContext
 	}
 	return ""
 }
@@ -305,6 +448,26 @@ func (vm *VM) SetBaseDir(dir string) {
 // SetCurrentFile sets the current file name for error messages
 func (vm *VM) SetCurrentFile(file string) {
 	vm.currentFile = file
+}
+
+// GetDebugger returns the debugger instance
+func (vm *VM) GetDebugger() *Debugger {
+	return vm.debugger
+}
+
+// EnableDebugger enables debugging
+func (vm *VM) EnableDebugger() {
+	if vm.debugger != nil {
+		vm.debugger.Enabled = true
+	}
+}
+
+// DisableDebugger disables debugging
+func (vm *VM) DisableDebugger() {
+	if vm.debugger != nil {
+		vm.debugger.Enabled = false
+		vm.debugger.Run()
+	}
 }
 
 // getEvaluator returns or creates the evaluator for builtin calls
@@ -393,6 +556,18 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 				methodTable.Methods[methodName] = closureObj
 				return true
 			})
+
+			// Fix: Don't overwrite existing implementation if new table is empty
+			// This prevents empty entries in vm.traitMethods (from unknown source)
+			// from clobbering builtin instances.
+			if len(methodTable.Methods) == 0 {
+				if existing, ok := vm.eval.ClassImplementations[traitName][typeName]; ok {
+					if mt, ok := existing.(*evaluator.MethodTable); ok && len(mt.Methods) > 0 {
+						return true
+					}
+				}
+			}
+
 			vm.eval.ClassImplementations[traitName][typeName] = methodTable
 			return true
 		})
@@ -490,7 +665,6 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 	// Save current VM state
 	savedFrameCount := vm.frameCount
 	savedSp := vm.sp
-	savedFrame := vm.frame
 
 	// Push arguments onto stack (closure is NOT pushed - callClosureDirect handles it)
 	for _, arg := range args {
@@ -518,6 +692,13 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 	// Inherit implicit context from current frame (caller)
 	if vm.frame != nil {
 		frame.ImplicitTypeContext = vm.frame.ImplicitTypeContext
+	} else {
+		frame.ImplicitTypeContext = ""
+	}
+	// Check if evaluator has ContainerContext set (from builtin call like >>=)
+	// This allows builtins (like Monad.bind) to propagate context to callbacks
+	if vm.eval != nil && vm.eval.ContainerContext != "" {
+		frame.ImplicitTypeContext = vm.eval.ContainerContext
 	}
 	// If nextImplicitContext is set (e.g. by OP_TRAIT_OP), override/use it
 	if vm.nextImplicitContext != "" {
@@ -549,7 +730,12 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 					// frame.base is usually savedSp
 					// So sp is savedSp + 1. pop() makes it savedSp.
 					vm.sp = savedSp
-					vm.frame = savedFrame
+					// Restore frame safely (handle slice growth)
+					if savedFrameCount > 0 {
+						vm.frame = &vm.frames[savedFrameCount-1]
+					} else {
+						vm.frame = nil
+					}
 					return resultVal.AsObject()
 				}
 				continue
@@ -557,26 +743,51 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 
 			vm.frameCount = savedFrameCount
 			vm.sp = savedSp
-			vm.frame = savedFrame
+			// Restore frame safely
+			if savedFrameCount > 0 {
+				vm.frame = &vm.frames[savedFrameCount-1]
+			} else {
+				vm.frame = nil
+			}
 			return &evaluator.Error{Message: err.Error()}
 		}
 		if done && vm.frameCount <= targetFrameCount {
 			// step() pushed result onto stack, but we return directly to builtin
 			// Restore stack pointer to before arguments were pushed
 			vm.sp = savedSp
-			vm.frame = savedFrame
+			// Restore frame safely
+			if savedFrameCount > 0 {
+				vm.frame = &vm.frames[savedFrameCount-1]
+			} else {
+				vm.frame = nil
+			}
 			return result.AsObject()
 		}
 	}
 
 	vm.sp = savedSp
-	vm.frame = savedFrame
+	// Restore frame safely
+	if savedFrameCount > 0 {
+		vm.frame = &vm.frames[savedFrameCount-1]
+	} else {
+		vm.frame = nil
+	}
 	return &evaluator.Nil{}
 }
 
 // step executes one instruction and returns (result, done, error)
 // done is true if OP_RETURN or OP_HALT was executed
 func (vm *VM) step() (Value, bool, error) {
+	// Check debugger breakpoint before executing instruction
+	if vm.debugger != nil && vm.debugger.Enabled && vm.debugger.ShouldBreak(vm) {
+		// Debugger wants to break - call OnStop callback if set
+		if vm.debugger.OnStop != nil {
+			vm.debugger.OnStop(vm.debugger, vm)
+		}
+		// Return special error to signal debug break
+		return NilVal(), false, errDebugBreak
+	}
+
 	op := Opcode(vm.frame.chunk.Code[vm.frame.ip])
 	vm.frame.ip++
 
@@ -627,7 +838,7 @@ func (vm *VM) step() (Value, bool, error) {
 	}
 }
 
-	// executeOneOp executes a single opcode (except RETURN and HALT)
+// executeOneOp executes a single opcode (except RETURN and HALT)
 func (vm *VM) Run(chunk *Chunk) (evaluator.Object, error) {
 	// Create a "script" function and closure for top-level code
 	scriptFn := &CompiledFunction{
@@ -648,17 +859,18 @@ func (vm *VM) Run(chunk *Chunk) (evaluator.Object, error) {
 	// Set up the initial frame for top-level code
 	vm.frameCount = 1
 	vm.frames[0] = CallFrame{
-		closure:             scriptClosure,
-		chunk:               chunk,
-		ip:                  0,
-		base:                0, // Top-level code starts at stack base 0
-		ImplicitTypeContext: vm.getTypeContext(), // Inherit context (if any)
+		closure:                  scriptClosure,
+		chunk:                    chunk,
+		ip:                       0,
+		base:                     0,                   // Top-level code starts at stack base 0
+		ImplicitTypeContext:      vm.getTypeContext(), // Inherit context (if any)
 		ExplicitTypeContextDepth: len(vm.typeContextStack),
 	}
 	vm.frame = &vm.frames[0]
 	vm.openUpvalues = nil
 
-	resultVal, err := vm.execute()
+	// Execute with debugger support
+	resultVal, err := vm.executeWithDebugger()
 	if err != nil {
 		return nil, err
 	}
@@ -667,6 +879,11 @@ func (vm *VM) Run(chunk *Chunk) (evaluator.Object, error) {
 
 // execute is the main interpreter loop
 func (vm *VM) execute() (Value, error) {
+	return vm.executeWithDebugger()
+}
+
+// executeWithDebugger is the main interpreter loop with debugger support
+func (vm *VM) executeWithDebugger() (Value, error) {
 	for {
 		result, done, err := vm.step()
 		if err != nil {
@@ -677,6 +894,14 @@ func (vm *VM) execute() (Value, error) {
 				if vm.frameCount == 0 {
 					return vm.pop(), nil
 				}
+				continue
+			}
+			// Check for debug break
+			if errors.Is(err, errDebugBreak) {
+				// Execution paused by debugger
+				// The debugger's OnStop callback will handle the pause and wait for user input
+				// After user enters 'continue', execution will resume from this point
+				// So we just continue the loop (don't return)
 				continue
 			}
 			// Add line info and stack trace to error
@@ -961,12 +1186,12 @@ func (vm *VM) closeUpvalues(lastSlot int) {
 	for vm.openUpvalues != nil && vm.openUpvalues.Location >= lastSlot {
 		upvalue := vm.openUpvalues
 
-	// "Close" the upvalue: copy value from stack to Closed field
-	// Closed field is still Object, so we must box it.
-	// But wait, ObjUpvalue expects Object.
-	// Let's assume we box it for now.
-	upvalue.Closed = vm.stack[upvalue.Location].AsObject()
-	upvalue.Location = -1 // Mark as closed
+		// "Close" the upvalue: copy value from stack to Closed field
+		// Closed field is still Object, so we must box it.
+		// But wait, ObjUpvalue expects Object.
+		// Let's assume we box it for now.
+		upvalue.Closed = vm.stack[upvalue.Location].AsObject()
+		upvalue.Location = -1 // Mark as closed
 
 		vm.openUpvalues = upvalue.Next
 	}
@@ -1071,6 +1296,7 @@ func (vm *VM) formatError(err error) error {
 		if file == "" {
 			file = "<script>"
 		}
+		// Remove .lang extension for stack trace display
 		if strings.HasSuffix(file, ".lang") {
 			file = file[:len(file)-5]
 		}
@@ -1102,7 +1328,22 @@ func (vm *VM) formatError(err error) error {
 		} else {
 			called = fnName
 		}
-		stackTrace.WriteString(fmt.Sprintf("\n  at %s:%d (called %s)", fnName, frameLine, called))
+
+		// For the outermost frame (i == 0), format the path
+		displayName := fnName
+		if i == 0 && fnName == file {
+			// This is the top-level script frame, format the path
+			fullPath := frame.chunk.File
+			if fullPath == "" {
+				fullPath = vm.currentFile
+			}
+			displayName = formatFilePath(fullPath)
+			if displayName == "" {
+				displayName = file
+			}
+		}
+
+		stackTrace.WriteString(fmt.Sprintf("\n  at %s:%d (called %s)", displayName, frameLine, called))
 	}
 
 	return fmt.Errorf("runtime error: ERROR at %d:%d: %s\nStack trace:%s", line, col, errMsg, stackTrace.String())
@@ -1119,13 +1360,13 @@ func (vm *VM) captureHandler(obj evaluator.Object) evaluator.Object {
 		}
 		for i, upvalue := range obj.Upvalues {
 			if upvalue.Location >= 0 {
-			// Open upvalue: capture current value from THIS VM's stack
-			var val evaluator.Object = &evaluator.Nil{}
-			if upvalue.Location < len(vm.stack) {
-				val = vm.stack[upvalue.Location].AsObject()
-			}
-			// Recurse to capture nested closures/partials inside the captured value
-			val = vm.captureHandler(val)
+				// Open upvalue: capture current value from THIS VM's stack
+				var val evaluator.Object = &evaluator.Nil{}
+				if upvalue.Location < len(vm.stack) {
+					val = vm.stack[upvalue.Location].AsObject()
+				}
+				// Recurse to capture nested closures/partials inside the captured value
+				val = vm.captureHandler(val)
 
 				// Create CLOSED upvalue
 				newClosure.Upvalues[i] = &ObjUpvalue{
@@ -1210,9 +1451,9 @@ func (vm *VM) ForkVM() *VM {
 	newVM.typeMap = vm.typeMap
 
 	// Create safe copies of mutable maps
-	newVM.traitMethods = vm.traitMethods // PersistentMap is safe to share
+	newVM.traitMethods = vm.traitMethods               // PersistentMap is safe to share
 	newVM.builtinTraitMethods = vm.builtinTraitMethods // PersistentMap is safe to share
-	newVM.extensionMethods = vm.extensionMethods // PersistentMap is safe to share
+	newVM.extensionMethods = vm.extensionMethods       // PersistentMap is safe to share
 	newVM.traitDefaults = vm.traitDefaults
 	newVM.moduleCache = vm.moduleCache
 	newVM.currentFile = vm.currentFile
@@ -1258,11 +1499,11 @@ func (vm *VM) asyncHandler(fn evaluator.Object, args []evaluator.Object) evaluat
 
 	// Create safe copies of mutable maps for async execution
 	// This prevents data races when JIT compilation writes to these maps
-	newVM.traitMethods = vm.traitMethods // PersistentMap is safe to share
+	newVM.traitMethods = vm.traitMethods               // PersistentMap is safe to share
 	newVM.builtinTraitMethods = vm.builtinTraitMethods // PersistentMap is safe to share
-	newVM.extensionMethods = vm.extensionMethods // PersistentMap is safe to share
-	newVM.traitDefaults = vm.traitDefaults       // Read-only at runtime
-	newVM.moduleCache = vm.moduleCache           // Shared persistent map cache
+	newVM.extensionMethods = vm.extensionMethods       // PersistentMap is safe to share
+	newVM.traitDefaults = vm.traitDefaults             // Read-only at runtime
+	newVM.moduleCache = vm.moduleCache                 // Shared persistent map cache
 	newVM.currentFile = vm.currentFile
 
 	// Reset stack and frames for new VM
@@ -1281,7 +1522,7 @@ func (vm *VM) asyncHandler(fn evaluator.Object, args []evaluator.Object) evaluat
 	newVM.frames[0] = CallFrame{
 		closure: &ObjClosure{
 			Function: &CompiledFunction{
-				Name: "<async>",
+				Name:  "<async>",
 				Chunk: haltChunk,
 			},
 		},
@@ -1341,8 +1582,10 @@ func (vm *VM) asyncHandler(fn evaluator.Object, args []evaluator.Object) evaluat
 func (vm *VM) RegisterFPTraits() {
 	env := evaluator.NewEnvironment()
 	e := vm.getEvaluator()
+	evaluator.RegisterBasicTraits(e, env)
 	evaluator.RegisterFPTraits(e, env)
 	evaluator.RegisterStandardTraits(e, env)
+	evaluator.RegisterDictionaryGlobals(e, env)
 
 	// Copy symbols from env to globals
 	for name, val := range env.GetStore() {
@@ -1361,6 +1604,14 @@ func (vm *VM) RegisterFPTraits() {
 
 		for typeName, methodTableObj := range typesMap {
 			if methodTable, ok := methodTableObj.(*evaluator.MethodTable); ok {
+				// traitMethods[traitName][typeName]
+				var methodMap *PersistentMap
+				if existing := typeMap.Get(typeName); existing != nil {
+					methodMap = existing.(*PersistentMap)
+				} else {
+					methodMap = EmptyMap()
+				}
+
 				for methodName, method := range methodTable.Methods {
 					method := method // Capture loop var
 					key := traitName + "." + typeName + "." + methodName
@@ -1371,9 +1622,10 @@ func (vm *VM) RegisterFPTraits() {
 							return e.ApplyFunction(method, args)
 						},
 					})
-					}
 				}
+				typeMap = typeMap.Put(typeName, methodMap)
 			}
+		}
 		vm.traitMethods = vm.traitMethods.Put(traitName, typeMap)
 	}
 }

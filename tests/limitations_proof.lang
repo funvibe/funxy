@@ -1,0 +1,205 @@
+import "lib/test" (*)
+
+// ==========================================
+// 1. Kind System Limitations
+// ==========================================
+// Proof: The system treats all type parameters as Kind * (types of values).
+// It cannot represent or check Higher-Kinded Types properly in definitions.
+
+type Proxy<t> = Proxy
+type Box<x> = { val: x }
+
+// This passes (t is inferred as *)
+testRun("1. Kind System: Value Type", fun() -> {
+    p: Proxy<Int> = Proxy
+    assert(true, "Int is Kind *")
+})
+
+// This FAILS because List is (* -> *) but Proxy expects *
+// This proves we don't have true Kind Polymorphism (forall k. Proxy<k>)
+testRun("1. Kind System: Constructor Failure", fun() -> {
+    // List has kind * -> *
+    // Error: Type argument mismatch: expected kind *, got (* -> *)
+    p: Proxy<List> = Proxy
+})
+
+
+// ==========================================
+// 2. HKT / Partial Application "Hack" Limitations
+// ==========================================
+// Proof: The unifier stripes arguments from the end (Right-to-Left).
+// It cannot handle types where the parameter we want to vary is NOT the last one.
+
+// A type with 2 params: Pair<Left, Right>
+type Pair<l, r> = { left: l, right: r }
+
+// A trait for things that can map over the FIRST parameter?
+// (Like Bifunctor but just the first one).
+// We expect f to be (* -> *)
+trait MapLeft<f> {
+    fun mapLeft(x: f<Int>) -> Bool
+}
+
+// We try to implement it for Pair, fixing the Right parameter (String)
+// So we want 'f' to be 'Pair<_, String>'
+// But unification F<Int> ~ Pair<Int, String> works by stripping from right.
+// F = Pair<Int> ??? No.
+// F<A> ~ C<X, Y>.
+// If we want F<Int> ~ Pair<Int, String>, we need F = Pair<_, String> ??
+// Unifier logic: F<A> ~ TApp(Pair, [Int, String]).
+// Arity F=1, Pair=2. Diff=1.
+// F binds to TApp(Pair, [Int]).
+// Then checks arg: A (Int) ~ String (Last arg of Pair).
+// FAILS: Int != String.
+testRun("2. HKT: Argument Ordering Limitation", fun() -> {
+    // This demonstrates we can only abstract over the LAST type parameter.
+
+    // Concrete type: Pair<Int, String>
+    p = { left: 1, right: "s" }
+
+    // Function expecting F<String> (so A=String)
+    // We want F to be "Pair<Int, _>"
+    // Unifier will try: F<String> ~ Pair<Int, String>
+    // 1. F binds to Pair<Int>
+    // 2. Check args: String ~ String. OK!
+    // Wait, this actually works for the second param.
+
+    // Let's try the FIRST param.
+    // Function expecting F<Int> (so A=Int)
+    // We want to pass Pair<Int, String>
+    // Unifier will try: F<Int> ~ Pair<Int, String>
+    // 1. F binds to Pair<Int>
+    // 2. Check args: Int ~ String (the last arg of Pair). FAIL!
+
+    fun take_first_mapper(container: f<Int>) -> Bool { true }
+
+    // We pass Pair<Int, String>.
+    // Intuitively: It holds an Int.
+    // But HKT unification assumes the type variable is always the *last* one.
+    take_first_mapper(p)
+})
+
+
+// ==========================================
+// 4. Rank-N fragility
+// ==========================================
+// Proof: Without explicit annotations, inference is fragile and order-dependent.
+
+testRun("Ok: Rank-N: Fragility", fun() -> {
+    // We return a polymorphic function.
+    // Without 'forall' annotation in return type, HM instantiates variables.
+    make_poly = fun() -> {
+        fun(x) -> x
+    }
+
+    my_id = make_poly()
+
+    // First call fixes the type of 'my_id' to Int -> Int
+    x = my_id(1)
+
+    // Second call fails because 'my_id' is no longer polymorphic
+    // Error should be argument mismatch: expected Int, got String
+    y = my_id("hello")
+    assertEquals((1, "hello"), (x, y))
+})
+
+// ==========================================
+// 5. Unsoundness of "Accidental Polymorphism"
+// ==========================================
+testRun("3. Unsoundness: Mutable State", fun() -> {
+    // A function that closes over a mutable variable 'store'.
+    // 'store' is inferred as Option<$a>
+    // returned function is inferred as $a -> $a
+    make_store = fun() {
+        // Use id(Zero) to prevent generalization (Value Restriction).
+        store = id(Zero)
+        fun(x) {
+            store = Some(x)
+            x
+        }
+    }
+
+    setter = make_store()
+
+    // 1. Set to Int. Internally 'store' should become Option<Int>.
+    _ = setter(1)
+
+    // 2. Set to String. 'store' should become Option<String>.
+    // In a sound system, this MUST FAIL because 'store' cannot be both Int and String.
+    _ = setter("hello")
+
+    assert(true, "If we reached here, the system is UNSOUND (allowed conflicting types for mutable state)")
+})
+
+
+// ==========================================
+// 6. Row Polymorphism (Field Loss)
+// ==========================================
+testRun("4. Ok: Row Polymorphism: Field Loss", fun() -> {
+    // Function definition is effectively: fun(rec: { x: Int }) -> { x: Int }
+    fun get_x(rec: { x: Int }) -> { x: Int } {
+        rec
+    }
+
+    input = { x: 1, y: 2 }
+
+    // We pass { x: 1, y: 2 }. It works (Width Subtyping).
+    result = get_x(input)
+
+    // BUT, the type of 'result' is strictly { x: Int }.
+    // We lost 'y'.
+
+    val = result.y
+    assertEquals(2, val, "Should not compile if we lost field y")
+})
+
+// ==========================================
+// 7. Unsoundness of "Accidental Polymorphism" (Conflict)
+// ==========================================
+testRun("5. Unsoundness: Mutable State Conflict", fun() -> {
+    // We create a "Cell" that holds a value.
+    // We return two closures: one to write (setter), one to read (getter).
+    // They share the SAME variable 'val'.
+
+    make_cell = fun() {
+        // Use id(Zero) to prevent generalization
+        val = id(Zero) // Option<$a>
+
+        // Setter: $a -> Option<$a>
+        setter = fun(x) {
+            val = Some(x)
+            val
+        }
+
+        // Getter: () -> Option<$a>
+        getter = fun() {
+            val
+        }
+
+        // Return record with both
+        { set: setter, get: getter }
+    }
+
+    cell = make_cell()
+
+    // 1. Constrain the cell to Int by using the getter
+    val_opt = cell.get()
+
+    // To force constraint $a ~ Int:
+    _ = match val_opt {
+        Some(x) -> x + 1
+        Zero -> 0
+    }
+
+    // 2. Now try to put a String into the cell using the setter.
+    // In a sound system, $a is now Int. So setter(String) must fail.
+
+    _ = cell.set("hello")
+
+    // 3. Runtime Crash?
+    val_opt_2 = cell.get()
+    res = match val_opt_2 {
+        Some(x) -> x + 1 // Runtime Error: "hello" + 1
+        Zero -> 0
+    }
+})

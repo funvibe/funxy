@@ -681,7 +681,6 @@ func RegisterSqlBuiltins(env *Environment) {
 	}
 }
 
-
 // SetSqlBuiltinTypes sets TypeInfo for SQL builtins
 func SetSqlBuiltinTypes(builtins map[string]*Builtin) {
 	stringType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.Char}}

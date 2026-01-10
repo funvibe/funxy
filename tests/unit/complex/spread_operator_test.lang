@@ -7,7 +7,7 @@ testRun("List spread in literal", \ -> {
     assertEquals([0, 1, 2, 3, 4, 5], l3, "Spread in list")
 })
 
-fun sum(args: Int...) -> Int {
+fun sum(args: ...Int) -> Int {
     acc = 0
     for x in args {
         acc = acc + x
@@ -21,7 +21,7 @@ testRun("Variadic function definition", \ -> {
 })
 
 testRun("Variadic lambda", \ -> {
-    vSum = fun(args: Int...) {
+    vSum = fun(args: ...Int) {
         // args is List<Int>
         // Use basic recursion or loop
         if len(args) == 0 { 0 }
@@ -31,7 +31,7 @@ testRun("Variadic lambda", \ -> {
     assertEquals(11, vSum(1), "Variadic lambda")
 })
 
-fun addMany(args: Int...) -> Int {
+fun addMany(args: ...Int) -> Int {
     acc = 0
     for x in args {
         acc = acc + x
@@ -54,7 +54,7 @@ testRun("Spread argument call", \ -> {
 testRun("Spread in tuple pattern", \ -> {
     t = (1, 2, 3)
     res = match t {
-        (h, t...) -> h
+        (h, ...t) -> h
         _ -> 0
     }
     assertEquals(1, res, "Spread pattern")

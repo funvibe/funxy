@@ -1,5 +1,5 @@
 // Test 1: Variadic lambda
-variadicLambda = fun (args: Int...) Int {
+variadicLambda = fun (args: ...Int) Int {
     sum = 0
     for x in args {
         sum = sum + x
@@ -14,16 +14,16 @@ result2 = variadicLambda(...[4, 5, 6])
 print(result2)  // Should print 15
 
 // Test 3: Simple use of variadic arg as list
-useLambda = fun (items: Int...) Int {
+useLambda = fun (items: ...Int) Int {
     len(items)
 }
 result3 = useLambda(1, 2, 3, 4)
 print(result3)  // Should print 4
 
 // Test 4: Spread in list literal inside lambda
-appendFn = fun (items: Int...) List<Int> {
+appendFn = fun (items: ...Int) List<Int> {
     base = [0]
-    [base..., items...]
+    [...base, ...items]
 }
 result4 = appendFn(1, 2, 3)
 print(result4)  // Should print [0, 1, 2, 3]

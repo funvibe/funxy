@@ -1,0 +1,24 @@
+import "./basic"
+import "./cycle_a"
+import "./reexport"
+
+import "lib/test" (testRun, assertEquals, assertTrue)
+
+testRun("Modules: Basic Exports", \ -> {
+    assertEquals(42, basic.pubVal, "Public value exported")
+
+    // Check type visibility
+    pt: basic.PubType = { x: 1 }
+    assertEquals(1, pt.x, "Public type exported")
+})
+
+testRun("Modules: Re-exports", \ -> {
+    // reexport module should have pubVal from basic
+    assertEquals(42, reexport.pubVal, "Re-exported value")
+    assertEquals("extra", reexport.extra, "Local value")
+})
+
+testRun("Modules: Circular Dependency", \ -> {
+    assertEquals(1, cycle_a.valA, "Cycle A load")
+    assertTrue(true, "Cycle loaded successfully")
+})

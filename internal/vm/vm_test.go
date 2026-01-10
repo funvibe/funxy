@@ -11,21 +11,21 @@ import (
 
 func parse(t *testing.T, input string) *ast.Program {
 	ctx := pipeline.NewPipelineContext(input)
-	
+
 	// Lexer
 	l := lexer.LexerProcessor{}
 	ctx = l.Process(ctx)
 	if len(ctx.Errors) > 0 {
 		t.Fatalf("lexer error: %s", ctx.Errors[0].Error())
 	}
-	
+
 	// Parser
 	p := parser.ParserProcessor{}
 	ctx = p.Process(ctx)
 	if len(ctx.Errors) > 0 {
 		t.Fatalf("parser error: %s", ctx.Errors[0].Error())
 	}
-	
+
 	return ctx.AstRoot.(*ast.Program)
 }
 
@@ -279,18 +279,18 @@ func TestShadowing(t *testing.T) {
 func TestDisassembler(t *testing.T) {
 	input := "1 + 2 * 3"
 	program := parse(t, input)
-	
+
 	compiler := NewCompiler()
 	chunk, err := compiler.Compile(program)
 	if err != nil {
 		t.Fatalf("compilation error: %s", err)
 	}
-	
+
 	output := Disassemble(chunk, "test")
 	if output == "" {
 		t.Fatal("disassembler produced empty output")
 	}
-	
+
 	// Should contain these opcodes
 	expectedParts := []string{"CONST", "MUL", "ADD", "HALT"}
 	for _, part := range expectedParts {
@@ -1319,4 +1319,3 @@ func TestPatternMatchingOption(t *testing.T) {
 		})
 	}
 }
-

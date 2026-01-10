@@ -1,0 +1,10 @@
+type Point = { x: Int, y: Int }
+
+fun getX(p) {
+    match p {
+        Point { x: x, y: _ } -> x
+    }
+}
+
+print(getX(Point { x: 10, y: 20 }))
+

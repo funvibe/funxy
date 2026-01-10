@@ -603,4 +603,3 @@ func builtinLoggerWithFields(e *Evaluator, args ...Object) Object {
 	doLogWithPrefix(logger.prefix, level, msg, fields)
 	return &Nil{}
 }
-

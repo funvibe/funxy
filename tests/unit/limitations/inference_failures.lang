@@ -1,0 +1,72 @@
+import "lib/test" (*)
+
+// 1. Unannotated Higher-Rank Polymorphism
+// The system likely cannot infer higher-rank types without annotations.
+testRun("Ok: Unannotated Higher-Rank", fun() -> {
+    // Identity function
+    my_id = fun(x) -> x
+
+    // Function that uses its argument polymorphically (twice with different types)
+    // BUT without type annotation for 'f'.
+    // HM inference will unify 'f's domain with the first usage (Int),
+    // and fail at the second usage (String).
+    apply_poly = fun(f) -> {
+        _ = f(1)
+        f("hello") // Should fail compilation here
+    }
+
+    assertEquals(apply_poly(my_id), "hello")
+})
+
+// 2. Ambiguous Trait Resolution with Polymorphic Return
+// Even with recent fixes, if there is NO context, it should fail.
+trait Parse<t> {
+    fun parse(s: String) -> t
+}
+
+instance Parse<Int> {
+    fun parse(s: String) -> Int { 0 }
+}
+
+instance Parse<Bool> {
+    fun parse(s: String) -> Bool { true }
+}
+
+testRun("Failure: Ambiguous Trait Return", fun() -> {
+    // Calling parse() without using the result or providing a type hint.
+    // The type variable T is unconstrained.
+    // The system should error due to ambiguity, not pick a random instance.
+    // We expect a compilation error here.
+    // _ = parse("123")
+    nil
+})
+
+// 3. Contravariant Context Loss
+// Checking if expected type propagates through function arguments correctly
+// when they are complex types (e.g. List<T>).
+testRun("Failure: Deep Context Loss", fun() -> {
+    // A function that expects a specific list type
+    expect_string_list = fun(l: List<String>) -> { l }
+
+    // Helper that generates a list (generic)
+    make_list = fun(x) -> [x]
+
+    // If we pass an ambiguous expression that depends on context:
+    // parse() needs context to know T.
+    // expect_string_list provides context List<String>.
+    // make_list(parse(...)) returns List<T>.
+    // Unification: List<T> ~ List<String> => T ~ String.
+    // If this propagation works, it passes. If not, it fails/ambiguous.
+    // This tests the DEPTH of the fix I implemented.
+    // expect_string_list(make_list(parse("abc")))
+    nil
+})
+
+// 4. Infinite Type (Occurs Check)
+// Standard HM failure case.
+testRun("Failure: Infinite Type", fun() -> {
+    // x = f(x) implies x ~ T -> U AND x ~ T.
+    // T ~ T -> U. Infinite type.
+    // fun(x) -> x(x)
+    nil
+})

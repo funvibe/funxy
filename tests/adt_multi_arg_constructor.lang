@@ -1,0 +1,4 @@
+type Pair<a, b> = MkPair a b
+
+p = MkPair(1, "hello")
+print(p)

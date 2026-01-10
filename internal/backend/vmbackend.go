@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"os"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/modules"
@@ -11,11 +12,17 @@ import (
 )
 
 // VMBackend executes programs using the bytecode VM
-type VMBackend struct{}
+type VMBackend struct {
+	debugMode bool
+}
 
 // NewVM creates a new VM backend
-func NewVM() *VMBackend {
-	return &VMBackend{}
+func NewVM(debugMode ...bool) *VMBackend {
+	debug := false
+	if len(debugMode) > 0 {
+		debug = debugMode[0]
+	}
+	return &VMBackend{debugMode: debug}
 }
 
 // Run compiles and executes the program using the VM
@@ -42,6 +49,11 @@ func (b *VMBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
 	chunk, err := compiler.Compile(program)
 	if err != nil {
 		return nil, fmt.Errorf("compilation error: %w", err)
+	}
+
+	// Set file path in chunk for debugging
+	if ctx.FilePath != "" {
+		chunk.File = ctx.FilePath
 	}
 
 	// Initialize VM
@@ -71,13 +83,27 @@ func (b *VMBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
 
 	if ctx.FilePath != "" {
 		machine.SetBaseDir(filepath.Dir(ctx.FilePath))
-		machine.SetCurrentFile(filepath.Base(ctx.FilePath))
+		machine.SetCurrentFile(ctx.FilePath)
 	}
 
 	// Process imports collected during compilation
 	pendingImports := compiler.GetPendingImports()
 	if err := machine.ProcessImports(pendingImports); err != nil {
 		return nil, fmt.Errorf("import error: %w", err)
+	}
+
+	// Enable debugger if debug mode is on
+	if b.debugMode {
+		machine.EnableDebugger()
+		debugger := machine.GetDebugger()
+		cli := vm.NewDebuggerCLI(debugger, machine)
+		cli.SetInput(os.Stdin)
+		cli.SetOutput(os.Stdout)
+		cli.Run() // Initialize CLI (sets up OnStop callback and prints welcome message)
+
+		// Start in step mode to stop at first line
+		// This allows user to set breakpoints before continuing
+		debugger.Step()
 	}
 
 	// Execute bytecode

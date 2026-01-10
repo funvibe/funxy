@@ -3,8 +3,30 @@
 import "lib/http" (httpServe)
 import "lib/list" (map)
 import "lib/sys" (sysExec)
-import "kit/web" (newRouter, get, handleRequest, setNotFoundHandler, withStatus, resHtml)
-import "kit/ui" (div, span, text, h1, h2, p, ul, li, a, render, html, head, title, body)
+import "lib/json" (jsonFromValue)
+import "kit/web" (newRouter, get, handleRequest, setNotFoundHandler, withStatus, resHtml, HandlerResult, Response)
+import "kit/ui" (*)
+
+// Helper to convert SmartResult (VNode | Builder) to HandlerResult
+fun renderPage(res: SmartResult) {
+    vnode = match res {
+        v: VNode -> v
+        _ -> Text("")
+    }
+    // Explicit annotation ensures Result<String, HandlerResult>
+    Ok(resHtml(vnode) : HandlerResult)
+}
+
+fun adaptRequest(req) {
+    {
+        method: req.method,
+        path: req.path,
+        query: req.query,
+        headers: req.headers,
+        body: req.body,
+        cookies: []
+    }
+}
 
 // === Page Components ===
 
@@ -27,9 +49,9 @@ fun homePage() {
         h2 { text("Welcome!") }
         p { text("This is a web application built with kit/web and kit/ui") }
         ul {
-            li { a({ href: "/about" }, text("About")) }
-            li { a({ href: "/users" }, text("Users")) }
-            li { a({ href: "/api/data" }, text("API Data")) }
+            li { a(href: "/about") { text("About") } }
+            li { a(href: "/users") { text("Users") } }
+            li { a(href: "/api/data") { text("API Data") } }
         }
     })
 }
@@ -44,7 +66,7 @@ fun aboutPage() {
             li { text("HTML rendering with kit/ui") }
             li { text("HTTP routing with kit/web") }
         }
-        p { a({ href: "/" }, text("Back to home")) }
+        p { a(href: "/") { text("Back to home") } }
     })
 }
 
@@ -55,14 +77,14 @@ fun usersPage() {
         { name: "Charlie", age: 35 }
     ]
 
-    userItems = users |> map(fun(user) {
+    userItems = map(fun(user) {
         li { text(user.name ++ " (age: " ++ show(user.age) ++ ")") }
-    })
+    }, users)
 
     layout("Users", div {
         h2 { text("User List") }
-        ul(userItems...)
-        p { a({ href: "/" }, text("Back to home")) }
+        ul(userItems)
+        p { a(href: "/") { text("Back to home") } }
     })
 }
 
@@ -70,22 +92,22 @@ fun notFoundPage() {
     layout("Not Found", div {
         h2 { text("404 - Page Not Found") }
         p { text("The page you're looking for doesn't exist.") }
-        p { a({ href: "/" }, text("Back to home")) }
+        p { a(href: "/") { text("Back to home") } }
     })
 }
 
 // === Handlers ===
 
 fun homeHandler(ctx) {
-    Ok(homePage())  // VNode -> Response via autoResponse
+    renderPage(homePage())
 }
 
 fun aboutHandler(ctx) {
-    Ok(aboutPage())  // VNode -> Response via autoResponse
+    renderPage(aboutPage())
 }
 
 fun usersHandler(ctx) {
-    Ok(usersPage())  // VNode -> Response via autoResponse
+    renderPage(usersPage())
 }
 
 fun apiHandler(ctx) {
@@ -94,25 +116,42 @@ fun apiHandler(ctx) {
         message: "This is JSON API endpoint",
         timestamp: 1234567890
     }
-    Ok(data)  // Json -> Response via autoResponse
+    Ok(jsonFromValue(data) : HandlerResult)
 }
 
 fun healthHandler(ctx) {
-    Ok("OK")  // String -> Response via autoResponse
+    Ok("OK" : HandlerResult)
 }
 
 fun notFoundHandler(ctx) {
-    // Explicitly create response to set status code
-    Ok(resHtml(notFoundPage()) |> withStatus(404))
+    match renderPage(notFoundPage()) {
+        Ok(res: HandlerResult) -> {
+            // Apply status code 404 to the response
+            // We know renderPage returns HandlerResult (which can be Response)
+            // But if pattern matching fails, it means 'res' is considered Json?
+            // Let's force it to be HandlerResult if needed, or inspect 'res' type.
+            match res {
+                resp: Response -> Ok(withStatus(404, resp) : HandlerResult)
+                _ -> Ok(res)
+            }
+        }
+        err -> err
+    }
 }
 
 // === Setup Router ===
 
+fun renderHandler(pageFunc) {
+    fun(ctx) {
+        renderPage(pageFunc())
+    }
+}
+
 router = setNotFoundHandler(
     newRouter()
-        |> get("/", homeHandler)
-        |> get("/about", aboutHandler)
-        |> get("/users", usersHandler)
+        |> get("/", renderHandler(homePage))
+        |> get("/about", renderHandler(aboutPage))
+        |> get("/users", renderHandler(usersPage))
         |> get("/api/data", apiHandler)
         |> get("/health", healthHandler),
     notFoundHandler
@@ -124,7 +163,6 @@ port = 8080
 
 // === Start Server ===
 
-// Kill any existing process on this port
 _ = sysExec("sh", ["-c", "lsof -i :" ++ show(port) ++ " -t 2>/dev/null | xargs -r kill -9 2>/dev/null || true"])
 
 print("Starting server on http://localhost:${port}")
@@ -137,4 +175,4 @@ print("  - http://localhost:${port}/health")
 print("")
 print("Press Ctrl+C to stop")
 
-httpServe(port, fun(req) { handleRequest(router, req) })
+httpServe(port, fun(req) { handleRequest(router, adaptRequest(req)) })

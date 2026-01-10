@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error at 19:33 [A003]: type error: evidence not found for Numeric[List]
+- error at 27:33 [A003]: type error: evidence not found for Show[FUNCTION]
+- error at 33:33 [A003]: type error: evidence not found for Numeric[Bool]

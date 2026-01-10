@@ -86,6 +86,9 @@ func TestUnitTests(t *testing.T) {
 
 // runLangTest runs a single .lang test file using the unified pipeline
 func runLangTest(t *testing.T, filePath string) {
+	// Set test mode flag for type normalization
+	config.IsTestMode = true
+
 	// Get absolute path for proper module resolution
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {

@@ -1,7 +1,7 @@
 // Test built-in traits: Equal, Order, Numeric, Default
 
 // Test Order constraint with max function
-fun max<T: Order>(a: T, b: T) -> T {
+fun max<t: Order>(a: t, b: t) -> t {
     if a > b { a } else { b }
 }
 
@@ -10,7 +10,7 @@ print(max(3.5, 2.1))    // 3.5
 print(max(100n, 50n))   // 100
 
 // Test Numeric constraint with sum function
-fun sum<T: Numeric>(a: T, b: T, c: T) -> T {
+fun sum<t: Numeric>(a: t, b: t, c: t) -> t {
     a + b + c
 }
 
@@ -18,7 +18,7 @@ print(sum(1, 2, 3))        // 6
 print(sum(1.0, 2.0, 3.0))  // 6
 
 // Test Equal constraint
-fun allEqual<T: Equal>(a: T, b: T, c: T) -> Bool {
+fun allEqual<t: Equal>(a: t, b: t, c: t) -> Bool {
     a == b && b == c
 }
 
@@ -59,3 +59,30 @@ fun unwrap(c: Counter) -> Int {
 
 c: Counter = default(Counter)
 print(unwrap(c))  // 0
+
+// ============================================
+// 8. Operators as functions with traits
+// ============================================
+fun fold(f: (r, t) -> r, init: r, list: List<t>) -> r {
+    match list {
+        [] -> init
+        [head, ...tail] -> fold(f, f(init, head), tail)
+    }
+}
+
+// Using (+) as function
+sumVal = fold((+), 0, [1, 2, 3, 4, 5])
+print(sumVal)  // 15
+
+// Using (*) as function
+product = fold((*), 1, [1, 2, 3, 4])
+print(product)  // 24
+
+// Using (&&) and (||) as functions
+allTrue = fold((&&), true, [true, true, true])
+print(allTrue)  // true
+
+anyTrue = fold((||), false, [false, true, false])
+print(anyTrue)  // true
+
+print("All built-in traits work!")

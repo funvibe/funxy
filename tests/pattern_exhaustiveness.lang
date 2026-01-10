@@ -27,7 +27,7 @@ result3 = match color {
 print(result3)
 
 // === 4. Nested ADT exhaustive ===
-type Tree<T> = Leaf T | Node (Tree<T>) (Tree<T>)
+type Tree<t> = Leaf t | Node Tree<t> Tree<t>
 
 tree = Node(Leaf(1), Leaf(2))
 result4 = match tree {
@@ -37,7 +37,7 @@ result4 = match tree {
 print(result4)
 
 // === 5. Option exhaustive with nested patterns ===
-type MyOption<T> = MySome T | MyNone
+type MyOption<t> = MySome t | MyNone
 
 opt = MySome(10)
 result5 = match opt {
@@ -50,7 +50,7 @@ print(result5)
 nums = [1, 2, 3]
 result6 = match nums {
     [] -> "empty"
-    [x, xs...] -> "non-empty"
+    [x, ...xs] -> "non-empty"
 }
 print(result6)
 
@@ -62,7 +62,7 @@ result7 = match pair {
 print(result7)
 
 // === 8. Complex nested pattern ===
-type Outcome<T, E> = Success T | Failure E
+type Outcome<t, e> = Success t | Failure e
 
 res = Success(42)
 result8 = match res {

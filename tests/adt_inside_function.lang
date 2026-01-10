@@ -1,0 +1,10 @@
+fun test() {
+    type Shape =
+        | Circle(Int)
+        | Rectangle(Int, Int)
+
+    true
+}
+
+print(test())
+

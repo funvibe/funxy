@@ -197,7 +197,7 @@ func (n *hamtNode) put(hash uint32, key, value Object, shift uint) (*hamtNode, b
 		// New entry
 		newNode.bitmap |= bit
 		pos := popcount(newNode.bitmap & (bit - 1))
-		
+
 		// Insert at position
 		newNode.nodes = append(newNode.nodes, nil)
 		copy(newNode.nodes[pos+1:], newNode.nodes[pos:])
@@ -220,13 +220,13 @@ func (n *hamtNode) put(hash uint32, key, value Object, shift uint) (*hamtNode, b
 		// Collision - create child node and push both entries down
 		child := &hamtNode{}
 		var added1, added2 bool
-		
+
 		// Put existing entry first
 		child, added1 = child.put(v.hash, v.key, v.value, shift+hamtBits)
-		
+
 		// Put new entry
 		child, added2 = child.put(hash, key, value, shift+hamtBits)
-		
+
 		newNode.nodes[pos] = child
 		return newNode, added1 || added2
 
@@ -262,7 +262,7 @@ func (n *hamtNode) remove(hash uint32, key Object, shift uint) (*hamtNode, bool)
 			copy(newNode.nodes[:pos], n.nodes[:pos])
 			// Copy elements after pos
 			copy(newNode.nodes[pos:], n.nodes[pos+1:])
-			
+
 			return newNode, true
 		}
 		return n, false
@@ -272,10 +272,10 @@ func (n *hamtNode) remove(hash uint32, key Object, shift uint) (*hamtNode, bool)
 		if !removed {
 			return n, false
 		}
-		
+
 		// If child became empty, remove it?
-		// Or if child has only 1 entry, collapse it? 
-		// For simplicity, just update the child for now. 
+		// Or if child has only 1 entry, collapse it?
+		// For simplicity, just update the child for now.
 		// Optimization: if child has 0 entries, remove it from this node.
 		if len(newChild.nodes) == 0 {
 			newNode := &hamtNode{

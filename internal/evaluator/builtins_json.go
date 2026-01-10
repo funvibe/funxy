@@ -117,9 +117,6 @@ func objectToGo(obj Object) (interface{}, error) {
 	}
 }
 
-
-
-
 // inferFromJson infers Object type from JSON value
 func inferFromJson(data interface{}, e *Evaluator) (Object, error) {
 	switch v := data.(type) {

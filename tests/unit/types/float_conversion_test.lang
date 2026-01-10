@@ -1,0 +1,29 @@
+// Test implicit Int -> Float conversion and mixed arithmetic
+
+import "lib/test" (testRun, assertEquals)
+
+testRun("Implicit Int -> Float conversion", fun() {
+    // 1. Int + Float
+    x = 4 + 1.5
+    assertEquals(5.5, x)
+
+    // 2. Float + Int
+    y = 2.5 + 3
+    assertEquals(5.5, y)
+
+    assertEquals(2.0, 5 / 2.5)
+    assertEquals(5.0, 2 * 2.5)
+    assertEquals(5.0, 2.5 * 2)
+
+    // 3. Comparisons
+    assertEquals(true, 4 < 4.5)
+    assertEquals(true, 4.5 > 4)
+    assertEquals(true, 4 == 4.0)
+
+    // 4. Function passing
+    fun takeFloat(f: Float) -> Float { f + 1.0 }
+
+    res = takeFloat(5) // Implicit conversion 5 -> 5.0
+    assertEquals(6.0, res)
+})
+

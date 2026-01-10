@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/token"
@@ -44,7 +45,7 @@ func (p *Parser) parsePackageDeclaration() *ast.PackageDeclaration {
 				p.nextToken() // consume comma
 			} else if !p.peekTokenIs(token.RPAREN) {
 				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-					diagnostics.ErrP004,
+					diagnostics.ErrP006,
 					p.peekToken,
 					"expected ',' or ')' in export list",
 				))
@@ -78,7 +79,7 @@ func (p *Parser) parseExportSpec() *ast.ExportSpec {
 	// Expect identifier
 	if !p.peekTokenIs(token.IDENT_UPPER) && !p.peekTokenIs(token.IDENT_LOWER) {
 		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-			diagnostics.ErrP004,
+			diagnostics.ErrP006,
 			p.peekToken,
 			"expected identifier or '*' in export list",
 		))
@@ -103,7 +104,7 @@ func (p *Parser) parseExportSpec() *ast.ExportSpec {
 			for !p.peekTokenIs(token.RPAREN) {
 				if !p.peekTokenIs(token.IDENT_UPPER) && !p.peekTokenIs(token.IDENT_LOWER) {
 					p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-						diagnostics.ErrP004,
+						diagnostics.ErrP006,
 						p.peekToken,
 						"expected identifier in re-export list",
 					))
@@ -119,7 +120,7 @@ func (p *Parser) parseExportSpec() *ast.ExportSpec {
 					p.nextToken() // consume comma
 				} else if !p.peekTokenIs(token.RPAREN) {
 					p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-						diagnostics.ErrP004,
+						diagnostics.ErrP006,
 						p.peekToken,
 						"expected ',' or ')' in re-export list",
 					))
@@ -265,10 +266,31 @@ func (p *Parser) parseTraitDeclaration() *ast.TraitDeclaration {
 
 	// trait Show<T> { ... }
 	// trait Order<T> : Equal<T> { ... }
-	if !p.expectPeek(token.IDENT_UPPER) {
-		return nil
+	if p.curTokenIs(token.IDENT_LOWER) {
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006,
+			p.curToken,
+			"Trait name must start with an uppercase letter",
+		))
+		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+		// Important: Consume the invalid token so we can proceed to parse body
+		// But don't call nextToken() twice if we were already on the token
+	} else if p.peekTokenIs(token.IDENT_UPPER) {
+		p.nextToken()
+		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+	} else if p.peekTokenIs(token.IDENT_LOWER) {
+		p.nextToken()
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006,
+			p.curToken,
+			"Trait name must start with an uppercase letter",
+		))
+		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+	} else {
+		if !p.expectPeek(token.IDENT_UPPER) {
+			return nil
+		}
 	}
-	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 
 	// Parse generic type parameters <T>
 	stmt.TypeParams = []*ast.Identifier{}
@@ -282,16 +304,47 @@ func (p *Parser) parseTraitDeclaration() *ast.TraitDeclaration {
 				continue
 			}
 
-			if !p.curTokenIs(token.IDENT_UPPER) {
-				// Type parameter must start with uppercase
+			if p.curTokenIs(token.IDENT_UPPER) {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP006, p.curToken,
+					fmt.Sprintf("Type variables must start with a lowercase letter (got '%s')", p.curToken.Literal),
+				))
+				// Continue parsing to allow error recovery
+			} else if !p.curTokenIs(token.IDENT_LOWER) {
+				// Type parameter must be an identifier
 				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
 					diagnostics.ErrP005, p.curToken,
-					"type parameter (uppercase)", p.curToken.Literal,
+					"expected identifier", p.curToken.Literal,
 				))
 				return nil
 			}
 			stmt.TypeParams = append(stmt.TypeParams, &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)})
 			p.nextToken() // move past IDENT
+
+			if p.curTokenIs(token.COLON) {
+				// Parse one or more trait constraints: t: Show, Cmp, Order
+				for {
+					p.nextToken() // move to Trait Name (or past :)
+					if !p.curTokenIs(token.IDENT_UPPER) {
+						p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+							diagnostics.ErrP005, p.curToken,
+							"expected trait name (uppercase identifier)", p.curToken.Literal,
+						))
+						break
+					}
+					// Use the last added type param as the constrained type var
+					lastParam := stmt.TypeParams[len(stmt.TypeParams)-1]
+					constraint := &ast.TypeConstraint{TypeVar: lastParam.Value, Trait: p.curToken.Literal.(string)}
+					stmt.Constraints = append(stmt.Constraints, constraint)
+					p.nextToken() // move past Trait
+
+					// Check if next is comma followed by another trait (uppercase)
+					if p.curTokenIs(token.COMMA) && p.peekTokenIs(token.IDENT_UPPER) {
+						continue // parse next trait for same type param
+					}
+					break
+				}
+			}
 		}
 
 		if !p.curTokenIs(token.GT) {
@@ -350,12 +403,48 @@ func (p *Parser) parseTraitDeclaration() *ast.TraitDeclaration {
 						continue
 					}
 					if p.curTokenIs(token.IDENT_UPPER) {
+						p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+							diagnostics.ErrP006, p.curToken,
+							fmt.Sprintf("Type variables must start with a lowercase letter (got '%s')", p.curToken.Literal),
+						))
 						fn.TypeParams = append(fn.TypeParams, &ast.Identifier{
 							Token: p.curToken,
 							Value: p.curToken.Literal.(string),
 						})
+						p.nextToken()
+					} else if p.curTokenIs(token.IDENT_LOWER) {
+						typeParam := &ast.Identifier{
+							Token: p.curToken,
+							Value: p.curToken.Literal.(string),
+						}
+						fn.TypeParams = append(fn.TypeParams, typeParam)
+						p.nextToken() // move past IDENT
+
+						// Check for constraints: t: Numeric, Show
+						if p.curTokenIs(token.COLON) {
+							p.nextToken() // consume ':'
+							// Parse constraint list: Trait1, Trait2, ...
+							for p.curTokenIs(token.IDENT_UPPER) {
+								constraint := &ast.TypeConstraint{
+									TypeVar: typeParam.Value,
+									Trait:   p.curToken.Literal.(string),
+								}
+								fn.Constraints = append(fn.Constraints, constraint)
+								p.nextToken()
+
+								// Check for comma (more constraints for this param)
+								if p.curTokenIs(token.COMMA) {
+									p.nextToken() // consume comma
+									// Continue to parse next constraint for this param
+								} else {
+									// No comma, end of constraints for this param
+									break
+								}
+							}
+						}
+					} else {
+						p.nextToken()
 					}
-					p.nextToken()
 				}
 				// curToken is now GT
 			}
@@ -415,6 +504,15 @@ func (p *Parser) parseTraitDeclaration() *ast.TraitDeclaration {
 						continue
 					}
 					if p.curTokenIs(token.IDENT_UPPER) {
+						p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+							diagnostics.ErrP006, p.curToken,
+							fmt.Sprintf("Type variables must start with a lowercase letter (got '%s')", p.curToken.Literal),
+						))
+						fn.TypeParams = append(fn.TypeParams, &ast.Identifier{
+							Token: p.curToken,
+							Value: p.curToken.Literal.(string),
+						})
+					} else if p.curTokenIs(token.IDENT_LOWER) {
 						fn.TypeParams = append(fn.TypeParams, &ast.Identifier{
 							Token: p.curToken,
 							Value: p.curToken.Literal.(string),
@@ -506,7 +604,7 @@ func (p *Parser) parseInstanceDeclaration() *ast.InstanceDeclaration {
 		// If we exited the loop without finding an uppercase trait name, it's an error
 		if stmt.TraitName == nil {
 			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-				diagnostics.ErrP005,
+				diagnostics.ErrP006,
 				p.curToken,
 				"expected trait name (uppercase identifier) in qualified name",
 			))
@@ -519,34 +617,50 @@ func (p *Parser) parseInstanceDeclaration() *ast.InstanceDeclaration {
 		stmt.TraitName = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 	}
 
-	// Check for HKT syntax: instance Trait<TypeConstructor> { ... }
-	// Or: instance Trait<TypeConstructor, E> { ... } with extra type params
+	// Check for HKT syntax / MPTC: instance Trait<TypeConstructor> { ... }
+	// Or: instance Trait<TypeConstructor, E> { ... }
+	// Or: instance Convert<Int, String> { ... }
 	if p.peekTokenIs(token.LT) {
 		p.nextToken() // consume trait name
 		p.nextToken() // consume <
-		// Parse the type constructor as Target
-		stmt.Target = p.parseType()
 
-		// Check for additional type parameters: <Result, E, F>
-		for p.peekTokenIs(token.COMMA) {
-			p.nextToken() // consume ,
-			p.nextToken() // move to type param
-			if p.curTokenIs(token.IDENT_UPPER) {
-				stmt.TypeParams = append(stmt.TypeParams, &ast.Identifier{
-					Token: p.curToken,
-					Value: p.curToken.Literal.(string),
-				})
+		// Parse all comma-separated types as arguments
+		for !p.curTokenIs(token.GT) && !p.curTokenIs(token.EOF) {
+			if p.curTokenIs(token.COMMA) {
+				p.nextToken()
+				continue
+			}
+			argType := p.parseType()
+			if argType != nil {
+				stmt.Args = append(stmt.Args, argType)
+				p.nextToken()
+			} else {
+				p.nextToken()
 			}
 		}
 
-		if !p.expectPeek(token.GT) {
+		if len(stmt.Args) > 0 {
+			// stmt.TypeParams are NOT populated here. Analyzer should handle implicit generics in Args.
+		}
+
+		// Ensure we consumed the GT
+		// parseType usually advances past the type.
+		// If we are at GT, loop terminates.
+		// curToken should be GT (or EOF)
+		if !p.curTokenIs(token.GT) {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP005, p.curToken,
+				"expected '>' to close instance type arguments", p.curToken.Literal,
+			))
 			return nil
 		}
 	} else {
 		p.nextToken()
-		stmt.Target = p.parseType() // Int, (List A), etc.
+		t := p.parseType()
+		if t != nil {
+			stmt.Args = []ast.Type{t}
+		}
 	}
-
 	if !p.expectPeek(token.LBRACE) {
 		return nil
 	}
@@ -615,7 +729,7 @@ func (p *Parser) parseOperatorMethod() *ast.FunctionStatement {
 				p.nextToken()
 				continue
 			}
-			if p.curTokenIs(token.IDENT_UPPER) {
+			if p.curTokenIs(token.IDENT_UPPER) || p.curTokenIs(token.IDENT_LOWER) {
 				fn.TypeParams = append(fn.TypeParams, &ast.Identifier{
 					Token: p.curToken,
 					Value: p.curToken.Literal.(string),
@@ -662,11 +776,15 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 				continue
 			}
 
-			if !p.curTokenIs(token.IDENT_UPPER) {
-				// Type parameter must start with uppercase
+			if p.curTokenIs(token.IDENT_UPPER) {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP006, p.curToken,
+					fmt.Sprintf("Type variables must start with a lowercase letter (got '%s')", p.curToken.Literal),
+				))
+			} else if !p.curTokenIs(token.IDENT_LOWER) {
 				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
 					diagnostics.ErrP005, p.curToken,
-					"type parameter (uppercase)", p.curToken.Literal,
+					"expected identifier", p.curToken.Literal,
 				))
 				return nil
 			}
@@ -676,14 +794,29 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 			p.nextToken() // move past IDENT
 
 			if p.curTokenIs(token.COLON) {
-				p.nextToken() // :
-				p.nextToken() // Trait Name
-				constraint := &ast.TypeConstraint{TypeVar: typeParam.Value, Trait: p.curToken.Literal.(string)}
-				stmt.Constraints = append(stmt.Constraints, constraint)
-				p.nextToken() // move past Trait
+				// Parse one or more trait constraints: t: Show, Cmp, Order
+				for {
+					p.nextToken() // move to Trait Name (or past :)
+					if !p.curTokenIs(token.IDENT_UPPER) {
+						p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+							diagnostics.ErrP005, p.curToken,
+							"expected trait name (uppercase identifier)", p.curToken.Literal,
+						))
+						break
+					}
+					constraint := &ast.TypeConstraint{TypeVar: typeParam.Value, Trait: p.curToken.Literal.(string)}
+					stmt.Constraints = append(stmt.Constraints, constraint)
+					p.nextToken() // move past Trait
+
+					// Check if next is comma followed by another trait (uppercase)
+					if p.curTokenIs(token.COMMA) && p.peekTokenIs(token.IDENT_UPPER) {
+						continue // parse next trait for same type param
+					}
+					break
+				}
 			}
 		}
-		// After loop, curToken is GT.
+		// After loop, curToken is GT or COMMA (before next type param).
 	}
 
 	// 2. Check for Extension Method Receiver: fun (recv: Type) ...
@@ -703,16 +836,42 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 		}
 
 		// After receiver comes the Method Name
-		if !p.expectPeek(token.IDENT_LOWER) {
-			return nil
+		if p.peekTokenIs(token.IDENT_LOWER) {
+			p.nextToken()
+			stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+		} else if p.peekTokenIs(token.IDENT_UPPER) {
+			p.nextToken()
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP006,
+				p.curToken,
+				"Extension method name must start with a lowercase letter",
+			))
+			stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+		} else {
+			// Report standard error if neither
+			if !p.expectPeek(token.IDENT_LOWER) {
+				return nil
+			}
 		}
-		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 	} else {
 		// Normal function
-		if !p.expectPeek(token.IDENT_LOWER) {
-			return nil
+		if p.peekTokenIs(token.IDENT_LOWER) {
+			p.nextToken()
+			stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+		} else if p.peekTokenIs(token.IDENT_UPPER) {
+			p.nextToken()
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP006,
+				p.curToken,
+				"Function name must start with a lowercase letter",
+			))
+			stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+		} else {
+			// Report standard error if neither
+			if !p.expectPeek(token.IDENT_LOWER) {
+				return nil
+			}
 		}
-		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 	}
 
 	// 3. Late Generics <T> (Standard syntax: fun name<T>)
@@ -726,11 +885,15 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 				continue
 			}
 
-			if !p.curTokenIs(token.IDENT_UPPER) {
-				// Type parameter must start with uppercase
+			if p.curTokenIs(token.IDENT_UPPER) {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP006, p.curToken,
+					fmt.Sprintf("Type variables must start with a lowercase letter (got '%s')", p.curToken.Literal),
+				))
+			} else if !p.curTokenIs(token.IDENT_LOWER) {
 				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
 					diagnostics.ErrP005, p.curToken,
-					"type parameter (uppercase)", p.curToken.Literal,
+					"expected identifier", p.curToken.Literal,
 				))
 				return nil
 			}
@@ -740,11 +903,75 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 			p.nextToken() // move past IDENT
 
 			if p.curTokenIs(token.COLON) {
-				p.nextToken() // consume ':'
-				// curToken is now Trait Name
-				constraint := &ast.TypeConstraint{TypeVar: typeParam.Value, Trait: p.curToken.Literal.(string)}
-				stmt.Constraints = append(stmt.Constraints, constraint)
-				p.nextToken() // consume Trait Name
+				// Parse one or more trait constraints: t: Show, Convert<String>, Order
+				for {
+					p.nextToken() // move to Trait Name
+					if !p.curTokenIs(token.IDENT_UPPER) {
+						p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+							diagnostics.ErrP005, p.curToken,
+							"expected trait name (uppercase identifier)", p.curToken.Literal,
+						))
+						break
+					}
+					traitName := p.curToken.Literal.(string)
+
+					// Check for MPTC arguments: Convert<String>
+					var args []ast.Type
+					if p.peekTokenIs(token.LT) {
+						p.nextToken() // consume trait name
+						// Parse type args
+						p.nextToken() // consume <
+						for !p.curTokenIs(token.GT) && !p.curTokenIs(token.EOF) {
+							if p.curTokenIs(token.COMMA) {
+								p.nextToken()
+								continue
+							}
+
+							// Handle RSHIFT (>>) splitting
+							if p.curTokenIs(token.RSHIFT) {
+								// We hit >>. Treat first > as closing this list.
+								// Split >> into > >
+								p.splitRshift = true // Next nextToken will return >
+								p.curToken.Type = token.GT
+								p.curToken.Literal = ">"
+								p.curToken.Lexeme = ">"
+								break // Found GT
+							}
+
+							args = append(args, p.parseType())
+
+							if p.peekTokenIs(token.COMMA) {
+								p.nextToken()
+							} else if p.peekTokenIs(token.RSHIFT) {
+								// Next is >>. Consume and split.
+								p.nextToken() // curToken is >>
+								p.splitRshift = true
+								p.curToken.Type = token.GT
+								p.curToken.Literal = ">"
+								p.curToken.Lexeme = ">"
+								break
+							} else if !p.peekTokenIs(token.GT) {
+								// error or done
+							}
+							p.nextToken()
+						}
+						// Now at GT
+					}
+
+					constraint := &ast.TypeConstraint{
+						TypeVar: typeParam.Value,
+						Trait:   traitName,
+						Args:    args,
+					}
+					stmt.Constraints = append(stmt.Constraints, constraint)
+					p.nextToken() // move past Trait (or GT)
+
+					// Check if next is comma followed by another trait (uppercase)
+					if p.curTokenIs(token.COMMA) && p.peekTokenIs(token.IDENT_UPPER) {
+						continue // parse next trait for same type param
+					}
+					break
+				}
 			}
 		}
 	}
@@ -760,60 +987,16 @@ func (p *Parser) parseFunctionStatement() *ast.FunctionStatement {
 		p.nextToken()
 	}
 
-	// Return type is optional technically in many languages, but here syntax implies it might be present.
-	// Support '->' prefix for return type (optional)
+	// Return type is optional
+	// Support '->' prefix for return type
 	if p.peekTokenIs(token.ARROW) {
 		p.nextToken() // consume '->'
 		p.nextToken() // point to start of type
 		stmt.ReturnType = p.parseType()
-	} else if !p.peekTokenIs(token.LBRACE) && !p.peekTokenIs(token.NEWLINE) && !p.peekTokenIs(token.WHERE) {
-		// If not '{' and not newline and not 'where', assume it is a return type (legacy syntax without '->' or just type)
-		// Check if next token looks like a type start?
-		// p.parseType() will try.
+	} else if !p.peekTokenIs(token.LBRACE) && !p.peekTokenIs(token.NEWLINE) {
+		// Legacy support: return type without '->' prefix
 		p.nextToken()
 		stmt.ReturnType = p.parseType()
-	}
-
-	// Parse 'where' constraints: fun foo<F>(...) -> ... where Functor<F>, Show<A> { ... }
-	if p.peekTokenIs(token.WHERE) {
-		p.nextToken() // consume 'where'
-		p.nextToken() // move to first constraint
-
-		for {
-			// Parse constraint: Trait<TypeVar> or Trait<TypeConstructor>
-			if !p.curTokenIs(token.IDENT_UPPER) {
-				break
-			}
-			traitName := p.curToken.Literal.(string)
-
-			// Expect <
-			if !p.expectPeek(token.LT) {
-				break
-			}
-			p.nextToken() // move past <
-
-			// Get type variable name
-			if !p.curTokenIs(token.IDENT_UPPER) {
-				break
-			}
-			typeVar := p.curToken.Literal.(string)
-
-			// Expect >
-			if !p.expectPeek(token.GT) {
-				break
-			}
-
-			constraint := &ast.TypeConstraint{TypeVar: typeVar, Trait: traitName}
-			stmt.Constraints = append(stmt.Constraints, constraint)
-
-			// Check for comma (more constraints)
-			if p.peekTokenIs(token.COMMA) {
-				p.nextToken() // consume ,
-				p.nextToken() // move to next constraint
-			} else {
-				break
-			}
-		}
 	}
 
 	// Check if Body starts
@@ -896,14 +1079,28 @@ func (p *Parser) parseParameter() *ast.Parameter {
 func (p *Parser) parseParameterCommon(allowArrowInType bool) *ast.Parameter {
 	param := &ast.Parameter{Token: p.curToken}
 
+	// Check for prefix variadic ...identifier
+	if p.curTokenIs(token.ELLIPSIS) {
+		param.IsVariadic = true
+		p.nextToken()
+		// Token update skipped intentionally
+	}
+
 	// Allow underscore as "ignored" parameter
 	if p.curTokenIs(token.UNDERSCORE) {
 		param.Name = &ast.Identifier{Token: p.curToken, Value: "_"}
 		param.IsIgnored = true
 	} else if p.curTokenIs(token.IDENT_LOWER) {
 		param.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+	} else if p.curTokenIs(token.IDENT_UPPER) {
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006,
+			p.curToken,
+			"Parameter name must start with a lowercase letter",
+		))
+		param.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 	} else {
-		// Error? Or support destructuring later
+		// Destructuring patterns not yet supported in parameters
 		return nil
 	}
 
@@ -911,17 +1108,18 @@ func (p *Parser) parseParameterCommon(allowArrowInType bool) *ast.Parameter {
 	if p.peekTokenIs(token.COLON) {
 		p.nextToken()
 		p.nextToken()
+
+		// Check for prefix variadic: args: ...Type
+		if p.curTokenIs(token.ELLIPSIS) {
+			param.IsVariadic = true
+			p.nextToken()
+		}
+
 		if allowArrowInType {
 			param.Type = p.parseType()
 		} else {
 			param.Type = p.parseTypeNoArrow()
 		}
-	}
-
-	// Check for variadic ...
-	if p.peekTokenIs(token.ELLIPSIS) {
-		p.nextToken()
-		param.IsVariadic = true
 	}
 
 	// Check for default value (e.g., x = 10)
@@ -943,10 +1141,19 @@ func (p *Parser) parseTypeDeclarationStatement() *ast.TypeDeclarationStatement {
 		stmt.IsAlias = true
 	}
 
-	if !p.expectPeek(token.IDENT_UPPER) {
+	if p.peekTokenIs(token.IDENT_LOWER) {
+		p.nextToken()
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006,
+			p.curToken,
+			"Type name must start with an uppercase letter",
+		))
+		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
+	} else if !p.expectPeek(token.IDENT_UPPER) {
 		return nil
+	} else {
+		stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 	}
-	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 
 	// 2. Parse Type Parameters <T, U>
 	if p.peekTokenIs(token.LT) {
@@ -959,11 +1166,17 @@ func (p *Parser) parseTypeDeclarationStatement() *ast.TypeDeclarationStatement {
 				continue
 			}
 
-			if !p.curTokenIs(token.IDENT_UPPER) {
-				// Type parameter must start with uppercase
+			if p.curTokenIs(token.IDENT_UPPER) {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP006, p.curToken,
+					fmt.Sprintf("Type variables must start with a lowercase letter (got '%s')", p.curToken.Literal),
+				))
+				// recover by treating it as if it were valid for parsing purposes
+			} else if !p.curTokenIs(token.IDENT_LOWER) {
+				// Type parameter must start with lowercase
 				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
 					diagnostics.ErrP005, p.curToken,
-					"type parameter (uppercase)", p.curToken.Literal,
+					"expected identifier", p.curToken.Literal,
 				))
 				return nil
 			}
@@ -992,28 +1205,13 @@ func (p *Parser) parseTypeDeclarationStatement() *ast.TypeDeclarationStatement {
 
 	// 4. Parse Right Hand Side
 	if p.curTokenIs(token.LBRACE) {
-		// Implicit alias for Record Type
+		// Implicit alias for Record Type: type Point = { x: Int, y: Int }
 		stmt.IsAlias = true
 		stmt.TargetType = p.parseType()
 	} else if stmt.IsAlias {
+		// Explicit alias: type alias X = SomeType
 		stmt.TargetType = p.parseType()
 	} else {
-		// Heuristic: Check if it looks like an alias (e.g. generic type application)?
-		// If RHS is `Name < ...`, it is likely an alias for a type application.
-		if p.curTokenIs(token.IDENT_UPPER) && p.peekTokenIs(token.LT) {
-			stmt.IsAlias = true
-			stmt.TargetType = p.parseType()
-			return stmt
-		}
-
-		// Heuristic: If RHS starts with '(' it's likely a function type or tuple - treat as alias
-		// e.g. type Handler = (Int) -> Nil
-		if p.curTokenIs(token.LPAREN) {
-			stmt.IsAlias = true
-			stmt.TargetType = p.parseType()
-			return stmt
-		}
-
 		// ADT: Constructor | Constructor ...
 		// Loop separated by PIPE (allow newlines before |)
 		for {
@@ -1047,51 +1245,52 @@ func (p *Parser) parseDataConstructor() *ast.DataConstructor {
 	dc := &ast.DataConstructor{Token: p.curToken}
 	if p.curTokenIs(token.IDENT_LOWER) {
 		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-			diagnostics.ErrP005,
+			diagnostics.ErrP006,
 			p.curToken,
-			token.IDENT_UPPER,
-			p.curToken.Type,
+			"Constructor name must start with an uppercase letter",
 		))
-		return nil
-	}
-	if !p.curTokenIs(token.IDENT_UPPER) {
+		// Continue parsing to allow recovery
+	} else if !p.curTokenIs(token.IDENT_UPPER) {
 		return nil
 	}
 	dc.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 
+	// Check for C-style syntax: Constructor(Type, Type, ...) or Constructor(Type)
+	// Rule: If there's a comma at the TOP LEVEL inside parens, it's C-style (multiple args).
+	//       If there's only one type with no comma, it's C-style with single arg.
+	//       For a tuple argument, use double parens: Constructor((A, B))
+	// ML-style: Constructor Type Type (space-separated, no parens around args)
+	if p.peekTokenIs(token.LPAREN) {
+		p.nextToken() // now at '('
+		p.nextToken() // move into the parens
+
+		if p.curTokenIs(token.RPAREN) {
+			// Empty parens: Constructor() - zero args
+			return dc
+		}
+
+		// Parse first type
+		firstType := p.parseNonUnionType()
+		dc.Parameters = append(dc.Parameters, firstType)
+
+		// Check for comma - if present, continue parsing C-style args
+		for p.peekTokenIs(token.COMMA) {
+			p.nextToken() // move to comma
+			p.nextToken() // move to next type
+			t := p.parseNonUnionType()
+			if t != nil {
+				dc.Parameters = append(dc.Parameters, t)
+			}
+		}
+
+		if !p.expectPeek(token.RPAREN) {
+			return nil
+		}
+		return dc
+	}
+
+	// ML-style syntax: Constructor Type Type ...
 	// Parse parameters (Types) until next PIPE or NEWLINE/EOF
-	// New syntax: Cons T (List<T>)
-	// Space separated atomic types?
-	// Or `Cons(T, List<T>)`?
-	// The user query didn't specify changing constructor definition syntax.
-	// But `List<T>` is now atomic (NamedType with args).
-	// Previously `List a` was parsed as `parseAtomicType` (List) then loop?
-	// No, `List a` is `TApp`.
-	// `parseDataConstructor` called `parseAtomicType`.
-	// If I have `Cons T`, `T` is atomic.
-	// If I have `Cons List<T>`, `List<T>` is atomic (handled by parseTypeApplication -> parseAtomicType + <...>).
-
-	// Wait, `parseType` handles `parseTypeApplication`.
-	// `parseAtomicType` handles `(Type)` and `Name`.
-	// `parseTypeApplication` calls `parseAtomicType` then checks for `<...>`.
-
-	// If `parseDataConstructor` calls `parseAtomicType`, it won't parse `<T>`.
-	// It should call `parseTypeApplication`?
-	// Or `parseType` (which includes Arrow)?
-	// Constructor params usually don't have arrows unless parenthesized.
-
-	// Let's change `parseAtomicType` to `parseTypeApplication` (or equivalent logic that parses one complete type unit).
-	// `parseType` handles arrows, which might be ambiguous if not parenthesized?
-	// `Cons Int -> Int` -> `Cons (Int -> Int)`?
-	// Usually `Cons Int` means `Cons` takes `Int`.
-	// If I use `parseType`, it consumes as much as possible.
-	// `Cons Int | Empty` -> `Int | Empty` is not a valid type.
-	// `parseType` parses `Int`. Next token is `|`.
-	// `parseType` stops at `|`? `|` has precedence?
-	// `Arrow` has precedence. `|` is not in type precedence usually (except Sum Type which is statement level here).
-
-	// So `parseType` is safe to call.
-
 	for !p.peekTokenIs(token.PIPE) && !p.peekTokenIs(token.NEWLINE) && !p.peekTokenIs(token.EOF) {
 		p.nextToken()
 		// Use parseNonUnionType to avoid consuming | as part of union type
@@ -1102,8 +1301,6 @@ func (p *Parser) parseDataConstructor() *ast.DataConstructor {
 			break
 		}
 		dc.Parameters = append(dc.Parameters, t)
-
-		// If parseType consumed up to PIPE, we loop check handles it.
 	}
 	return dc
 }
@@ -1116,15 +1313,6 @@ func (p *Parser) parseConstantDeclaration(name *ast.Identifier) *ast.ConstantDec
 	// Optional Type Annotation
 	if p.peekTokenIs(token.COLON) {
 		p.nextToken() // :
-
-		// Check if it's :- (COLON_MINUS) immediately?
-		// The lexer emits COLON_MINUS as one token.
-		// But here we consumed COLON. Wait.
-		// If lexer sees `:-`, it emits COLON_MINUS.
-		// So `kVAL : Type :- 123` -> IDENT COLON Type COLON_MINUS Expr
-		// `kVAL :- 123` -> IDENT COLON_MINUS Expr
-
-		// If we are here, next token was COLON. So it's type annotation.
 		p.nextToken() // Start of Type
 		stmt.TypeAnnotation = p.parseType()
 	}
@@ -1161,14 +1349,34 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 
 		var stmt ast.Statement
 		if p.curToken.Type == token.TYPE {
-			stmt = p.parseTypeDeclarationStatement()
-			if p.peekTokenIs(token.NEWLINE) {
-				p.nextToken()
+			// Type definitions are not allowed inside blocks (functions, if, match, etc.)
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP006,
+				p.curToken,
+				"type definitions are only allowed at module level",
+			))
+			// Skip the entire type definition to recover
+			// Type definitions can span multiple lines with | constructors
+			for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+				// Skip until we find a line that doesn't start with | (new constructor)
+				// or until we hit a keyword that starts a new statement
+				if p.curTokenIs(token.NEWLINE) {
+					p.nextToken()
+					// Check if next line continues the type definition (starts with |)
+					if !p.curTokenIs(token.PIPE) {
+						break
+					}
+				} else {
+					p.nextToken()
+				}
 			}
-			p.nextToken()
+			continue
 		} else if p.curToken.Type == token.FUN && (p.peekTokenIs(token.IDENT_LOWER) || p.peekTokenIs(token.LT)) {
 			// Function inside block
-			stmt = p.parseFunctionStatement()
+			fnStmt := p.parseFunctionStatement()
+			if fnStmt != nil {
+				stmt = fnStmt
+			}
 			if p.peekTokenIs(token.NEWLINE) {
 				p.nextToken()
 			}

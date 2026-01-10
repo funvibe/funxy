@@ -1,187 +1,291 @@
 package ui (*)
 
 import "lib/list" (map, filter, foldl, foldr)
-import "lib/string" (stringJoin, stringReplaceAll)
-import "lib/map" (mapFromRecord, mapItems)
+import "lib/string" (stringJoin, stringReplaceAll, stringIndexOf)
+import "lib/map" (mapFromRecord, mapItems, mapMerge)
 import "lib/tuple" (fst, snd)
 
+// === Types ===
+
+type alias AnyRecord = {}
+
 type VNode =
-    Element String Map<String, String> List<VNode>
+    Element String Map<String, String> List<SmartResult>
     | Text String
     | Raw String
-    | Fragment List<VNode>
+    | Fragment List<SmartResult>
 
-fun showVNode(v) {
+type alias SmartResult = VNode | BuilderFunc | List<SmartResult>
+
+// Forward declarations/order matters for aliases sometimes
+type alias ChildBlock = () -> List<SmartResult>
+
+// Return VNode to match repro structure and potentially avoid cycle issues
+type alias BuilderFunc = (UIArg) -> VNode
+
+type alias UIArg = List<SmartResult> | VNode | AnyRecord | ChildBlock | List<List<SmartResult>>
+
+
+// === Constructors ===
+
+fun text(s) -> SmartResult { Text(s) }
+fun raw(s) -> SmartResult { Raw(s) }
+fun fragment(children: List<SmartResult>) -> SmartResult { Fragment(children) }
+
+fun showVNode(v: SmartResult) {
     match v {
-        Element(tag, _, _) -> "Element(" ++ tag ++ ")"
-        Text(s) -> "Text(" ++ s ++ ")"
-        Raw(_) -> "Raw(...)"
-        Fragment(_) -> "Fragment(...)"
+        n: VNode -> match n {
+            Element(tag, _, _) -> "Element(" ++ tag ++ ")"
+            Text(s) -> "Text(" ++ s ++ ")"
+            Raw(_) -> "Raw(...)"
+            Fragment(_) -> "Fragment(...)"
+        }
+        _ -> "BuilderFunc"
     }
 }
 
-fun text(s) { Text(s) }
-fun raw(s) { Raw(s) }
-fun fragment(children) { Fragment(children) }
+// === Internal Helpers ===
 
-fun element(tag, attrs, children) {
-    // attrs can be: {} (empty Record), {key: value, ...} (Record with fields), or Map
+fun element(tag, attrs, children: List<SmartResult>) -> VNode {
     attrMap = mapFromRecord(attrs)
     Element(tag, attrMap, children)
 }
 
-// Helper to check if a value is a Record that can be converted to Map
-fun isRecordAttrs(value) {
-    typeOf(value, Map) || (value == {})
+fun elem(tag, children: List<SmartResult>) -> SmartResult {
+    element(tag, {}, children)
 }
 
-// Helper to handle optional attributes
-fun elem(tag, args...) {
-    argLen = len(args)
-    if argLen == 0 {
-        element(tag, {}, [])
-    } else if argLen == 1 {
-        // Single argument: check what it is
-        arg0 = args[0]
-        // If it's empty record {}, treat as empty attrs
-        // If it's a List, treat as children
-        // Otherwise wrap in a list and treat as single child
-        if typeOf(arg0, List) {
-            element(tag, {}, arg0)
-        } else {
-            element(tag, {}, [arg0])
-        }
-    } else if argLen == 2 && typeOf(args[1], List) {
-        // Two arguments with second being a List: from block syntax with attrs
-        // args[0] = Record (attrs), args[1] = List (children from block)
-        attrs = args[0]
-        children = args[1]
-        element(tag, attrs, children)
-    } else if argLen == 2 {
-        // Two arguments but second is NOT a List
-        // Check if first argument looks like attributes (a Record)
-        first = args[0]
-        second = args[1]
+fun elemA(tag, attrs, children: List<SmartResult>) -> SmartResult {
+    element(tag, attrs, children)
+}
 
-        // Try to detect if first is a Record that can be converted to Map
-        // Records can be converted by mapFromRecord
-        firstAsMap = mapFromRecord(first)
-        firstIsNotEmpty = len(mapItems(firstAsMap)) > 0
-        firstIsRecordAttrs = first == {} || firstIsNotEmpty
+// === Smart Logic ===
 
-        if firstIsRecordAttrs {
-            // First is attributes, second is single child
-            children = if typeOf(second, List) { second } else { [second] }
-            element(tag, first, children)
-        } else {
-            // Both are children
-            element(tag, {}, args)
+fun resolveArg(tag, attrsMap: Map<String, String>, arg: UIArg) -> VNode {
+    match arg {
+        l: List<SmartResult> -> element(tag, attrsMap, l)
+
+        n: VNode -> element(tag, attrsMap, [n])
+
+        f: ChildBlock -> element(tag, attrsMap, f())
+
+        r -> {
+            newMap = mapFromRecord(r)
+            merged = mapMerge(attrsMap, newMap)
+            createBuilderFromMap(tag, merged)
         }
-    } else {
-        // All other cases: treat all args as children
-        // Handles: ul(li1, li2, li3) or div(class: "x")(child1)(child2)
-        element(tag, {}, args)
     }
 }
 
-// Helper for void tags (no children)
-fun voidElem(tag, args...) {
-    attrs = if len(args) > 0 { args[0] } else { {} }
+fun createBuilderFromMap(tag, attrsMap: Map<String, String>) -> BuilderFunc {
+    fun(arg: UIArg) -> VNode {
+        resolveArg(tag, attrsMap, arg)
+    }
+}
+
+fun createBuilder(tag, initialAttrs) -> BuilderFunc {
+    fun(arg: UIArg) -> VNode {
+        initialMap: Map<String, String> = mapFromRecord(initialAttrs)
+        resolveArg(tag, initialMap, arg)
+    }
+}
+
+fun isListType(v) {
+    t = show(getType(v))
+    match stringIndexOf(t, "List") {
+        Some(_) -> true
+        _ -> false
+    }
+}
+
+// Helper to call block dynamicallly (bypassing pattern match limitations)
+fun callBlock(f: ChildBlock) -> SmartResult {
+    f()
+}
+
+fun smartElem(tag, ...args: UIArg) -> SmartResult {
+    match args {
+        // Single argument case
+        [arg] -> match arg {
+            l: List<SmartResult> -> elem(tag, l)
+            n: VNode -> elem(tag, [n])
+            // Try to match ChildBlock explicitly.
+            f: ChildBlock -> elem(tag, f())
+
+            // Assume anything else is a Record (attrs)
+            r -> createBuilder(tag, r)
+        }
+
+        // Two arguments case: div(attrs, children) or div(attrs) { block }
+        [attrs, children] -> {
+            if isListType(children) {
+                // It is a list at runtime. Match to satisfy Analyzer.
+                match children {
+                    l: List<SmartResult> -> elemA(tag, attrs, l)
+                    _ -> panic("expected list")
+                }
+            } else {
+                match children {
+                    n: VNode -> elemA(tag, attrs, [n])
+                    f -> {
+                         // Check if block returns list or single item
+                         res = callBlock(f)
+                         childrenList = if isListType(res) {
+                             match res {
+                                 l: List<SmartResult> -> l
+                                 _ -> [res] // Fallback (should be covered by isListType)
+                             }
+                         } else {
+                             [res]
+                         }
+                         elemA(tag, attrs, childrenList)
+                    }
+                }
+            }
+        }
+
+        _ -> panic("invalid argument count for " ++ tag ++ ": " ++ show(len(args)))
+    }
+}
+
+fun smartVoidElem(tag, ...args: UIArg) -> SmartResult {
+    match args {
+        [attrs] -> voidElemA(tag, attrs)
+        [] -> voidElem(tag)
+        _ -> panic("void tag " ++ tag ++ " expects optional attrs only")
+    }
+}
+
+// === Tags ===
+
+fun voidElem(tag) -> SmartResult {
+    element(tag, {}, [])
+}
+
+fun voidElemA(tag, attrs) -> SmartResult {
     element(tag, attrs, [])
 }
 
-// Document structure
-fun html(args...) { elem("html", args...) }
-fun head(args...) { elem("head", args...) }
-fun body(args...) { elem("body", args...) }
-fun title(args...) { elem("title", args...) }
-fun style(args...) { elem("style", args...) }
-fun script(args...) { elem("script", args...) }
+// Standard Tags
 
-// Void tags
-fun meta(args...) { voidElem("meta", args...) }
-fun link(args...) { voidElem("link", args...) }
-fun img(args...) { voidElem("img", args...) }
-fun input(args...) { voidElem("input", args...) }
-fun hr(args...) { voidElem("hr", args...) }
-fun br(args...) { voidElem("br", args...) }
+fun html(...args: UIArg) -> SmartResult { smartElem("html", ...args) }
+fun head(...args: UIArg) -> SmartResult { smartElem("head", ...args) }
+fun body(...args: UIArg) -> SmartResult { smartElem("body", ...args) }
+fun title(...args: UIArg) -> SmartResult { smartElem("title", ...args) }
+fun style(...args: UIArg) -> SmartResult { smartElem("style", ...args) }
+fun script(...args: UIArg) -> SmartResult { smartElem("script", ...args) }
+
+// Void tags (modified to accept attrs optionally)
+fun meta(...args: UIArg) -> SmartResult { smartVoidElem("meta", ...args) }
+fun link(...args: UIArg) -> SmartResult { smartVoidElem("link", ...args) }
+fun img(...args: UIArg) -> SmartResult { smartVoidElem("img", ...args) }
+fun input(...args: UIArg) -> SmartResult { smartVoidElem("input", ...args) }
+fun hr(...args: UIArg) -> SmartResult { smartVoidElem("hr", ...args) }
+fun br(...args: UIArg) -> SmartResult { smartVoidElem("br", ...args) }
 
 // Semantic tags
-fun header(args...) { elem("header", args...) }
-fun footer(args...) { elem("footer", args...) }
-fun tagMain(args...) { elem("main", args...) }
-fun nav(args...) { elem("nav", args...) }
-fun section(args...) { elem("section", args...) }
-fun article(args...) { elem("article", args...) }
-fun aside(args...) { elem("aside", args...) }
+fun header(...args: UIArg) -> SmartResult { smartElem("header", ...args) }
+fun footer(...args: UIArg) -> SmartResult { smartElem("footer", ...args) }
+fun tagMain(...args: UIArg) -> SmartResult { smartElem("main", ...args) }
+fun nav(...args: UIArg) -> SmartResult { smartElem("nav", ...args) }
+fun section(...args: UIArg) -> SmartResult { smartElem("section", ...args) }
+fun article(...args: UIArg) -> SmartResult { smartElem("article", ...args) }
+fun aside(...args: UIArg) -> SmartResult { smartElem("aside", ...args) }
 
 // Common tags
-fun div(args...) { elem("div", args...) }
-fun span(args...) { elem("span", args...) }
-fun p(args...) { elem("p", args...) }
-fun h1(args...) { elem("h1", args...) }
-fun h2(args...) { elem("h2", args...) }
-fun h3(args...) { elem("h3", args...) }
-fun h4(args...) { elem("h4", args...) }
-fun h5(args...) { elem("h5", args...) }
-fun h6(args...) { elem("h6", args...) }
-fun a(args...) { elem("a", args...) }
-fun button(args...) { elem("button", args...) }
-fun label(args...) { elem("label", args...) }
-fun ul(args...) { elem("ul", args...) }
-fun ol(args...) { elem("ol", args...) }
-fun li(args...) { elem("li", args...) }
-fun form(args...) { elem("form", args...) }
-fun textarea(args...) { elem("textarea", args...) }
-fun select(args...) { elem("select", args...) }
-fun option(args...) { elem("option", args...) }
+fun div(...args: UIArg) -> SmartResult { smartElem("div", ...args) }
+fun span(...args: UIArg) -> SmartResult { smartElem("span", ...args) }
+fun p(...args: UIArg) -> SmartResult { smartElem("p", ...args) }
+fun h1(...args: UIArg) -> SmartResult { smartElem("h1", ...args) }
+fun h2(...args: UIArg) -> SmartResult { smartElem("h2", ...args) }
+fun h3(...args: UIArg) -> SmartResult { smartElem("h3", ...args) }
+fun h4(...args: UIArg) -> SmartResult { smartElem("h4", ...args) }
+fun h5(...args: UIArg) -> SmartResult { smartElem("h5", ...args) }
+fun h6(...args: UIArg) -> SmartResult { smartElem("h6", ...args) }
+fun a(...args: UIArg) -> SmartResult { smartElem("a", ...args) }
+fun button(...args: UIArg) -> SmartResult { smartElem("button", ...args) }
+fun label(...args: UIArg) -> SmartResult { smartElem("label", ...args) }
+fun ul(...args: UIArg) -> SmartResult { smartElem("ul", ...args) }
+fun ol(...args: UIArg) -> SmartResult { smartElem("ol", ...args) }
+fun li(...args: UIArg) -> SmartResult { smartElem("li", ...args) }
+fun form(...args: UIArg) -> SmartResult { smartElem("form", ...args) }
+fun textarea(...args: UIArg) -> SmartResult { smartElem("textarea", ...args) }
+fun select(...args: UIArg) -> SmartResult { smartElem("select", ...args) }
+fun option(...args: UIArg) -> SmartResult { smartElem("option", ...args) }
 
 // Tables
-fun table(args...) { elem("table", args...) }
-fun tr(args...) { elem("tr", args...) }
-fun td(args...) { elem("td", args...) }
-fun th(args...) { elem("th", args...) }
-fun thead(args...) { elem("thead", args...) }
-fun tbody(args...) { elem("tbody", args...) }
+fun table(...args: UIArg) -> SmartResult { smartElem("table", ...args) }
+fun tr(...args: UIArg) -> SmartResult { smartElem("tr", ...args) }
+fun td(...args: UIArg) -> SmartResult { smartElem("td", ...args) }
+fun th(...args: UIArg) -> SmartResult { smartElem("th", ...args) }
+fun thead(...args: UIArg) -> SmartResult { smartElem("thead", ...args) }
+fun tbody(...args: UIArg) -> SmartResult { smartElem("tbody", ...args) }
+
+// Aliases for explicit attrs (backward compatibility/explicit usage)
+
 
 // HTML5 DOCTYPE helper
-fun html5(args...) {
-    // args should be children of html tag (head, body)
-    // We treat html5 as a Fragment containing DOCTYPE and the <html> tag
+fun html5(arg: UIArg) -> SmartResult {
     Fragment([
         Raw("<!DOCTYPE html>"),
-        html(args...)
+        html(arg)
     ])
 }
 
-fun render(node) {
+// === Rendering ===
+
+fun renderAttr(k, v) {
+    // Special handling for reserved keywords
+    htmlKey = if k == "htmlFor" {
+        "for"
+    } else if k == "htmlType" {
+        "type"
+    } else {
+        stringReplaceAll(k, "_", "-")
+    }
+    // Handle boolean attributes
+    if v == "true" {
+            " " ++ htmlKey
+    } else if v == "false" {
+            ""
+    } else {
+        " " ++ htmlKey ++ "=\"" ++ v ++ "\""
+    }
+}
+
+fun render(node: SmartResult) -> String {
     match node {
-        Element(tag, attrs, children) -> {
-            attrList = attrs
-                |> mapItems
-                |> map(fun(pair) {
-                    k = fst(pair)
-                    v = snd(pair)
-                    k = stringReplaceAll(k, "_", "-")
-                    " " ++ k ++ "=\"" ++ v ++ "\""
-                })
+        v: VNode -> match v {
+            Element(tag, attrs, children) -> {
+                attrList = attrs
+                    |> mapItems
+                    |> map(fun(pair) {
+                        k = fst(pair)
+                        val = snd(pair)
+                        renderAttr(k, val)
+                    })
 
-            attrStr = stringJoin(attrList, "")
+                attrStr = stringJoin(attrList, "")
 
-            childrenStrList = children |> map(render)
-            childrenStr = stringJoin(childrenStrList, "")
+                childrenStrList = children |> map(render)
+                childrenStr = stringJoin(childrenStrList, "")
 
-            result = if isVoidTag(tag) {
-                "<" ++ tag ++ attrStr ++ " />"
-            } else {
-                "<" ++ tag ++ attrStr ++ ">" ++ childrenStr ++ "</" ++ tag ++ ">"
+                result = if isVoidTag(tag) {
+                    "<" ++ tag ++ attrStr ++ " />"
+                } else {
+                    "<" ++ tag ++ attrStr ++ ">" ++ childrenStr ++ "</" ++ tag ++ ">"
+                }
+                result
             }
-            result
+            Text(s) -> escapeHtml(s)
+            Raw(s) -> s
+            Fragment(children) -> {
+                strList = children |> map(render)
+                stringJoin(strList, "")
+            }
         }
-        Text(s) -> escapeHtml(s)
-        Raw(s) -> s
-        Fragment(children) -> {
-            strList = children |> map(render)
+        l: List<SmartResult> -> {
+            strList = l |> map(render)
             stringJoin(strList, "")
         }
         _ -> ""

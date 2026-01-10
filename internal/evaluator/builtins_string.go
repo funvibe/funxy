@@ -31,7 +31,7 @@ func StringBuiltins() map[string]*Builtin {
 		"stringReplaceAll": {Fn: builtinReplaceAll, Name: "stringReplaceAll"},
 		"stringStartsWith": {Fn: builtinStartsWith, Name: "stringStartsWith"},
 		"stringEndsWith":   {Fn: builtinEndsWith, Name: "stringEndsWith"},
-		"stringIndexOf":  {Fn: builtinStringIndexOf, Name: "stringIndexOf"},
+		"stringIndexOf":    {Fn: builtinStringIndexOf, Name: "stringIndexOf"},
 
 		// Other
 		"stringRepeat":   {Fn: builtinRepeat, Name: "stringRepeat"},
@@ -65,7 +65,7 @@ func SetStringBuiltinTypes(builtins map[string]*Builtin) {
 		"stringReplaceAll": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType, stringType}, ReturnType: stringType},
 		"stringStartsWith": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Bool},
 		"stringEndsWith":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Bool},
-		"stringIndexOf":  typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: optionInt},
+		"stringIndexOf":    typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: optionInt},
 		"stringRepeat":     typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int}, ReturnType: stringType},
 		"stringPadLeft":    typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Char}, ReturnType: stringType},
 		"stringPadRight":   typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Char}, ReturnType: stringType},

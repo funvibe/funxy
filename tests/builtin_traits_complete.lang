@@ -34,7 +34,7 @@ print(default(Float))
 print(default(Bool))
 print(default(Char) == '\0')
 print(default(String))
-type OptInt = Option<Int>
+type alias OptInt = Option<Int>
 print(default(OptInt))
 
 print("=== Semigroup (<>) ===")

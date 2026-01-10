@@ -66,28 +66,28 @@ testRun("Tuple getType", fun() {
 // ============================================================================
 
 testRun("Generic identity function with Int", fun() {
-    fun identity<T>(x: T) -> T { x }
+    fun identity(x: t) -> t { x }
     result = identity(42)
     assertEquals(42, result)
     assert(typeOf(result, Int), "result should be Int")
 })
 
 testRun("Generic identity function with String", fun() {
-    fun identity<T>(x: T) -> T { x }
+    fun identity(x: t) -> t { x }
     result = identity("hello")
     assertEquals("hello", result)
     assert(typeOf(result, List(Char)), "result should be String")
 })
 
 testRun("Generic identity function with List", fun() {
-    fun identity<T>(x: T) -> T { x }
+    fun identity(x: t) -> t { x }
     result = identity([1, 2, 3])
     assertEquals([1, 2, 3], result)
     assert(typeOf(result, List), "result should be List")
 })
 
 testRun("Generic swap function", fun() {
-    fun swap<A, B>(pair: (A, B)) -> (B, A) {
+    fun swap(pair: (a, b)) -> (b, a) {
         (a, b) = pair
         (b, a)
     }
@@ -96,7 +96,7 @@ testRun("Generic swap function", fun() {
 })
 
 testRun("Generic const function", fun() {
-    fun myConst<A, B>(a: A, b: B) -> A { a }
+    fun myConst(a: a, b: b) -> a { a }
     result = myConst(42, "ignored")
     assertEquals(42, result)
 })
@@ -130,41 +130,44 @@ testRun("Fail infers type from value", fun() {
     assert(typeOf(r, Result), "r should be Result")
 })
 
-testRun("Zero and Some have same base type at runtime", fun() {
+testRun("Zero and Some are both Option types", fun() {
     z: Option<Int> = Zero
     s = Some(42)
-    // Both should be Option at runtime (type erasure)
-    assert(show(getType(z)) == show(getType(s)), "should have same base type")
+    // Both should be Option types at runtime
+    assert(typeOf(z, Option), "Zero is Option")
+    assert(typeOf(s, Option), "Some is Option")
 })
 
-testRun("Ok and Fail have same base type at runtime", fun() {
+testRun("Ok and Fail are both Result types", fun() {
     o = Ok(42)
     f = Fail("error")
-    // Both should be Result at runtime
-    assert(show(getType(o)) == show(getType(f)), "should have same base type")
+    // Both should be Result types at runtime
+    assert(typeOf(o, Result), "Ok is Result")
+    assert(typeOf(f, Result), "Fail is Result")
 })
 
 // ============================================================================
 // Type Erasure
 // ============================================================================
 
-testRun("getType erases Option parameter", fun() {
+testRun("getType preserves Option parameter (reified)", fun() {
     o1: Option<Int> = Some(42)
     o2: Option<String> = Some("hi")
-    // Use string comparison to avoid type mismatch
-    assertEquals(show(getType(o1)), show(getType(o2)))
+    // With reified generics, types should be different
+    assert(show(getType(o1)) != show(getType(o2)), "should have different concrete types")
 })
 
-testRun("getType erases Result parameters", fun() {
+testRun("getType preserves Result parameters (reified)", fun() {
     r1 = Ok(42)
     r2 = Ok("hi")
-    assertEquals(show(getType(r1)), show(getType(r2)))
+    // With reified generics, types should be different
+    assert(show(getType(r1)) != show(getType(r2)), "should have different concrete types")
 })
 
-testRun("getType shows Option without element type", fun() {
+testRun("getType shows Option with element type (reified)", fun() {
     o = Some(42)
     t = getType(o)
-    assertEquals("type(Option)", show(t))
+    assertEquals("type((Option Int))", show(t))
 })
 
 testRun("getType shows List with element type for concrete lists", fun() {
@@ -245,10 +248,10 @@ testRun("typeOf Char positive", fun() {
 // Comparing Types
 // ============================================================================
 
-testRun("Same base types are equal", fun() {
+testRun("Different concrete types are not equal (reified)", fun() {
     t1 = show(getType(Some(1)))
     t2 = show(getType(Some("x")))
-    assertEquals(t1, t2)
+    assert(t1 != t2, "Option<Int> != Option<String>")
 })
 
 testRun("Different base types are not equal", fun() {
@@ -268,7 +271,7 @@ testRun("List and Map are different", fun() {
 // ============================================================================
 
 type Color = Red | Green | Blue
-type Tree<T> = Leaf T | Branch (Tree<T>, Tree<T>)
+type Tree<t> = Leaf t | Branch((Tree<t>, Tree<t>))
 
 testRun("Custom enum ADT", fun() {
     c = Red
@@ -276,11 +279,11 @@ testRun("Custom enum ADT", fun() {
     assert(show(getType(c)) == show(getType(Blue)), "Red == Blue type")
 })
 
-testRun("Custom generic ADT", fun() {
+testRun("Custom generic ADT (reified)", fun() {
     t1 = Leaf(42)
     t2 = Leaf("hello")
-    // Both Tree (erased) - compare as strings
-    assertEquals(show(getType(t1)), show(getType(t2)))
+    // With reified generics, types should be different
+    assert(show(getType(t1)) != show(getType(t2)), "Tree<Int> != Tree<String>")
 })
 
 testRun("Nested custom ADT", fun() {
@@ -422,8 +425,8 @@ testRun("Bytes type", fun() {
     assertEquals("type(Bytes)", show(getType(b)))
 })
 
+type Point = { x: Int, y: Int }
 testRun("Record with spread preserves type", fun() {
-    type Point = { x: Int, y: Int }
     p1: Point = { x: 1, y: 2 }
     p2 = { ...p1, x: 10 }
     assertEquals(show(getType(p1)), show(getType(p2)))
@@ -461,14 +464,15 @@ testRun("Type as value in typeOf", fun() {
 // Type Erasure Edge Cases
 // ============================================================================
 
-testRun("Different Option contents same type", fun() {
+testRun("Different Option contents have different types (reified)", fun() {
     o1 = Some(42)
     o2 = Some([1,2,3])
     o3 = Some({ x: 1 })
-    // All should be type(Option)
-    assertEquals("type(Option)", show(getType(o1)))
-    assertEquals("type(Option)", show(getType(o2)))
-    assertEquals("type(Option)", show(getType(o3)))
+    // With reified generics, all should have different concrete types
+    t1 = show(getType(o1))
+    t2 = show(getType(o2))
+    t3 = show(getType(o3))
+    assert(t1 != t2 && t2 != t3 && t1 != t3, "all should have different types")
 })
 
 testRun("Zero is always Option", fun() {
@@ -478,17 +482,17 @@ testRun("Zero is always Option", fun() {
     assertEquals("type(Option)", show(getType(z2)))
 })
 
-testRun("Nested Option type", fun() {
+testRun("Nested Option type (reified)", fun() {
     o: Option<Option<Int>> = Some(Some(42))
-    // Outer is Option (erased)
-    assertEquals("type(Option)", show(getType(o)))
+    // With reified generics, should show full nested type
+    assertEquals("type((Option (Option Int)))", show(getType(o)))
 })
 
-testRun("Result with different error types", fun() {
+testRun("Result with different error types (reified)", fun() {
     r1: Result<String, Int> = Ok(42)
     r2: Result<Int, Int> = Ok(42)
-    assertEquals("type(Result)", show(getType(r1)))
-    assertEquals("type(Result)", show(getType(r2)))
+    // With reified generics, should have different concrete types
+    assert(show(getType(r1)) != show(getType(r2)), "Result<String, Int> != Result<Int, Int>")
 })
 
 print("type_system_test: all tests passed!")

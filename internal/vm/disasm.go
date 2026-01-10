@@ -221,4 +221,3 @@ func closureInstruction(sb *strings.Builder, name string, chunk *Chunk, offset i
 
 	return offset
 }
-

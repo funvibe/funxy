@@ -71,6 +71,44 @@ func (vm *VM) binaryOp(op Opcode) error {
 		return nil
 	}
 
+	// Mixed Int/Float path (implicit conversion)
+	if (a.IsInt() && b.IsFloat()) || (a.IsFloat() && b.IsInt()) {
+		var aVal, bVal float64
+
+		if a.IsInt() {
+			aVal = float64(a.AsInt())
+		} else {
+			aVal = a.AsFloat()
+		}
+
+		if b.IsInt() {
+			bVal = float64(b.AsInt())
+		} else {
+			bVal = b.AsFloat()
+		}
+
+		var result float64
+		switch op {
+		case OP_ADD:
+			result = aVal + bVal
+		case OP_SUB:
+			result = aVal - bVal
+		case OP_MUL:
+			result = aVal * bVal
+		case OP_DIV:
+			if bVal == 0 {
+				return fmt.Errorf("division by zero")
+			}
+			result = aVal / bVal
+		case OP_MOD:
+			result = math.Mod(aVal, bVal)
+		case OP_POW:
+			result = math.Pow(aVal, bVal)
+		}
+		vm.push(FloatVal(result))
+		return nil
+	}
+
 	// Slow path: convert to Objects for complex types (BigInt, etc.)
 	aObj := a.AsObject()
 	bObj := b.AsObject()
@@ -450,6 +488,35 @@ func (vm *VM) comparisonOp(op Opcode) error {
 		var result bool
 		aVal := a.AsFloat()
 		bVal := b.AsFloat()
+		switch op {
+		case OP_LT:
+			result = aVal < bVal
+		case OP_LE:
+			result = aVal <= bVal
+		case OP_GT:
+			result = aVal > bVal
+		case OP_GE:
+			result = aVal >= bVal
+		}
+		vm.push(BoolVal(result))
+		return nil
+	}
+
+	// Mixed Int/Float comparison
+	if (a.IsInt() && b.IsFloat()) || (a.IsFloat() && b.IsInt()) {
+		var aVal, bVal float64
+		if a.IsInt() {
+			aVal = float64(a.AsInt())
+		} else {
+			aVal = a.AsFloat()
+		}
+		if b.IsInt() {
+			bVal = float64(b.AsInt())
+		} else {
+			bVal = b.AsFloat()
+		}
+
+		var result bool
 		switch op {
 		case OP_LT:
 			result = aVal < bVal

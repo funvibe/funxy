@@ -1,0 +1,136 @@
+// =============================================================================
+// Do Notation Tests
+// =============================================================================
+// Tests for do-notation syntactic sugar that desugars to >>= (bind) chains.
+
+print("=== Do Notation Tests ===")
+
+// Test 1: Basic do-notation with Option
+result1 = do {
+    x <- Some(10)
+    y <- Some(20)
+    Some(x + y)
+}
+
+match result1 {
+    Some(v) -> print("Test 1 PASS: " ++ show(v))  // Should be 30
+    Zero -> print("Test 1 FAIL: got Zero")
+}
+
+// Test 2: Short-circuiting (None stops the chain)
+result2 = do {
+    x <- Zero  // This should stop the chain
+    y <- Some(20)  // Should not execute
+    Some(x + y)
+}
+
+match result2 {
+    Zero -> print("Test 2 PASS: short-circuited correctly")
+    Some(_) -> print("Test 2 FAIL: should have short-circuited")
+}
+
+// Test 3: Do-notation with let binding (constant declaration)
+result3 = do {
+    x <- Some(5)
+    k :- 2  // let binding
+    Some(x * k)
+}
+
+match result3 {
+    Some(v) -> print("Test 3 PASS: " ++ show(v))  // Should be 10
+    Zero -> print("Test 3 FAIL: got Zero")
+}
+
+// Test 4: Nested do-notation (do inside do)
+result4 = do {
+    x <- Some(10)
+    inner = do {
+        y <- Some(5)
+        Some(y * 2)
+    }
+    match inner {
+        Some(v) -> Some(x + v)
+        Zero -> Zero
+    }
+}
+
+match result4 {
+    Some(v) -> print("Test 4 PASS: " ++ show(v))  // Should be 20
+    Zero -> print("Test 4 FAIL: got Zero")
+}
+
+// Test 5: Do-notation with List (List is also a Monad)
+result5 = do {
+    x <- [1, 2, 3]
+    y <- [10, 20]
+    [x + y]
+}
+
+print("Test 5: List do-notation")
+print(result5)  // Should be [11, 21, 12, 22, 13, 23]
+
+// Test 6: Multiple bindings in sequence
+result6 = do {
+    a <- Some(1)
+    b <- Some(2)
+    c <- Some(3)
+    Some(a + b + c)
+}
+
+match result6 {
+    Some(v) -> print("Test 6 PASS: " ++ show(v))  // Should be 6
+    Zero -> print("Test 6 FAIL: got Zero")
+}
+
+// Test 7: Side effect with let binding
+result7 = do {
+    x <- Some(10)
+    // We must use let-binding for side effects that are not monadic actions
+    _ :- print("Side effect")
+    Some(x)
+}
+
+match result7 {
+    Some(v) -> print("Test 7 PASS: " ++ show(v))
+    Zero -> print("Test 7 FAIL: got Zero")
+}
+
+// Test 8: Custom Monad (Box)
+type Box<t> = Box(t)
+
+instance Functor Box {
+    fun fmap(f, box) {
+        match box { Box(x) -> Box(f(x)) }
+    }
+}
+
+instance Applicative Box {
+    fun pure(x) { Box(x) }
+    operator (<*>)(f, box) {
+        match (f, box) {
+            (Box(func), Box(val)) -> Box(func(val))
+        }
+    }
+}
+
+instance Monad Box {
+    operator (>>=)(m, f) {
+        match m {
+            Box(x) -> f(x)
+        }
+    }
+}
+
+print("Test 8: Custom Monad (Box)")
+result8 = do {
+    x <- Box(10)
+    y <- Box(20)
+    Box(x + y)
+}
+
+match result8 {
+    Box(v) -> print("Test 8 PASS: " ++ show(v))
+}
+
+print("=== Do Notation Tests Complete ===")
+

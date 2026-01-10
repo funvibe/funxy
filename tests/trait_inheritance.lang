@@ -1,16 +1,16 @@
 // Trait inheritance test
-// trait Ord<T> : Cmp<T> { ... }
+// trait Ord<t> : Cmp<t> { ... }
 
 type Ordering = Lt | Eq | Gt
 
 // Base trait
-trait Cmp<T> {
-    fun cmp(a: T, b: T) -> Bool
+trait Cmp<t> {
+    fun cmp(a: t, b: t) -> Bool
 }
 
 // Derived trait - requires Cmp
-trait Ord<T> : Cmp<T> {
-    fun compare(a: T, b: T) -> Ordering
+trait Ord<t> : Cmp<t> {
+    fun compare(a: t, b: t) -> Ordering
 }
 
 // First implement Cmp for Int

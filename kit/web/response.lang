@@ -1,7 +1,7 @@
 package web
 
 import "kit/ui" (VNode, render)
-import "lib/json" (jsonEncode, jsonFromValue)
+import "lib/json" (Json, jsonEncode, jsonFromValue)
 
 // --- Response Helpers ---
 
@@ -45,15 +45,12 @@ fun setCookie(name, val, res: Response) -> Response {
 // --- Finalize ---
 
 // Automatic response conversion (used internally by handleRequest)
-fun autoResponse(val) -> Response {
-    if typeOf(val, Response) {
-        val
-    } else if typeOf(val, String) {
-        resText(val)
-    } else if typeOf(val, VNode) {
-        resHtml(val)
-    } else {
-        resJson(val)
+fun autoResponse(val: HandlerResult) -> Response {
+    match val {
+        res: Response -> res
+        s: String -> resText(s)
+        node: VNode -> resHtml(node)
+        j: Json -> resJson(j)
     }
 }
 

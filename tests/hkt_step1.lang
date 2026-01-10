@@ -9,38 +9,38 @@
 // -----------------------------------------------------------------------------
 
 // F is a type constructor (like Option, List), A is element type
-fun identity<F, A>(fa: F<A>) -> F<A> {
+fun hktId<f, a>(fa: f<a>) -> f<a> {
     fa
 }
 
 // Should work with Option
-opt1 = identity(Some(42))
+opt1 = hktId(Some(42))
 print(opt1)  // Some(42)
 
 // Should work with List
-list1 = identity([1, 2, 3])
+list1 = hktId([1, 2, 3])
 print(list1)  // [1, 2, 3]
 
 // -----------------------------------------------------------------------------
 // Test 1.2: Identity for two-arg type constructors (like Result)
 // -----------------------------------------------------------------------------
 
-fun identity2<F, A, B>(fab: F<A, B>) -> F<A, B> {
+fun hktId2<f, a, b>(fab: f<a, b>) -> f<a, b> {
     fab
 }
 
 // Should work with Result
-res1 = identity2(Ok("hello"))
+res1 = hktId2(Ok("hello"))
 print(res1)  // Ok("hello")
 
-res2 = identity2(Fail(404))
+res2 = hktId2(Fail(404))
 print(res2)  // Fail(404)
 
 // -----------------------------------------------------------------------------
 // Test 1.3: Function that transforms inside container
 // -----------------------------------------------------------------------------
 
-fun wrap<F, A>(x: A, wrapper: (A) -> F<A>) -> F<A> {
+fun wrap<f, a>(x: a, wrapper: (a) -> f<a>) -> f<a> {
     wrapper(x)
 }
 
@@ -51,7 +51,7 @@ print(opt2)  // Some(10)
 // Test 1.4: Two container types in one function
 // -----------------------------------------------------------------------------
 
-fun convert<F, G, A>(fa: F<A>, converter: (F<A>) -> G<A>) -> G<A> {
+fun convert<f, g, a>(fa: f<a>, converter: (f<a>) -> g<a>) -> g<a> {
     converter(fa)
 }
 
@@ -73,7 +73,7 @@ print(list3)  // []
 // Test 1.5: Nested type application F<G<A>>
 // -----------------------------------------------------------------------------
 
-fun nested<F, G, A>(fga: F<G<A>>) -> F<G<A>> {
+fun nested<f, g, a>(fga: f<g<a>>) -> f<g<a>> {
     fga
 }
 

@@ -7,7 +7,7 @@ fun count(n, acc) {
 print(count(1000000, 0))
 
 // 2. ADT Linked List
-type LList<T> = Cons T (LList<T>) | LNil
+type LList<t> = Cons t (LList<t>) | LNil
 
 fun lRange(n, acc) {
     if n == 0 { acc } else { lRange(n - 1, Cons(n, acc)) }
@@ -27,7 +27,7 @@ print(lLength(list, 0))
 fun sumTail(list: List<Int>, acc: Int) {
     match list {
         [] -> acc
-        [x, xs...] -> sumTail(xs, acc + x)
+        [x, ...xs] -> sumTail(xs, acc + x)
     }
 }
 print(sumTail([1, 2, 3, 4, 5], 0))
@@ -36,7 +36,7 @@ print(sumTail([1, 2, 3, 4, 5], 0))
 fun reverse(list: List<Int>, acc: List<Int>) {
     match list {
         [] -> acc
-        [x, xs...] -> reverse(xs, [x, acc...])
+        [x, ...xs] -> reverse(xs, [x, ...acc])
     }
 }
 print(reverse([1, 2, 3], []))
@@ -45,9 +45,9 @@ print(reverse([1, 2, 3], []))
 fun filter(list: List<Int>, predicate: (Int) -> Bool, acc: List<Int>) {
     match list {
         [] -> acc
-        [x, xs...] -> {
+        [x, ...xs] -> {
             if predicate(x) {
-                filter(xs, predicate, [x, acc...])
+                filter(xs, predicate, [x, ...acc])
             } else {
                 filter(xs, predicate, acc)
             }
@@ -58,11 +58,11 @@ fun filter(list: List<Int>, predicate: (Int) -> Bool, acc: List<Int>) {
 fun quicksort(list: List<Int>) -> List<Int> {
     match list {
         [] -> []
-        [pivot, others...] -> {
+        [pivot, ...others] -> {
             smaller = filter(others, fun(x) -> x < pivot, [])
             greater = filter(others, fun(x) -> !(x < pivot), [])
-            
-            [quicksort(smaller)..., pivot, quicksort(greater)...]
+
+            [...quicksort(smaller), pivot, ...quicksort(greater)]
         }
     }
 }

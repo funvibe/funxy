@@ -1,0 +1,14 @@
+// ==========================================
+// Scoping Rules: Global Mutation Error
+// ==========================================
+
+globalVar = 100
+
+fun mutateGlobal() {
+    print("Trying to mutate globalVar...")
+    globalVar = 200 // Should error: cannot mutate global from function
+    print("Should not reach here")
+}
+
+mutateGlobal()
+

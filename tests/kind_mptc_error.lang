@@ -1,0 +1,13 @@
+// Test: MPTC Kind Mismatch
+
+trait Transform<f, g> {
+    fun transform(x: f<Int>) -> g<Int>
+}
+
+type alias MyInt = Int
+
+// Error: MyInt is *, expected * -> *
+instance Transform MyInt {
+    fun transform(x) { Some(1) }
+}
+

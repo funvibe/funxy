@@ -5,13 +5,13 @@
 // =============================================
 
 // Custom trait with Optional-like semantics
-trait OptionalSemantics<F> {
-    fun semIsEmpty(v: F<A>) -> Bool
-    fun semUnwrap(v: F<A>) -> A
-    fun semWrap(a: A) -> F<A>
-    
+trait OptionalSemantics<f> {
+    fun semIsEmpty(v: f<a>) -> Bool
+    fun semUnwrap(v: f<a>) -> a
+    fun semWrap(val: a) -> f<a>
+
     // Default: getOrElse derived from isEmpty and unwrap
-    fun semGetOrElse(v: F<A>, fallback: A) -> A {
+    fun semGetOrElse(v: f<a>, fallback: a) -> a {
         if semIsEmpty(v) { fallback }
         else { semUnwrap(v) }
     }
@@ -19,27 +19,27 @@ trait OptionalSemantics<F> {
 
 // Custom type where inner type is at Args[1], NOT Args[0]
 // Validated<E, A> - E is error type, A is value type
-type Validated<E, A> = Invalid E | Valid A
+type Validated<e, a> = Invalid e | Valid a
 
 // Implement OptionalSemantics for Validated
 // unwrap signature: Validated<E, A> -> A shows inner type is A (Args[1])
-instance OptionalSemantics Validated {
-    fun semIsEmpty(v: Validated<E, A>) -> Bool {
+instance OptionalSemantics Validated<e> {
+    fun semIsEmpty(v: Validated<e, a>) -> Bool {
         match v {
             Invalid(_) -> true
             Valid(_) -> false
         }
     }
-    
-    fun semUnwrap(v: Validated<E, A>) -> A {
+
+    fun semUnwrap(v: Validated<e, a>) -> a {
         match v {
             Invalid(_) -> panic("semUnwrap on Invalid")
-            Valid(a) -> a
+            Valid(val) -> val
         }
     }
-    
-    fun semWrap(a: A) -> Validated<E, A> {
-        Valid(a)
+
+    fun semWrap(val: a) -> Validated<e, a> {
+        Valid(val)
     }
 }
 

@@ -10,7 +10,7 @@ func TestUnify(t *testing.T) {
 	intType := TCon{Name: "Int"}
 	boolType := TCon{Name: "Bool"}
 	listCon := TCon{Name: "List"}
-	
+
 	varType := func(name string) TVar { return TVar{Name: name} }
 	listType := func(arg Type) TApp { return TApp{Constructor: listCon, Args: []Type{arg}} }
 
@@ -99,21 +99,21 @@ func TestUnify(t *testing.T) {
 
 func TestUnifyAllowExtra(t *testing.T) {
 	intType := TCon{Name: "Int"}
-	
+
 	// Small: { x: Int }
 	smallRec := TRecord{Fields: map[string]Type{"x": intType}}
-	
+
 	// Large: { x: Int, y: Int }
 	largeRec := TRecord{Fields: map[string]Type{"x": intType, "y": intType}}
 
 	// Nested Small: { inner: Small }
 	nestedSmall := TRecord{Fields: map[string]Type{"inner": smallRec}}
-	
+
 	// Nested Large: { inner: Large }
 	nestedLarge := TRecord{Fields: map[string]Type{"inner": largeRec}}
 
 	tests := []struct {
-		name    string
+		name     string
 		expected Type // t1 (Supertype)
 		actual   Type // t2 (Subtype)
 		wantErr  bool
@@ -147,4 +147,3 @@ func TestUnifyAllowExtra(t *testing.T) {
 		})
 	}
 }
-

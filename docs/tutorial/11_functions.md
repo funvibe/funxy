@@ -94,6 +94,22 @@ fun outer() {
 }
 ```
 
+#### Mutation in Closures
+Local functions can **mutate** variables captured from their enclosing function scope.
+
+```rust
+fun counter() {
+    count = 0
+    fun inc() {
+        count = count + 1  // OK: mutates 'count' from 'counter' scope
+        count
+    }
+    inc
+}
+```
+
+**Note:** You **cannot** mutate variables defined at the **module level (global)** from inside a function. Global variables are read-only to functions.
+
 ### 3. Anonymous Functions (Lambdas)
 Used as expressions, typically passed to other functions.
 - **Parameter Types**: **Optional** (if context allows inference).
@@ -195,7 +211,7 @@ The block syntax works with any variadic function that accepts a list as its las
 
 ```rust
 // Define a function that accepts children
-fun container(items...) {
+fun container(...items) {
     print("Container with ${len(items)} items")
     items
 }
@@ -458,7 +474,7 @@ type Point = MkPoint Int Int
 pointX5 = MkPoint(5)       // Waiting for second Int
 print(pointX5(10))         // MkPoint(5, 10)
 
-type Box<T> = MkBox T T T
+type Box<t> = MkBox t t t
 boxWith1 = MkBox(1)
 print(boxWith1(2)(3))      // MkBox(1, 2, 3)
 

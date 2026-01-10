@@ -1,0 +1,14 @@
+trait Convert<a, b> {
+  fun convert(x: a) -> b
+}
+
+instance Convert<Int, String> {
+  fun convert(a: Int) -> String { show(a) }
+}
+
+fun genericConvert<t, u>(val: t) -> u {
+  convert(val)
+}
+
+s: String = genericConvert(42)
+print(s)

@@ -30,8 +30,8 @@ func TestParser(t *testing.T) {
 		{"tuple_type", "type alias Pair = (Int, Bool)"},
 		{"pattern_matching_tuple", "match x { (1, a) -> true }"},
 		{"function_basic", "fun add(x: Int, y: Int) Int { x + y }"},
-		{"function_variadic", "fun sum(nums...) Int { 0 }"},
-		{"function_mixed_variadic", "fun process(id: Int, args...) { 0 }"},
+		{"function_variadic", "fun sum(...nums) Int { 0 }"},
+		{"function_mixed_variadic", "fun process(id: Int, ...args) { 0 }"},
 	}
 
 	for _, tc := range testCases {

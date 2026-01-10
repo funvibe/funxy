@@ -2,7 +2,7 @@
   "name": "funxy-language",
   "displayName": "Funxy Language",
   "description": "Syntax highlighting for Funxy programming language",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "publisher": "funxy",
   "engines": {
     "vscode": "^1.60.0"

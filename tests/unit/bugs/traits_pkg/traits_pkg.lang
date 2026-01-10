@@ -3,36 +3,36 @@ package traits_pkg (*)
 import "lib/string" (*)
 
 // 1. Basic Trait
-trait SimpleTrait<T> {
-    fun simpleMethod(val: T) -> String
+trait SimpleTrait<t> {
+    fun simpleMethod(val: t) -> String
 }
 
 // 2. Trait with Operator
-trait OpTrait<T> {
-    fun plus(a: T, b: T) -> T
+trait OpTrait<t> {
+    fun plus(a: t, b: t) -> t
 }
 
 // 3. Trait with Default Method
-trait DefaultTrait<T> {
-    fun required(val: T) -> String
-    fun optional(val: T) -> String {
+trait DefaultTrait<t> {
+    fun required(val: t) -> String
+    fun optional(val: t) -> String {
         "default: " ++ required(val)
     }
 }
 
 // 4. Inheritance Chain
-trait GrandParent<T> {
-    fun gpMethod(val: T) -> String { "gp" }
-    fun overrideMe(val: T) -> String { "gp_orig" }
+trait GrandParent<t> {
+    fun gpMethod(val: t) -> String { "gp" }
+    fun overrideMe(val: t) -> String { "gp_orig" }
 }
 
-trait Parent<T>: GrandParent<T> {
-    fun pMethod(val: T) -> String { "p" }
-    fun overrideMe(val: T) -> String { "p_overridden" }
+trait Parent<t>: GrandParent<t> {
+    fun pMethod(val: t) -> String { "p" }
+    fun overrideMe(val: t) -> String { "p_overridden" }
 }
 
-trait Child<T>: Parent<T> {
-    fun cMethod(val: T) -> String { "c" }
+trait Child<t>: Parent<t> {
+    fun cMethod(val: t) -> String { "c" }
 }
 
 // 5. Box struct (ADT with named fields)
@@ -59,6 +59,11 @@ instance OpTrait MyBox {
         }
     }
 }
+
+instance GrandParent MyBox {}
+instance Parent MyBox {}
+instance Child MyBox {}
+
 // ...
 // 6. Deep Inheritance Test Type
 type DeepBoxType = DeepBoxVal(String)

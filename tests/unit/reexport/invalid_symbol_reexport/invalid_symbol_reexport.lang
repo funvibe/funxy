@@ -1,0 +1,12 @@
+package invalid_symbol_reexport (localFn, source(notExported))
+
+// This module imports from "source" which exports: Shape, Circle, Square, area
+// But we're trying to re-export "notExported" which doesn't exist in source's exports
+// This should produce an error
+
+import "../source" (*)
+
+fun localFn() -> Int {
+    42
+}
+

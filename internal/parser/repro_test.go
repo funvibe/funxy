@@ -8,9 +8,9 @@ import (
 
 func TestExtensionMethodParsing(t *testing.T) {
 	input := `
-	type MyOption<T> = Yes T | NoVal
-	
-	fun<T, R> (o: MyOption<T>) map(f: (T) -> R) -> MyOption<R> {
+	type MyOption<t> = Yes t | NoVal
+
+	fun<t, r> (o: MyOption<t>) map(f: (t) -> r) -> MyOption<r> {
 		match o {
 			Yes(v) -> Yes(f(v))
 			NoVal -> NoVal
@@ -21,7 +21,7 @@ func TestExtensionMethodParsing(t *testing.T) {
 	ctx := pipeline.NewPipelineContext(input)
 	processor := &lexer.LexerProcessor{}
 	ctx = processor.Process(ctx)
-	
+
 	p := New(ctx.TokenStream, ctx)
 	program := p.ParseProgram()
 

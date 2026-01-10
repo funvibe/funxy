@@ -1,0 +1,33 @@
+=== Built-in types ===
+42
+3.14
+true
+false
+'x'
+hello
+[1, 2, 3]
+(1, "two")
+Some(5)
+Zero
+Ok(42)
+Fail("err")
+Nil
+=== Custom Show instance ===
+Point(10, 20)
+=== ADT with Show ===
+Red
+Green
+RGB(255)
+=== Fallback Show ===
+{age: 30, name: "Alice"}
+=== Generic context ===
+Value: 42
+Value: Point(10, 20)
+Value: Red
+=== Nested types ===
+[{x: 10, y: 20}, {x: 0, y: 0}]
+Some({x: 10, y: 20})
+=== Integration with sprintf ===
+The point is: Point(10, 20)
+Color: Blue, Int: 42
+

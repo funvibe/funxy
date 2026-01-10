@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 6:26 [A003]: type error: type MyResult has kind (* -> (* -> *)), but trait Functor requires kind (* -> *) for parameter f (type constructor)

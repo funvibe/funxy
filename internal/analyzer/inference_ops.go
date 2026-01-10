@@ -14,13 +14,29 @@ func getOptionalInnerType(t typesystem.Type, table *symbols.SymbolTable) (typesy
 }
 
 // typeHasConstraint checks if a type (typically TVar/TCon) has a constraint in the current context
-func typeHasConstraint(ctx *InferenceContext, t typesystem.Type, traitName string) bool {
+func typeHasConstraint(ctx *InferenceContext, t typesystem.Type, traitName string, table *symbols.SymbolTable) bool {
+	var name string
 	switch tv := t.(type) {
 	case typesystem.TVar:
-		return ctx.HasConstraint(tv.Name, traitName)
+		name = tv.Name
 	case typesystem.TCon:
 		// TCon with same name as a constrained type param (used in function bodies)
-		return ctx.HasConstraint(tv.Name, traitName)
+		name = tv.Name
+	default:
+		return false
+	}
+
+	if ctx.HasConstraint(name, traitName) {
+		return true
+	}
+
+	// Check super traits
+	if constraints, ok := ctx.ActiveConstraints[name]; ok {
+		for _, c := range constraints {
+			if isTraitSubclass(c.Trait, traitName, table) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -30,8 +46,17 @@ func typeHasConstraint(ctx *InferenceContext, t typesystem.Type, traitName strin
 // while `pivot` has the constraint from the outer function.
 func eitherHasConstraint(ctx *InferenceContext, table *symbols.SymbolTable, l, r typesystem.Type, traitName string) bool {
 	// First check local implementations
-	if table.IsImplementationExists(traitName, l) ||
-		table.IsImplementationExists(traitName, r) {
+	// Unwrap type aliases before checking to handle cases with type aliases
+	unwrappedL := typesystem.UnwrapUnderlying(l)
+	if unwrappedL == nil {
+		unwrappedL = l
+	}
+	unwrappedR := typesystem.UnwrapUnderlying(r)
+	if unwrappedR == nil {
+		unwrappedR = r
+	}
+	if table.IsImplementationExists(traitName, []typesystem.Type{unwrappedL}) ||
+		table.IsImplementationExists(traitName, []typesystem.Type{unwrappedR}) {
 		return true
 	}
 
@@ -42,8 +67,8 @@ func eitherHasConstraint(ctx *InferenceContext, table *symbols.SymbolTable, l, r
 	}
 
 	// Finally check constraints
-	return typeHasConstraint(ctx, l, traitName) ||
-		typeHasConstraint(ctx, r, traitName)
+	return typeHasConstraint(ctx, l, traitName, table) ||
+		typeHasConstraint(ctx, r, traitName, table)
 }
 
 // getTraitForOp returns the expected trait name for an operator (for error messages)
@@ -72,7 +97,7 @@ func inferPrefixExpression(ctx *InferenceContext, n *ast.PrefixExpression, table
 		return nil, nil, err
 	}
 	totalSubst := s1
-	right = right.Apply(totalSubst)
+	right = right.Apply(ctx.GlobalSubst).Apply(totalSubst)
 
 	switch n.Operator {
 	case "-":
@@ -116,7 +141,48 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		return nil, nil, err
 	}
 	totalSubst := s1
-	l = l.Apply(totalSubst)
+	l = l.Apply(ctx.GlobalSubst).Apply(totalSubst)
+
+	// Contextual Typing: Try to determine expected type for Right operand based on Left and Operator
+	// This helps with lambda inference (e.g. pure(10) >>= fun(x) -> ...)
+	traitName, hasTrait := table.GetTraitForOperator(n.Operator)
+	isHKT := hasTrait && table.IsHKTTrait(traitName)
+	if isHKT {
+		// Logic similar to inferHKTOperator but just for context propagation
+		methodName := "(" + n.Operator + ")"
+		if sym, ok := table.Find(methodName); ok {
+			if methodType, ok := sym.Type.(typesystem.TFunc); ok && len(methodType.Params) == 2 {
+				// Instantiate method
+				freshMethodType := InstantiateWithContext(ctx, methodType).(typesystem.TFunc)
+				// Unify first param with Left to constrain type vars
+				// We use a temporary subst to avoid polluting the main inference if it fails
+				// (Validation happens properly later in inferHKTOperator)
+				if subst, err := typesystem.Unify(freshMethodType.Params[0], l); err == nil {
+					// Apply subst to second param to get expected type for Right
+					expectedRight := freshMethodType.Params[1].Apply(subst)
+
+					if ctx.ExpectedTypes == nil {
+						ctx.ExpectedTypes = make(map[ast.Node]typesystem.Type)
+					}
+					ctx.ExpectedTypes[n.Right] = expectedRight
+
+					// Merge substitution from Contextual Typing to preserve learned type information
+					// (e.g. M -> OptionT) which might be needed for deferred constraints.
+					// We must update both GlobalSubst (for recursive calls) and totalSubst (for local flow).
+					ctx.GlobalSubst = subst.Compose(ctx.GlobalSubst)
+					totalSubst = subst.Compose(totalSubst)
+					l = l.Apply(totalSubst)
+				}
+			}
+		}
+	}
+
+	if n.Operator == "|>" {
+		// Pipe operator needs special handling to support placeholders in arguments
+		// e.g. x |> f(_, y)
+		// We delegate to inferPipeExpression BEFORE inferring n.Right
+		return inferPipeExpression(ctx, n, table, inferFn)
+	}
 
 	r, s2, err := inferFn(n.Right, table)
 	if err != nil {
@@ -124,8 +190,8 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 	}
 	totalSubst = s2.Compose(totalSubst)
 
-	l = l.Apply(totalSubst)
-	r = r.Apply(totalSubst)
+	l = l.Apply(ctx.GlobalSubst).Apply(totalSubst)
+	r = r.Apply(ctx.GlobalSubst).Apply(totalSubst)
 
 	switch n.Operator {
 	case "+", "-", "*", "/", "%", "**":
@@ -135,6 +201,28 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 				// Both operands should have the same type
 				subst, err := typesystem.Unify(l, r)
 				if err != nil {
+					// Implicit conversion check
+					isLInt := false
+					if _, err := typesystem.Unify(l, typesystem.Int); err == nil {
+						isLInt = true
+					}
+					isLFloat := false
+					if _, err := typesystem.Unify(l, typesystem.Float); err == nil {
+						isLFloat = true
+					}
+					isRInt := false
+					if _, err := typesystem.Unify(r, typesystem.Int); err == nil {
+						isRInt = true
+					}
+					isRFloat := false
+					if _, err := typesystem.Unify(r, typesystem.Float); err == nil {
+						isRFloat = true
+					}
+
+					if (isLInt && isRFloat) || (isLFloat && isRInt) {
+						return typesystem.Float, totalSubst, nil
+					}
+
 					return nil, nil, inferErrorf(n, "type mismatch in %s: %s vs %s", n.Operator, l, r)
 				}
 				totalSubst = subst.Compose(totalSubst)
@@ -151,8 +239,12 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			if subst2, err := typesystem.Unify(r, typesystem.Int); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 				return typesystem.Int, totalSubst, nil
+			} else if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
+				// Int + Float -> Float
+				totalSubst = subst2.Compose(totalSubst)
+				return typesystem.Float, totalSubst, nil
 			} else {
-				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Int, got %s", n.Operator, r)
+				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Int or Float, got %s", n.Operator, r)
 			}
 		} else if subst, err := typesystem.Unify(l, typesystem.Float); err == nil {
 			totalSubst = subst.Compose(totalSubst)
@@ -160,8 +252,12 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 				return typesystem.Float, totalSubst, nil
+			} else if subst2, err := typesystem.Unify(r, typesystem.Int); err == nil {
+				// Float + Int -> Float
+				totalSubst = subst2.Compose(totalSubst)
+				return typesystem.Float, totalSubst, nil
 			} else {
-				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Float, got %s", n.Operator, r)
+				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Float or Int, got %s", n.Operator, r)
 			}
 		} else if subst, err := typesystem.Unify(l, typesystem.BigInt); err == nil {
 			totalSubst = subst.Compose(totalSubst)
@@ -223,6 +319,28 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 				// Both operands should have the same type
 				subst, err := typesystem.Unify(l, r)
 				if err != nil {
+					// Implicit conversion check for comparison
+					isLInt := false
+					if _, err := typesystem.Unify(l, typesystem.Int); err == nil {
+						isLInt = true
+					}
+					isLFloat := false
+					if _, err := typesystem.Unify(l, typesystem.Float); err == nil {
+						isLFloat = true
+					}
+					isRInt := false
+					if _, err := typesystem.Unify(r, typesystem.Int); err == nil {
+						isRInt = true
+					}
+					isRFloat := false
+					if _, err := typesystem.Unify(r, typesystem.Float); err == nil {
+						isRFloat = true
+					}
+
+					if (isLInt && isRFloat) || (isLFloat && isRInt) {
+						return typesystem.Bool, totalSubst, nil
+					}
+
 					return nil, nil, inferErrorf(n, "type mismatch in %s: %s vs %s", n.Operator, l, r)
 				}
 				totalSubst = subst.Compose(totalSubst)
@@ -234,18 +352,22 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		if subst, err := typesystem.Unify(l, typesystem.Int); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.Int); err != nil {
-				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Int, got %s", n.Operator, r)
-			} else {
+			if subst2, err := typesystem.Unify(r, typesystem.Int); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
+			} else if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
+				totalSubst = subst2.Compose(totalSubst)
+			} else {
+				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Int or Float, got %s", n.Operator, r)
 			}
 		} else if subst, err := typesystem.Unify(l, typesystem.Float); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.Float); err != nil {
-				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Float, got %s", n.Operator, r)
-			} else {
+			if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
+			} else if subst2, err := typesystem.Unify(r, typesystem.Int); err == nil {
+				totalSubst = subst2.Compose(totalSubst)
+			} else {
+				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Float or Int, got %s", n.Operator, r)
 			}
 		} else if subst, err := typesystem.Unify(l, typesystem.BigInt); err == nil {
 			totalSubst = subst.Compose(totalSubst)
@@ -292,6 +414,28 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 				// Both operands should have the same type
 				subst, err := typesystem.Unify(l, r)
 				if err != nil {
+					// Implicit conversion check for equality
+					isLInt := false
+					if _, err := typesystem.Unify(l, typesystem.Int); err == nil {
+						isLInt = true
+					}
+					isLFloat := false
+					if _, err := typesystem.Unify(l, typesystem.Float); err == nil {
+						isLFloat = true
+					}
+					isRInt := false
+					if _, err := typesystem.Unify(r, typesystem.Int); err == nil {
+						isRInt = true
+					}
+					isRFloat := false
+					if _, err := typesystem.Unify(r, typesystem.Float); err == nil {
+						isRFloat = true
+					}
+
+					if (isLInt && isRFloat) || (isLFloat && isRInt) {
+						return typesystem.Bool, totalSubst, nil
+					}
+
 					return nil, nil, inferErrorf(n, "type mismatch in %s: %s vs %s", n.Operator, l, r)
 				}
 				totalSubst = subst.Compose(totalSubst)
@@ -302,6 +446,28 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		// Fallback to built-in equality
 		subst, err := typesystem.Unify(l, r)
 		if err != nil {
+			// Implicit conversion check for built-in equality
+			isLInt := false
+			if _, err := typesystem.Unify(l, typesystem.Int); err == nil {
+				isLInt = true
+			}
+			isLFloat := false
+			if _, err := typesystem.Unify(l, typesystem.Float); err == nil {
+				isLFloat = true
+			}
+			isRInt := false
+			if _, err := typesystem.Unify(r, typesystem.Int); err == nil {
+				isRInt = true
+			}
+			isRFloat := false
+			if _, err := typesystem.Unify(r, typesystem.Float); err == nil {
+				isRFloat = true
+			}
+
+			if (isLInt && isRFloat) || (isLFloat && isRInt) {
+				return typesystem.Bool, totalSubst, nil
+			}
+
 			return nil, nil, inferErrorf(n, "type mismatch in %s: %s vs %s", n.Operator, l, r)
 		}
 		totalSubst = subst.Compose(totalSubst)
@@ -326,7 +492,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 	case "??":
 		// Null coalescing via Optional trait: F<A> ?? A -> A
 		// Left must implement Optional, right must match inner type
-		if !table.IsImplementationExists("Optional", l) {
+		if !CheckTraitImplementation(l, "Optional", table) {
 			return nil, nil, inferErrorf(n.Left, "type %s does not implement Optional trait", l)
 		}
 		// Extract inner type A from F<A> using trait method signature
@@ -343,7 +509,12 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 
 	case "++":
 		// First check if type implements Concat trait
-		if table.IsImplementationExists("Concat", l) {
+		// Unwrap type aliases before checking to handle cases with type aliases
+		checkType := typesystem.UnwrapUnderlying(l)
+		if checkType == nil {
+			checkType = l
+		}
+		if table.IsImplementationExists("Concat", []typesystem.Type{checkType}) {
 			// User-defined Concat - operands must be same type, return same type
 			subst, err := typesystem.Unify(l, r)
 			if err != nil {
@@ -430,39 +601,6 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		totalSubst = subst2.Compose(totalSubst)
 
 		return expectedList.Apply(totalSubst), totalSubst, nil
-
-	case "|>":
-		// Pipe operator: x |> f  is equivalent to f(x)
-		// Right operand must be a function that accepts left operand
-		// Also support variadic functions: x |> print works
-
-		// Check if r is already a function type (possibly variadic)
-		if fnType, ok := r.(typesystem.TFunc); ok {
-			if len(fnType.Params) >= 1 {
-				// Unify left operand with first parameter
-				subst, err := typesystem.Unify(l, fnType.Params[0])
-				if err != nil {
-					return nil, nil, inferErrorf(n.Left, "cannot pipe %s to function expecting %s", l, fnType.Params[0])
-				}
-				totalSubst = subst.Compose(totalSubst)
-				return fnType.ReturnType.Apply(totalSubst), totalSubst, nil
-			}
-		}
-
-		// General case: unify with expected function type
-		resultVar := ctx.FreshVar()
-		expectedFnType := typesystem.TFunc{
-			Params:     []typesystem.Type{l},
-			ReturnType: resultVar,
-		}
-
-		subst, err := typesystem.Unify(r, expectedFnType)
-		if err != nil {
-			return nil, nil, inferErrorf(n.Right, "right operand of |> must be a function (T) -> R, got %s", r)
-		}
-		totalSubst = subst.Compose(totalSubst)
-
-		return resultVar.Apply(totalSubst), totalSubst, nil
 
 	case "$":
 		// Function application: f $ x = f(x)
@@ -630,6 +768,35 @@ func inferHKTOperator(ctx *InferenceContext, n *ast.InfixExpression, l, r typesy
 	// Apply all substitutions to the return type
 	resultType := freshMethodType.ReturnType.Apply(totalSubst)
 
+	// Check constraints from the method (e.g. M: Monad)
+	for _, c := range freshMethodType.Constraints {
+		// Apply substitution to get the concrete type for the type variable
+		tvar := typesystem.TVar{Name: c.TypeVar}
+		concreteType := tvar.Apply(totalSubst)
+
+		// Check if it's a constrained type param (TCon like "T" in recursive calls)
+		// Unwrap type aliases before checking to handle cases like Writer<IntList, Int>
+		checkType := typesystem.UnwrapUnderlying(concreteType)
+		if checkType == nil {
+			checkType = concreteType
+		}
+
+		// If type is still a variable, defer constraint check (Proposal 002)
+		if _, stillVar := concreteType.(typesystem.TVar); stillVar {
+			ctx.AddDeferredConstraint(Constraint{
+				Kind:  ConstraintImplements,
+				Left:  concreteType,
+				Trait: c.Trait,
+				Node:  n,
+			})
+			continue
+		}
+
+		if !table.IsImplementationExists(c.Trait, []typesystem.Type{checkType}) && !typeHasConstraint(ctx, concreteType, c.Trait, table) {
+			return nil, nil, inferErrorf(n, "type %s does not implement trait %s", concreteType, c.Trait)
+		}
+	}
+
 	return resultType, totalSubst, nil
 }
 
@@ -639,7 +806,7 @@ func inferPostfixExpression(ctx *InferenceContext, n *ast.PostfixExpression, tab
 		return nil, nil, err
 	}
 	totalSubst := s1
-	leftType = leftType.Apply(totalSubst)
+	leftType = leftType.Apply(ctx.GlobalSubst).Apply(totalSubst)
 
 	if n.Operator == "?" {
 		if tApp, ok := leftType.(typesystem.TApp); ok {

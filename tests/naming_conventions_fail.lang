@@ -1,0 +1,35 @@
+// Test naming conventions enforced by the parser
+
+// 1. Function names must be lowercase
+fun BadFunc() {
+    print("fail")
+}
+
+// 2. Variable/Constant names must be lowercase
+BadVar :- 10
+OneMoreBadVar = 10
+
+// 3. Type variables must be lowercase
+fun goodFunc(x: BadT) -> BadT { x }
+
+// 4. Extension method names must be lowercase
+type alias MyInt = Int
+fun (i: MyInt) BadExt() { }
+
+type badType = Constructor | AnotherConstructor
+type GoodType = GoodConstructor | badConstructor
+type alias myChar = Char
+
+trait badTrait {
+    fun method() { }
+}
+
+fun anotherFunc(X) { X }
+fun anotherGoodFunc(x) {
+    Y :- x + 1
+    Z = 1
+    Z
+}
+
+print("Should not run")
+

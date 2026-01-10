@@ -1,0 +1,279 @@
+import "lib/test" (*)
+
+// 1. Rank-N Polymorphism
+// This now passes with Rank-N support.
+// We explicitly type 'g' as 'forall a. a -> a' to allow polymorphic usage.
+testRun("Feature: Rank-N Polymorphism", fun() -> {
+    id_fn = fun(x) -> x
+
+    // Define function expecting a polymorphic argument
+    // We use explicit type annotation for the parameter to enable Rank-N inference
+    poly_user = fun(g: forall t. t -> t) -> {
+        v1 = g(1)      // g instantiated at Int
+        v2 = g("s")    // g instantiated at String
+        (v1, v2)
+    }
+
+    result = poly_user(id_fn)
+    assertEquals(1, result[0])
+    assertEquals("s", result[1])
+})
+
+type alias MyNumber = Int
+
+// Edge cases for Rank-N Polymorphism
+testRun("Rank-N: Edge Cases", fun() -> {
+    // 1. Multiple polymorphic functions with different types
+    id_fn = fun(x) -> x
+    const_fn = fun(x) -> fun(y) -> x
+
+    poly_user2 = fun(g: forall t. t -> t) -> {
+        v1 = g(42)
+        v2 = g(true)
+        v3 = g([1, 2, 3])
+        (v1, v2, v3)
+    }
+
+    result2 = poly_user2(id_fn)
+    assertEquals(42, result2[0])
+    assertEquals(true, result2[1])
+    assertEquals([1, 2, 3], result2[2])
+
+    // 2. Polymorphic function used multiple times in same context
+    multi_use = fun(f: forall t. t -> t) -> {
+        a = f(1)
+        b = f(2)
+        c = f(3)
+        (a, b, c)
+    }
+
+    result3 = multi_use(id_fn)
+    assertEquals(1, result3[0])
+    assertEquals(2, result3[1])
+    assertEquals(3, result3[2])
+
+    // 2b. Rank-2 Polymorphism: function taking polymorphic function
+    // Expected: function that accepts forall u. u -> u and returns polymorphic result
+    rank2_user = fun(f: forall t. (forall u. u -> u) -> t) -> {
+        id_local = fun(x) -> x
+        f(id_local)
+    }
+
+    // For Rank-2, function must be polymorphic in return type
+    poly_factory = fun(g: forall u. u -> u) -> g(10)
+
+    result3b = rank2_user(poly_factory)
+    assertEquals(10, result3b)
+
+    // 2c. Rank-2 with different return types
+    rank2_user2 = fun(f: forall t. (forall u. u -> u) -> t) -> {
+        id_local = fun(x) -> x
+        f(id_local)
+    }
+
+    poly_factory_str = fun(g: forall u. u -> u) -> g("test")
+    result3c = rank2_user2(poly_factory_str)
+    assertEquals("test", result3c)
+
+    // 2d. Rank-2 with multiple instantiations
+    rank2_multi = fun(f: forall t. (forall u. u -> u) -> t) -> {
+        id_local = fun(x) -> x
+        (f(id_local), f(id_local))
+    }
+
+    poly_factory_int = fun(g: forall u. u -> u) -> g(42)
+    poly_factory_bool = fun(g: forall u. u -> u) -> g(true)
+
+    result3d_int = rank2_multi(poly_factory_int)
+    result3d_bool = rank2_multi(poly_factory_bool)
+    assertEquals(42, result3d_int[0])
+    assertEquals(42, result3d_int[1])
+    assertEquals(true, result3d_bool[0])
+    assertEquals(true, result3d_bool[1])
+
+
+    // 3. Polymorphic function passed through multiple levels
+    level1 = fun(f: forall t. t -> t) -> f
+    level2 = fun(f: forall t. t -> t) -> level1(f)
+    level3 = fun(f: forall t. t -> t) -> level2(f)
+
+    id_fn2 = fun(x) -> x
+    // passed = level3(id_fn2)
+    // assertEquals(100, passed(100))
+    // assertEquals("test", passed("test"))
+    // NOTE: The above fails with Value Restriction because 'level3(id_fn2)' is an expansive expression (function call),
+    // so the result is not generalized. 'passed' becomes monomorphic. This is correct behavior for safety.
+
+    // 4. Polymorphic function with records
+    record_id = fun(rec) -> rec
+
+    record_user = fun(f: forall t. t -> t) -> {
+        point = { x: 1, y: 2 }
+        num = 42
+        (f(point), f(num))
+    }
+
+    result4 = record_user(record_id)
+    assertEquals(1, result4[0].x)
+    assertEquals(2, result4[0].y)
+    assertEquals(42, result4[1])
+
+    // 5. Polymorphic function with lists
+    list_id = fun(lst) -> lst
+
+    list_user = fun(f: forall t. t -> t) -> {
+        ints = [1, 2, 3]
+        strings = ["a", "b"]
+        (f(ints), f(strings))
+    }
+
+    result5 = list_user(list_id)
+    assertEquals([1, 2, 3], result5[0])
+    assertEquals(["a", "b"], result5[1])
+
+    // 6. Multiple polymorphic parameters
+    multi_poly = fun(f: forall t. t -> t, g: forall u. u -> u) -> {
+        v1 = f(1)
+        v2 = g("test")
+        (v1, v2)
+    }
+
+    id1 = fun(x) -> x
+    id2 = fun(x) -> x
+    result6 = multi_poly(id1, id2)
+    assertEquals(1, result6[0])
+    assertEquals("test", result6[1])
+
+    alias_user = fun(f: forall t. t -> t) -> {
+        x: MyNumber = 42
+        f(x)
+    }
+
+    result7 = alias_user(id_fn)
+    assertEquals(42, result7)
+
+    // 8. Polymorphic function preserves type information
+    type_checker = fun(f: forall t. t -> t) -> {
+        int_val = f(100)
+        str_val = f("hello")
+        bool_val = f(true)
+        // All should work with same polymorphic function
+        (int_val, str_val, bool_val)
+    }
+
+    result8 = type_checker(id_fn)
+    assertEquals(100, result8[0])
+    assertEquals("hello", result8[1])
+    assertEquals(true, result8[2])
+
+    // 9. Polymorphic function with tuples
+    tuple_id = fun(tup) -> tup
+
+    tuple_user = fun(f: forall t. t -> t) -> {
+        pair = (1, "test")
+        triple = (true, 42, "x")
+        (f(pair), f(triple))
+    }
+
+    result9 = tuple_user(tuple_id)
+    assertEquals(1, result9[0][0])
+    assertEquals("test", result9[0][1])
+    assertEquals(true, result9[1][0])
+    assertEquals(42, result9[1][1])
+    assertEquals("x", result9[1][2])
+
+    // 10. Polymorphic function with Option types
+    option_id = fun(opt) -> opt
+
+    option_user = fun(f: forall t. t -> t) -> {
+        int_opt = Some(42)
+        str_opt = Some("test")
+        (f(int_opt), f(str_opt))
+    }
+
+    result10 = option_user(option_id)
+    assertEquals(Some(42), result10[0])
+    assertEquals(Some("test"), result10[1])
+
+    // 11. Polymorphic function maintains identity across different instantiations
+    identity_test = fun(f: forall t. t -> t) -> {
+        // Same function used with completely different types
+        a = f(1)
+        b = f("hello")
+        c = f(true)
+        d = f([1, 2])
+        e = f({ x: 10 })
+        (a, b, c, d, e)
+    }
+
+    result11 = identity_test(id_fn)
+    assertEquals(1, result11[0])
+    assertEquals("hello", result11[1])
+    assertEquals(true, result11[2])
+    assertEquals([1, 2], result11[3])
+    assertEquals(10, result11[4].x)
+
+    // 12. Nested polymorphic function calls
+    nested_poly = fun(f: forall t. t -> t) -> {
+        inner = fun(g: forall u. u -> u) -> {
+            (g(1), g("x"))
+        }
+        inner(f)
+    }
+
+    result12 = nested_poly(id_fn)
+    assertEquals(1, result12[0])
+    assertEquals("x", result12[1])
+})
+
+// Rank-2 and Rank-3 Polymorphism tests
+testRun("Rank-N: Rank-2 Polymorphism", fun() -> {
+    // Rank-2: function that takes polymorphic function and returns polymorphic result
+    rank2_applier = fun(f: forall t. (forall u. u -> u) -> t) -> {
+        id_fn = fun(x) -> x
+        f(id_fn)
+    }
+
+    // Function polymorphic in return type - key requirement for Rank-2
+    apply_id = fun(g: forall u. u -> u) -> g(100)
+
+    result = rank2_applier(apply_id)
+    assertEquals(100, result)
+
+    // Rank-2 with string
+    apply_id_str = fun(g: forall u. u -> u) -> g("rank2")
+    result_str = rank2_applier(apply_id_str)
+    assertEquals("rank2", result_str)
+
+    // Rank-2 with record
+    apply_id_rec = fun(g: forall u. u -> u) -> g({ x: 42, y: 10 })
+    result_rec = rank2_applier(apply_id_rec)
+    assertEquals(42, result_rec.x)
+    assertEquals(10, result_rec.y)
+})
+
+testRun("Rank-N: Rank-3 Polymorphism", fun() -> {
+    // Rank-3: function that takes Rank-2 function
+    rank3_applier = fun(f: forall t. (forall u. (forall v. v -> v) -> u) -> t) -> {
+        id_fn = fun(x) -> x
+        rank2_fn = fun(g: forall v. v -> v) -> g(200)
+        f(rank2_fn)
+    }
+
+    // Rank-2 function polymorphic in return type
+    apply_rank2 = fun(h: forall u. (forall v. v -> v) -> u) -> h(fun(x) -> x)
+
+    result = rank3_applier(apply_rank2)
+    assertEquals(200, result)
+
+    // Rank-3 with different types
+    apply_rank2_str = fun(h: forall u. (forall v. v -> v) -> u) -> h(fun(x) -> x)
+    rank3_applier_str = fun(f: forall t. (forall u. (forall v. v -> v) -> u) -> t) -> {
+        id_fn = fun(x) -> x
+        rank2_fn = fun(g: forall v. v -> v) -> g("rank3")
+        f(rank2_fn)
+    }
+
+    result_str = rank3_applier_str(apply_rank2_str)
+    assertEquals("rank3", result_str)
+})

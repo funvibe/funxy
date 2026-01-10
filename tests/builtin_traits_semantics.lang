@@ -9,11 +9,11 @@
 // Built-in: Equal<T> with == and !=
 // Semantics: != is derived from ==
 
-trait EqualSemantics<T> {
-    fun eq(a: T, b: T) -> Bool
-    
+trait EqualSemantics<t> {
+    fun eq(a: t, b: t) -> Bool
+
     // Default: != derived from ==
-    fun neq(a: T, b: T) -> Bool {
+    fun neq(a: t, b: t) -> Bool {
         !(eq(a, b))
     }
 }
@@ -45,21 +45,21 @@ print((1 != 2) == neq(1, 2))       // true
 // Built-in: Order<T> with <, >, <=, >=
 // Semantics: only < is required, others derived
 
-trait OrderSemantics<T> : EqualSemantics<T> {
-    fun lt(a: T, b: T) -> Bool
-    
+trait OrderSemantics<t> : EqualSemantics<t> {
+    fun lt(a: t, b: t) -> Bool
+
     // Default: > derived from <
-    fun gt(a: T, b: T) -> Bool {
+    fun gt(a: t, b: t) -> Bool {
         lt(b, a)
     }
-    
+
     // Default: <= derived from < and ==
-    fun lte(a: T, b: T) -> Bool {
+    fun lte(a: t, b: t) -> Bool {
         lt(a, b) || eq(a, b)
     }
-    
+
     // Default: >= derived from <=
-    fun gte(a: T, b: T) -> Bool {
+    fun gte(a: t, b: t) -> Bool {
         lte(b, a)
     }
 }
@@ -84,11 +84,11 @@ print((5 <= 5) == lte(5, 5))       // true
 print((5 >= 3) == gte(5, 3))       // true
 
 // min/max using OrderSemantics
-fun minSem<T: OrderSemantics>(a: T, b: T) -> T {
+fun minSem<t: OrderSemantics>(a: t, b: t) -> t {
     if lt(a, b) { a } else { b }
 }
 
-fun maxSem<T: OrderSemantics>(a: T, b: T) -> T {
+fun maxSem<t: OrderSemantics>(a: t, b: t) -> t {
     if gt(a, b) { a } else { b }
 }
 
@@ -101,15 +101,15 @@ print(maxSem(10, 20))              // 20
 // Built-in: Number<T> with +, -, *, /, %, **
 // Semantics: all operations are primitive
 
-trait NumberSemantics<T> {
-    fun add(a: T, b: T) -> T
-    fun sub(a: T, b: T) -> T
-    fun mul(a: T, b: T) -> T
-    fun div(a: T, b: T) -> T
-    fun modulo(a: T, b: T) -> T
-    
+trait NumberSemantics<t> {
+    fun add(a: t, b: t) -> t
+    fun sub(a: t, b: t) -> t
+    fun mul(a: t, b: t) -> t
+    fun div(a: t, b: t) -> t
+    fun modulo(a: t, b: t) -> t
+
     // Default: negate using sub
-    fun negate(x: T, zero: T) -> T {
+    fun negate(x: t, zero: t) -> t {
         sub(zero, x)
     }
 }
@@ -159,7 +159,7 @@ print((2 ** 10) == powerSem(2, 10))        // true
 fun sumSem(xs: List<Int>) -> Int {
     match xs {
         [] -> 0
-        [x, rest...] -> add(x, sumSem(rest))
+        [x, ...rest] -> add(x, sumSem(rest))
     }
 }
 
@@ -169,7 +169,7 @@ print(sumSem([1, 2, 3, 4, 5]))             // 15
 fun productSem(xs: List<Int>) -> Int {
     match xs {
         [] -> 1
-        [x, rest...] -> mul(x, productSem(rest))
+        [x, ...rest] -> mul(x, productSem(rest))
     }
 }
 
@@ -180,12 +180,12 @@ print(productSem([1, 2, 3, 4, 5]))         // 120
 // =============================================
 // Built-in: Bitwise<T> with &, |, ^, <<, >>
 
-trait BitwiseSemantics<T> {
-    fun band(a: T, b: T) -> T    // AND
-    fun bor(a: T, b: T) -> T     // OR
-    fun bxor(a: T, b: T) -> T    // XOR
-    fun shl(a: T, b: T) -> T     // left shift
-    fun shr(a: T, b: T) -> T     // right shift
+trait BitwiseSemantics<t> {
+    fun band(a: t, b: t) -> t    // AND
+    fun bor(a: t, b: t) -> t     // OR
+    fun bxor(a: t, b: t) -> t    // XOR
+    fun shl(a: t, b: t) -> t     // left shift
+    fun shr(a: t, b: t) -> t     // right shift
 }
 
 instance BitwiseSemantics<Int> {
@@ -244,8 +244,8 @@ print(toggleBit(7, 1))                     // 5 (111 -> 101)
 // =============================================
 // Built-in: Concat<T> with ++
 
-trait ConcatSemantics<T> {
-    fun concatSem(a: T, b: T) -> T
+trait ConcatSemantics<t> {
+    fun concatSem(a: t, b: t) -> t
 }
 
 // We can't easily make List<A> instance without HKT for the element type
@@ -262,7 +262,7 @@ instance ConcatSemantics<IntList> {
         fun go(xs: List<Int>, ys: List<Int>) -> List<Int> {
             match xs {
                 [] -> ys
-                [x, rest...] -> x :: go(rest, ys)
+                [x, ...rest] -> x :: go(rest, ys)
             }
         }
         MkIntList(go(unwrapIntList(a), unwrapIntList(b)))
@@ -275,7 +275,7 @@ instance ConcatSemantics<String> {
         fun go(xs: List<Char>, ys: String) -> String {
             match xs {
                 [] -> ys
-                [c, rest...] -> go(rest, ys)  // simplified - just demonstrate structure
+                [c, ...rest] -> go(rest, ys)  // simplified - just demonstrate structure
             }
         }
         a ++ b  // use built-in for actual concat
@@ -296,7 +296,7 @@ print("Hello" ++ " World")                             // Hello World
 fun flattenSem(xss: List<List<Int>>) -> List<Int> {
     match xss {
         [] -> []
-        [xs, rest...] -> xs ++ flattenSem(rest)
+        [xs, ...rest] -> xs ++ flattenSem(rest)
     }
 }
 
@@ -308,7 +308,7 @@ print(flattenSem([[1, 2], [3], [4, 5]]))               // [1, 2, 3, 4, 5]
 // Built-in: :: operator
 
 // Cons is primitive, but we can implement using match
-fun cons<T>(x: T, xs: List<T>) -> List<T> {
+fun cons(x: t, xs: List<t>) -> List<t> {
     x :: xs
 }
 
@@ -317,7 +317,7 @@ print(cons(1, [2, 3]))                                 // [1, 2, 3]
 print((1 :: [2, 3]) == cons(1, [2, 3]))                // true
 
 // Derived: replicate using cons
-fun replicate<T>(n: Int, x: T) -> List<T> {
+fun replicate(n: Int, x: t) -> List<t> {
     if n <= 0 { [] }
     else { cons(x, replicate(n - 1, x)) }
 }
@@ -338,8 +338,8 @@ print(rangeSem(1, 5))                                  // [1, 2, 3, 4, 5]
 // Built-in: Default<T> with default(Type)
 
 // DefaultSemantics requires a "dummy" argument for type dispatch
-trait DefaultSemantics<T> {
-    fun getDefaultFor(dummy: T) -> T
+trait DefaultSemantics<t> {
+    fun getDefaultFor(dummy: t) -> t
 }
 
 instance DefaultSemantics<Int> {
@@ -382,33 +382,33 @@ print(getOrDefaultSem(Zero, 0))                        // 0
 // Built-in: Functor<F> with fmap
 // Semantics: fmapSem applies function to value inside container
 
-trait FunctorSemantics<F> {
-    fun fmapSem<A, B>(f: (A) -> B, fa: F<A>) -> F<B>
+trait FunctorSemantics<f> {
+    fun fmapSem(fn: (a) -> b, fa: f<a>) -> f<b>
 }
 
 instance FunctorSemantics<Option> {
-    fun fmapSem<A, B>(f: (A) -> B, fa: Option<A>) -> Option<B> {
+    fun fmapSem(fn: (a) -> b, fa: Option<a>) -> Option<b> {
         match fa {
-            Some(x) -> Some(f(x))
+            Some(x) -> Some(fn(x))
             Zero -> Zero
         }
     }
 }
 
 instance FunctorSemantics<List> {
-    fun fmapSem<A, B>(f: (A) -> B, fa: List<A>) -> List<B> {
+    fun fmapSem(fn: (a) -> b, fa: List<a>) -> List<b> {
         match fa {
             [] -> []
-            [x, xs...] -> f(x) :: fmapSem(f, xs)
+            [x, ...xs] -> fn(x) :: fmapSem(fn, xs)
         }
     }
 }
 
-instance FunctorSemantics<Result, E> {
-    fun fmapSem<A, B>(f: (A) -> B, fa: Result<E, A>) -> Result<E, B> {
+instance FunctorSemantics Result<e> {
+    fun fmapSem(fn: (a) -> b, fa: Result<e, a>) -> Result<e, b> {
         match fa {
-            Ok(x) -> Ok(f(x))
-            Fail(e) -> Fail(e)
+            Ok(x) -> Ok(fn(x))
+            Fail(err) -> Fail(err)
         }
     }
 }
@@ -443,7 +443,7 @@ print(fmap(double, Fail("err")))                           // Fail("err")
 // =============================================
 
 // Law 1: Identity — fmap(id, x) == x
-fun idFn<T>(x: T) -> T { x }
+fun idFn(x: t) -> t { x }
 
 opt = Some(42)
 print(fmap(idFn, opt) == opt)                              // true

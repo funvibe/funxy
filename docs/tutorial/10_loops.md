@@ -56,14 +56,17 @@ for x in [1, 2, 3] {
 }
 ```
 
-`List<T>` implements `Iter` by default. For custom iteration, use `range()` or build a list:
+`List<T>` implements `Iter` by default. `Range<T>` also implements `Iter`.
 
 ```rust
-import "lib/list" (range)
-
 // Using range for numeric iteration
-for i in range(0, 5) {
+for i in 0..4 {
     print(i)  // 0, 1, 2, 3, 4
+}
+
+// Range with step
+for i in (0, 2)..10 {
+    print(i) // 0, 2, 4, 6, 8
 }
 
 // Custom iteration via list generation
@@ -161,4 +164,101 @@ res = for x in [1, 2, 3] {
     Some(0)  // same type
 }
 ```
+
+## List Comprehensions
+
+For many common iteration patterns, list comprehensions provide a more concise and declarative alternative to loops.
+
+### Basic Syntax
+
+```
+[output | clause, clause, ...]
+```
+
+### Comparison with Loops
+
+**Using a loop:**
+```rust
+result = []
+for x in [1, 2, 3, 4, 5] {
+    if x % 2 == 0 {
+        result = result ++ [x * 2]
+    }
+}
+// result = [4, 8]
+```
+
+**Using a list comprehension:**
+```rust
+result = [x * 2 | x <- [1, 2, 3, 4, 5], x % 2 == 0]
+// result = [4, 8]
+```
+
+### Generators and Filters
+
+- **Generator:** `pattern <- iterable` — iterates over elements
+- **Filter:** `boolean_expression` — filters elements
+
+```rust
+// Double each element
+doubled = [x * 2 | x <- [1, 2, 3]]
+// [2, 4, 6]
+
+// Filter and transform
+evens = [x | x <- [1, 2, 3, 4, 5, 6], x % 2 == 0]
+// [2, 4, 6]
+
+// Multiple filters
+filtered = [x | x <- 1..10, x > 3, x < 8]
+// [4, 5, 6, 7]
+```
+
+### Multiple Generators (Nested Loops)
+
+Multiple generators are equivalent to nested loops:
+
+**Using nested loops:**
+```rust
+pairs = []
+for x in [1, 2] {
+    for y in [3, 4] {
+        pairs = pairs ++ [(x, y)]
+    }
+}
+// [(1, 3), (1, 4), (2, 3), (2, 4)]
+```
+
+**Using a list comprehension:**
+```rust
+pairs = [(x, y) | x <- [1, 2], y <- [3, 4]]
+// [(1, 3), (1, 4), (2, 3), (2, 4)]
+```
+
+### Pattern Destructuring
+
+Generators support pattern matching:
+
+```rust
+// Tuple destructuring
+sums = [a + b | (a, b) <- [(1, 2), (3, 4), (5, 6)]]
+// [3, 7, 11]
+
+// Flattening nested lists
+matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+flat = [x | row <- matrix, x <- row]
+// [1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+
+### When to Use Each
+
+| Use Case | Recommended |
+|----------|-------------|
+| Transform/filter a list | List comprehension |
+| Side effects (print, IO) | `for` loop |
+| Early exit with `break` | `for` loop |
+| Accumulating state | `for` loop or `foldl` |
+| Cartesian products | List comprehension |
+| Simple iteration | Either |
+
+See [Lists](06_lists.md) for more details on list comprehensions.
 

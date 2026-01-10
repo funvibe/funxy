@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/funvibe/funxy/internal/config"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -12,14 +13,34 @@ type Type interface {
 	String() string
 	Apply(Subst) Type
 	FreeTypeVariables() []TVar
+	Kind() Kind
 }
 
 // TVar represents a type variable (e.g. 'a', 'b', 't1').
 type TVar struct {
-	Name string
+	Name    string
+	KindVal Kind // Renamed from Kind to KindVal to avoid collision with method
 }
 
-func (t TVar) String() string { return t.Name }
+func (t TVar) String() string {
+	// Normalize auto-generated type variables (t1, t2, t14, etc.) to t?
+	// This normalization only happens during test runs
+	if config.IsTestMode && strings.HasPrefix(t.Name, "t") {
+		// Check if rest is numeric
+		rest := t.Name[1:]
+		if _, err := strconv.Atoi(rest); err == nil {
+			return "t?"
+		}
+	}
+	return t.Name
+}
+
+func (t TVar) Kind() Kind {
+	if t.KindVal == nil {
+		return Star
+	}
+	return t.KindVal
+}
 
 func (t TVar) Apply(s Subst) Type {
 	return ApplyWithCycleCheck(t, s, make(map[string]bool))
@@ -77,6 +98,23 @@ func ApplyWithCycleCheck(t Type, s Subst, visited map[string]bool) Type {
 		}
 
 	case TCon:
+		// Allow substitution of TCon if it matches a key in the substitution map
+		// This is required for Monomorphization where generic type parameters
+		// are represented as Rigid TCons in the function body.
+		if replacement, ok := s[typ.Name]; ok {
+			// Check for direct self-reference to avoid infinite loop
+			if tCon, ok := replacement.(TCon); ok && tCon.Name == typ.Name {
+				return typ
+			}
+			// Check cycle with visited map
+			if visited[typ.Name] {
+				return typ
+			}
+			// Add to visited
+			newVisited := copyVisited(visited)
+			newVisited[typ.Name] = true
+			return ApplyWithCycleCheck(replacement, s, newVisited)
+		}
 		return typ // Constants don't change
 
 	case TFunc:
@@ -94,7 +132,11 @@ func ApplyWithCycleCheck(t Type, s Subst, visited map[string]bool) Type {
 					newTypeVar = tv.Name
 				}
 			}
-			newConstraints[i] = Constraint{TypeVar: newTypeVar, Trait: c.Trait}
+			newArgs := make([]Type, len(c.Args))
+			for j, arg := range c.Args {
+				newArgs[j] = ApplyWithCycleCheck(arg, s, visited)
+			}
+			newConstraints[i] = Constraint{TypeVar: newTypeVar, Trait: c.Trait, Args: newArgs}
 		}
 		return TFunc{
 			Params:       newParams,
@@ -116,7 +158,11 @@ func ApplyWithCycleCheck(t Type, s Subst, visited map[string]bool) Type {
 		for k, v := range typ.Fields {
 			newFields[k] = ApplyWithCycleCheck(v, s, visited)
 		}
-		return TRecord{Fields: newFields, IsOpen: typ.IsOpen}
+		var newRow Type
+		if typ.Row != nil {
+			newRow = ApplyWithCycleCheck(typ.Row, s, visited)
+		}
+		return TRecord{Fields: newFields, Row: newRow, IsOpen: typ.IsOpen}
 
 	case TUnion:
 		newTypes := make([]Type, len(typ.Types))
@@ -124,6 +170,41 @@ func ApplyWithCycleCheck(t Type, s Subst, visited map[string]bool) Type {
 			newTypes[i] = ApplyWithCycleCheck(t, s, visited)
 		}
 		return NormalizeUnion(newTypes)
+
+	case TForall:
+		// Filter substitution to exclude quantified variables
+		newSubst := make(Subst)
+		boundVars := make(map[string]bool)
+		for _, v := range typ.Vars {
+			boundVars[v.Name] = true
+		}
+
+		for k, v := range s {
+			if !boundVars[k] {
+				newSubst[k] = v
+			}
+		}
+
+		// Apply to constraints
+		newConstraints := make([]Constraint, len(typ.Constraints))
+		for i, c := range typ.Constraints {
+			newArgs := make([]Type, len(c.Args))
+			for j, arg := range c.Args {
+				newArgs[j] = ApplyWithCycleCheck(arg, newSubst, visited)
+			}
+			newConstraints[i] = Constraint{
+				TypeVar: c.TypeVar,
+				Trait:   c.Trait,
+				Args:    newArgs,
+			}
+		}
+
+		// Apply to body
+		return TForall{
+			Vars:        typ.Vars,
+			Constraints: newConstraints,
+			Type:        ApplyWithCycleCheck(typ.Type, newSubst, visited),
+		}
 
 	default:
 		// Fallback for any other types
@@ -146,8 +227,57 @@ func (t TVar) FreeTypeVariables() []TVar {
 // TCon represents a type constant/constructor (e.g. Int, Bool, List).
 type TCon struct {
 	Name           string
-	Module         string // Optional module path for imported types
-	UnderlyingType Type   // For type aliases: the underlying type (nil for regular types)
+	Module         string    // Optional module path for imported types
+	UnderlyingType Type      // For type aliases: the underlying type (nil for regular types)
+	TypeParams     *[]string // Names of type parameters for parameterized aliases
+	KindVal        Kind      // Rename to KindVal to avoid method name conflict if embedded? No, struct field.
+	// But let's call it KindVal just to be safe or just explicit. Or just 'Kind'.
+	// In Go, field 'Kind' and method 'Kind()' on *TCon or TCon is fine if TCon is struct.
+	// But TCon is a struct, not interface.
+}
+
+var builtinKinds map[string]Kind
+
+func init() {
+	builtinKinds = make(map[string]Kind)
+	arrow1 := MakeArrow(Star, Star)       // * -> *
+	arrow2 := MakeArrow(Star, Star, Star) // * -> * -> *
+
+	// Register known builtins (sync with config/builtins.go)
+	// * -> *
+	builtinKinds["List"] = arrow1
+	builtinKinds["Option"] = arrow1
+	builtinKinds["Identity"] = arrow1
+	builtinKinds["Functor"] = arrow1
+	builtinKinds["Applicative"] = arrow1
+	builtinKinds["Monad"] = arrow1
+	builtinKinds["Empty"] = arrow1
+	builtinKinds["Optional"] = arrow1
+
+	// * -> * -> *
+	builtinKinds["Map"] = arrow2
+	builtinKinds["Result"] = arrow2
+	builtinKinds["State"] = arrow2
+	builtinKinds["Reader"] = arrow2
+	builtinKinds["Writer"] = arrow2
+
+	// OptionT :: (*->*) -> * -> *
+	builtinKinds["OptionT"] = MakeArrow(arrow1, Star, Star)
+
+	// ResultT :: (*->*) -> * -> * -> *
+	builtinKinds["ResultT"] = MakeArrow(arrow1, Star, Star, Star)
+}
+
+func (t TCon) Kind() Kind {
+	// If explicit kind is set, return it
+	if t.KindVal != nil {
+		return t.KindVal
+	}
+	// Fallback: lookup builtins
+	if k, ok := builtinKinds[t.Name]; ok {
+		return k
+	}
+	return Star
 }
 
 func (t TCon) String() string {
@@ -158,7 +288,7 @@ func (t TCon) String() string {
 }
 
 func (t TCon) Apply(s Subst) Type {
-	return t
+	return ApplyWithCycleCheck(t, s, make(map[string]bool))
 }
 
 func (t TCon) FreeTypeVariables() []TVar {
@@ -177,10 +307,56 @@ func UnwrapUnderlying(t Type) Type {
 	}
 }
 
+// ExpandTypeAlias expands a type alias TApp by substituting type arguments into the underlying type.
+// For example: StringResult<Int> where StringResult<e> = Result<e, String> becomes Result<Int, String>.
+// Returns the original type if it's not an alias or cannot be expanded.
+func ExpandTypeAlias(t Type) Type {
+	tApp, ok := t.(TApp)
+	if !ok {
+		return t
+	}
+
+	tCon, ok := tApp.Constructor.(TCon)
+	if !ok || tCon.UnderlyingType == nil || tCon.TypeParams == nil {
+		return t
+	}
+
+	// Build substitution from type parameters to actual arguments
+	if len(*tCon.TypeParams) != len(tApp.Args) {
+		return t // Arity mismatch, cannot expand
+	}
+
+	subst := make(Subst)
+	for i, paramName := range *tCon.TypeParams {
+		subst[paramName] = tApp.Args[i]
+	}
+
+	// Apply substitution to the underlying type
+	return tCon.UnderlyingType.Apply(subst)
+}
+
 // TApp represents a type application (e.g. List Int).
 type TApp struct {
 	Constructor Type
 	Args        []Type
+	KindVal     Kind // Cache the kind
+}
+
+func (t TApp) Kind() Kind {
+	if t.KindVal != nil {
+		return t.KindVal
+	}
+	k := t.Constructor.Kind()
+	for range t.Args {
+		if arrow, ok := k.(KArrow); ok {
+			k = arrow.Right
+		} else {
+			// Applying to non-arrow kind? Should be error or Star?
+			// For now, assume Star
+			return Star
+		}
+	}
+	return k
 }
 
 func (t TApp) String() string {
@@ -219,6 +395,8 @@ type TTuple struct {
 	Elements []Type
 }
 
+func (t TTuple) Kind() Kind { return Star }
+
 func (t TTuple) String() string {
 	args := []string{}
 	for _, el := range t.Elements {
@@ -243,7 +421,10 @@ func (t TTuple) FreeTypeVariables() []TVar {
 type TRecord struct {
 	Fields map[string]Type
 	IsOpen bool // If true, this record can be extended (Row Polymorphism inference)
+	Row    Type // Row variable for row polymorphism (usually TVar). If non-nil, IsOpen should ideally be true.
 }
+
+func (t TRecord) Kind() Kind { return Star }
 
 func (t TRecord) String() string {
 	fields := []string{}
@@ -257,10 +438,21 @@ func (t TRecord) String() string {
 	for _, k := range keys {
 		fields = append(fields, fmt.Sprintf("%s: %s", k, t.Fields[k].String()))
 	}
-	if t.IsOpen {
-		return fmt.Sprintf("{ %s, ... }", strings.Join(fields, ", "))
+
+	suffix := ""
+	if t.Row != nil {
+		suffix = " | " + t.Row.String()
+	} else if t.IsOpen {
+		suffix = ", ..."
 	}
-	return fmt.Sprintf("{ %s }", strings.Join(fields, ", "))
+
+	if len(fields) == 0 && suffix != "" && strings.HasPrefix(suffix, " | ") {
+		// Just row: { | r } -> { r }? No, usually { | r } or { r } syntax?
+		// Funxy doesn't have syntax yet, so format as { | r }
+		return fmt.Sprintf("{ %s }", suffix[3:])
+	}
+
+	return fmt.Sprintf("{ %s%s }", strings.Join(fields, ", "), suffix)
 }
 
 func (t TRecord) Apply(s Subst) Type {
@@ -278,6 +470,9 @@ func (t TRecord) FreeTypeVariables() []TVar {
 	for _, k := range keys {
 		vars = append(vars, t.Fields[k].FreeTypeVariables()...)
 	}
+	if t.Row != nil {
+		vars = append(vars, t.Row.FreeTypeVariables()...)
+	}
 	return uniqueTVars(vars)
 }
 
@@ -286,6 +481,8 @@ func (t TRecord) FreeTypeVariables() []TVar {
 type TUnion struct {
 	Types []Type // At least 2 types
 }
+
+func (t TUnion) Kind() Kind { return Star }
 
 func (t TUnion) String() string {
 	parts := []string{}
@@ -344,10 +541,11 @@ func NormalizeUnion(types []Type) Type {
 	return TUnion{Types: unique}
 }
 
-// Constraint represents a type constraint (e.g. T: Show)
+// Constraint represents a type constraint (e.g. T: Show or T: Convert<U>)
 type Constraint struct {
 	TypeVar string
 	Trait   string
+	Args    []Type // Arguments for MPTC
 }
 
 // TFunc represents a function type (e.g. (Int, Int) -> Bool).
@@ -358,6 +556,8 @@ type TFunc struct {
 	DefaultCount int          // Number of parameters with default values (from the end)
 	Constraints  []Constraint // Generic constraints (e.g. T: Show)
 }
+
+func (t TFunc) Kind() Kind { return Star }
 
 func (t TFunc) String() string {
 	params := []string{}
@@ -396,11 +596,75 @@ func (t TFunc) FreeTypeVariables() []TVar {
 	return uniqueTVars(vars)
 }
 
+// TForall represents a universally quantified type (Rank-N).
+// e.g. forall T. T -> T
+type TForall struct {
+	Vars        []TVar
+	Constraints []Constraint
+	Type        Type
+}
+
+func (t TForall) Kind() Kind { return Star }
+
+func (t TForall) String() string {
+	vars := []string{}
+	for _, v := range t.Vars {
+		varStr := v.String()
+
+		// Collect all constraints for this variable
+		var constraints []string
+		for _, c := range t.Constraints {
+			if c.TypeVar == v.Name {
+				constraints = append(constraints, c.Trait)
+			}
+		}
+
+		// Add constraints to variable string
+		if len(constraints) > 0 {
+			varStr += ": " + strings.Join(constraints, ", ")
+		}
+
+		vars = append(vars, varStr)
+	}
+	return fmt.Sprintf("forall %s. %s", strings.Join(vars, " "), t.Type.String())
+}
+
+func (t TForall) Apply(s Subst) Type {
+	return ApplyWithCycleCheck(t, s, make(map[string]bool))
+}
+
+func (t TForall) FreeTypeVariables() []TVar {
+	bound := make(map[string]bool)
+	for _, v := range t.Vars {
+		bound[v.Name] = true
+	}
+
+	free := t.Type.FreeTypeVariables()
+
+	// Also collect free variables from constraints
+	for _, c := range t.Constraints {
+		for _, arg := range c.Args {
+			constraintFree := arg.FreeTypeVariables()
+			free = append(free, constraintFree...)
+		}
+	}
+
+	result := []TVar{}
+	for _, v := range free {
+		if !bound[v.Name] {
+			result = append(result, v)
+		}
+	}
+	return uniqueTVars(result)
+}
+
 // TType represents the type of a Type (Meta-type).
 // e.g. Int (the value) has type TType{Type: Int}.
 type TType struct {
 	Type Type
 }
+
+func (t TType) Kind() Kind { return Star }
 
 func (t TType) String() string { return fmt.Sprintf("Type<%s>", t.Type.String()) }
 

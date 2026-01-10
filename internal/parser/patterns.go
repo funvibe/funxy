@@ -140,6 +140,15 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 			Name:     &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)},
 			Elements: []ast.Pattern{},
 		}
+	case token.ELLIPSIS:
+		// Spread pattern: ...name
+		tok := p.curToken
+		p.nextToken() // consume ...
+		pat := p.parsePattern()
+		if pat == nil {
+			return nil
+		}
+		return &ast.SpreadPattern{Token: tok, Pattern: pat}
 	case token.LPAREN:
 		startToken := p.curToken
 		p.nextToken()
@@ -150,10 +159,6 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 		}
 
 		pat := p.parsePattern()
-		if p.peekTokenIs(token.ELLIPSIS) {
-			p.nextToken()
-			pat = &ast.SpreadPattern{Token: p.curToken, Pattern: pat}
-		}
 
 		// Check for comma (tuple)
 		if p.peekTokenIs(token.COMMA) {
@@ -162,10 +167,6 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 				p.nextToken()
 				p.nextToken()
 				nextPat := p.parsePattern()
-				if p.peekTokenIs(token.ELLIPSIS) {
-					p.nextToken()
-					nextPat = &ast.SpreadPattern{Token: p.curToken, Pattern: nextPat}
-				}
 				elements = append(elements, nextPat)
 			}
 			if !p.expectPeek(token.RPAREN) {
@@ -191,10 +192,6 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 		elements := []ast.Pattern{}
 		for {
 			pat := p.parsePattern()
-			if p.peekTokenIs(token.ELLIPSIS) {
-				p.nextToken()
-				pat = &ast.SpreadPattern{Token: p.curToken, Pattern: pat}
-			}
 			elements = append(elements, pat)
 
 			if p.peekTokenIs(token.COMMA) {
@@ -209,6 +206,9 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 			return nil
 		}
 		return &ast.ListPattern{Token: startToken, Elements: elements}
+	case token.LBRACE:
+		// Record pattern { x: p1, y: p2 }
+		return p.parseRecordPattern()
 	default:
 		return nil
 	}
@@ -218,6 +218,19 @@ func (p *Parser) parseConstructorPattern() ast.Pattern {
 	cp := &ast.ConstructorPattern{
 		Token: p.curToken,
 		Name:  &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)},
+	}
+
+	// Check for named record pattern: Point { x: p1, y: p2 }
+	if p.peekTokenIs(token.LBRACE) {
+		typeName := p.curToken.Literal.(string)
+		p.nextToken() // consume type name, now at '{'
+		rp := p.parseRecordPattern()
+		if rp != nil {
+			if recPat, ok := rp.(*ast.RecordPattern); ok {
+				recPat.TypeName = typeName
+			}
+		}
+		return rp
 	}
 
 	// Check if we have C-style arguments (a, b)

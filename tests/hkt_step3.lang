@@ -3,7 +3,7 @@
 // Note: Functor instances for Option, List, Result are now built-in
 
 // Generic function with inline constraint (preferred for simple cases)
-fun double<F: Functor>(fa: F<Int>) -> F<Int> {
+fun double<f: Functor>(fa: f<Int>) -> f<Int> {
     fmap(fun(x) -> x * 2, fa)
 }
 
@@ -22,12 +22,12 @@ list2 = double([])
 print(list2)
 
 // Another generic function (also inline constraint)
-fun increment<F: Functor>(fa: F<Int>) -> F<Int> {
+fun increment<f: Functor>(fa: f<Int>) -> f<Int> {
     fmap(fun(x) -> x + 1, fa)
 }
 
 // Example with where clause (for complex cases)
-fun doubleWhere<F: Functor>(fa: F<Int>) -> F<Int> where Functor<F> {
+fun doubleWhere<f: Functor>(fa: f<Int>) -> f<Int> {
     fmap(fun(x) -> x * 2, fa)
 }
 

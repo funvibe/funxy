@@ -49,15 +49,16 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 		}, typesystem.Subst{}, nil
 
 	case *ast.FormatStringLiteral:
-		// Format string literal creates a formatter function: ? -> List<Char>
-		// We use a type variable for the input since it can be anything that supports string conversion
+		// Format string literal creates a variadic formatter function: (...args) -> String
+		// It can accept any number of arguments of any type
 		paramType := ctx.FreshVar()
 		return typesystem.TFunc{
-			Params:     []typesystem.Type{paramType},
+			Params: []typesystem.Type{paramType},
 			ReturnType: typesystem.TApp{
 				Constructor: typesystem.TCon{Name: config.ListTypeName},
 				Args:        []typesystem.Type{typesystem.TCon{Name: "Char"}},
 			},
+			IsVariadic: true, // Variadic function - accepts any number of arguments
 		}, typesystem.Subst{}, nil
 
 	case *ast.CharLiteral:
@@ -142,7 +143,9 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 
 		// Return anonymous record type by default
 		// Nominal typing is handled via explicit type annotations or unification
-		return typesystem.TRecord{Fields: finalFields}, totalSubst, nil
+		// Empty record literal {} is treated as Open to allow it to unify with any record (as a base/default)
+		isOpen := len(finalFields) == 0
+		return typesystem.TRecord{Fields: finalFields, IsOpen: isOpen}, totalSubst, nil
 
 	case *ast.ListLiteral:
 		if len(n.Elements) == 0 {
@@ -163,6 +166,11 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			totalSubst = s1.Compose(totalSubst)
 
 			if _, ok := firstNode.(*ast.SpreadExpression); ok {
+				// Resolve alias (e.g. String -> List<Char>)
+				if table != nil {
+					firstType = table.ResolveTypeAlias(firstType)
+				}
+
 				// If spread, firstType is the List type (List<T>).
 				if tApp, ok := firstType.(typesystem.TApp); ok {
 					if tCon, ok := tApp.Constructor.(typesystem.TCon); ok && tCon.Name == config.ListTypeName && len(tApp.Args) == 1 {
@@ -306,5 +314,123 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			Args:        []typesystem.Type{keyType, valType},
 		}, totalSubst, nil
 	}
-		return nil, nil, inferErrorf(node, "unknown literal type: %T", node)
+	return nil, nil, inferErrorf(node, "unknown literal type: %T", node)
+}
+
+// inferListComprehension infers the type of a list comprehension
+// [output | clause, clause, ...]
+// The result type is List<T> where T is the type of the output expression
+func inferListComprehension(ctx *InferenceContext, n *ast.ListComprehension, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
+	totalSubst := typesystem.Subst{}
+
+	// Create a new scope for the comprehension
+	compScope := symbols.NewEnclosedSymbolTable(table, symbols.ScopeBlock)
+
+	// Process each clause to bind variables and infer types
+	for _, clause := range n.Clauses {
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			// Infer the type of the iterable
+			iterType, s, err := inferFn(c.Iterable, compScope)
+			if err != nil {
+				return nil, nil, err
+			}
+			totalSubst = s.Compose(totalSubst)
+			iterType = iterType.Apply(totalSubst)
+
+			// Resolve type alias (e.g. String -> List<Char>)
+			iterType = table.ResolveTypeAlias(iterType)
+
+			// Extract element type from iterable
+			var elemType typesystem.Type
+			if tApp, ok := iterType.(typesystem.TApp); ok {
+				if tCon, ok := tApp.Constructor.(typesystem.TCon); ok {
+					if tCon.Name == config.ListTypeName && len(tApp.Args) == 1 {
+						elemType = tApp.Args[0]
+					} else if tCon.Name == "Range" && len(tApp.Args) == 1 {
+						elemType = tApp.Args[0]
+					} else {
+						return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List or Range, got %s", iterType)
+					}
+				} else {
+					return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List or Range, got %s", iterType)
+				}
+			} else if tVar, ok := iterType.(typesystem.TVar); ok {
+				// Unknown type, create fresh element type and constrain
+				elemType = ctx.FreshVar()
+				listType := typesystem.TApp{
+					Constructor: typesystem.TCon{Name: config.ListTypeName},
+					Args:        []typesystem.Type{elemType},
+				}
+				subst, err := typesystem.Unify(tVar, listType)
+				if err != nil {
+					return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List, got %s", iterType)
+				}
+				totalSubst = subst.Compose(totalSubst)
+				elemType = elemType.Apply(totalSubst)
+			} else {
+				return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List, got %s", iterType)
+			}
+
+			// Bind pattern variables with the element type
+			bindPatternType(c.Pattern, elemType, compScope)
+
+		case *ast.CompFilter:
+			// Infer the type of the filter condition
+			condType, s, err := inferFn(c.Condition, compScope)
+			if err != nil {
+				return nil, nil, err
+			}
+			totalSubst = s.Compose(totalSubst)
+			condType = condType.Apply(totalSubst)
+
+			// Filter condition must be Bool
+			subst, err := typesystem.Unify(condType, typesystem.Bool)
+			if err != nil {
+				return nil, nil, inferErrorf(c.Condition, "filter condition must be Bool, got %s", condType)
+			}
+			totalSubst = subst.Compose(totalSubst)
+		}
+	}
+
+	// Infer the type of the output expression
+	outputType, s, err := inferFn(n.Output, compScope)
+	if err != nil {
+		return nil, nil, err
+	}
+	totalSubst = s.Compose(totalSubst)
+	outputType = outputType.Apply(totalSubst)
+
+	// Result is List<outputType>
+	return typesystem.TApp{
+		Constructor: typesystem.TCon{Name: config.ListTypeName},
+		Args:        []typesystem.Type{outputType},
+	}, totalSubst, nil
+}
+
+// bindPatternType binds variables in a pattern to the given type in the symbol table
+func bindPatternType(pattern ast.Pattern, t typesystem.Type, table *symbols.SymbolTable) {
+	switch p := pattern.(type) {
+	case *ast.IdentifierPattern:
+		if p.Value != "_" {
+			table.Define(p.Value, t, "comprehension")
+		}
+	case *ast.WildcardPattern:
+		// Nothing to bind
+	case *ast.TuplePattern:
+		if tuple, ok := t.(typesystem.TTuple); ok && len(tuple.Elements) == len(p.Elements) {
+			for i, elem := range p.Elements {
+				bindPatternType(elem, tuple.Elements[i], table)
+			}
+		}
+	case *ast.ListPattern:
+		if tApp, ok := t.(typesystem.TApp); ok {
+			if tCon, ok := tApp.Constructor.(typesystem.TCon); ok && tCon.Name == config.ListTypeName && len(tApp.Args) == 1 {
+				elemType := tApp.Args[0]
+				for _, elem := range p.Elements {
+					bindPatternType(elem, elemType, table)
+				}
+			}
+		}
+	}
 }

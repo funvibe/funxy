@@ -1,0 +1,90 @@
+import "lib/test" (*)
+
+// 1. Recursive Types Limitation
+// Testing if we can define infinite recursive structural types without nominal wrappers.
+type RecList = { val: Int, next: RecList | Nil }
+
+testRun("Recursive Types: Infinite alias", fun() -> {
+    r1 = { val: 1, next: nil }
+    r2 = { val: 2, next: r1 }
+
+    check_rec = fun(x: RecList) -> Int {
+        x.val
+    }
+
+    assert(check_rec(r1) == 1, "Base recursion case")
+    assert(check_rec(r2) == 2, "Nested recursion case")
+})
+
+
+// 2. Rank-N Polymorphism Limitation
+// Trying to pass a polymorphic function and use it with different types.
+
+testRun("Rank-N: Polymorphic argument usage", fun() -> {
+    // Identity function: forall a. a -> a
+    my_id = fun(x) -> x
+
+    // Function taking a function 'f' and trying to apply it to Int AND String
+    // If Rank-N is NOT supported, 'f' will be inferred as Int -> Int (or String -> String)
+    // at the first call, and the second call will fail.
+    apply_twice = fun(f, x: Int, y: String) -> {
+        i = f(x) // f becomes (Int -> Int) here
+        // s = f(y) // Error expected here: f cannot accept String
+        // (i, s)
+        i
+    }
+
+    // Calling it
+    res = apply_twice(my_id, 10, "hello")
+    assert(res == 10)
+})
+
+
+// 3. Kind Polymorphism Limitation
+// Trying to use a type that works on constructors of different kinds (e.g. * and *->*)
+type Proxy<t> = Proxy
+
+testRun("Failure: Kind Polymorphism: Proxy", fun() -> {
+    // Define a type that holds nothing but carries a phantom type T
+
+    // Funxy likely infers the kind of t from usage.
+    // If we use Proxy<Int> (t is *) and Proxy<List> (t is *->*),
+    // a truly kind-polymorphic system would allow: fun p(x: Proxy<k>) {}
+
+    // fun take_proxy(p: Proxy<t>) -> Bool { true }
+
+    // p1: Proxy<Int> = Proxy // inferred as Proxy<Int>?
+    // p2: Proxy<List> = Proxy // inferred as Proxy<List>?
+
+    // assertEquals(take_proxy(p1), true)
+    // assertEquals(take_proxy(p2), true)
+})
+
+
+// 4. Row Polymorphism (Open Records)
+// Testing if we can write a function that takes "any record with field x"
+// and preserves the other fields.
+
+testRun("Row Polymorphism: Open records", fun() -> {
+    // Function expecting record with 'x: Int'
+    // In strict systems, passing {x:1, y:2} fails (width subtyping might allow it but lose 'y' info).
+    // In row polymorphism: fun get_x(rec: { x: Int | r }) -> Int
+
+    get_x = fun(rec: { x: Int }) -> Int {
+        rec.x
+    }
+
+    r1 = { x: 10, y: 20 }
+
+    // 1. Width subtyping check: Can we pass r1?
+    val = get_x(r1)
+    assert(val == 10, "Width subtyping works")
+
+    // 2. Information preservation check
+    // Can we write a function that updates 'x' and returns the *same* record shape?
+    // fun update_x(rec) { { ...rec, x: rec.x + 1 } } -- Spread syntax needed
+
+    // If we don't have spread for records or explicit row variable support,
+    // we can't write generic update functions that preserve unknown fields.
+})
+

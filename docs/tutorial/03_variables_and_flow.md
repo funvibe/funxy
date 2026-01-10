@@ -12,6 +12,50 @@ x = x + 1    // Update
 print(x)     // 11
 ```
 
+### Mutation and Shadowing
+
+The `=` operator defines a new variable if it doesn't exist in the current or outer scopes. If the variable *does* exist, `=` acts as an assignment (mutation) to the existing variable.
+
+This means you **cannot shadow** a variable from an outer scope by declaring a new one with the same name. You will implicitly mutate the outer variable instead.
+
+```rust
+x = 1
+{
+    // This is NOT a new local variable 'x'
+    // This MUTATES the outer 'x'
+    x = 2
+}
+print(x)  // 2
+```
+
+### Global Immutability
+
+There is one important exception to the mutation rule: **Global (Module-level) variables cannot be mutated from within functions.**
+
+```rust
+globalCounter = 0
+
+fun increment() {
+    // Error: cannot mutate global variable 'globalCounter' from within a function
+    globalCounter = globalCounter + 1
+}
+```
+
+However, you **can** mutate variables from an enclosing *function* scope (closures):
+
+```rust
+fun makeCounter() {
+    count = 0  // Local to makeCounter
+
+    fun inc() {
+        count = count + 1  // OK: mutating closure variable
+        count
+    }
+
+    inc
+}
+```
+
 ## Scopes
 
 Blocks `{ }` create a new scope:

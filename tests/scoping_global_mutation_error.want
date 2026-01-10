@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 9:5 [A003]: type error: cannot mutate global variable 'globalVar' from within a function

@@ -133,7 +133,7 @@ rect = Rectangle(10, 20)
 print(getType(rect))
 
 // Generic ADT
-type Container<T> = Wrap T
+type Container<t> = Wrap t
 
 wrapInt = Wrap(42)
 print(getType(wrapInt))
@@ -142,7 +142,7 @@ wrapStr = Wrap("hello")
 print(getType(wrapStr))
 
 // Recursive ADT
-type MyList<T> = Cons T (MyList<T>) | End
+type MyList<t> = Cons t (MyList<t>) | End
 
 myList = Cons(1, Cons(2, Cons(3, End)))
 print(getType(myList))

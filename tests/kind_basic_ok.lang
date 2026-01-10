@@ -1,0 +1,17 @@
+// Test: Basic HKT Kinds
+// Functor expects F: * -> *
+
+type MyBox<t> = Box(t)
+
+instance Functor<MyBox> {
+    fun fmap(f, x) {
+        match x {
+            Box(v) -> Box(f(v))
+        }
+    }
+}
+
+b: MyBox<Int> = Box(42)
+res: MyBox<String> = fmap(fun(x) { "s" }, b)
+
+print("OK")

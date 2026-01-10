@@ -7,8 +7,6 @@ import "lib/sql" (SqlValue)
 // Two packages both have trait named "Storage" but in different modules
 import "./qualified_pkg/db" as dbStorage
 import "./qualified_pkg/cache" as cacheStorage
-import "./qualified_pkg/db" (MkDbConfig, MkDbConnection)
-import "./qualified_pkg/cache" (MkCacheConfig, MkCacheEntry)
 
 // === SCENARIO 2: Selective import with trait method auto-import ===
 import "./qualified_pkg/core" (validate, getMessage, getErrors, audit, timestamp, display, incrementVersion, Status, Entity)
@@ -18,7 +16,7 @@ import "./qualified_pkg/core" (validate, getMessage, getErrors, audit, timestamp
 
 type User = MkUser { userId: Int, userName: String, email: String }
 type Product = MkProduct { productId: Int, productName: String, price: Int }
-type Order = MkOrder { orderId: Int, userId: Int, products: List<Int> }
+type UserOrder = MkOrder { orderId: Int, userId: Int, products: List<Int> }
 
 // ============================================================================
 // TEST 1: Module collision - два trait с одинаковым именем Storage
@@ -33,7 +31,7 @@ testRun("Test 1: Module collision - db.Storage vs cache.Storage", fun() {
         fun save(u) { true }
         fun load(id) {
             u = MkUser { userId: id, userName: "loaded", email: "test@test.com" }
-            Some(item: u)
+            Some(u)
         }
         fun delete(id) { true }
     }
@@ -43,7 +41,7 @@ testRun("Test 1: Module collision - db.Storage vs cache.Storage", fun() {
         fun persist(u) { "user:" ++ show(u.userId) }
         fun retrieve(key) {
             u = MkUser { userId: 1, userName: "cached", email: "cache@test.com" }
-            Some(item: u)
+            Some(u)
         }
         fun invalidate(key) { true }
     }
@@ -166,7 +164,7 @@ testRun("Test 5: Multiple qualified traits for same type", fun() {
         fun save(p) { true }
         fun load(id) {
             p = MkProduct { productId: id, productName: "loaded", price: 0 }
-            Some(item: p)
+            Some(p)
         }
         fun delete(id) { true }
     }
@@ -179,7 +177,7 @@ testRun("Test 5: Multiple qualified traits for same type", fun() {
         }
         fun retrieve(key) {
             p = MkProduct { productId: 1, productName: "cached", price: 100 }
-            Some(item: p)
+            Some(p)
         }
         fun invalidate(key) { true }
     }
@@ -198,10 +196,10 @@ testRun("Test 5: Multiple qualified traits for same type", fun() {
 // ============================================================================
 testRun("Test 6: Qualified trait with default methods", fun() {
     // Auditable trait имеет default method timestamp
-    instance qualified_pkg.core.Auditable Order {
+    instance qualified_pkg.core.Auditable UserOrder {
         fun audit(o) {
             match o {
-                MkOrder(r) -> "Order #" ++ show(r.orderId) ++ " by user " ++ show(r.userId)
+                MkOrder(r) -> "UserOrder #" ++ show(r.orderId) ++ " by user " ++ show(r.userId)
             }
         }
         fun timestamp(o) { 0 }  // Implementing default method explicitly

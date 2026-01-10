@@ -1,28 +1,28 @@
-// Test: Multiple constraints
-// fun process<T: Show, Cmp>(x: T, y: T) -> String
+// Test: Multiple constraints on same type variable
+// New syntax: t: Trait1, Trait2, Trait3
 
-trait Show<T> {
-    fun show(val: T) -> String
+trait Printable<t> {
+    fun format(val: t) -> String
 }
 
-trait Cmp<T> {
-    fun cmp(a: T, b: T) -> Bool
+trait Cmp<t> {
+    fun cmp(a: t, b: t) -> Bool
 }
 
-instance Show Int {
-    fun show(val: Int) -> String { "int" }
+instance Printable Int {
+    fun format(val: Int) -> String { "int" }
 }
 
 instance Cmp Int {
     fun cmp(a: Int, b: Int) -> Bool { a == b }
 }
 
-// Function with multiple constraints - T must implement BOTH Show AND Cmp
-fun process<T: Show, T: Cmp>(x: T, y: T) -> String {
-    if cmp(x, y) { 
-        show(x) 
-    } else { 
-        "different" 
+// Function with multiple constraints - t must implement BOTH Printable AND Cmp
+fun process<t: Printable, Cmp>(x: t, y: t) -> String {
+    if cmp(x, y) {
+        format(x)
+    } else {
+        "different"
     }
 }
 

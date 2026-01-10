@@ -1,21 +1,21 @@
 // Test: Error when one of multiple super traits is missing
 
-trait Show<T> {
-    fun show(val: T) -> String
+trait Stringify<t> {
+    fun stringify(val: t) -> String
 }
 
-trait Cmp<T> {
-    fun cmp(a: T, b: T) -> Bool
+trait Cmp<t> {
+    fun cmp(a: t, b: t) -> Bool
 }
 
-// Print requires both Show and Cmp
-trait Print<T> : Show<T>, Cmp<T> {
-    fun format(val: T) -> String
+// Print requires both Stringify and Cmp
+trait Print<t> : Stringify<t>, Cmp<t> {
+    fun format(val: t) -> String
 }
 
-// Only implement Show, NOT Cmp
-instance Show Int {
-    fun show(val: Int) -> String {
+// Only implement Stringify, NOT Cmp
+instance Stringify Int {
+    fun stringify(val: Int) -> String {
         "Int"
     }
 }

@@ -1,10 +1,10 @@
 // Test extension methods
 
 // Define an ADT
-type Container<T> = Box T
+type Container<t> = Box t
 
 // Define extension method
-fun<T> (b: Container<T>) unbox() -> T {
+fun (b: Container<t>) unbox() -> t {
     match b {
         Box(v) -> v
     }
@@ -32,7 +32,7 @@ print(pt.sum())
 // Test implicit generic resolution (List)
 // List is built-in but handled as List a
 // Extension on List
-fun<T> (l: List<T>) len_plus_one() -> Int {
+fun (l: List<t>) len_plus_one() -> Int {
     len(l) + 1
 }
 

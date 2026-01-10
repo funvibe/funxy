@@ -13,7 +13,7 @@ type PipelineContext struct {
 	FilePath    string // Path to the source file (if any)
 	TokenStream TokenStream
 	AstRoot     ast.Node
-	SymbolTable *symbols.SymbolTable // Add the symbol table here
+	SymbolTable *symbols.SymbolTable         // Add the symbol table here
 	TypeMap     map[ast.Node]typesystem.Type // Stores inferred types for expressions
 	Errors      []*diagnostics.DiagnosticError
 
@@ -23,8 +23,8 @@ type PipelineContext struct {
 	// Operator -> Trait mapping for dispatch: "+" -> "Add", "==" -> "Equal"
 	OperatorTraits map[string]string
 
-	// Trait implementations: trait -> []types that implement it
-	TraitImplementations map[string][]typesystem.Type
+	// Trait implementations: trait -> [InstanceDef] (MPTC support)
+	TraitImplementations map[string][]symbols.InstanceDef
 
 	// Module loader - shared between analyzer and evaluator
 	// Using interface{} to avoid import cycle with modules package
@@ -43,6 +43,6 @@ func NewPipelineContext(source string) *PipelineContext {
 		Errors:               []*diagnostics.DiagnosticError{},
 		TraitDefaults:        make(map[string]*ast.FunctionStatement),
 		OperatorTraits:       make(map[string]string),
-		TraitImplementations: make(map[string][]typesystem.Type),
+		TraitImplementations: make(map[string][]symbols.InstanceDef),
 	}
 }

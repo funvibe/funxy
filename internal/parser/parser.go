@@ -33,53 +33,55 @@ type (
 
 // Precedence constants
 const (
-	LOWEST      = iota
+	LOWEST           = iota
 	USER_OP_APP_PREC // $ (lowest precedence operator, but above LOWEST)
-	PIPE_PREC   // |>
-	LOGIC_OR    // ||
-	LOGIC_AND   // &&
-	EQUALS      // ==
-	LESSGREATER // > or <
-	BITWISE_OR  // | ^
-	BITWISE_AND // &
-	SHIFT       // << >>
-	SUM         // +
-	PRODUCT     // *
-	POWER       // **
-	PREFIX      // -X or !X
-	POSTFIX     // X?
-	CALL        // myFunction(X)
-	INDEX       // array[index]
-	ANNOTATION  // x: Int
+	PIPE_PREC        // |>
+	LOGIC_OR         // ||
+	LOGIC_AND        // &&
+	EQUALS           // ==
+	LESSGREATER      // > or <
+	BITWISE_OR       // | ^
+	BITWISE_AND      // &
+	RANGE            // ..
+	SHIFT            // << >>
+	SUM              // +
+	PRODUCT          // *
+	POWER            // **
+	PREFIX           // -X or !X
+	POSTFIX          // X?
+	CALL             // myFunction(X)
+	INDEX            // array[index]
+	ANNOTATION       // x: Int
 )
 
 var precedences = map[token.TokenType]int{
-	token.USER_OP_APP:   USER_OP_APP_PREC, // $ (lowest, function application)
-	token.PIPE_GT:       PIPE_PREC,
-	token.OR:            LOGIC_OR,
-	token.NULL_COALESCE: LOGIC_OR,  // ?? same precedence as ||
-	token.AND:           LOGIC_AND,
-	token.EQ:        EQUALS,
-	token.NOT_EQ:    EQUALS,
-	token.LT:        LESSGREATER,
-	token.GT:        LESSGREATER,
-	token.LTE:       LESSGREATER,
-	token.GTE:       LESSGREATER,
-	token.PIPE:      BITWISE_OR,
-	token.CARET:     BITWISE_OR,
-	token.AMPERSAND: BITWISE_AND,
-	token.LSHIFT:    SHIFT,
-	token.RSHIFT:    SHIFT,
-	token.PLUS:      SUM,
-	token.MINUS:     SUM,
-	token.CONCAT:    SUM,  // ++ same as +
-	token.CONS:      SUM,  // :: same level (right-associative handled in parseInfix)
-	token.SLASH:     PRODUCT,
-	token.ASTERISK:  PRODUCT,
-	token.PERCENT:   PRODUCT,
-	token.POWER:     POWER,
-	token.COMPOSE:   POWER,  // ,, composition (right-to-left, high precedence like Haskell's .)
-	token.LPAREN:    CALL,
+	token.USER_OP_APP:     USER_OP_APP_PREC, // $ (lowest, function application)
+	token.PIPE_GT:         PIPE_PREC,
+	token.OR:              LOGIC_OR,
+	token.NULL_COALESCE:   LOGIC_OR, // ?? same precedence as ||
+	token.AND:             LOGIC_AND,
+	token.EQ:              EQUALS,
+	token.NOT_EQ:          EQUALS,
+	token.LT:              LESSGREATER,
+	token.GT:              LESSGREATER,
+	token.LTE:             LESSGREATER,
+	token.GTE:             LESSGREATER,
+	token.PIPE:            BITWISE_OR,
+	token.CARET:           BITWISE_OR,
+	token.AMPERSAND:       BITWISE_AND,
+	token.DOT_DOT:         RANGE,
+	token.LSHIFT:          SHIFT,
+	token.RSHIFT:          SHIFT,
+	token.PLUS:            SUM,
+	token.MINUS:           SUM,
+	token.CONCAT:          SUM, // ++ same as +
+	token.CONS:            SUM, // :: same level (right-associative handled in parseInfix)
+	token.SLASH:           PRODUCT,
+	token.ASTERISK:        PRODUCT,
+	token.PERCENT:         PRODUCT,
+	token.POWER:           POWER,
+	token.COMPOSE:         POWER, // ,, composition (right-to-left, high precedence like Haskell's .)
+	token.LPAREN:          CALL,
 	token.ASSIGN:          EQUALS, // Assignment has low precedence? Usually lowest. But here we treat as expr.
 	token.PLUS_ASSIGN:     EQUALS, // Compound assignment operators
 	token.MINUS_ASSIGN:    EQUALS,
@@ -88,10 +90,10 @@ var precedences = map[token.TokenType]int{
 	token.PERCENT_ASSIGN:  EQUALS,
 	token.POWER_ASSIGN:    EQUALS,
 	token.COLON:           ANNOTATION,
-	token.LBRACKET:  INDEX,
-	token.QUESTION:       POSTFIX,
-	token.DOT:            CALL,
-	token.OPTIONAL_CHAIN: CALL,  // ?. has same precedence as .
+	token.LBRACKET:        INDEX,
+	token.QUESTION:        POSTFIX,
+	token.DOT:             CALL,
+	token.OPTIONAL_CHAIN:  CALL, // ?. has same precedence as .
 	// User-definable operators are registered dynamically in init()
 }
 
@@ -154,6 +156,7 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 	p.registerPrefix(token.BACKSLASH, p.parseLambdaExpression)
 	p.registerPrefix(token.FOR, p.parseForExpression) // for loop
 	p.registerPrefix(token.ELLIPSIS, p.parsePrefixSpreadExpression)
+	p.registerPrefix(token.DO, p.parseDoExpression)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression) // Re-register explicitly to be safe
 
 	p.infixParseFns = make(map[token.TokenType]infixParseFn)
@@ -162,8 +165,9 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 	p.registerInfix(token.SLASH, p.parseInfixExpression)
 	p.registerInfix(token.ASTERISK, p.parseInfixExpression)
 	p.registerInfix(token.PERCENT, p.parseInfixExpression)
-	p.registerInfix(token.POWER, p.parseInfixExpression)
+	p.registerInfix(token.POWER, p.parseRightAssocInfixExpression)
 	p.registerInfix(token.AMPERSAND, p.parseInfixExpression)
+	p.registerInfix(token.DOT_DOT, p.parseRangeExpression)
 	p.registerInfix(token.PIPE, p.parseInfixExpression)
 	p.registerInfix(token.CARET, p.parseInfixExpression)
 	p.registerInfix(token.LSHIFT, p.parseInfixExpression)
@@ -174,7 +178,7 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 	p.registerInfix(token.PIPE_GT, p.parseInfixExpression)
 	p.registerInfix(token.USER_OP_APP, p.parseRightAssocInfixExpression) // $ right-associative
 	p.registerInfix(token.CONCAT, p.parseInfixExpression)
-	p.registerInfix(token.CONS, p.parseRightAssocInfixExpression) // Right-associative
+	p.registerInfix(token.CONS, p.parseRightAssocInfixExpression)    // Right-associative
 	p.registerInfix(token.COMPOSE, p.parseRightAssocInfixExpression) // Right-associative composition
 	p.registerInfix(token.EQ, p.parseInfixExpression)
 	p.registerInfix(token.NOT_EQ, p.parseInfixExpression)
@@ -258,9 +262,23 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 		var typeAnnot ast.Type
 
 		if ident, ok := expr.(*ast.Identifier); ok {
+			if ident.Token.Type == token.IDENT_UPPER {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP006,
+					ident.Token,
+					"Constant name must start with a lowercase letter",
+				))
+			}
 			name = ident
 		} else if anno, ok := expr.(*ast.AnnotatedExpression); ok {
 			if ident, ok := anno.Expression.(*ast.Identifier); ok {
+				if ident.Token.Type == token.IDENT_UPPER {
+					p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+						diagnostics.ErrP006,
+						ident.Token,
+						"Constant name must start with a lowercase letter",
+					))
+				}
 				name = ident
 				typeAnnot = anno.TypeAnnotation
 			} else {
@@ -272,21 +290,21 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 			// Convert tuple literal to tuple pattern
 			pattern = p.tupleExprToPattern(tuple)
 			if pattern == nil {
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "invalid pattern in tuple destructuring"))
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP006, expr.GetToken(), "invalid pattern in tuple destructuring"))
 				return nil
 			}
 		} else if list, ok := expr.(*ast.ListLiteral); ok {
 			// Convert list literal to list pattern
 			pattern = p.listExprToPattern(list)
 			if pattern == nil {
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "invalid pattern in list destructuring"))
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP006, expr.GetToken(), "invalid pattern in list destructuring"))
 				return nil
 			}
 		} else if rec, ok := expr.(*ast.RecordLiteral); ok {
 			// Convert record literal to record pattern
 			pattern = p.recordExprToPattern(rec)
 			if pattern == nil {
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP005, expr.GetToken(), "invalid pattern in record destructuring"))
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP006, expr.GetToken(), "invalid pattern in record destructuring"))
 				return nil
 			}
 		} else {
@@ -366,6 +384,21 @@ func (p *Parser) exprToPattern(expr ast.Expression) ast.Pattern {
 	}
 }
 
+// parseDirectiveStatement parses a directive statement.
+// directive "name"
+func (p *Parser) parseDirectiveStatement() *ast.DirectiveStatement {
+	stmt := &ast.DirectiveStatement{Token: p.curToken}
+
+	if !p.expectPeek(token.STRING) {
+		return nil
+	}
+
+	stmt.Name = p.curToken.Literal.(string)
+	p.nextToken() // consume string
+
+	return stmt
+}
+
 func (p *Parser) ParseProgram() *ast.Program {
 	program := &ast.Program{}
 	program.Statements = []ast.Statement{}
@@ -401,6 +434,25 @@ func (p *Parser) ParseProgram() *ast.Program {
 		}
 	}
 
+	// 2.5 Check for Directives (must be top-level, after imports)
+	for p.curToken.Type == token.DIRECTIVE {
+		dir := p.parseDirectiveStatement()
+		if dir != nil {
+			program.Statements = append(program.Statements, dir)
+		}
+		// Directive is followed by string then newline
+		// parseDirectiveStatement consumes string and nextToken calls Next().
+		// We expect newline after.
+		if p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
+		p.nextToken()
+		// Consume newlines
+		for p.curToken.Type == token.NEWLINE {
+			p.nextToken()
+		}
+	}
+
 	// 3. Parse Statements
 	for p.curToken.Type != token.EOF {
 		if p.curToken.Type == token.NEWLINE {
@@ -415,7 +467,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 				p.nextToken()
 			}
 			p.nextToken()
-		} else if p.curToken.Type == token.FUN && (p.peekTokenIs(token.IDENT_LOWER) || p.peekTokenIs(token.LT) || p.peekTokenIs(token.LPAREN)) {
+		} else if p.curToken.Type == token.FUN && (p.peekTokenIs(token.IDENT_LOWER) || p.peekTokenIs(token.IDENT_UPPER) || p.peekTokenIs(token.LT) || p.peekTokenIs(token.LPAREN)) {
 			// Function declaration (named)
 			// Or generic function fun foo<T>(...)
 			// Or extension method fun (recv) foo(...)
@@ -445,17 +497,23 @@ func (p *Parser) ParseProgram() *ast.Program {
 					nextToken := tokens[idx+1]
 					// If next token is IDENT, it is likely Extension Method Name: fun (recv) Name
 					// If next token is LBRACE, ARROW, or COLON (ret type of lambda?), it is Literal.
-					if nextToken.Type == token.IDENT_LOWER {
+					if nextToken.Type == token.IDENT_LOWER || nextToken.Type == token.IDENT_UPPER {
 						isExtension = true
 					}
 				}
+			} else if p.peekTokenIs(token.IDENT_UPPER) {
+				// Invalid function name starting with uppercase, but treat as function statement to report correct error
+				isExtension = true
 			} else {
 				// Normal function `fun Name` or `fun <T> Name`
 				isExtension = true
 			}
 
 			if isExtension {
-				stmt = p.parseFunctionStatement()
+				fnStmt := p.parseFunctionStatement()
+				if fnStmt != nil {
+					stmt = fnStmt
+				}
 				if p.peekTokenIs(token.NEWLINE) {
 					p.nextToken()
 				}
@@ -487,7 +545,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 		} else if p.curToken.Type == token.PACKAGE || p.curToken.Type == token.IMPORT {
 			// Error: package/import must be at top
 			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-				diagnostics.ErrP005, // Or generic syntax error
+				diagnostics.ErrP006, // Or generic syntax error
 				p.curToken,
 				"package or import declaration must be at the top of the file",
 			))
@@ -632,6 +690,32 @@ func (p *Parser) peekPrecedence() int {
 		return p
 	}
 	return LOWEST
+}
+
+func (p *Parser) parseRangeExpression(left ast.Expression) ast.Expression {
+	tok := p.curToken
+	precedence := p.curPrecedence()
+	p.nextToken() // consume ..
+
+	// Parse end expression
+	end := p.parseExpression(precedence)
+
+	var start, next ast.Expression
+	start = left
+
+	// Check for (start, next)..end syntax
+	// We only support literal tuples for this syntactic sugar
+	if tuple, ok := left.(*ast.TupleLiteral); ok && len(tuple.Elements) == 2 {
+		start = tuple.Elements[0]
+		next = tuple.Elements[1]
+	}
+
+	return &ast.RangeExpression{
+		Token: tok,
+		Start: start,
+		Next:  next,
+		End:   end,
+	}
 }
 
 func (p *Parser) registerPrefix(tokenType token.TokenType, fn prefixParseFn) {

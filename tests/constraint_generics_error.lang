@@ -1,20 +1,20 @@
 // Test: Constraint generics error
-// String does not implement Show
+// String does not implement Printable
 
-trait Show<T> {
-    fun show(val: T) -> String
+trait Printable<t> {
+    fun format(val: t) -> String
 }
 
-instance Show Int {
-    fun show(val: Int) -> String {
+instance Printable Int {
+    fun format(val: Int) -> String {
         "int"
     }
 }
 
-// Constrained function - T must implement Show
-fun display<T: Show>(x: T) -> String {
-    show(x)
+// Constrained function - t must implement Printable
+fun display<t: Printable>(x: t) -> String {
+    format(x)
 }
 
-// ERROR: String (List Char) does not implement Show
+// ERROR: String (List Char) does not implement Printable
 print(display("hello"))

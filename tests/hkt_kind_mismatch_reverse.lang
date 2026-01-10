@@ -1,0 +1,8 @@
+// Test: Kind checking reverse case
+// Show expects kind * (concrete type)
+// List has kind * -> * (type constructor)
+
+instance Show<List> {
+    fun show(x: List) -> String { "List" }
+}
+

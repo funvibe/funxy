@@ -67,7 +67,10 @@ func evaluateModule(mod *modules.Module, loader *modules.Loader) (evaluator.Obje
 	evaluator.RegisterBuiltins(env)
 
 	eval := evaluator.New()
-	evaluator.RegisterFPTraits(eval, env) // Register FP traits
+	evaluator.RegisterBasicTraits(eval, env)    // Register basic traits (Eq, Ord, etc.)
+	evaluator.RegisterStandardTraits(eval, env) // Register Show (and potentially others)
+	evaluator.RegisterFPTraits(eval, env)       // Register FP traits
+	evaluator.RegisterDictionaryGlobals(eval, env)
 	if mod.TraitDefaults != nil {
 		eval.TraitDefaults = mod.TraitDefaults
 	}
@@ -155,6 +158,8 @@ func handleTest() bool {
 	if os.Args[1] != "test" {
 		return false
 	}
+
+	// Test mode flag is already set in main()
 
 	// Initialize virtual packages
 	modules.InitVirtualPackages()
@@ -248,7 +253,7 @@ func runTestFile(path string, useTreeWalk bool) {
 	}
 
 	// Use unified pipeline logic with test mode enabled
-	runPipeline(string(sourceCode), absPath, useTreeWalk, true)
+	runPipeline(string(sourceCode), absPath, useTreeWalk, true, false)
 }
 
 func handleHelp() bool {
@@ -411,6 +416,14 @@ func handleRunCompiled() bool {
 
 	bytecodePath := os.Args[2]
 
+	// Fix os.Args for sysArgs: remove "-r" flag so os.Args[1] is the script path
+	// This ensures sysArgs() returns [scriptPath, args...] consistent with source execution
+	// We do this by constructing a new slice to avoid modifying the underlying array in a way that might affect other things
+	newArgs := make([]string, 0, len(os.Args)-1)
+	newArgs = append(newArgs, os.Args[0])
+	newArgs = append(newArgs, os.Args[2:]...)
+	os.Args = newArgs
+
 	// Read bytecode file
 	data, err := os.ReadFile(bytecodePath)
 	if err != nil {
@@ -476,7 +489,7 @@ func getArgs() []string {
 }
 
 // Run code using the unified pipeline
-func runPipeline(sourceCode string, filePath string, useTreeWalk bool, isTestMode bool) {
+func runPipeline(sourceCode string, filePath string, useTreeWalk bool, isTestMode bool, debugMode bool) {
 	// 1. Create the initial pipeline context
 	initialContext := pipeline.NewPipelineContext(sourceCode)
 	initialContext.FilePath = filePath
@@ -485,9 +498,12 @@ func runPipeline(sourceCode string, filePath string, useTreeWalk bool, isTestMod
 	// 2. Select backend based on flag
 	var execBackend backend.Backend
 	if useTreeWalk {
+		if debugMode {
+			fmt.Fprintln(os.Stderr, "Warning: Debug mode is only supported with VM backend. Use VM backend (default) for debugging.")
+		}
 		execBackend = backend.NewTreeWalk()
 	} else {
-		execBackend = backend.NewVM()
+		execBackend = backend.NewVM(debugMode)
 	}
 
 	// 3. Create and configure the processing pipeline
@@ -528,6 +544,27 @@ func main() {
 		}
 	}()
 
+	// Set test mode flag once at startup if:
+	// 1. First argument is "test" (handled by handleTest)
+	// 2. Environment variable FUNXY_TEST_MODE is set (for go test runs)
+	if len(os.Args) >= 2 && os.Args[1] == "test" {
+		config.IsTestMode = true
+	} else if os.Getenv("FUNXY_TEST_MODE") == "1" {
+		config.IsTestMode = true
+	}
+
+	// Check for debug flag
+	debugMode := false
+	args := os.Args[1:]
+	var fileArgs []string
+	for _, arg := range args {
+		if arg == "-debug" || arg == "--debug" {
+			debugMode = true
+		} else if !strings.HasPrefix(arg, "-") {
+			fileArgs = append(fileArgs, arg)
+		}
+	}
+
 	// Handle help first
 	if handleHelp() {
 		return
@@ -549,7 +586,14 @@ func main() {
 	}
 
 	useTreeWalk := isTreeWalkMode()
-	args := getArgs()
+
+	// Restore args with file arguments
+	if len(fileArgs) > 0 {
+		os.Args = append([]string{os.Args[0]}, fileArgs...)
+	} else {
+		os.Args = []string{os.Args[0]}
+	}
+	args = getArgs()
 
 	if len(args) == 2 {
 		path := args[1]
@@ -579,7 +623,7 @@ func main() {
 	}
 
 	// Use unified pipeline execution
-	runPipeline(sourceCode, filePath, useTreeWalk, false)
+	runPipeline(sourceCode, filePath, useTreeWalk, false, debugMode)
 }
 
 func readInputFromArgs(args []string) (string, error) {

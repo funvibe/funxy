@@ -81,9 +81,14 @@ Save as `hello.lang` and run: `./funxy hello.lang`
 ```rust
 import "lib/list" (map)
 
+directive "strict_types" // Enforce stricter type checking
+
 numbers = [1, 2, 3] // Type inferred: List<Int>
-doubled = map(\x -> { x * 2 }, numbers)
-print(doubled) // [2, 4, 6]
+
+// Compact lambdas and implicit conversions (Int -> Float)
+doubled = map(\x -> x * 2.0, numbers)
+
+print(doubled) // [2.0, 4.0, 6.0]
 
 // Explicit types when needed
 fun add(a: Int, b: Int) -> Int { a + b }
@@ -129,10 +134,12 @@ print(route("GET", "/files/css/main.css")) // File: css/main.css
 import "lib/list" (filter, map, foldl)
 
 result = [1, 2, 3, 4, 5]
-    |> filter(fun(x) { x % 2 == 0 })
-    |> map(fun(x) { x * x })
-    |> foldl(fun(acc, x) { acc + x }, 0)
-// 20
+    |> filter(\x -> x % 2 == 0) // Lambda syntax
+    |> map(\x -> x * x)
+    |> foldl(\acc, x -> acc + x, 0)
+    |> %"Result: %.2f" // Pipe formatting
+
+// Result: 20.00
 ```
 
 ### Algebraic Data Types
@@ -200,6 +207,29 @@ html = render(page)
 // <div><span>Header</span><div>Content line 1Content line 2</div><span>Footer</span></div>
 ```
 
+### Do Notation
+
+Monadic operations simplified:
+
+```rust
+fun maybeAdd(mx, my) {
+    do {
+        x <- mx
+        y <- my
+        pure(x + y)
+    }
+}
+```
+
+### Ranges and List Comprehensions
+
+Expressive list generation:
+
+```rust
+chars = 'a'..'z'
+squares = [x * x | x <- 1..10, x % 2 == 0]
+```
+
 ### Tail Call Optimization
 
 ```rust
@@ -211,7 +241,15 @@ fun countdown(n, acc) {
 print(countdown(1000000, 0))  // Works, no stack overflow
 ```
 
-### Cyclic Dependencies
+### Debugging
+
+Funxy includes a built-in debugger.
+
+```bash
+./funxy -debug script.lang
+```
+
+## Cyclic Dependencies
 
 Modules can import each other — the analyzer resolves cycles automatically:
 
@@ -313,7 +351,7 @@ import "lib/list" (filter)
 fun qsort(xs) {
     match xs {
         [] -> []
-        [pivot, rest...] -> {
+        [pivot, ...rest] -> {
             less = filter(fun(x) { x < pivot }, rest)
             greater = filter(fun(x) { x >= pivot }, rest)
             qsort(less) ++ [pivot] ++ qsort(greater)

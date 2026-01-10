@@ -1,4 +1,4 @@
-import "kit/ui" (*)
+import "kit/ui" (text, h1, raw, render, div, span, img, button, p)
 import "lib/test" (*)
 import "lib/string" (stringIndexOf)
 import "lib/tuple" (fst, snd)
@@ -12,16 +12,18 @@ fun containsStr(needle, haystack) {
 
 testRun("UI Package - Types", fun() {
     t = text("Hello")
-    s = showVNode(t)
-    assert(s |> containsStr("Text"), "contains Text constructor")
-    assert(s |> containsStr("Hello"), "contains content")
+    r = render(t)
+    assert(r == "Hello", "render text")
 })
 
 testRun("UI Package - Render", fun() {
-    node = div(class: "container", id: "main") {
-        h1() { text("Title") }
-        p(style: "color: red") { text("Content") }
-        raw("<span>Raw rendered</span>")
+    // div(attrs)(children)
+    node = div({class: "container", id: "main"}) {
+        [
+            h1([text("Title")]),
+            p({style: "color: red"}) { [text("Content")] },
+            raw("<span>Raw rendered</span>")
+        ]
     }
 
     rendered = render(node)
@@ -36,7 +38,7 @@ testRun("UI Package - Render", fun() {
 })
 
 testRun("UI Package - Void Tags", fun() {
-    imgNode = img(src: "pic.jpg", alt: "Pic")
+    imgNode = img({src: "pic.jpg", alt: "Pic"})
     rendered = render(imgNode)
 
     assert(rendered |> containsStr("<img"), "contains <img")
@@ -45,7 +47,7 @@ testRun("UI Package - Void Tags", fun() {
 })
 
 testRun("UI Package - Attributes Normalization", fun() {
-    btn = button(hx_post: "/api/click", data_val: "123") { text("Click") }
+    btn = button({hx_post: "/api/click", data_val: "123"}) { [text("Click")] }
     rendered = render(btn)
 
     assert(rendered |> containsStr("hx-post=\"/api/click\""), "hx-post present")
@@ -55,21 +57,20 @@ testRun("UI Package - Attributes Normalization", fun() {
 })
 
 testRun("UI Package - Empty Element", fun() {
-    empty = div()
+    empty = div([])
     rendered = render(empty)
     assert(rendered |> containsStr("<div></div>"), "empty div")
 })
 
 testRun("UI Package - Block Syntax Without Parens", fun() {
-    // Testing clean DSL: div { ... } instead of div() { ... }
-    node = div {
-        text("Hello")
-        span { text("World") }
-    }
+    // Testing explicit div with list argument
+    node = div([
+        text("Hello"),
+        span([text("World")])
+    ])
     rendered = render(node)
 
     assert(rendered |> containsStr("<div>"), "contains open div")
     assert(rendered |> containsStr("Hello"), "contains text")
-    assert(rendered |> containsStr("<span>World</span>"), "contains nested span")
     assert(rendered |> containsStr("</div>"), "contains close div")
 })

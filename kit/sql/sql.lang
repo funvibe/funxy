@@ -8,9 +8,9 @@ import "lib/tuple" (fst, snd)
 
 // --- ORM-like Helpers ---
 
-trait Model<T> {
-    fun tableName(val: T) -> String
-    fun toRow(val: T) -> Map<String, SqlValue>
+trait Model<t> {
+    fun tableName(val: t) -> String
+    fun toRow(val: t) -> Map<String, SqlValue>
 }
 
 // Helper to query all rows and map them
@@ -31,7 +31,7 @@ fun findById(db, table, key, mapper) {
     }
 }
 
-fun insert<T: Model>(db, model: T) {
+fun insert<t: Model>(db, model: t) {
     table = tableName(model)
     row = toRow(model)
     items = mapItems(row)

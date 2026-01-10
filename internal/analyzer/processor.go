@@ -27,9 +27,9 @@ func (sap *SemanticAnalyzerProcessor) Process(ctx *pipeline.PipelineContext) *pi
 	}
 	errors := analyzer.Analyze(ctx.AstRoot)
 
-	ctx.TypeMap = analyzer.TypeMap               // Export inferred types to context
-	ctx.TraitDefaults = analyzer.TraitDefaults   // Export trait defaults for evaluator
-	ctx.OperatorTraits = ctx.SymbolTable.GetAllOperatorTraits() // Export operator -> trait mappings
+	ctx.TypeMap = analyzer.TypeMap                                     // Export inferred types to context
+	ctx.TraitDefaults = analyzer.TraitDefaults                         // Export trait defaults for evaluator
+	ctx.OperatorTraits = ctx.SymbolTable.GetAllOperatorTraits()        // Export operator -> trait mappings
 	ctx.TraitImplementations = ctx.SymbolTable.GetAllImplementations() // Export trait implementations
 
 	if len(errors) > 0 {

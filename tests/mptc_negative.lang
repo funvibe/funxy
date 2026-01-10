@@ -1,0 +1,33 @@
+// =============================================================================
+// MPTC NEGATIVE TESTS
+// Checks constraint violations for Multi-Parameter Type Classes
+// =============================================================================
+
+type Triple<a, b, c> = T(a, b, c)
+
+trait UltraConstrained<a: Numeric, b: Show, c: Numeric> {
+    fun ultraProcess(x: Triple<a, b, c>) -> String
+}
+
+// Generic instance that requires constraints
+instance UltraConstrained<a: Numeric, b: Show, c: Numeric> {
+    fun ultraProcess(t: Triple<a, b, c>) -> String { "Instance Found" }
+}
+
+print("Test 1: Violate a: Numeric (String passed)")
+t1 = T("string", "showable", 10)
+print("Result: " ++ ultraProcess(t1))
+
+// 2. Violate Show constraint on second parameter
+// Expected: Error (Function is not Show)
+print("Test 2: Violate b: Show (Function passed)")
+func = \x -> x
+t2 = T(10, func, 10)
+// Note: show(func) might work via reflection, but trait Show constraint should fail
+print("Result: " ++ ultraProcess(t2))
+
+// 3. Violate Numeric constraint on third parameter
+// Expected: Error (Boolean is not Numeric)
+print("Test 3: Violate c: Numeric (Boolean passed)")
+t3 = T(10, "showable", true)
+print("Result: " ++ ultraProcess(t3))

@@ -5,13 +5,15 @@ import (
 	"math/big"
 	"github.com/funvibe/funxy/internal/token"
 	"strconv"
+	"unicode"
+	"unicode/utf8"
 )
 
 type Lexer struct {
 	input        string
 	position     int  // current position in input (points to current char)
 	readPosition int  // current reading position in input (after current char)
-	ch           byte // current char under examination
+	ch           rune // current char under examination
 	line         int  // current line number
 	column       int  // current column number
 }
@@ -27,11 +29,18 @@ func (l *Lexer) readChar() {
 		l.line++
 		l.column = 0
 	}
+
 	if l.readPosition >= len(l.input) {
 		l.ch = 0
 	} else {
-		l.ch = l.input[l.readPosition]
+		r, w := utf8.DecodeRuneInString(l.input[l.readPosition:])
+		l.ch = r
+		l.position = l.readPosition
+		l.readPosition += w
+		l.column++
+		return
 	}
+
 	l.position = l.readPosition
 	l.readPosition++
 	l.column++
@@ -133,15 +142,19 @@ func (l *Lexer) NextToken() token.Token {
 				literal := "..."
 				tok = token.Token{Type: token.ELLIPSIS, Lexeme: literal, Literal: literal, Line: l.line, Column: l.column}
 			} else {
-				// Just two dots? Illegal for now unless range operator .. added
-				tok = newToken(token.ILLEGAL, l.ch, l.line, l.column)
+				// Two dots: Range operator ..
+				literal := ".."
+				tok = token.Token{Type: token.DOT_DOT, Lexeme: literal, Literal: literal, Line: l.line, Column: l.column}
 			}
 		} else {
 			tok = newToken(token.DOT, l.ch, l.line, l.column)
 		}
 	case '<':
-		// <, <=, <<, <>, <|>, <*>, <$>, <:>, <~>
-		if l.peekChar() == '<' {
+		// <, <=, <<, <>, <|>, <*>, <$>, <:>, <~>, <-
+		if l.peekChar() == '-' {
+			l.readChar()
+			tok = token.Token{Type: token.L_ARROW, Lexeme: "<-", Literal: "<-", Line: l.line, Column: l.column}
+		} else if l.peekChar() == '<' {
 			l.readChar()
 			tok = token.Token{Type: token.LSHIFT, Lexeme: "<<", Literal: "<<", Line: l.line, Column: l.column}
 		} else if l.peekChar() == '=' {
@@ -368,11 +381,34 @@ func (l *Lexer) NextToken() token.Token {
 		tok.Line = l.line
 		tok.Column = l.column
 	case '`':
-		tok.Type = token.STRING
-		tok.Literal = l.readRawString()
-		tok.Lexeme = fmt.Sprintf("`%s`", tok.Literal)
-		tok.Line = l.line
-		tok.Column = l.column
+		// Check for triple backticks ```
+		if l.peekChar() == '`' {
+			peek2 := l.peekChar2()
+			if peek2 == '`' {
+				// Triple backticks - read until closing triple backticks
+				tok.Type = token.STRING
+				tok.Literal = l.readTripleRawString()
+				tok.Lexeme = fmt.Sprintf("```%s```", tok.Literal)
+				tok.Line = l.line
+				tok.Column = l.column
+				// Don't call readChar() here - readTripleRawString() already consumed everything
+				return tok
+			} else {
+				// Single backtick
+				tok.Type = token.STRING
+				tok.Literal = l.readRawString()
+				tok.Lexeme = fmt.Sprintf("`%s`", tok.Literal)
+				tok.Line = l.line
+				tok.Column = l.column
+			}
+		} else {
+			// Single backtick
+			tok.Type = token.STRING
+			tok.Literal = l.readRawString()
+			tok.Lexeme = fmt.Sprintf("`%s`", tok.Literal)
+			tok.Line = l.line
+			tok.Column = l.column
+		}
 	case '\'':
 		tok.Type = token.CHAR
 		tok.Literal = l.readCharLiteral()
@@ -425,6 +461,7 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 	var result []byte
 	hasInterp := false
 	braceDepth := 0
+	buf := make([]byte, 4)
 
 	for {
 		l.readChar()
@@ -437,12 +474,42 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 
 		// Inside interpolation ${...} - don't process escapes, keep raw
 		if braceDepth > 0 {
+			// Handle nested strings inside interpolation to avoid confusing braces
+			if l.ch == '"' || l.ch == '\'' || l.ch == '`' {
+				quote := l.ch
+				n := utf8.EncodeRune(buf, l.ch)
+				result = append(result, buf[:n]...)
+
+				for {
+					l.readChar()
+					if l.ch == 0 {
+						break
+					}
+
+					// Handle escapes in " and '
+					if l.ch == '\\' && (quote == '"' || quote == '\'') {
+						n := utf8.EncodeRune(buf, l.ch)
+						result = append(result, buf[:n]...)
+						l.readChar() // consume escaped char
+					} else if l.ch == quote {
+						n := utf8.EncodeRune(buf, l.ch)
+						result = append(result, buf[:n]...)
+						break
+					}
+
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+				}
+				continue
+			}
+
 			if l.ch == '{' {
 				braceDepth++
 			} else if l.ch == '}' {
 				braceDepth--
 			}
-			result = append(result, l.ch)
+			n := utf8.EncodeRune(buf, l.ch)
+			result = append(result, buf[:n]...)
 			continue
 		}
 
@@ -476,12 +543,15 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 				result = append(result, '$')
 			default:
 				// Unknown escape - keep both backslash and char
-				result = append(result, '\\', l.ch)
+				result = append(result, '\\')
+				n := utf8.EncodeRune(buf, l.ch)
+				result = append(result, buf[:n]...)
 			}
 			continue
 		}
 
-		result = append(result, l.ch)
+		n := utf8.EncodeRune(buf, l.ch)
+		result = append(result, buf[:n]...)
 	}
 	return string(result), hasInterp
 }
@@ -498,6 +568,37 @@ func (l *Lexer) readRawString() string {
 		// Note: l.readChar() already handles line counting for '\n'
 	}
 	return l.input[position:l.position]
+}
+
+// readTripleRawString reads a triple backtick-delimited raw string that can span multiple lines.
+// No escape sequences are processed - content is taken as-is.
+// When this function returns, curToken will be positioned on the first backtick of the closing triple backticks.
+func (l *Lexer) readTripleRawString() string {
+	// Skip the opening triple backticks
+	l.readChar() // consume second `
+	l.readChar() // consume third `
+	position := l.position
+	for {
+		l.readChar()
+		if l.ch == 0 {
+			break
+		}
+		if l.ch == '`' {
+			// Check if next two chars are also backticks
+			if l.peekChar() == '`' && l.peekChar2() == '`' {
+				// Found closing triple backticks - stop here, don't consume them yet
+				// l.position points to the first backtick of the closing triple
+				break
+			}
+		}
+		// Note: l.readChar() already handles line counting for '\n'
+	}
+	result := l.input[position:l.position]
+	// Consume the closing triple backticks (NextToken will call readChar() which consumes the first `)
+	l.readChar() // consume first closing `
+	l.readChar() // consume second closing `
+	l.readChar() // consume third closing `
+	return result
 }
 
 func (l *Lexer) readCharLiteral() int64 {
@@ -528,11 +629,12 @@ func (l *Lexer) readCharLiteral() int64 {
 			// Unknown escape, just use the char after backslash
 			char = int64(l.ch)
 		}
+		l.readChar() // consume escaped char
 	} else {
+		// Read rune
 		char = int64(l.ch)
+		l.readChar() // consume the char
 	}
-
-	l.readChar() // consume char
 	// Expect closing '
 	if l.ch != '\'' {
 		// Error handling? Lexer logic usually permissive or sets ILLEGAL.
@@ -677,26 +779,40 @@ func (l *Lexer) readNumber() token.Token {
 	}
 }
 
-func isHexDigit(ch byte) bool {
+func isHexDigit(ch rune) bool {
 	return isDigit(ch) || ('a' <= ch && ch <= 'f') || ('A' <= ch && ch <= 'F')
 }
 
-func isLetter(ch byte) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
+func isLetter(ch rune) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || (ch >= 0x80 && unicode.IsLetter(ch))
 }
 
-func isDigit(ch byte) bool {
+func isDigit(ch rune) bool {
 	return '0' <= ch && ch <= '9'
 }
 
-func (l *Lexer) peekChar() byte {
+func (l *Lexer) peekChar() rune {
 	if l.readPosition >= len(l.input) {
 		return 0
 	}
-	return l.input[l.readPosition]
+	r, _ := utf8.DecodeRuneInString(l.input[l.readPosition:])
+	return r
 }
 
-func newToken(tokenType token.TokenType, ch byte, line, col int) token.Token {
+func (l *Lexer) peekChar2() rune {
+	if l.readPosition >= len(l.input) {
+		return 0
+	}
+	_, w := utf8.DecodeRuneInString(l.input[l.readPosition:])
+	pos2 := l.readPosition + w
+	if pos2 >= len(l.input) {
+		return 0
+	}
+	r, _ := utf8.DecodeRuneInString(l.input[pos2:])
+	return r
+}
+
+func newToken(tokenType token.TokenType, ch rune, line, col int) token.Token {
 	literal := string(ch)
 	return token.Token{Type: tokenType, Lexeme: literal, Literal: literal, Line: line, Column: col}
 }
@@ -706,12 +822,26 @@ func (l *Lexer) skipWhitespace() {
 		l.readChar()
 	}
 	// Handle comments
-	if l.ch == '/' && l.peekChar() == '/' {
-		l.readChar() // consume first /
-		l.readChar() // consume second /
-		for l.ch != '\n' && l.ch != 0 {
-			l.readChar()
+	if l.ch == '/' {
+		if l.peekChar() == '/' {
+			l.readChar() // consume first /
+			l.readChar() // consume second /
+			for l.ch != '\n' && l.ch != 0 {
+				l.readChar()
+			}
+			l.skipWhitespace()
+		} else if l.peekChar() == '*' {
+			l.readChar() // consume /
+			l.readChar() // consume *
+			for l.ch != 0 {
+				if l.ch == '*' && l.peekChar() == '/' {
+					l.readChar() // consume *
+					l.readChar() // consume /
+					break
+				}
+				l.readChar()
+			}
+			l.skipWhitespace()
 		}
-		l.skipWhitespace() // Skip whitespace after comment (and potentially handle next comment/newline)
 	}
 }

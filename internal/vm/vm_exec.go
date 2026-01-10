@@ -218,6 +218,12 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			}
 		}
 
+	case OP_RANGE:
+		end := vm.pop()
+		next := vm.pop()
+		start := vm.pop()
+		vm.push(ObjVal(&ObjRange{Start: start, Next: next, End: end}))
+
 	case OP_MAKE_ITER:
 		// Convert iterable to (iterable_or_iterator, length_or_minus1)
 		// For List/Tuple: push list, push length (index-based)
@@ -231,6 +237,85 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			case *evaluator.Tuple:
 				vm.push(val)
 				vm.push(IntVal(int64(len(v.Elements))))
+			case *ObjRange:
+				// Range iterator
+				// Check for Int/Char optimization
+				start := v.Start
+				end := v.End
+				next := v.Next
+
+				var current int64
+				var endVal int64
+				var step int64 = 1
+				isOptimized := false
+				isChar := false
+
+				if start.IsInt() && end.IsInt() {
+					isOptimized = true
+					current = start.AsInt()
+					endVal = end.AsInt()
+					if next.Type != ValNil && next.IsInt() {
+						step = next.AsInt() - current
+					}
+				} else if start.IsObj() && end.IsObj() {
+					if sChar, ok := start.Obj.(*evaluator.Char); ok {
+						if eChar, ok := end.Obj.(*evaluator.Char); ok {
+							isOptimized = true
+							isChar = true
+							current = sChar.Value
+							endVal = eChar.Value
+							if next.Type != ValNil {
+								if nChar, ok := next.Obj.(*evaluator.Char); ok {
+									step = nChar.Value - current
+								}
+							}
+						}
+					}
+				}
+
+				if isOptimized {
+					// Create stateful closure
+					currPtr := new(int64)
+					*currPtr = current
+
+					iterFn := func(args []evaluator.Object) evaluator.Object {
+						c := *currPtr
+						if (step > 0 && c > endVal) || (step < 0 && c < endVal) {
+							return &evaluator.DataInstance{Name: config.ZeroCtorName, TypeName: config.OptionTypeName}
+						}
+						*currPtr += step
+
+						var valObj evaluator.Object
+						if isChar {
+							valObj = &evaluator.Char{Value: c}
+						} else {
+							valObj = &evaluator.Integer{Value: c}
+						}
+
+						return &evaluator.DataInstance{
+							Name:     config.SomeCtorName,
+							TypeName: config.OptionTypeName,
+							Fields:   []evaluator.Object{valObj},
+						}
+					}
+
+					vm.push(ObjVal(&BuiltinClosure{Name: "range_iter", Fn: iterFn}))
+					vm.push(IntVal(-1)) // Lazy
+				} else {
+					// Fallback to trait lookup
+					typeName := vm.getTypeName(val)
+					iterMethod := vm.LookupTraitMethodAny("Iter", typeName, "iter")
+					if iterMethod != nil {
+						iterFn, err := vm.callAndGetResult(ObjectToValue(iterMethod), val)
+						if err != nil {
+							return err
+						}
+						vm.push(iterFn)
+						vm.push(IntVal(-1))
+					} else {
+						return fmt.Errorf("type %s is not iterable (no Iter instance)", typeName)
+					}
+				}
 			default:
 				// Try Iter trait - use lazy iteration
 				typeName := vm.getTypeName(val)
@@ -356,6 +441,12 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_CLOSE_SCOPE:
 		n := int(vm.readByte())
+		// Close upvalues for locals being removed (under the result)
+		// Locals start at sp - 1 - n.
+		// Note: closeUpvalues closes everything >= start, so it might close result too
+		// if result was captured (unlikely for temporary).
+		vm.closeUpvalues(vm.sp - 1 - n)
+
 		result := vm.pop()
 		vm.sp -= n
 		vm.push(result)
@@ -633,9 +724,37 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			finalFields[k] = v
 		}
 
-		// 5. Create new record, preserving TypeName from base
+		// 5. Create new record
 		newRec := evaluator.NewRecord(finalFields)
-		newRec.TypeName = baseRec.TypeName
+
+		// Row Polymorphism: If we added new fields (not just overwriting existing ones),
+		// mark as extended to use structural typing instead of nominal
+		if len(newFields) > 0 {
+			addedNewField := false
+			for k := range newFields {
+				found := false
+				for _, f := range baseRec.Fields {
+					if f.Key == k {
+						found = true
+						break
+					}
+				}
+				if !found {
+					addedNewField = true
+					break
+				}
+			}
+			if addedNewField {
+				newRec.RowPolyExtended = true
+			} else {
+				// Only preserve TypeName if we didn't add new fields
+				newRec.TypeName = baseRec.TypeName
+			}
+		} else {
+			// No new fields, just spread - preserve TypeName
+			newRec.TypeName = baseRec.TypeName
+		}
+
 		vm.push(ObjVal(newRec))
 
 	case OP_MAKE_MAP:
@@ -843,6 +962,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		actualType := vm.getTypeName(val)
 		// Also check against Object.Type()
 		match := actualType == expectedType || (val.IsObj() && string(val.AsObject().Type()) == expectedType)
+
 		// Special cases
 		if !match && val.IsObj() {
 			obj := val.AsObject()
@@ -859,6 +979,53 @@ func (vm *VM) executeOneOp(op Opcode) error {
 				_, match = obj.(*evaluator.Nil)
 			}
 		}
+
+		// Check aliases if not matched yet
+		if !match && vm.typeAliases != nil {
+			if aliasObj := vm.typeAliases.Get(expectedType); aliasObj != nil {
+				if typeObj, ok := aliasObj.(*evaluator.TypeObject); ok {
+					switch t := typeObj.TypeVal.(type) {
+					case typesystem.TFunc:
+						if val.IsObj() {
+							switch val.AsObject().(type) {
+							case *evaluator.Function, *evaluator.Builtin, *evaluator.ClassMethod, *evaluator.BoundMethod, *evaluator.OperatorFunction, *evaluator.ComposedFunction, *evaluator.PartialApplication, *ObjClosure, *VMComposedFunction:
+								match = true
+							}
+						}
+					case typesystem.TRecord:
+						if val.IsObj() {
+							if rec, ok := val.AsObject().(*evaluator.RecordInstance); ok {
+								// Check fields
+								match = true
+								for fieldName := range t.Fields {
+									if rec.Get(fieldName) == nil {
+										match = false
+										break
+									}
+								}
+							}
+						}
+					case typesystem.TTuple:
+						if val.IsObj() {
+							if tuple, ok := val.AsObject().(*evaluator.Tuple); ok {
+								if len(tuple.Elements) == len(t.Elements) {
+									match = true
+								}
+							}
+						}
+					}
+
+					// Check named alias (e.g. type A = B)
+					if !match {
+						aliasName := evaluator.ExtractTypeConstructorName(typeObj.TypeVal)
+						if aliasName != "" && aliasName == actualType {
+							match = true
+						}
+					}
+				}
+			}
+		}
+
 		vm.push(BoolVal(match))
 
 	case OP_SET_FIELD:
@@ -968,6 +1135,16 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		// extensionMethods[typeName][methodName] = closure
 		methodMap = methodMap.Put(methodName, closure)
 		vm.extensionMethods = vm.extensionMethods.Put(typeName, methodMap)
+
+	case OP_REGISTER_TYPE_ALIAS:
+		nameIdx := vm.readConstantIndex()
+		name := vm.frame.chunk.Constants[nameIdx].(*stringConstant).Value
+		typeObj := vm.pop().AsObject()
+
+		if vm.typeAliases == nil {
+			vm.typeAliases = EmptyMap()
+		}
+		vm.typeAliases = vm.typeAliases.Put(name, typeObj)
 
 	case OP_CALL_METHOD:
 		// Call method on object: [receiver, arg1, arg2, ...] -> [result]
@@ -1184,11 +1361,47 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 		// Native trait lookup first
 		typeName := vm.getTypeName(left)
-		if closure := vm.LookupOperator(typeName, opStr); closure != nil {
-			// Set implicit context for the upcoming call
-			vm.nextImplicitContext = typeName
 
-			// Call the trait method natively
+		// Strategy for MPTC lookup:
+		// For Multi-Parameter Type Classes (like Convert<From, To>), implementations are registered
+		// with composite keys (e.g. "Int_String").
+		// If the standard lookup by single type name fails ("Int"), we attempt to construct
+		// a composite key using the current type context (which often represents the expected 'To' type).
+
+		lookupTypeName := typeName
+		if context := vm.getTypeContext(); context != "" {
+			// If context is distinct from typeName, try combining
+			// e.g. typeName="Int", context="String" -> "Int_String"
+			if context != typeName {
+				composite := typeName + "_" + context
+				// Check if we have methods registered for this composite key
+				// This is heuristic and assumes strict naming convention "Arg1_Arg2"
+				// But traitMethods access is cheap.
+				if vm.traitMethods.Get("Convert") != nil {
+					// We only do this for Convert trait? Or generically?
+					// OP_TRAIT_OP doesn't know it's Convert. It knows opStr (e.g. "convert").
+					// We need to find WHICH trait defines this operator.
+					// LookupOperator scans ALL traits.
+
+					// Let's modify LookupOperator to support trying the composite key if provided.
+					// But LookupOperator is generic.
+				}
+				lookupTypeName = composite
+			}
+		}
+
+		if closure := vm.LookupOperator(lookupTypeName, opStr); closure != nil {
+			// Found with composite key!
+			vm.nextImplicitContext = lookupTypeName
+			vm.push(ObjVal(closure))
+			vm.push(left)
+			vm.push(right)
+			if err := vm.callClosure(closure, 2); err != nil {
+				return err
+			}
+		} else if closure := vm.LookupOperator(typeName, opStr); closure != nil {
+			// Standard lookup
+			vm.nextImplicitContext = typeName
 			vm.push(ObjVal(closure))
 			vm.push(left)
 			vm.push(right)
@@ -1339,38 +1552,40 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_FORMATTER:
-		// Create format string function closure
+		// Create format string function closure (variadic)
 		// Args: [constant_index] (format string)
-		// Returns: [closure]
+		// Returns: [closure] - a variadic function that calls sprintf
 		fmtStrIdx := vm.readConstantIndex()
 		fmtStr := vm.frame.chunk.Constants[fmtStrIdx].Inspect()
 		if len(fmtStr) >= 2 && fmtStr[0] == '"' && fmtStr[len(fmtStr)-1] == '"' {
 			fmtStr = fmtStr[1 : len(fmtStr)-1]
 		}
 
-		// Create a Native Function that captures the format string
+		// For short form (no % in string), prepend % to make it a valid format specifier
+		// For full form (contains %), use as-is
+		if !strings.Contains(fmtStr, "%") {
+			fmtStr = "%" + fmtStr
+		}
+
+		// Create a variadic Native Function that captures the format string
 		formatter := &evaluator.Builtin{
 			Name: "formatter",
 			TypeInfo: typesystem.TFunc{
 				Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
 				ReturnType: typesystem.TCon{Name: "String"},
+				IsVariadic: true,
 			},
 			Fn: func(e *evaluator.Evaluator, args ...evaluator.Object) evaluator.Object {
-				if len(args) != 1 {
-					return &evaluator.Error{Message: fmt.Sprintf("formatter expects 1 argument, got %d", len(args))}
-				}
-				// Call internal sprintf
+				// Call internal sprintf with all arguments
 				sprintf, ok := evaluator.Builtins["sprintf"]
 				if !ok {
 					return &evaluator.Error{Message: "internal error: sprintf not found"}
 				}
-				// Prepend % if missing (for short form %".2f")
-				finalFmt := fmtStr
-				if !strings.HasPrefix(finalFmt, "%") {
-					finalFmt = "%" + finalFmt
-				}
-				// Arguments for sprintf: [format_string_list, value]
-				return sprintf.Fn(e, evaluator.StringToList(finalFmt), args[0])
+				// Prepend format string to args
+				allArgs := make([]evaluator.Object, 0, len(args)+1)
+				allArgs = append(allArgs, evaluator.StringToList(fmtStr))
+				allArgs = append(allArgs, args...)
+				return sprintf.Fn(e, allArgs...)
 			},
 		}
 		vm.push(ObjVal(formatter))

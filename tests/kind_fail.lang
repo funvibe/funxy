@@ -1,4 +1,4 @@
-type Box<T> = { val: T }
+type Box<t> = { val: t }
 
 type alias BadArity = Box<Int, Int>
 type alias BadKind = Int<Box>

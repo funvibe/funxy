@@ -1,0 +1,6 @@
+package cycle_b (valB)
+
+import "../cycle_a"
+
+valB = 2
+

@@ -45,10 +45,10 @@
             --operator: #0891b2;
             --builtin: #dc2626;
         }
-        body { 
-            font-family: 'JetBrains Mono', 'Fira Code', monospace; 
-            max-width: 900px; 
-            margin: 50px auto; 
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            max-width: 900px;
+            margin: 50px auto;
             background: var(--bg);
             color: var(--fg);
             padding: 20px;
@@ -103,18 +103,18 @@
         .cmt { color: var(--comment); font-style: italic; }
         .op { color: var(--operator); }
         .bi { color: var(--builtin); }
-        pre#output { 
-            background: var(--pre-bg); 
-            padding: 15px; 
+        pre#output {
+            background: var(--pre-bg);
+            padding: 15px;
             border-radius: 8px;
             color: var(--fg);
             overflow-x: auto;
             min-height: 50px;
             border: 1px solid var(--border);
         }
-        button { 
-            padding: 10px 20px; 
-            font-size: 14px; 
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
             cursor: pointer;
             background: var(--btn-bg);
             color: var(--btn-fg);
@@ -124,18 +124,18 @@
             transition: background 0.2s;
         }
         button:hover { background: var(--btn-hover); }
-        .controls { 
-            display: flex; 
-            gap: 10px; 
-            align-items: center; 
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
             margin: 15px 0;
             flex-wrap: wrap;
         }
         .file-input { display: none; }
-        .file-label { 
-            padding: 10px 20px; 
-            font-size: 14px; 
-            background: var(--border); 
+        .file-label {
+            padding: 10px 20px;
+            font-size: 14px;
+            background: var(--border);
             border: 1px solid var(--muted);
             border-radius: 6px;
             cursor: pointer;
@@ -145,8 +145,8 @@
         .filename { color: var(--muted); font-size: 13px; }
         .btn-clear { background: var(--btn-clear); }
         .btn-clear:hover { background: var(--btn-clear-hover); }
-        .btn-theme { 
-            background: var(--border); 
+        .btn-theme {
+            background: var(--border);
             color: var(--fg);
             margin-left: auto;
         }
@@ -192,9 +192,18 @@
             // Tokenize first, then highlight
             const tokens = [];
             let i = 0;
-            
+
             while (i < text.length) {
-                // Comments
+                // Multi-line Comments
+                if (text[i] === '/' && text[i+1] === '*') {
+                    let end = text.indexOf('*/', i + 2);
+                    if (end === -1) end = text.length;
+                    else end += 2;
+                    tokens.push({type: 'cmt', text: text.slice(i, end)});
+                    i = end;
+                    continue;
+                }
+                // Single-line Comments
                 if (text[i] === '/' && text[i+1] === '/') {
                     let end = text.indexOf('\n', i);
                     if (end === -1) end = text.length;
@@ -226,10 +235,10 @@
                     let j = i;
                     while (j < text.length && /[a-zA-Z0-9_]/.test(text[j])) j++;
                     const word = text.slice(i, j);
-                    const keywords = ['fun','type','alias','match','if','else','for','in','import','trait','instance','operator','async','await','break','continue','package'];
+                    const keywords = ['fun','type','alias','match','if','else','for','in','import','trait','instance','operator','async','await','break','continue','package','directive','do'];
                     const types = ['Int','Float','String','Bool','Nil','List','Map','Option','Result','Some','Zero','Ok','Fail','Bytes','BigInt','Rational','Char','Unit'];
                     const builtins = ['print','show','len','read','getType','default','panic','id','const','fst','snd','map','filter','foldl','head','tail','range','true','false'];
-                    
+
                     if (keywords.includes(word)) tokens.push({type: 'kw', text: word});
                     else if (types.includes(word)) tokens.push({type: 'ty', text: word});
                     else if (builtins.includes(word)) tokens.push({type: 'bi', text: word});
@@ -262,12 +271,12 @@
                     }
                 }
                 if (matched) continue;
-                
+
                 // Default: single char
                 tokens.push({type: null, text: text[i]});
                 i++;
             }
-            
+
             // Build highlighted HTML
             let html = '';
             for (const t of tokens) {
@@ -307,8 +316,8 @@
                     body: JSON.stringify({code: codeEl.value})
                 });
                 const data = await res.json();
-                output.textContent = (data.error && data.error.length > 0) 
-                    ? 'Error: ' + data.error 
+                output.textContent = (data.error && data.error.length > 0)
+                    ? 'Error: ' + data.error
                     : (data.output || 'No output');
             } catch (e) {
                 output.textContent = 'Error: ' + e.message;
@@ -319,13 +328,13 @@
             const defaultName = filenameEl.textContent || 'code.lang';
             const filename = prompt('Save as:', defaultName);
             if (!filename) return;
-            
+
             const text = codeEl.value;
             const blob = new Blob([text], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = filename.endsWith('.lang') || filename.endsWith('.funxy') || filename.endsWith('.fx') 
+            a.download = filename.endsWith('.lang') || filename.endsWith('.funxy') || filename.endsWith('.fx')
                 ? filename : filename + '.lang';
             document.body.appendChild(a);
             a.click();

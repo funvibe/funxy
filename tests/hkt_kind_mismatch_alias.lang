@@ -1,0 +1,9 @@
+// Test: Kind checking with Type Aliases
+// MyInt is an alias for Int (kind *), but Functor requires * -> *
+
+type alias MyInt = Int
+
+instance Functor<MyInt> {
+    fun fmap<a, b>(f: (a) -> b, fa: MyInt) -> MyInt { fa }
+}
+

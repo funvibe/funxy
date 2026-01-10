@@ -1,7 +1,7 @@
 package shapes (*)
 
 // User-defined ADT
-type Shape = Circle Int | Rectangle (Int, Int) | Point
+type Shape = Circle Int | Rectangle((Int, Int)) | Point
 
 // Record type
 type Config = {

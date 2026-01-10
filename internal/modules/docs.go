@@ -553,6 +553,7 @@ func initListDocs() {
 		"forEach":   {Description: "Apply function to each element for side effects", Category: "Higher-Order"},
 		// Transform
 		"reverse": {Description: "Reverse list", Category: "Transform"},
+		"append":  {Description: "Append element to end of list", Category: "Transform"},
 		"concat":  {Description: "Flatten one level of nesting", Category: "Transform"},
 		"flatten": {Description: "Flatten one level (alias for concat)", Category: "Transform"},
 		"unique":  {Description: "Remove duplicates", Category: "Transform"},
@@ -573,6 +574,9 @@ func initListDocs() {
 
 func initMapDocs() {
 	meta := map[string]*DocMeta{
+		// Creation
+		"mapNew":        {Description: "Create empty map", Category: "Creation"},
+		"mapFromRecord": {Description: "Create map from record fields", Category: "Creation"},
 		// Access
 		"mapGet":      {Description: "Get value for key (returns Option)", Category: "Access"},
 		"mapGetOr":    {Description: "Get value for key or default", Category: "Access"},
@@ -974,6 +978,8 @@ func initTestDocs() {
 		"testExpectFail": {Description: "Test that is expected to fail (for known bugs)", Category: "Test Definition"},
 		// Assertions
 		"assert":       {Description: "Assert condition is true", Category: "Assertions"},
+		"assertTrue":   {Description: "Assert value is true", Category: "Assertions"},
+		"assertFalse":  {Description: "Assert value is false", Category: "Assertions"},
 		"assertEquals": {Description: "Assert two values are equal", Category: "Assertions"},
 		"assertOk":     {Description: "Assert Result is Ok", Category: "Assertions"},
 		"assertFail":   {Description: "Assert Result is Fail", Category: "Assertions"},

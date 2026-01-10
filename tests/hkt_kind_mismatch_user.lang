@@ -1,0 +1,12 @@
+// Test: Kind checking for user-defined HKT trait
+// Container expects f to be * -> * because of usage f<Int>
+
+trait Container<f> {
+    fun get(x: f<Int>) -> Int
+}
+
+// Int is kind *, not * -> *
+instance Container<Int> {
+    fun get(x: Int) -> Int { x }
+}
+

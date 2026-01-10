@@ -1,10 +1,10 @@
 // Test: Trait default implementations
 
-trait Cmp<T> {
-    fun same(a: T, b: T) -> Bool
-    
+trait Cmp<t> {
+    fun same(a: t, b: t) -> Bool
+
     // Default implementation
-    fun diff(a: T, b: T) -> Bool {
+    fun diff(a: t, b: t) -> Bool {
         if same(a, b) { false } else { true }
     }
 }

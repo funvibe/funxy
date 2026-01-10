@@ -9,19 +9,19 @@ import "lib/list" (head)
 
 // Get directory of this script
 scriptDir = match sysArgs() {
-    [path, _...] -> pathDir(path)
+    [path, ..._] -> pathDir(path)
     _ -> "."
 }
 
 fun runCode(code: String) -> { output: String, error: String } {
     tmpFile = pathJoin([pathTemp(), "funxy_" ++ uuidToString(uuidNew()) ++ ".lang"])
-    
+
     match fileWrite(tmpFile, code) {
         Fail(e) -> { output: "", error: "Failed to write: " ++ e }
         Ok(_) -> {
             result = sysExec("./funxy", [tmpFile])
             fileDelete(tmpFile)
-            
+
             if result.code == 0 {
                 { output: result.stdout, error: "" }
             } else {

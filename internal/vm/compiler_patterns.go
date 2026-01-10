@@ -485,8 +485,8 @@ func (c *Compiler) compileRecordPattern(p *ast.RecordPattern, line int) (int, er
 		// For non-binding patterns, pop the field
 		if _, isIdent := fieldPattern.(*ast.IdentifierPattern); !isIdent {
 			if slotsAfterCheck == slotsBeforeCheck {
-			c.emit(OP_POP, line)
-			c.slotCount--
+				c.emit(OP_POP, line)
+				c.slotCount--
 			} else {
 				// Bindings added. Pop field below bindings.
 				keepCount := slotsAfterCheck - slotsBeforeCheck
@@ -589,6 +589,10 @@ func (c *Compiler) compileTypePattern(p *ast.TypePattern, line int) (int, error)
 }
 
 func (c *Compiler) compileSpreadPattern(p *ast.SpreadPattern, line int) (int, error) {
+	// Handle case where Pattern is nil (just ...xs as wildcard)
+	if p.Pattern == nil {
+		return -1, nil
+	}
 	if idPat, ok := p.Pattern.(*ast.IdentifierPattern); ok {
 		// Simple identifier - bind spread value directly
 		slot := c.slotCount - 1
@@ -674,8 +678,8 @@ func (c *Compiler) compileListPattern(p *ast.ListPattern, line int) (int, error)
 		if _, isIdent := elemPat.(*ast.IdentifierPattern); !isIdent {
 			if _, isSpread := elemPat.(*ast.SpreadPattern); !isSpread {
 				if slotsAfterCheck == slotsBeforeCheck {
-			c.emit(OP_POP, line)
-			c.slotCount--
+					c.emit(OP_POP, line)
+					c.slotCount--
 				} else {
 					// Bindings added. Pop element below bindings.
 					keepCount := slotsAfterCheck - slotsBeforeCheck
@@ -700,8 +704,11 @@ func (c *Compiler) compileListPattern(p *ast.ListPattern, line int) (int, error)
 		c.emit(OP_GET_LIST_REST, line)
 		c.currentChunk().Write(byte(fixedCount), line)
 
-		if idPat, ok := spreadPat.Pattern.(*ast.IdentifierPattern); ok {
-			c.addLocal(idPat.Value, c.slotCount-1)
+		// Only bind if Pattern is not nil
+		if spreadPat.Pattern != nil {
+			if idPat, ok := spreadPat.Pattern.(*ast.IdentifierPattern); ok {
+				c.addLocal(idPat.Value, c.slotCount-1)
+			}
 		}
 	}
 

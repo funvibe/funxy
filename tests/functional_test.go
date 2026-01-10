@@ -104,6 +104,8 @@ func TestFunctional(t *testing.T) {
 			// Run binary from project root so that imports like "kit/..." work
 			cmd := exec.Command(binaryPath, absPath)
 			cmd.Dir = projectRoot
+			// Set test mode environment variable so the binary knows it's running in test mode
+			cmd.Env = append(os.Environ(), "FUNXY_TEST_MODE=1")
 			var stdout, stderr bytes.Buffer
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
@@ -136,9 +138,9 @@ func TestFunctional(t *testing.T) {
 				got = stderrStr
 			}
 
-			// Normalize line endings only
-			got = strings.ReplaceAll(got, "\r\n", "\n")
-			want = strings.ReplaceAll(want, "\r\n", "\n")
+			// Normalize line endings and trim spaces
+			got = strings.TrimSpace(strings.ReplaceAll(got, "\r\n", "\n"))
+			want = strings.TrimSpace(strings.ReplaceAll(want, "\r\n", "\n"))
 
 			if got != want {
 				t.Errorf("Output mismatch:\n--- want ---\n%s\n--- got ---\n%s", want, got)

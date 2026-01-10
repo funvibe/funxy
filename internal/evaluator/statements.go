@@ -9,6 +9,7 @@ import (
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"github.com/funvibe/funxy/internal/utils"
+	"strings"
 )
 
 func (e *Evaluator) evalProgram(program *ast.Program, env *Environment) Object {
@@ -78,40 +79,37 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 			return &Nil{}
 		}
 
-	if len(node.Symbols) > 0 {
-		// import "path" (a, b, c) - import only specified symbols
-		for _, sym := range node.Symbols {
-			if val := record.Get(sym.Value); val != nil {
-				env.Set(sym.Value, val)
+		if len(node.Symbols) > 0 {
+			// import "path" (a, b, c) - import only specified symbols
+			for _, sym := range node.Symbols {
+				if val := record.Get(sym.Value); val != nil {
+					env.Set(sym.Value, val)
 
-				// Auto-import ADT constructors if present
-				if mod.SymbolTable != nil {
-					if variants, ok := mod.SymbolTable.GetVariants(sym.Value); ok {
-						for _, variantName := range variants {
-							// Only import if the variant is actually exported by the module
-							if variantVal := record.Get(variantName); variantVal != nil {
-								env.Set(variantName, variantVal)
+					// Auto-import ADT constructors if present
+					if mod.SymbolTable != nil {
+						if variants, ok := mod.SymbolTable.GetVariants(sym.Value); ok {
+							for _, variantName := range variants {
+								// Only import if the variant is actually exported by the module
+								if variantVal := record.Get(variantName); variantVal != nil {
+									env.Set(variantName, variantVal)
+								}
 							}
 						}
 					}
-				}
-			} else {
-				// Check if it's a trait - traits don't have runtime values but should be importable
-				if mod.SymbolTable != nil {
-					if symbolVal, ok := mod.SymbolTable.Find(sym.Value); ok && symbolVal.Kind == symbols.TraitSymbol {
-						// Trait found - it's OK to import even though there's no runtime value
-						// The trait definition will be available in the SymbolTable
-						continue
+				} else {
+					// Check if it's a trait - traits don't have runtime values but should be importable
+					if mod.SymbolTable != nil {
+						if symVal, ok := mod.SymbolTable.Find(sym.Value); ok && symVal.Kind == symbols.TraitSymbol {
+							// Trait found - it's OK to import even though there's no runtime value
+							continue
+						}
 					}
+					// Extension methods might not be in the record yet but could be in exports
+					return newError("symbol '%s' not found in module %s", sym.Value, mod.Name)
 				}
-				// Extension methods might not be in the record yet but could be in exports
-				// Try to look them up directly from the record using a fallback path
-				// This happens when module is evaluated but extension methods aren't in the main record
-				return newError("symbol '%s' not found in module %s", sym.Value, mod.Name)
 			}
+			return &Nil{}
 		}
-		return &Nil{}
-	}
 
 		if len(node.Exclude) > 0 {
 			// import "path" !(a, b, c) - import all except specified
@@ -629,6 +627,28 @@ func (e *Evaluator) evalTypeDeclaration(node *ast.TypeDeclarationStatement, env 
 }
 
 func (e *Evaluator) evalTraitDeclaration(node *ast.TraitDeclaration, env *Environment) Object {
+	// Register SuperTraits
+	var superTraits []string
+	for _, st := range node.SuperTraits {
+		name := extractTypeNameFromAST(st)
+		if name != "" {
+			superTraits = append(superTraits, name)
+		}
+	}
+	e.TraitSuperTraits[node.Name.Value] = superTraits
+
+	// Update global TraitMethods map for dictionary lookups
+	// This is required for FindMethodInDictionary to work with user-defined traits
+	var methodNames []string
+	for _, sig := range node.Signatures {
+		name := sig.Name.Value
+		if sig.Operator != "" {
+			name = "(" + sig.Operator + ")"
+		}
+		methodNames = append(methodNames, name)
+	}
+	TraitMethods[node.Name.Value] = methodNames
+
 	for _, sig := range node.Signatures {
 		methodName := sig.Name.Value
 		// For operator methods, use the synthetic name "(+)" etc.
@@ -660,9 +680,22 @@ func (e *Evaluator) evalTraitDeclaration(node *ast.TraitDeclaration, env *Enviro
 func (e *Evaluator) evalInstanceDeclaration(node *ast.InstanceDeclaration, env *Environment) Object {
 	className := node.TraitName.Value
 
-	typeName, err := e.resolveCanonicalTypeName(node.Target, env)
-	if err != nil {
-		return newError("%s", err.Error())
+	var typeKey string
+	if len(node.Args) > 0 {
+		// MPTC: Combine all arg types into a key "Type1_Type2"
+		// This matches the lookup strategy we will implement
+		var typeNames []string
+		for _, arg := range node.Args {
+			typeName, err := e.resolveCanonicalTypeName(arg, env)
+			if err != nil {
+				return newError("%s", err.Error())
+			}
+			typeNames = append(typeNames, typeName)
+		}
+		typeKey = strings.Join(typeNames, "_")
+	} else {
+		// Should not happen if parser validates args
+		return newError("instance declaration missing arguments")
 	}
 
 	if _, ok := e.ClassImplementations[className]; !ok {
@@ -672,19 +705,130 @@ func (e *Evaluator) evalInstanceDeclaration(node *ast.InstanceDeclaration, env *
 	methods := make(map[string]Object)
 	for _, method := range node.Methods {
 		fn := &Function{
-			Name:       method.Name.Value,
-			Parameters: method.Parameters,
-			ReturnType: method.ReturnType,
-			Body:       method.Body,
-			Env:        env,
-			Line:       method.Token.Line,
-			Column:     method.Token.Column,
+			Name:          method.Name.Value,
+			Parameters:    method.Parameters,
+			WitnessParams: method.WitnessParams,
+			ReturnType:    method.ReturnType,
+			Body:          method.Body,
+			Env:           env,
+			Line:          method.Token.Line,
+			Column:        method.Token.Column,
 		}
 		methods[method.Name.Value] = fn
 	}
 
 	table := &MethodTable{Methods: methods}
-	e.ClassImplementations[className][typeName] = table
+	e.ClassImplementations[className][typeKey] = table
+
+	// Register constructor for generic instances (Tree-walk mode support for dictionary passing)
+	if len(node.AnalyzedRequirements) > 0 || len(node.TypeParams) > 0 {
+		typeName := typeKey // Use typeKey as typeName (e.g. Expr_t)
+		if len(node.Args) > 0 {
+			// Try to get simple name if possible, or use typeKey
+			simpleName, _ := e.resolveCanonicalTypeName(node.Args[0], env)
+			if simpleName != "" {
+				// Use the base name (e.g. Expr) if it matches the start of typeKey?
+				// analyzer uses TypeName from TCon.
+				// Here we approximate.
+				// If typeKey is "Expr_t", we want "Expr".
+				if parts := strings.Split(typeKey, "_"); len(parts) > 0 {
+					typeName = parts[0]
+				}
+			}
+		}
+
+		evidenceName := analyzer.GetDictionaryConstructorName(className, typeName)
+
+		ctor := &Builtin{
+			Name: evidenceName,
+			Fn: func(ev *Evaluator, args ...Object) Object {
+				if len(args) != len(node.AnalyzedRequirements) {
+					return newError("constructor %s expects %d arguments, got %d", evidenceName, len(node.AnalyzedRequirements), len(args))
+				}
+
+				// Create Dictionary
+				dict := &Dictionary{
+					TraitName: className,
+					Methods:   nil, // Populated below
+					Supers:    []*Dictionary{},
+				}
+
+				// Create closure environment
+				closureEnv := NewEnclosedEnvironment(env)
+
+				// Bind witnesses
+				for i, req := range node.AnalyzedRequirements {
+					// Construct param name: $w_TypeVar_Trait_Args...
+					paramName := analyzer.GetWitnessParamName(req.TypeVar, req.Trait)
+					if len(req.Args) > 0 {
+						for _, arg := range req.Args {
+							paramName += "_" + arg.String()
+						}
+					}
+					closureEnv.Set(paramName, args[i])
+				}
+
+				// Populate Supers
+				if superTraits, ok := e.TraitSuperTraits[className]; ok {
+					for _, stName := range superTraits {
+						for i, req := range node.AnalyzedRequirements {
+							if req.Trait == stName {
+								if dictArg, ok := args[i].(*Dictionary); ok {
+									dict.Supers = append(dict.Supers, dictArg)
+								} else {
+									return newError("witness for super trait %s must be a dictionary", stName)
+								}
+								break
+							}
+						}
+					}
+				}
+
+				// Create methods
+				methodsMap := make(map[string]Object)
+				for _, method := range node.Methods {
+					methodFn := &Function{
+						Name:          method.Name.Value,
+						Parameters:    method.Parameters,
+						WitnessParams: method.WitnessParams,
+						ReturnType:    method.ReturnType,
+						Body:          method.Body,
+						Env:           closureEnv, // Capture witnesses
+						Line:          method.Token.Line,
+						Column:        method.Token.Column,
+					}
+					methodsMap[method.Name.Value] = methodFn
+				}
+
+				// Map to slice based on Trait definition order
+				if methodNames, ok := TraitMethods[className]; ok {
+					dict.Methods = make([]Object, len(methodNames))
+					for i, name := range methodNames {
+						if fn, ok := methodsMap[name]; ok {
+							dict.Methods[i] = fn
+						} else {
+							// Should we check default implementation?
+							// For instance declaration, if method is missing, it should use default.
+							// But here we are constructing the dictionary.
+							// If `node.Methods` is incomplete, we should check `e.TraitDefaults` or global defaults.
+							// But usually analyzer ensures completeness or defaults are injected?
+							// If missing, we might leave it nil or error?
+							// For now, leave nil (or panic if accessed).
+						}
+					}
+				} else {
+					// Fallback if TraitMethods not found (e.g. built-in trait?)
+					// Built-in traits like Show/Equal might not be in TraitMethods map if not declared in source?
+					// But user instances implement them.
+					// We need to ensure built-in traits are in TraitMethods.
+					// Builtins are registered elsewhere.
+				}
+
+				return dict
+			},
+		}
+		env.Set(evidenceName, ctor)
+	}
 
 	return &Nil{}
 }
@@ -693,13 +837,27 @@ func (e *Evaluator) evalConstantDeclaration(node *ast.ConstantDeclaration, env *
 	// Set type context BEFORE evaluating value, so nullary ClassMethod calls can dispatch
 	// This mirrors evalAssignExpression behavior
 	oldCallNode := e.CurrentCallNode
+	var pushedTypeName string
+	var pushedWitness bool
+
 	if node.TypeAnnotation != nil {
 		e.CurrentCallNode = node
+		// Push type name to stack to guide dispatch for inner calls
+		pushedTypeName = extractTypeNameFromAST(node.TypeAnnotation)
+		if pushedTypeName != "" {
+			e.TypeContextStack = append(e.TypeContextStack, pushedTypeName)
+		}
 	}
 
 	val := e.Eval(node.Value, env)
 
-	// Restore previous call node
+	// Restore previous call node and stack
+	if pushedTypeName != "" && len(e.TypeContextStack) > 0 {
+		e.TypeContextStack = e.TypeContextStack[:len(e.TypeContextStack)-1]
+	}
+	if pushedWitness {
+		e.PopWitness()
+	}
 	e.CurrentCallNode = oldCallNode
 
 	if isError(val) {
@@ -809,19 +967,20 @@ func (e *Evaluator) evalExtensionMethod(node *ast.FunctionStatement, env *Enviro
 	methodName := node.Name.Value
 
 	fn := &Function{
-		Name:       node.Name.Value,
-		Parameters: node.Parameters,
-		ReturnType: node.ReturnType,
-		Body:       node.Body,
-		Env:        env,
-		Line:       node.Token.Line,
-		Column:     node.Token.Column,
+		Name:          node.Name.Value,
+		Parameters:    node.Parameters,
+		WitnessParams: node.WitnessParams,
+		ReturnType:    node.ReturnType,
+		Body:          node.Body,
+		Env:           env,
+		Line:          node.Token.Line,
+		Column:        node.Token.Column,
 	}
 	newParams := append([]*ast.Parameter{node.Receiver}, node.Parameters...)
 	fn.Parameters = newParams
 
 	if _, ok := e.ExtensionMethods[typeName]; !ok {
-		e.ExtensionMethods[typeName] = make(map[string]*Function)
+		e.ExtensionMethods[typeName] = make(map[string]Object)
 	}
 	e.ExtensionMethods[typeName][methodName] = fn
 
@@ -865,7 +1024,7 @@ func (e *Evaluator) evalForExpression(node *ast.ForExpression, env *Environment)
 
 		// Look up iter method from Iter trait implementation for this type
 		iterableTypeName := getRuntimeTypeName(iterable)
-		if iterMethod, found := e.lookupTraitMethod(config.IterTraitName, iterableTypeName, config.IterMethodName); found {
+		if iterMethod, found := e.lookupTraitMethod(config.IterTraitName, config.IterMethodName, iterableTypeName); found {
 			res := e.ApplyFunction(iterMethod, []Object{iterable})
 			if !isError(res) {
 				iteratorFn = res
@@ -922,6 +1081,67 @@ func (e *Evaluator) evalForExpression(node *ast.ForExpression, env *Environment)
 				items = list.ToSlice()
 			} else if str, ok := iterable.(*List); ok {
 				items = str.ToSlice()
+			} else if rng, ok := iterable.(*Range); ok {
+				// Expand range to items
+				// We support Int and Char ranges for now, similar to VM
+				start := rng.Start
+				end := rng.End
+				next := rng.Next
+
+				var current int64
+				var endVal int64
+				var step int64 = 1
+				isChar := false
+				isNumeric := false
+
+				if sInt, ok := start.(*Integer); ok {
+					if eInt, ok := end.(*Integer); ok {
+						current = sInt.Value
+						endVal = eInt.Value
+						isNumeric = true
+						if nInt, ok := next.(*Integer); ok {
+							step = nInt.Value - current
+						}
+					}
+				} else if sChar, ok := start.(*Char); ok {
+					if eChar, ok := end.(*Char); ok {
+						current = sChar.Value
+						endVal = eChar.Value
+						isChar = true
+						isNumeric = true
+						if nChar, ok := next.(*Char); ok {
+							step = nChar.Value - current
+						}
+					}
+				}
+
+				if isNumeric {
+					// Generate items
+					// Inclusive end
+					for {
+						if step > 0 {
+							if current > endVal {
+								break
+							}
+						} else {
+							if current < endVal {
+								break
+							}
+						}
+
+						var item Object
+						if isChar {
+							item = &Char{Value: current}
+						} else {
+							item = &Integer{Value: current}
+						}
+						items = append(items, item)
+
+						current += step
+					}
+				} else {
+					return newError("range iteration only supported for Int and Char in interpreter mode")
+				}
 			} else {
 				return newError("iterable must be List or implement Iter trait, got %s", iterable.Type())
 			}

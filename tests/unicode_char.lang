@@ -1,0 +1,5 @@
+c = 'a'
+print(c)
+c = '中'
+print(c)
+

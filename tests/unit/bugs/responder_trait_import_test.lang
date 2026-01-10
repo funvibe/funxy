@@ -4,12 +4,14 @@
 
 import "./responder_trait_import" (toResponse)
 import "lib/test" (*)
-import "kit/ui" (text)
+import "kit/ui" (text, VNode)
 import "lib/json" (Json)
 
 testRun("Responder Trait Import Bug", fun() {
     str = "Hello World"
-    html = text("Hello HTML")
+    htmlRes = text("Hello HTML")
+    // Unwrap SmartResult to VNode
+    html = match htmlRes { v: VNode -> v, _ -> Text("error") }
     json = JStr("Hello Json")
 
     response1 = toResponse(json)      // Json -> Response via Responder trait

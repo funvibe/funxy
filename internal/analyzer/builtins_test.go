@@ -3,12 +3,22 @@ package analyzer
 import (
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/symbols"
+	"strings"
 	"testing"
 )
 
 func TestBuiltinTraitsMatchConfig(t *testing.T) {
-	table := symbols.NewEmptySymbolTable()
-	RegisterBuiltins(table)
+	// Reset prelude and builtins for test isolation
+	symbols.ResetPrelude()
+	ResetBuiltins()
+
+	// Create a new symbol table (this also initializes prelude)
+	// and register analyzer builtins to prelude
+	userTable := symbols.NewSymbolTable()
+	RegisterBuiltins(userTable)
+
+	// Use prelude for checking (where builtins are registered)
+	table := symbols.GetPrelude()
 
 	for _, trait := range config.BuiltinTraits {
 		// Check trait existence
@@ -27,7 +37,8 @@ func TestBuiltinTraitsMatchConfig(t *testing.T) {
 			t.Errorf("Trait %s: config params %v, symbol table params %v", trait.Name, trait.TypeParams, params)
 		}
 		for i, p := range params {
-			if i < len(trait.TypeParams) && p != trait.TypeParams[i] {
+			// Compare case-insensitively since we lowercase builtins internally
+			if i < len(trait.TypeParams) && p != trait.TypeParams[i] && p != strings.ToLower(trait.TypeParams[i]) {
 				t.Errorf("Trait %s: param %d mismatch: config %s, symbol table %s", trait.Name, i, trait.TypeParams[i], p)
 			}
 		}
@@ -37,10 +48,10 @@ func TestBuiltinTraitsMatchConfig(t *testing.T) {
 			// If method is just a name, check if it's defined in the table
 			// Note: Trait methods are registered in the symbol table as functions
 			// But we can also check via GetTraitForMethod
-			
+
 			// Some methods might be operators in config like "(+)" but here listed as "+" ??
 			// Config has Operators []string separately. Methods []string are named methods.
-			
+
 			traitName, ok := table.GetTraitForMethod(method)
 			if !ok {
 				t.Errorf("Trait method %s (of %s) not found in symbol table", method, trait.Name)
@@ -48,7 +59,7 @@ func TestBuiltinTraitsMatchConfig(t *testing.T) {
 				t.Errorf("Method %s should belong to %s, but found in %s", method, trait.Name, traitName)
 			}
 		}
-		
+
 		// Check operators
 		for _, op := range trait.Operators {
 			traitName, ok := table.GetTraitForOperator(op)
@@ -60,4 +71,3 @@ func TestBuiltinTraitsMatchConfig(t *testing.T) {
 		}
 	}
 }
-

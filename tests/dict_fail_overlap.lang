@@ -1,0 +1,32 @@
+trait Convert<a, b> {
+    fun conv(x: a) -> b
+}
+
+instance Convert<Int, Bool> {
+    fun conv(x: Int) -> Bool { true }
+}
+
+instance Convert<Int, String> {
+    fun conv(x: Int) -> String { "str" }
+}
+
+// Fixed constraint syntax: a constraint on types, not type params
+// Note: where clause not fully supported? Use implicit constraint syntax
+fun runConv<a, b>(x: a) -> b {
+    // We assume Convert<a, b> is available
+    conv(x)
+}
+
+fun main() {
+    i = 10
+
+    // Case 1: Expect Bool
+    resBool: Bool = runConv(i)
+    print(resBool)
+
+    // Case 2: Expect String
+    resStr: String = runConv(i)
+    print(resStr)
+}
+
+main()

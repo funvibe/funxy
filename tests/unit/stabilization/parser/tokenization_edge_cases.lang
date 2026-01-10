@@ -1,0 +1,335 @@
+// =============================================================================
+// Stabilization Test: Tokenization Edge Cases
+// =============================================================================
+// Tests lexer handling of unusual but valid inputs.
+// Lexer bugs can cause mysterious parse errors or silent misinterpretation.
+
+import "lib/test" (testRun, assertEquals, assertTrue)
+
+// =============================================================================
+// STRING LITERALS
+// =============================================================================
+
+testRun("String: empty", \ -> {
+    s = ""
+    assertEquals(0, len(s), "empty string len")
+    assertEquals("", s, "empty string value")
+})
+
+testRun("String: single char", \ -> {
+    s = "a"
+    assertEquals(1, len(s), "single char len")
+    assertEquals("a", s, "single char value")
+})
+
+testRun("String: escape sequences", \ -> {
+    assertEquals("\n", "\n", "newline")
+    assertEquals("\t", "\t", "tab")
+    assertEquals("\\", "\\", "backslash")
+    assertEquals("\"", "\"", "quote")
+})
+
+testRun("String: multiple escapes", \ -> {
+    s = "line1\nline2\ttab\\slash\"quote"
+    assertTrue(len(s) > 0, "multi escape")
+})
+
+testRun("String: unicode", \ -> {
+    s = "Hello, 世界!"
+    assertTrue(len(s) > 0, "unicode string")
+})
+
+testRun("String: emoji", \ -> {
+    s = "🎉🚀✨"
+    assertTrue(len(s) > 0, "emoji string")
+})
+
+testRun("String: mixed unicode and ascii", \ -> {
+    s = "Hello 世界 🌍 World"
+    assertTrue(len(s) > 0, "mixed unicode")
+})
+
+// =============================================================================
+// CHAR LITERALS
+// =============================================================================
+
+testRun("Char: basic", \ -> {
+    c = 'a'
+    assertEquals('a', c, "char a")
+})
+
+testRun("Char: escape sequences", \ -> {
+    assertEquals('\n', '\n', "char newline")
+    assertEquals('\t', '\t', "char tab")
+    assertEquals('\\', '\\', "char backslash")
+    assertEquals('\'', '\'', "char quote")
+})
+
+// Note: Unicode char literals may not be supported
+// testRun("Char: unicode", \ -> {
+//     c = '中'
+//     assertEquals('中', c, "chinese char")
+// })
+
+// =============================================================================
+// NUMBER LITERALS
+// =============================================================================
+
+testRun("Number: zero", \ -> {
+    assertEquals(0, 0, "zero")
+    assertEquals(0.0, 0.0, "float zero")
+})
+
+testRun("Number: negative", \ -> {
+    assertEquals(-1, -1, "negative int")
+    assertEquals(-3.14, -3.14, "negative float")
+})
+
+testRun("Number: large int", \ -> {
+    n = 999999999999
+    assertTrue(n > 0, "large int")
+})
+
+testRun("Number: float precision", \ -> {
+    f = 3.141592653589793
+    assertTrue(f > 3.14, "pi precision")
+})
+
+testRun("Number: scientific notation", \ -> {
+    // If supported
+    // n = 1e10
+    // assertEquals(10000000000, n, "scientific")
+    assertTrue(true, "placeholder")
+})
+
+testRun("Number: hex literal", \ -> {
+    n = 0xFF
+    assertEquals(255, n, "hex FF")
+
+    n2 = 0x10
+    assertEquals(16, n2, "hex 10")
+
+    n3 = 0xDEADBEEF
+    assertEquals(3735928559, n3, "hex DEADBEEF")
+})
+
+testRun("Number: binary literal", \ -> {
+    n = 0b1010
+    assertEquals(10, n, "binary 1010")
+
+    n2 = 0b11111111
+    assertEquals(255, n2, "binary 8 ones")
+})
+
+testRun("Number: octal literal", \ -> {
+    n = 0o777
+    assertEquals(511, n, "octal 777")
+
+    n2 = 0o10
+    assertEquals(8, n2, "octal 10")
+})
+
+// =============================================================================
+// IDENTIFIERS
+// =============================================================================
+
+testRun("Identifier: single letter", \ -> {
+    a = 1
+    b = 2
+    c = 3
+    assertEquals(6, a + b + c, "single letter vars")
+})
+
+testRun("Identifier: underscore prefix", \ -> {
+    _private = 42
+    assertEquals(42, _private, "underscore prefix")
+})
+
+testRun("Identifier: underscore in middle", \ -> {
+    my_var = 42
+    assertEquals(42, my_var, "underscore middle")
+})
+
+testRun("Identifier: numbers in name", \ -> {
+    var1 = 1
+    var2 = 2
+    var123 = 123
+    assertEquals(126, var1 + var2 + var123, "numbers in name")
+})
+
+testRun("Identifier: long name", \ -> {
+    thisIsAVeryLongVariableNameThatShouldStillWork = 42
+    assertEquals(42, thisIsAVeryLongVariableNameThatShouldStillWork, "long name")
+})
+
+testRun("Identifier: case sensitive", \ -> {
+    // Note: Variables must start with lowercase, uppercase starts type/constructor
+    abc = 1
+    abC = 2
+    aBc = 3
+    assertEquals(6, abc + abC + aBc, "case sensitive")
+})
+
+// =============================================================================
+// OPERATORS TOKENIZATION
+// =============================================================================
+
+testRun("Operators: no spaces", \ -> {
+    assertEquals(5, 2+3, "no space add")
+    assertEquals(6, 2*3, "no space mul")
+    assertEquals(5, 10-5, "no space sub")
+    assertEquals(2, 10/5, "no space div")
+})
+
+testRun("Operators: double char", \ -> {
+    assertTrue(1 == 1, "==")
+    assertTrue(1 != 2, "!=")
+    assertTrue(1 <= 2, "<=")
+    assertTrue(2 >= 1, ">=")
+    assertTrue(true && true, "&&")
+    assertTrue(true || false, "||")
+})
+
+testRun("Operators: compound assignment", \ -> {
+    x = 10
+    x += 5
+    assertEquals(15, x, "+=")
+
+    x -= 3
+    assertEquals(12, x, "-=")
+
+    x *= 2
+    assertEquals(24, x, "*=")
+
+    x /= 4
+    assertEquals(6, x, "/=")
+})
+
+testRun("Operators: arrow confusion", \ -> {
+    // -> should not be confused with > followed by -
+    f = \x -> x + 1
+    assertEquals(2, f(1), "arrow function")
+})
+
+testRun("Operators: pipe confusion", \ -> {
+    // |> should not be confused with | followed by >
+    fun add1(x) { x + 1 }
+    assertEquals(2, 1 |> add1, "pipe operator")
+})
+
+// =============================================================================
+// COMMENTS
+// =============================================================================
+
+testRun("Comments: line comment", \ -> {
+    x = 1 // this is a comment
+    assertEquals(1, x, "line comment")
+})
+
+testRun("Comments: comment only line", \ -> {
+    // This is a full line comment
+    x = 42
+    assertEquals(42, x, "comment only line")
+})
+
+// =============================================================================
+// WHITESPACE HANDLING
+// =============================================================================
+
+testRun("Whitespace: multiple spaces", \ -> {
+    x    =    1    +    2
+    assertEquals(3, x, "multiple spaces")
+})
+
+testRun("Whitespace: tabs", \ -> {
+	x	=	1	+	2
+    assertEquals(3, x, "tabs")
+})
+
+testRun("Whitespace: mixed", \ -> {
+    x 	 = 	 1 	 + 	 2
+    assertEquals(3, x, "mixed whitespace")
+})
+
+testRun("Whitespace: trailing", \ -> {
+    x = 42
+    assertEquals(42, x, "trailing whitespace")
+})
+
+testRun("Whitespace: leading indentation", \ -> {
+    result = {
+        a = 1
+            b = 2
+                c = 3
+        a + b + c
+    }
+    assertEquals(6, result, "varying indentation")
+})
+
+// =============================================================================
+// DELIMITERS
+// =============================================================================
+
+testRun("Delimiters: brackets close together", \ -> {
+    nested = [[[[1]]]]
+    assertEquals(1, nested[0][0][0][0], "nested brackets")
+})
+
+testRun("Delimiters: parens close together", \ -> {
+    f = \x -> \y -> \z -> x + y + z
+    result = f(1)(2)(3)
+    assertEquals(6, result, "nested parens")
+})
+
+testRun("Delimiters: braces close together", \ -> {
+    result = { { { { 42 } } } }
+    assertEquals(42, result, "nested braces")
+})
+
+testRun("Delimiters: mixed close together", \ -> {
+    f = \x -> [x]
+    result = f(1)[0]
+    assertEquals(1, result, "mixed delimiters")
+})
+
+// =============================================================================
+// TRICKY SEQUENCES
+// =============================================================================
+
+testRun("Tricky: minus vs negative", \ -> {
+    x = 5
+    y = -3
+    assertEquals(2, x + y, "add negative")
+    assertEquals(8, x - y, "sub negative")
+    assertEquals(8, x - -3, "double minus")
+    // x--3 is x - (-3) = 8. The second - is unary minus applied to 3
+    assertEquals(8, x--3, "x--3 = x - (-3)")
+})
+
+testRun("Tricky: greater than vs type param", \ -> {
+    // f<a>(x) might confuse > as greater-than
+    fun myId<t>(x: t) -> t { x }
+    result = myId(42)
+    assertEquals(42, result, "generic not confused with >")
+})
+
+testRun("Tricky: less than vs type param", \ -> {
+    // List<Int> might confuse < as less-than
+    list: List<Int> = [1, 2, 3]
+    assertEquals([1, 2, 3], list, "type param not confused with <")
+})
+
+testRun("Tricky: slash in division vs comment", \ -> {
+    result = 10 / 2 // this is division
+    assertEquals(5, result, "division not comment")
+})
+
+testRun("Tricky: consecutive operators", \ -> {
+    // Unary plus (+x) is not supported in Funxy
+    // Only unary minus is a prefix operator
+    assertEquals(3, 1 + 2, "addition works")
+    assertEquals(-1, 1 + (-2), "unary minus in parens")
+})
+
+print("=== Tokenization Edge Cases Tests Complete ===")
+

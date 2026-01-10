@@ -1,14 +1,14 @@
 package cache (*)
 
 // Storage trait - КОЛЛИЗИЯ с db/storage.Storage!
-trait Storage<T> {
-    fun persist(item: T) -> String
-    fun retrieve(key: String) -> Option<T>
+trait Storage<t> {
+    fun persist(item: t) -> String
+    fun retrieve(key: String) -> Option<t>
     fun invalidate(key: String) -> Bool
 }
 
 type CacheConfig = MkCacheConfig { ttl: Int, maxSize: Int, evictionPolicy: String }
-type CacheEntry<T> = MkCacheEntry { key: String, value: T, expiresAt: Int }
+type CacheEntry<t> = MkCacheEntry { key: String, value: t, expiresAt: Int }
 
 fun createDefault() {
     MkCacheConfig { ttl: 300, maxSize: 1000, evictionPolicy: "LRU" }

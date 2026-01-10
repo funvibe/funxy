@@ -9,10 +9,10 @@ import "lib/test" (*)
 // Part 1: Custom Monad type (Attempt)
 // =============================================
 
-type Attempt<A> = Success A | Failure String
+type Attempt<a> = Success a | Failure String
 
 instance Functor Attempt {
-    fun fmap<A, B>(f: (A) -> B, fa: Attempt<A>) -> Attempt<B> {
+    fun fmap(f: (a) -> b, fa: Attempt<a>) -> Attempt<b> {
         match fa {
             Success(a) -> Success(f(a))
             Failure(e) -> Failure(e)
@@ -21,9 +21,9 @@ instance Functor Attempt {
 }
 
 instance Applicative Attempt {
-    fun pure<A>(a: A) -> Attempt<A> { Success(a) }
-    
-    operator (<*>)<A, B>(ff: Attempt<(A) -> B>, fa: Attempt<A>) -> Attempt<B> {
+    fun pure(a: a) -> Attempt<a> { Success(a) }
+
+    operator (<*>)(ff: Attempt<(a) -> b>, fa: Attempt<a>) -> Attempt<b> {
         match ff {
             Failure(e) -> Failure(e)
             Success(f) -> fmap(f, fa)
@@ -32,7 +32,7 @@ instance Applicative Attempt {
 }
 
 instance Monad Attempt {
-    operator (>>=)<A, B>(fa: Attempt<A>, f: (A) -> Attempt<B>) -> Attempt<B> {
+    operator (>>=)(fa: Attempt<a>, f: (a) -> Attempt<b>) -> Attempt<b> {
         match fa {
             Success(a) -> f(a)
             Failure(e) -> Failure(e)
@@ -40,17 +40,17 @@ instance Monad Attempt {
     }
 }
 
-instance Semigroup Attempt {
-    operator (<>)<A>(a: Attempt<A>, b: Attempt<A>) -> Attempt<A> {
-        match a {
-            Success(_) -> a
-            Failure(_) -> b
+instance Semigroup Attempt<a> {
+    operator (<>)(x: Attempt<a>, y: Attempt<a>) -> Attempt<a> {
+        match x {
+            Success(_) -> x
+            Failure(_) -> y
         }
     }
 }
 
-instance Monoid Attempt {
-    fun mempty<A>() -> Attempt<A> { Failure("empty") }
+instance Monoid Attempt<a> {
+    fun mempty() -> Attempt<a> { Failure("empty") }
 }
 
 testRun("Attempt Functor - fmap", fun() -> {
@@ -60,7 +60,7 @@ testRun("Attempt Functor - fmap", fun() -> {
 })
 
 testRun("Attempt Functor Identity", fun() -> {
-    fun id<A>(x: A) -> A { x }
+    fun id(x: a) -> a { x }
     m = Success(42)
     assert(fmap(id, m) == m)
 })
@@ -79,7 +79,7 @@ testRun("Attempt Applicative - <*>", fun() -> {
 testRun("Attempt Monad - basic >>=", fun() -> {
     result = Success(10) >>= fun(n) -> Success(n * 2)
     assertEquals(result, Success(20))
-    
+
     fail: Attempt<Int> = Failure("error")
     result2 = fail >>= fun(n) -> Success(n * 2)
     assertEquals(result2, Failure("error"))
@@ -112,7 +112,7 @@ testRun("Attempt Semigroup - <>", fun() -> {
     a = Success(1)
     b = Success(2)
     assertEquals(a <> b, Success(1))
-    
+
     fail: Attempt<Int> = Failure("e")
     assertEquals(fail <> a, Success(1))
 })
@@ -146,18 +146,18 @@ testRun("Attempt Monoid - Right Identity", fun() -> {
 // Part 2: Custom Wrapper with Semigroup
 // =============================================
 
-type Wrapper<A> = Wrap A
+type Wrapper<a> = Wrap a
 
 instance Functor Wrapper {
-    fun fmap<A, B>(f: (A) -> B, wa: Wrapper<A>) -> Wrapper<B> {
+    fun fmap(f: (a) -> b, wa: Wrapper<a>) -> Wrapper<b> {
         match wa {
             Wrap(a) -> Wrap(f(a))
         }
     }
 }
 
-instance Semigroup Wrapper {
-    operator (<>)<A>(wa: Wrapper<A>, wb: Wrapper<A>) -> Wrapper<A> {
+instance Semigroup Wrapper<a> {
+    operator (<>)(wa: Wrapper<a>, wb: Wrapper<a>) -> Wrapper<a> {
         wa  // First wins
     }
 }
@@ -210,27 +210,27 @@ testRun("Mix Option and Attempt with >>=", fun() -> {
     // Built-in Option
     optResult = Some(10) >>= fun(x) -> Some(x * 2)
     assertEquals(optResult, Some(20))
-    
-    // Custom Attempt  
+
+    // Custom Attempt
     attResult = Success(10) >>= fun(x) -> Success(x * 2)
     assertEquals(attResult, Success(20))
 })
 
 testRun("Convert between Option and Attempt", fun() -> {
-    fun attemptToOption<A>(att: Attempt<A>) -> Option<A> {
+    fun attemptToOption(att: Attempt<a>) -> Option<a> {
         match att {
             Success(a) -> Some(a)
             Failure(_) -> Zero
         }
     }
-    
-    fun optionToAttempt<A>(opt: Option<A>, errMsg: String) -> Attempt<A> {
+
+    fun optionToAttempt(opt: Option<a>, errMsg: String) -> Attempt<a> {
         match opt {
             Some(a) -> Success(a)
             Zero -> Failure(errMsg)
         }
     }
-    
+
     // Transform through different monads
     start: Attempt<Int> = Success(5)
     step1 = start >>= fun(x) -> Success(x * 2)
@@ -238,7 +238,7 @@ testRun("Convert between Option and Attempt", fun() -> {
     step3 = step2 >>= fun(x) -> Some(x + 5)
     step4 = optionToAttempt(step3, "failed")
     final = step4 >>= fun(x) -> Success(x * 3)
-    
+
     assertEquals(final, Success(45))  // ((5 * 2) + 5) * 3 = 45
 })
 
@@ -275,8 +275,8 @@ testRun("UserOpChoose - associativity", fun() -> {
 // Built-in mempty is special - analyzer knows it's a value
 // =============================================
 
-trait Init<T> {
-    fun init() -> T
+trait Init<t> {
+    fun init() -> t
 }
 
 instance Init Int {
@@ -301,13 +301,13 @@ testRun("User nullary trait - explicit call", fun() -> {
     // User-defined nullary methods need explicit ()
     n: Int = init()
     assertEquals(n, 0)
-    
+
     s: String = init()
     assertEquals(s, "")
-    
+
     b: Bool = init()
     assertEquals(b, false)
-    
+
     c: Coord = init()
     assertEquals(c.x, 0)
     assertEquals(c.y, 0)
@@ -334,7 +334,7 @@ testRun("Built-in mempty - no explicit call needed", fun() -> {
     // mempty is special - analyzer knows it's a value, not () -> T
     empty: List<Int> = mempty
     assertEquals(empty, [])
-    
+
     emptyOpt: Option<Int> = mempty
     assertEquals(emptyOpt, Zero)
 })

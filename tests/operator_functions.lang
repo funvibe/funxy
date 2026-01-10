@@ -74,10 +74,10 @@ cons = (::)
 print(cons(0, [1, 2, 3]))  // [0, 1, 2, 3]
 
 // Using operators in higher-order functions
-fun fold<T, R>(f: (R, T) -> R, init: R, list: List<T>) -> R {
+fun fold(f: (r, t) -> r, init: r, list: List<t>) -> r {
     match list {
         [] -> init
-        [head, tail...] -> fold(f, f(init, head), tail)
+        [head, ...tail] -> fold(f, f(init, head), tail)
     }
 }
 
@@ -88,11 +88,11 @@ product = fold((*), 1, [1, 2, 3, 4, 5])
 print(product)  // 120
 
 // Passing operator to map-like function
-fun zipWith<A, B, C>(f: (A, B) -> C, xs: List<A>, ys: List<B>) -> List<C> {
+fun zipWith(f: (a, b) -> c, xs: List<a>, ys: List<b>) -> List<c> {
     match (xs, ys) {
         ([], _) -> []
         (_, []) -> []
-        ([x, xs2...], [y, ys2...]) -> f(x, y) :: zipWith(f, xs2, ys2)
+        ([x, ...xs2], [y, ...ys2]) -> f(x, y) :: zipWith(f, xs2, ys2)
     }
 }
 

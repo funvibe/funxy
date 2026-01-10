@@ -236,4 +236,3 @@ func (vm *VM) importBuiltinsFromEnv(env *evaluator.Environment) {
 		vm.globals.Globals = vm.globals.Globals.Put(name, obj)
 	}
 }
-

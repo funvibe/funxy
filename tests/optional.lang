@@ -16,32 +16,35 @@ print(Fail("error") ?? -1) // -1
 print(Zero ?? Zero ?? Some(5) ?? 999)  // 5
 
 // Short-circuit: right side not evaluated when unnecessary
-counter = 0
+fun testShortCircuit() {
+    counter = 0
 
-fun sideEffect() -> Int {
-    counter = counter + 1
-    999
+    fun sideEffect() -> Int {
+        counter = counter + 1
+        999
+    }
+
+    // Some doesn't call fallback
+    x = Some(1) ?? sideEffect()
+    print(x)       // 1
+    print(counter) // 0
+
+    // Zero calls fallback
+    y = Zero ?? sideEffect()
+    print(y)       // 999
+    print(counter) // 1
+
+    // Ok doesn't call fallback
+    z = Ok(42) ?? sideEffect()
+    print(z)       // 42
+    print(counter) // 1
+
+    // Fail calls fallback
+    w = Fail("err") ?? sideEffect()
+    print(w)       // 999
+    print(counter) // 2
 }
-
-// Some doesn't call fallback
-x = Some(1) ?? sideEffect()
-print(x)       // 1
-print(counter) // 0
-
-// Zero calls fallback
-y = Zero ?? sideEffect()
-print(y)       // 999
-print(counter) // 1
-
-// Ok doesn't call fallback
-z = Ok(42) ?? sideEffect()
-print(z)       // 42
-print(counter) // 1
-
-// Fail calls fallback
-w = Fail("err") ?? sideEffect()
-print(w)       // 999
-print(counter) // 2
+testShortCircuit()
 
 // Type inference works correctly
 opt: Option<Int> = Some(10)
@@ -55,10 +58,10 @@ print(res ?? 0)  // 20
 // Tests that ?? correctly extracts inner type from unwrap signature
 // =============================================
 
-type Validated<E, A> = Invalid E | Valid A
+type Validated<e, a> = Invalid e | Valid a
 
-instance Empty Validated {
-    fun isEmpty(v: Validated<E, A>) -> Bool {
+instance Empty Validated<e> {
+    fun isEmpty(v: Validated<e, a>) -> Bool {
         match v {
             Invalid(_) -> true
             Valid(_) -> false
@@ -66,16 +69,16 @@ instance Empty Validated {
     }
 }
 
-instance Optional Validated {
-    fun unwrap(v: Validated<E, A>) -> A {
+instance Optional Validated<e> {
+    fun unwrap(v: Validated<e, a>) -> a {
         match v {
             Invalid(_) -> panic("unwrap on Invalid")
-            Valid(a) -> a
+            Valid(val) -> val
         }
     }
-    
-    fun wrap(a: A) -> Validated<E, A> {
-        Valid(a)
+
+    fun wrap(val: a) -> Validated<e, a> {
+        Valid(val)
     }
 }
 
@@ -99,4 +102,3 @@ print(val3?.score ?? 0)  // 100
 print(val4?.score ?? 0)  // 0
 
 print("All fallback tests passed!")
-

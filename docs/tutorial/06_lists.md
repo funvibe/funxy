@@ -4,7 +4,7 @@
 
 Lists in Funxy are immutable sequences of elements of the same type. A **hybrid ("Smart List")** implementation is used, combining the advantages of vectors and linked lists:
 
-1. **Vector (Vector-backed)**: Lists created via literals `[...]` or functions like `range()`. Provide **O(1)** append to end, **O(1)** indexed access, and **O(1)** length.
+1. **Vector (Vector-backed)**: Lists created via literals `[...]` or ranges converted to lists. Provide **O(1)** append to end, **O(1)** indexed access, and **O(1)** length.
 2. **Linked List (Cons-backed)**: Lists created with the `::` (cons) operator. Provide **O(1)** prepend.
 
 Read operations are automatically optimized: if a vector segment is encountered while traversing a linked list, access switches to **O(1)**. This allows efficient use of both functional patterns (recursion with `head :: tail`) and imperative patterns (indexed access).
@@ -203,8 +203,8 @@ partition(fun(x) -> x % 2 == 0, [1, 2, 3, 4, 5])
 
 ```rust
 // Range — [start, end)
-range(1, 5)                       // [1, 2, 3, 4]
-range(0, 10)                      // [0, 1, 2, ..., 9]
+r = 1..4                            // Range<Int> inclusive
+list = [x | x <- 1..4]              // [1, 2, 3, 4]
 ```
 
 ## Pipe Operator
@@ -229,7 +229,7 @@ result = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 fun sum(xs: List<Int>) -> Int {
     match xs {
         [] -> 0
-        [x, rest...] -> x + sum(rest)
+        [x, ...rest] -> x + sum(rest)
     }
 }
 
@@ -241,7 +241,7 @@ sum([1, 2, 3, 4, 5])  // 15
 ```rust
 fun first3(xs: List<Int>) -> List<Int> {
     match xs {
-        [a, b, c, rest...] -> [a, b, c]
+        [a, b, c, ...rest] -> [a, b, c]
         _ -> xs
     }
 }
@@ -260,7 +260,7 @@ fun describe(xs: List<Int>) -> String {
         [] -> "empty"
         [x] -> "single: ${x}"
         [x, y] -> "pair: ${x}, ${y}"
-        [x, rest...] -> "starts with ${x}, has ${length(rest)} more"
+        [x, ...rest] -> "starts with ${x}, has ${length(rest)} more"
     }
 }
 ```
@@ -279,6 +279,88 @@ ys = [4, 5]
 
 // Multiple spreads
 [...xs, ...ys]          // [1, 2, 3, 4, 5]
+```
+
+## List Comprehensions
+
+List comprehensions provide a concise, declarative way to create lists. The syntax is inspired by Haskell and mathematical set notation.
+
+### Basic Syntax
+
+```rust
+[output | clause, clause, ...]
+```
+
+Where clauses can be:
+- **Generators:** `pattern <- iterable` — iterate over elements
+- **Filters:** `boolean_expression` — filter elements
+
+### Simple Examples
+
+```rust
+// Double each element
+doubled = [x * 2 | x <- [1, 2, 3]]
+// [2, 4, 6]
+
+// Filter even numbers
+evens = [x | x <- [1, 2, 3, 4, 5, 6], x % 2 == 0]
+// [2, 4, 6]
+
+// Combined: filter and transform
+result = [x * 2 | x <- [1, 2, 3, 4, 5], x > 2]
+// [6, 8, 10]
+```
+
+### Multiple Generators
+
+Multiple generators create a cartesian product:
+
+```rust
+pairs = [(x, y) | x <- [1, 2], y <- [3, 4]]
+// [(1, 3), (1, 4), (2, 3), (2, 4)]
+
+// Dependent generators (y depends on x)
+triangular = [(x, y) | x <- [1, 2, 3], y <- [1, 2, 3], y <= x]
+// [(1, 1), (2, 1), (2, 2), (3, 1), (3, 2), (3, 3)]
+```
+
+### Pattern Destructuring
+
+Generators support pattern matching for tuples and records:
+
+```rust
+// Tuple pattern
+sums = [a + b | (a, b) <- [(1, 2), (3, 4), (5, 6)]]
+// [3, 7, 11]
+
+// Nested lists (flattening)
+matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+flattened = [x | row <- matrix, x <- row]
+// [1, 2, 3, 4, 5, 6, 7, 8, 9]
+```
+
+### Multiple Filters
+
+```rust
+filtered = [x | x <- [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], x > 3, x < 8]
+// [4, 5, 6, 7]
+```
+
+### Using Outer Variables
+
+```rust
+multiplier = 3
+scaled = [x * multiplier | x <- [1, 2, 3]]
+// [3, 6, 9]
+```
+
+### Strings (List<Char>)
+
+Since strings are `List<Char>`, comprehensions work with them:
+
+```rust
+chars = [c | c <- "abc"]
+// "abc" (as List<Char>)
 ```
 
 ## Practical Examples
@@ -317,7 +399,7 @@ maximum([3, 1, 4, 1, 5, 9])  // 9
 ```rust
 import "lib/list" (filter, unique, map)
 
-fun groupBy<K, V>(keyFn: (V) -> K, xs: List<V>) -> List<(K, List<V>)> {
+fun groupBy<k, v>(keyFn: (v) -> k, xs: List<v>) -> List<(k, List<v>)> {
     keys = unique(map(keyFn, xs))
     map(fun(k) -> (k, filter(fun(x) -> keyFn(x) == k, xs)), keys)
 }

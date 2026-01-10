@@ -82,12 +82,36 @@ Trailing commas are allowed.
 
 ## Imports
 
+Funxy enforces a **strict single-import rule**: a module can be imported only once per file. This prevents ambiguity and keeps dependencies clear.
+
 ```rust
 import "lib/list"           // Import as module object
+// OR
 import "lib/list" as l      // Import with alias
+// OR
 import "lib/list" (map)     // Import specific symbols
+// OR
 import "lib/list" (*)       // Import all symbols
-import "lib/list" !(map)    // Import all except specified
+```
+
+### Duplicate Imports Forbidden
+
+It is a **compilation error** to import the same module path more than once in the same file. You must choose the import style that best fits your needs.
+
+**Incorrect:**
+```rust
+import "lib/math"           // Import 1
+import "lib/math" (sqrt)    // ✗ Error: module 'lib/math' already imported
+```
+
+**Correct:**
+```rust
+// Use one comprehensive import
+import "lib/math" (*)       // Import everything including sqrt
+// OR
+import "lib/math" (sqrt, pi) // Import what you need
+// OR
+import "lib/math" as m      // Use qualified access: m.sqrt
 ```
 
 ### Accessing Imported Symbols
@@ -237,7 +261,7 @@ v = SqlString("")
    v = types.SqlValue(42)
    ```
 
-   **Note**: Don't import the same module twice (with alias AND selective) - choose one approach.
+   **Note**: You cannot import the same module twice (e.g. once with alias and once selectively). This will cause a compilation error. Choose the approach that best suits your usage in that file.
 
 4. **For qualified traits**, use full path qualification:
    ```rust
@@ -433,6 +457,7 @@ Supported via multi-pass analysis. Module A can import B while B imports A.
 | Extension methods | Exported with their type |
 | ADT constructors | Auto-imported with parent type |
 | Trait methods | Auto-imported when methods are imported |
+| Duplicate imports | **Forbidden** (compilation error) |
 | Module aliases | Explicit: `as alias` or default from path |
 | Name collisions | Use explicit aliases or qualified names |
 | Qualified traits | Multi-level: `module.submodule.Trait` |

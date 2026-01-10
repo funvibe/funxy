@@ -1,8 +1,8 @@
 // Test: Missing required method error
 
-trait Cmp<T> {
-    fun cmp(a: T, b: T) -> Bool           // Required
-    fun notCmp(a: T, b: T) -> Bool {      // Default
+trait Cmp<t> {
+    fun cmp(a: t, b: t) -> Bool           // Required
+    fun notCmp(a: t, b: t) -> Bool {      // Default
         if cmp(a, b) { false } else { true }
     }
 }

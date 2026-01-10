@@ -1,18 +1,18 @@
 // Explicit Generics
-fun id<T>(x: T) -> T {
+fun myId(x: t) -> t {
     x
 }
 
 // Call with Int
-i = id(5)
+i = myId(5)
 print(i) // 5
 
 // Call with String (List Char)
-s = id("hello")
+s = myId("hello")
 print(s) // "hello"
 
 // Generic Function with List
-fun first<T>(list: List<T>) -> Option<T> {
+fun first(list: List<t>) -> Option<t> {
     if len(list) > 0 {
         Some(list[0])
     } else {
@@ -27,9 +27,9 @@ f2 = first([])
 print(f2) // Zero
 
 // Generic Wrapper Struct
-type Box<T> = { value: T }
+type Box<t> = { value: t }
 
-fun makeBox<T>(v: T) -> Box<T> {
+fun makeBox(v: t) -> Box<t> {
     { value: v }
 }
 

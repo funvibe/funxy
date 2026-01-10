@@ -17,12 +17,12 @@ import "lib/list" (map)
 // Using <|> operator (since <> is bound to built-in Semigroup)
 // =============================================================================
 
-instance UserOpChoose List<T> {
-    operator (<|>)(a: List<T>, b: List<T>) -> List<T> { a ++ b }
+instance UserOpChoose List<t> {
+    operator (<|>)(a: List<t>, b: List<t>) -> List<t> { a ++ b }
 }
 
-instance UserOpChoose Option<T> {
-    operator (<|>)(a: Option<T>, b: Option<T>) -> Option<T> {
+instance UserOpChoose Option<t> {
+    operator (<|>)(a: Option<t>, b: Option<t>) -> Option<t> {
         match a {
             Some(_) -> a
             Zero -> b
@@ -64,16 +64,16 @@ print(((a <> b) <> c) == (a <> (b <> c)))  // true
 // mempty :: A
 // =============================================================================
 
-trait MonoidSemantics<A> {
-    fun memptyS(dummy: A) -> A
+trait MonoidSemantics<t> {
+    fun memptyS(dummy: t) -> t
 }
 
-instance MonoidSemantics List<T> {
-    fun memptyS(dummy: List<T>) -> List<T> { [] }
+instance MonoidSemantics List<t> {
+    fun memptyS(dummy: List<t>) -> List<t> { [] }
 }
 
-instance MonoidSemantics Option<T> {
-    fun memptyS(dummy: Option<T>) -> Option<T> { Zero }
+instance MonoidSemantics Option<t> {
+    fun memptyS(dummy: Option<t>) -> Option<t> { Zero }
 }
 
 print("=== Monoid ===")
@@ -102,33 +102,33 @@ print((x <> emptyList) == x)  // true
 // fmap :: (A -> B) -> F<A> -> F<B>
 // =============================================================================
 
-trait FunctorSemantics<F> {
-    fun fmapS<A, B>(f: (A) -> B, fa: F<A>) -> F<B>
+trait FunctorSemantics<f> {
+    fun fmapS(fn: (a) -> b, fa: f<a>) -> f<b>
 }
 
 instance FunctorSemantics<Option> {
-    fun fmapS<A, B>(f: (A) -> B, fa: Option<A>) -> Option<B> {
+    fun fmapS(fn: (a) -> b, fa: Option<a>) -> Option<b> {
         match fa {
-            Some(x) -> Some(f(x))
+            Some(x) -> Some(fn(x))
             Zero -> Zero
         }
     }
 }
 
 instance FunctorSemantics<List> {
-    fun fmapS<A, B>(f: (A) -> B, fa: List<A>) -> List<B> {
+    fun fmapS(fn: (a) -> b, fa: List<a>) -> List<b> {
         match fa {
             [] -> []
-            [x, xs...] -> f(x) :: fmapS(f, xs)
+            [x, ...xs] -> fn(x) :: fmapS(fn, xs)
         }
     }
 }
 
-instance FunctorSemantics<Result, E> {
-    fun fmapS<A, B>(f: (A) -> B, fa: Result<E, A>) -> Result<E, B> {
+instance FunctorSemantics Result<e> {
+    fun fmapS(fn: (a) -> b, fa: Result<e, a>) -> Result<e, b> {
         match fa {
-            Ok(x) -> Ok(f(x))
-            Fail(e) -> Fail(e)
+            Ok(x) -> Ok(fn(x))
+            Fail(err) -> Fail(err)
         }
     }
 }
@@ -160,15 +160,14 @@ print(fmap(fun(x) -> x + 100, failVal))                  // Fail("error")
 print(fmap(fun(x) -> x + 100, failVal) == fmapS(fun(x) -> x + 100, failVal))  // true
 
 // Functor Laws:
-// Identity:    fmap(identity, x) == x
+// Identity:    fmap(id, x) == x
 // Composition: fmap(f ,, g, x) == fmap(f, fmap(g, x))
-identity = fun(x) -> x
 inc = fun(x: Int) -> x + 1
 dbl = fun(x: Int) -> x * 2
 composed = dbl ,, inc  // dbl(inc(x))
 
 optTest = Some(5)
-print(fmap(identity, optTest) == optTest)                           // true (Identity)
+print(fmap(id, optTest) == optTest)                           // true (Identity)
 print(fmap(composed, optTest) == fmap(dbl, fmap(inc, optTest))) // true (Composition)
 
 // =============================================================================
@@ -177,27 +176,27 @@ print(fmap(composed, optTest) == fmap(dbl, fmap(inc, optTest))) // true (Composi
 // (<*>) :: F<(A -> B)> -> F<A> -> F<B>
 // =============================================================================
 
-trait ApplicativeSemantics<F> {
-    fun pureS<A>(dummy: F<A>, x: A) -> F<A>
-    fun applyS<A, B>(ff: F<(A) -> B>, fa: F<A>) -> F<B>
+trait ApplicativeSemantics<f> {
+    fun pureS(dummy: f<a>, x: a) -> f<a>
+    fun applyS(ff: f<(a) -> b>, fa: f<a>) -> f<b>
 }
 
 instance ApplicativeSemantics<Option> {
-    fun pureS<A>(dummy: Option<A>, x: A) -> Option<A> { Some(x) }
-    fun applyS<A, B>(ff: Option<(A) -> B>, fa: Option<A>) -> Option<B> {
+    fun pureS(dummy: Option<a>, x: a) -> Option<a> { Some(x) }
+    fun applyS(ff: Option<(a) -> b>, fa: Option<a>) -> Option<b> {
         match (ff, fa) {
-            (Some(f), Some(a)) -> Some(f(a))
+            (Some(fn), Some(a)) -> Some(fn(a))
             _ -> Zero
         }
     }
 }
 
 instance ApplicativeSemantics<List> {
-    fun pureS<A>(dummy: List<A>, x: A) -> List<A> { [x] }
-    fun applyS<A, B>(ff: List<(A) -> B>, fa: List<A>) -> List<B> {
+    fun pureS(dummy: List<a>, x: a) -> List<a> { [x] }
+    fun applyS(ff: List<(a) -> b>, fa: List<a>) -> List<b> {
         match ff {
             [] -> []
-            [f, fs...] -> map(f, fa) ++ applyS(fs, fa)
+            [f, ...fs] -> map(f, fa) ++ applyS(fs, fa)
         }
     }
 }
@@ -230,12 +229,12 @@ print(result4 == applyS(fns, vals))                      // true
 // (>>=) :: M<A> -> (A -> M<B>) -> M<B>
 // =============================================================================
 
-trait MonadSemantics<M> {
-    fun bindS<A, B>(ma: M<A>, f: (A) -> M<B>) -> M<B>
+trait MonadSemantics<m> {
+    fun bindS(ma: m<a>, f: (a) -> m<b>) -> m<b>
 }
 
 instance MonadSemantics<Option> {
-    fun bindS<A, B>(ma: Option<A>, f: (A) -> Option<B>) -> Option<B> {
+    fun bindS(ma: Option<a>, f: (a) -> Option<b>) -> Option<b> {
         match ma {
             Some(a) -> f(a)
             Zero -> Zero
@@ -244,10 +243,10 @@ instance MonadSemantics<Option> {
 }
 
 instance MonadSemantics<List> {
-    fun bindS<A, B>(ma: List<A>, f: (A) -> List<B>) -> List<B> {
+    fun bindS(ma: List<a>, f: (a) -> List<b>) -> List<b> {
         match ma {
             [] -> []
-            [x, xs...] -> f(x) ++ bindS(xs, f)
+            [x, ...xs] -> f(x) ++ bindS(xs, f)
         }
     }
 }

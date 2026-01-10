@@ -6,8 +6,8 @@ x = 42
 print(x)
 
 // Generic function - analyzer knows return type
-fun identity<T>(x: T) -> T { x }
-y = identity(100)
+fun idFn(x: t) -> t { x }
+y = idFn(100)
 print(y)
 
 // With explicit annotation
@@ -16,7 +16,7 @@ print(z)
 
 // The TypeMap contains:
 // - x = 42 → Int
-// - identity(100) → Int  
+// - identity(100) → Int
 // - z → Option<Int>
 // - Some(50) → Option<Int>
 

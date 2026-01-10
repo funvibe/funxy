@@ -767,20 +767,20 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 	}
 
 	types := map[string]typesystem.Type{
-		"httpGet":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
-		"httpPost":       typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultResponse},
-		"httpPostJson":   typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.TVar{Name: "A"}}, ReturnType: resultResponse},
-		"httpPut":        typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultResponse},
-		"httpDelete":     typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
+		"httpGet":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
+		"httpPost":     typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultResponse},
+		"httpPostJson": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.TVar{Name: "A"}}, ReturnType: resultResponse},
+		"httpPut":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultResponse},
+		"httpDelete":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
 		// httpRequest has 2 default params: body="" and timeout=0
 		"httpRequest": typesystem.TFunc{
 			Params:       []typesystem.Type{stringType, stringType, headersType, stringType, typesystem.Int},
 			ReturnType:   resultResponse,
 			DefaultCount: 2, // body and timeout have defaults
 		},
-		"httpSetTimeout":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"httpServe":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
-		"httpServeAsync":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: typesystem.Int},
+		"httpSetTimeout": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+		"httpServe":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
+		"httpServeAsync": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: typesystem.Int},
 		"httpServerStop": typesystem.TFunc{
 			Params:       []typesystem.Type{typesystem.Int, typesystem.Int},
 			ReturnType:   typesystem.Nil,
@@ -797,8 +797,8 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 	// Set default arguments for httpRequest: body="" and timeout=0
 	if b, ok := builtins["httpRequest"]; ok {
 		b.DefaultArgs = []Object{
-			stringToList(""),    // body default = ""
-			&Integer{Value: 0},  // timeout default = 0
+			stringToList(""),   // body default = ""
+			&Integer{Value: 0}, // timeout default = 0
 		}
 	}
 

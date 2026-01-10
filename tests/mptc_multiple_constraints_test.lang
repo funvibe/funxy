@@ -1,0 +1,35 @@
+// Test: MPTC with multiple constraints on single type parameter
+// This tests that we can have: Type<a: Trait1, Trait2, b: Trait3>
+// Using built-in traits: Numeric, Show, Equal
+
+// Int already implements Numeric, Show, Equal (built-in)
+
+type Pair<a, b> = P(a, b)
+
+// Test: Multiple constraints on 'a' parameter: Numeric AND Show
+// 'b' has single constraint: Show
+instance Show<Pair<a: Numeric, Show, b: Show>> {
+    fun show(p: Pair<a, b>) -> String {
+        match p {
+            P(x, y) -> {
+                // Use Numeric constraint on 'a'
+                doubled = x + x
+                // Use Show constraint on 'a'
+                xStr = show(doubled)
+                // Use Show constraint on 'b'
+                yStr = show(y)
+                "Pair(" ++ xStr ++ ", " ++ yStr ++ ")"
+            }
+        }
+    }
+}
+
+// Test: Multiple constraints on both parameters
+// Note: Equal trait uses == operator, not eq method
+// So we test with a simpler case - just Show constraint
+
+
+// Test with Int (satisfies Numeric, Show, Equal)
+p1 = P(5, true)
+
+print(show(p1))  // Should show "Pair(10, true)" (doubled first element)

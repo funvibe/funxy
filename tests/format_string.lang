@@ -1,0 +1,63 @@
+// Comprehensive tests for format string literals
+
+// Test 1: Single argument (original behavior)
+print(%".2f"(3.14159))
+
+// Test 2: Two arguments (new variadic behavior)
+print(%"%s, %s!"("Hello", "World"))
+
+// Test 3: Three arguments
+print(%"%s + %s = %d"("one", "two", 3))
+
+// Test 4: Mixed types
+print(%"Name: %s, Age: %d, Score: %.1f"("Alice", 25, 95.5))
+
+// Test 5: Integer formatting
+print(%"%d in hex is %x"(255, 255))
+
+// Test 6: Zero arguments (just format string with %%)
+print(%"100%% complete"())
+
+// Test 7: Format string assigned to variable
+formatter = %"User: %s (ID: %d)"
+print(formatter("Bob", 42))
+
+// Test 8: Format string used directly in expression
+result = %"%s is %d years old"("Charlie", 30)
+print(result)
+
+// Test 9: Multiple format specifiers of same type
+print(%"%d, %d, %d, %d"(1, 2, 3, 4))
+
+// Test 10: String with special characters
+print(%"Value: [%s]"("test"))
+
+// === Format specifier coverage ===
+
+// Test 11: %s - string
+print(%"%s"("hello"))
+
+// Test 12: %d - decimal integer
+print(%"%d"(42))
+
+// Test 13: %x - hex lowercase
+print(%"%x"(255))
+
+// Test 14: %X - hex uppercase
+print(%"%X"(255))
+
+// Test 15: %o - octal
+print(%"%o"(64))
+
+// Test 16: %b - binary
+print(%"%b"(10))
+
+// Test 17: %f - float default precision
+print(%"%f"(3.14))
+
+// Test 18: %.Nf - float with precision
+print(%"%.3f"(2.71828))
+
+// Test 19: %% - escaped percent
+print(%"%%"())
+

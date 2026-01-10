@@ -1,0 +1,30 @@
+// Test: MPTC Collision
+// Verify that instances with same first arg but different second arg are distinct
+
+trait Convert<a, b> {
+    fun convert(val: a) -> b
+}
+
+// Instance 1: Int -> String
+instance Convert<Int, String> {
+    fun convert(val: Int) -> String { "String" }
+}
+
+// Instance 2: Int -> Bool
+instance Convert<Int, Bool> {
+    fun convert(val: Int) -> Bool { true }
+}
+
+// Usage
+s: String = convert(42) // Should pick Int->String
+b: Bool = convert(100)  // Should pick Int->Bool (but type inference needs to know target)
+
+// Explicit typing helps dispatch if supported, or inference from context
+// In our current solver:
+// convert(42) -> a=Int.
+// If result is assigned to String, b=String.
+// Constraint: Int: Convert<String>.
+
+print(s)
+print(b)
+

@@ -1,0 +1,16 @@
+// Test: MPTC Kind Mismatch (Mixed Kinds)
+
+trait Container<v, b> {
+    fun wrapC(x: v) -> b<v>
+}
+
+instance Container<Bool, Int> {
+    fun wrapC(x) { 0 }
+}
+
+// Error 1: List is * -> *, expected * (first param)
+// Error 2: Int is *, expected * -> * (second param)
+// Note: Errors might be reported sequentially
+instance Container<List, Int> {
+    fun wrapC(x) { 0 }
+}

@@ -43,7 +43,6 @@ func BitsBuiltins() map[string]*Builtin {
 		"bitsInt":     {Fn: builtinBitsInt, Name: "bitsInt"},
 		"bitsBytes":   {Fn: builtinBitsBytes, Name: "bitsBytes"},
 		"bitsRest":    {Fn: builtinBitsRest, Name: "bitsRest"},
-
 	}
 }
 
@@ -683,4 +682,3 @@ func decodeBitsToInt(bits *Bits, spec string) int64 {
 
 	return int64(val)
 }
-

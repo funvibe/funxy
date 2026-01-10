@@ -9,6 +9,7 @@ import (
 	"github.com/funvibe/funxy/internal/typesystem"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Local represents a local variable during compilation
@@ -84,6 +85,12 @@ type Compiler struct {
 
 	// Context for type expectations (propagated from assignments/annotations)
 	typeContext string
+
+	// Function Registry for monomorphization (maps function name to AST)
+	functionRegistry map[string]*ast.FunctionStatement
+
+	// Type substitution for monomorphized functions
+	subst typesystem.Subst
 }
 
 // PendingImport represents an import that needs to be processed before VM runs
@@ -102,12 +109,14 @@ func NewCompiler() *Compiler {
 			Chunk: NewChunk(),
 			Name:  "<script>",
 		},
-		funcType:        TYPE_SCRIPT,
-		locals:          make([]Local, 256),
-		upvalues:        make([]Upvalue, 256),
-		globals:         make(map[string]bool),
-		importedModules: make(map[string]bool),
-		typeAliases:     make(map[string]typesystem.Type),
+		funcType:         TYPE_SCRIPT,
+		locals:           make([]Local, 256),
+		upvalues:         make([]Upvalue, 256),
+		globals:          make(map[string]bool),
+		importedModules:  make(map[string]bool),
+		typeAliases:      make(map[string]typesystem.Type),
+		functionRegistry: make(map[string]*ast.FunctionStatement),
+		subst:            make(typesystem.Subst),
 	}
 	return c
 }
@@ -169,6 +178,28 @@ func (c *Compiler) astTypeToTypesystemType(t ast.Type) typesystem.Type {
 			fields[name] = c.astTypeToTypesystemType(fieldType)
 		}
 		return typesystem.TRecord{Fields: fields}
+	case *ast.FunctionType:
+		var params []typesystem.Type
+		for _, p := range node.Parameters {
+			params = append(params, c.astTypeToTypesystemType(p))
+		}
+		ret := c.astTypeToTypesystemType(node.ReturnType)
+		return typesystem.TFunc{
+			Params:     params,
+			ReturnType: ret,
+		}
+	case *ast.TupleType:
+		var elems []typesystem.Type
+		for _, e := range node.Types {
+			elems = append(elems, c.astTypeToTypesystemType(e))
+		}
+		return typesystem.TTuple{Elements: elems}
+	case *ast.UnionType:
+		var types []typesystem.Type
+		for _, t := range node.Types {
+			types = append(types, c.astTypeToTypesystemType(t))
+		}
+		return typesystem.TUnion{Types: types}
 	}
 	return nil
 }
@@ -181,13 +212,15 @@ func newFunctionCompiler(enclosing *Compiler, name string, arity int) *Compiler 
 			Name:  name,
 			Arity: arity,
 		},
-		funcType:    TYPE_FUNCTION,
-		locals:      make([]Local, 256),
-		upvalues:    make([]Upvalue, 256),
-		scopeDepth:  1, // Function body starts at depth 1
-		enclosing:   enclosing,
-		typeMap:     enclosing.typeMap, // Inherit type map
-		typeAliases: enclosing.typeAliases, // Inherit type aliases map reference
+		funcType:         TYPE_FUNCTION,
+		locals:           make([]Local, 256),
+		upvalues:         make([]Upvalue, 256),
+		scopeDepth:       1, // Function body starts at depth 1
+		enclosing:        enclosing,
+		typeMap:          enclosing.typeMap,          // Inherit type map
+		typeAliases:      enclosing.typeAliases,      // Inherit type aliases map reference
+		functionRegistry: enclosing.functionRegistry, // Inherit registry
+		subst:            enclosing.subst,            // Inherit substitution
 	}
 	return c
 }
@@ -214,6 +247,12 @@ func (c *Compiler) Compile(program *ast.Program) (*Chunk, error) {
 
 	c.emit(OP_HALT, 0)
 	c.function.LocalCount = c.localCount
+
+	// Save local variable names for debugging (top-level script)
+	c.function.LocalNames = make([]string, c.localCount)
+	for i := 0; i < c.localCount; i++ {
+		c.function.LocalNames[i] = c.locals[i].Name
+	}
 
 	// Copy pending imports to the chunk for serialization
 	chunk := c.currentChunk()
@@ -376,55 +415,55 @@ func (c *Compiler) compileTupleLiteral(lit *ast.TupleLiteral) error {
 	return nil
 }
 
-	// Compile record literal
-	func (c *Compiler) compileRecordLiteral(lit *ast.RecordLiteral) error {
-		line := lit.Token.Line
+// Compile record literal
+func (c *Compiler) compileRecordLiteral(lit *ast.RecordLiteral) error {
+	line := lit.Token.Line
 
-		// Elements of a record literal are never in tail position
-		wasTail := c.inTailPosition
-		c.inTailPosition = false
-		defer func() { c.inTailPosition = wasTail }()
+	// Elements of a record literal are never in tail position
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+	defer func() { c.inTailPosition = wasTail }()
 
-		// If spread is present, compile it first
-		hasSpread := lit.Spread != nil
-		if hasSpread {
-			if err := c.withTypeContext("", func() error {
-				return c.compileExpression(lit.Spread)
-			}); err != nil {
-				return err
-			}
+	// If spread is present, compile it first
+	hasSpread := lit.Spread != nil
+	if hasSpread {
+		if err := c.withTypeContext("", func() error {
+			return c.compileExpression(lit.Spread)
+		}); err != nil {
+			return err
 		}
+	}
 
-		fieldCount := 0
-		// Compile each field value and emit field name
-		for name, value := range lit.Fields {
-			// Push field name as constant
-			nameIdx := c.currentChunk().AddConstant(&stringConstant{Value: name})
-			c.emit(OP_CONST, line)
-			c.currentChunk().Write(byte(nameIdx>>8), line)
-			c.currentChunk().Write(byte(nameIdx), line)
-			c.slotCount++
+	fieldCount := 0
+	// Compile each field value and emit field name
+	for name, value := range lit.Fields {
+		// Push field name as constant
+		nameIdx := c.currentChunk().AddConstant(&stringConstant{Value: name})
+		c.emit(OP_CONST, line)
+		c.currentChunk().Write(byte(nameIdx>>8), line)
+		c.currentChunk().Write(byte(nameIdx), line)
+		c.slotCount++
 
-			// Push field value
-			if err := c.withTypeContext("", func() error {
-				return c.compileExpression(value)
-			}); err != nil {
-				return err
-			}
-			fieldCount++
+		// Push field value
+		if err := c.withTypeContext("", func() error {
+			return c.compileExpression(value)
+		}); err != nil {
+			return err
 		}
+		fieldCount++
+	}
 
-		if hasSpread {
-			// Emit EXTEND_RECORD with field count
-			c.emit(OP_EXTEND_RECORD, line)
-			c.currentChunk().Write(byte(fieldCount), line)
+	if hasSpread {
+		// Emit EXTEND_RECORD with field count
+		c.emit(OP_EXTEND_RECORD, line)
+		c.currentChunk().Write(byte(fieldCount), line)
 
-			// Stack: [base, name1, val1, name2, val2...]
-			// Base consumes 1, pairs consume 2*N
-			// Result consumes -1 (base) - 2*N + 1 (result) = -2*N
-			// So total change: -2*N
-			c.slotCount -= fieldCount * 2
-			// Base is replaced by result, so slotCount stays same for base
+		// Stack: [base, name1, val1, name2, val2...]
+		// Base consumes 1, pairs consume 2*N
+		// Result consumes -1 (base) - 2*N + 1 (result) = -2*N
+		// So total change: -2*N
+		c.slotCount -= fieldCount * 2
+		// Base is replaced by result, so slotCount stays same for base
 	} else {
 		// Emit MAKE_RECORD with field count
 		c.emit(OP_MAKE_RECORD, line)
@@ -603,8 +642,8 @@ func (c *Compiler) bindPattern(pat ast.Pattern, line int) error {
 			c.currentChunk().Write(byte(count), line)
 			c.removeSlotFromStack(listSlot)
 		} else {
-		c.emit(OP_POP, line)
-		c.slotCount--
+			c.emit(OP_POP, line)
+			c.slotCount--
 		}
 		return nil
 
@@ -1125,4 +1164,102 @@ func buildFunctionTypeFromStatement(stmt *ast.FunctionStatement) typesystem.Type
 		Params:     params,
 		ReturnType: retType,
 	}
+}
+
+// specialize generates a specialized version of a generic function
+func (c *Compiler) specialize(name string, instantiation map[string]typesystem.Type) (string, error) {
+	stmt, ok := c.functionRegistry[name]
+	if !ok {
+		return name, nil // Not found in registry, maybe imported or built-in
+	}
+
+	// Generate specialized name
+	var keys []string
+	for k := range instantiation {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	specName := name
+	for _, k := range keys {
+		t := instantiation[k]
+		specName += "$" + mangleTypeName(t)
+	}
+
+	// Find root compiler
+	root := c
+	for root.enclosing != nil {
+		root = root.enclosing
+	}
+
+	// Check if already compiled
+	if root.globals[specName] {
+		return specName, nil
+	}
+	// Mark as compiled to break recursion
+	root.registerGlobal(specName)
+
+	// Create compiler for specialized function attached to ROOT
+	arity := len(stmt.Parameters)
+	specCompiler := newFunctionCompiler(root, specName, arity)
+
+	// Setup substitution
+	specCompiler.subst = make(typesystem.Subst)
+	for k, v := range instantiation {
+		specCompiler.subst[k] = v
+	}
+
+	// Setup locals
+	for i, param := range stmt.Parameters {
+		specCompiler.addLocal(param.Name.Value, i)
+	}
+	specCompiler.slotCount = arity
+
+	// Compile Body
+	if err := specCompiler.compileFunctionBody(stmt.Body); err != nil {
+		return "", err
+	}
+
+	// Finalize function object
+	fn := specCompiler.function
+	fn.LocalCount = specCompiler.localCount
+	fn.UpvalueCount = specCompiler.upvalueCount
+	// fn.TypeInfo = ... (skip for now)
+
+	// Emit OP_CLOSURE to ROOT
+	fnIdx := root.currentChunk().AddConstant(fn)
+	root.emit(OP_CLOSURE, stmt.Token.Line)
+	root.currentChunk().Write(byte(fnIdx>>8), stmt.Token.Line)
+	root.currentChunk().Write(byte(fnIdx), stmt.Token.Line)
+
+	// Emit Upvalues
+	for i := 0; i < specCompiler.upvalueCount; i++ {
+		if specCompiler.upvalues[i].IsLocal {
+			root.currentChunk().Write(1, stmt.Token.Line)
+		} else {
+			root.currentChunk().Write(0, stmt.Token.Line)
+		}
+		root.currentChunk().Write(specCompiler.upvalues[i].Index, stmt.Token.Line)
+	}
+	root.slotCount++
+
+	// Emit OP_SET_GLOBAL to ROOT
+	nameIdx := root.currentChunk().AddConstant(&stringConstant{Value: specName})
+	root.emit(OP_SET_GLOBAL, stmt.Token.Line)
+	root.currentChunk().Write(byte(nameIdx>>8), stmt.Token.Line)
+	root.currentChunk().Write(byte(nameIdx), stmt.Token.Line)
+	root.emit(OP_POP, stmt.Token.Line) // consume value
+	root.slotCount--
+
+	return specName, nil
+}
+
+func mangleTypeName(t typesystem.Type) string {
+	s := t.String()
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, "<", "$")
+	s = strings.ReplaceAll(s, ">", "$")
+	s = strings.ReplaceAll(s, ",", "_")
+	s = strings.ReplaceAll(s, ".", "_")
+	return s
 }

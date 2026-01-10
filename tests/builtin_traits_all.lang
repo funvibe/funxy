@@ -1,7 +1,7 @@
 // Test: All built-in traits with custom types
 
 // ============================================
-// 1. Equal<T> - equality comparison
+// 1. Equal<t> - equality comparison
 // ============================================
 type Email = MkEmail String
 
@@ -24,7 +24,7 @@ print(e1 != e3)  // true
 print(e1 != e2)  // false
 
 // ============================================
-// 2. Order<T> : Equal<T> - ordering
+// 2. Order<t> : Equal<t> - ordering
 // ============================================
 type Age = MkAge Int
 
@@ -63,7 +63,7 @@ print(a2 >= a1)  // true
 print(a1 == a3)  // true (inherited from Equal)
 
 // ============================================
-// 3. Numeric<T> - arithmetic operations
+// 3. Numeric<t> - arithmetic operations
 // ============================================
 type Money = MkMoney Int
 
@@ -101,7 +101,7 @@ print(getMoney(m1 % m2))   // 10
 print(getMoney(MkMoney(2) ** MkMoney(8)))  // 256
 
 // ============================================
-// 4. Bitwise<T> - bitwise operations
+// 4. Bitwise<t> - bitwise operations
 // ============================================
 type Flags = MkFlags Int
 
@@ -135,7 +135,7 @@ print(getFlags(MkFlags(1) << MkFlags(4)))  // 16
 print(getFlags(MkFlags(32) >> MkFlags(2))) // 8
 
 // ============================================
-// 5. Concat<T> - concatenation
+// 5. Concat<t> - concatenation
 // ============================================
 type Path = MkPath String
 
@@ -155,7 +155,7 @@ print(getPath(p1 ++ p2))           // home/user
 print(getPath(p1 ++ p2 ++ p3))     // home/user/file.txt
 
 // ============================================
-// 6. Default<T> - default value
+// 6. Default<t> - default value
 // ============================================
 
 // 6a. ADT with custom getDefault
@@ -232,10 +232,10 @@ print(b)   // false
 // ============================================
 // 8. Operators as functions with traits
 // ============================================
-fun fold<T, R>(f: (R, T) -> R, init: R, list: List<T>) -> R {
+fun fold(f: (r, t) -> r, init: r, list: List<t>) -> r {
     match list {
         [] -> init
-        [head, tail...] -> fold(f, f(init, head), tail)
+        [head, ...tail] -> fold(f, f(init, head), tail)
     }
 }
 

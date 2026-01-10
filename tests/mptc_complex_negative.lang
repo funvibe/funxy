@@ -1,0 +1,49 @@
+// =============================================================================
+// MPTC NEGATIVE TESTS
+// Covers: Constraint violations, Ambiguity, Missing Instances
+// =============================================================================
+
+trait Convert<a, b> {
+    fun convert(x: a) -> b
+}
+
+trait Combinable<a, b, c> {
+    fun combine(x: a, y: b) -> c
+}
+
+type Box<t> = Box(t)
+
+instance Convert<Int, String> {
+    fun convert(x: Int) -> String { "${x}" }
+}
+
+instance Combinable<Int, Int, Int> {
+    fun combine(x: Int, y: Int) -> Int { x + y }
+}
+
+instance Combinable<String, String, String> {
+    fun combine(x: String, y: String) -> String { x ++ y }
+}
+
+// 1. Missing Instance
+// Constraint: b: Convert<a> -> implies Convert<a, b>
+// Int implements Convert<String>, but NOT Convert<Bool>
+fun needsConvert<a: Convert<b>, b>(val: a) -> b {
+    convert(val)
+}
+
+// Should FAIL: No instance Convert<Int, Bool>
+// We force result type Bool to trigger specific instance search
+print("Test 1: Missing Instance")
+b: Bool = needsConvert(123)
+
+// 2. Constraint Violation in MPTC
+// Constraint: c: Combinable<a, b> -> implies Combinable<a, b, c>
+fun merge<c: Combinable<a, b>, a, b>(x: a, y: b) -> c {
+    combine(x, y)
+}
+
+print("Test 2: Constraint Violation")
+// Should FAIL: Combinable<Int, String, ?>
+// Only (Int, Int) -> Int and (String, String) -> String are defined
+mix = merge(1, "hello")

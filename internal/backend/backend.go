@@ -11,7 +11,7 @@ import (
 type Backend interface {
 	// Run executes the program from pipeline context and returns the result
 	Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
-	
+
 	// Name returns the backend name for display
 	Name() string
 }

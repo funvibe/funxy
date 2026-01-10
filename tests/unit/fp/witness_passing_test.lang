@@ -1,0 +1,145 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+// Tests demonstrating Proposal 002: HKT Constraint Solver and Witnesses
+// These tests show:
+// 1. Dynamic Dictionary Passing for generic functions
+// 2. Type alias support (IntList = List<Int>)
+// 3. Witness passing through WitnessStack (no CurrentTypeHint)
+// 4. User-defined types with Applicative instances
+
+// Type aliases for testing
+type alias IntList = List<Int>
+type alias StringList = List<String>
+
+// Custom Monoid for Writer
+type MySum = MakeSum Int
+
+instance Semigroup MySum {
+  operator (<>)(a: MySum, b: MySum) -> MySum {
+      match (a, b) {
+          (MakeSum(x), MakeSum(y)) -> MakeSum(x + y)
+      }
+  }
+}
+
+instance Monoid MySum {
+  fun mempty() -> MySum { MakeSum(0) }
+}
+
+// Test 1: Writer with type alias (IntList = List<Int>)
+// This demonstrates that witness passing works with type aliases
+testRun("Writer: Pure with type alias (Proposal 002)", fun() -> {
+  // The witness is extracted from Writer<IntList, Int> annotation
+  // IntList is unwrapped to List<Int> for trait method lookup
+  w: Writer<IntList, Int> = pure(42)
+
+  (val, log) = runWriter(w)
+
+  assertEquals(val, 42, "Value should match")
+  assert(isEmpty(log), "Log should be empty list (mempty for List)")
+})
+
+// Test 2: Writer with custom Monoid (MySum)
+// This demonstrates witness passing for user-defined types
+testRun("Writer: Pure with custom Monoid (Proposal 002)", fun() -> {
+  // Witness is passed from annotation Writer<MySum, Int>
+  w: Writer<MySum, Int> = pure(100)
+
+  (val, log) = runWriter(w)
+
+  assertEquals(val, 100, "Value should match")
+  match log {
+    MakeSum(v) -> assertEquals(v, 0, "Log should be MakeSum(0) from mempty")
+  }
+})
+
+// Test 3: OptionT with type annotation
+// This demonstrates witness passing for transformers
+testRun("OptionT: Pure with annotation (Proposal 002)", fun() -> {
+  // Witness is captured from OptionT<Identity, Int> annotation
+  // and passed to pure() via WitnessStack
+  x: OptionT<Identity, Int> = pure(50)
+
+  val = runIdentity(runOptionT(x))
+  match val {
+    Some(v) -> assertEquals(50, v, "pure worked with witness passing"),
+    Zero -> assert(false, "pure failed - witness not passed correctly")
+  }
+})
+
+// Test 4: Pure inside lambda (demonstrates WitnessStack vs CurrentTypeHint)
+// This shows that witness is preserved inside lambda closures
+testRun("Pure inside lambda: Witness preserved (Proposal 002)", fun() -> {
+  // The witness is stored in AST node, not in global CurrentTypeHint
+  // So it works even inside lambda closures
+  f = fun() -> OptionT<Identity, Int> {
+    // Witness from return type annotation is used here
+    pure(200)
+  }
+
+  val = runIdentity(runOptionT(f()))
+  match val {
+    Some(v) -> assertEquals(200, v, "Witness passed through lambda"),
+    Zero -> assert(false, "Witness lost in lambda")
+  }
+})
+
+// Test 5: Generic-to-generic function call
+// This demonstrates dynamic dictionary passing for generic functions
+testRun("Generic-to-generic: Witness propagation (Proposal 002)", fun() -> {
+  // Helper function that uses pure internally
+  helper = fun(x: Int) -> Writer<MySum, Int> {
+    // The witness Writer<MySum, Int> is propagated to this pure() call
+    pure(x * 2)
+  }
+
+  w = helper(25)
+  (val, log) = runWriter(w)
+
+  assertEquals(val, 50, "Generic function received witness")
+  match log {
+    MakeSum(v) -> assertEquals(v, 0, "Log type correctly inferred")
+  }
+})
+
+// Test 6: Nested generic calls
+// This demonstrates witness passing through multiple levels
+testRun("Nested generics: Deep witness passing (Proposal 002)", fun() -> {
+  // Outer function returns Writer
+  outer = fun(x: Int) -> Writer<IntList, Int> {
+    // Inner function also uses pure
+    inner = fun(y: Int) -> Writer<IntList, Int> {
+      pure(y + 10)
+    }
+    inner(x)
+  }
+
+  w = outer(5)
+  (val, log) = runWriter(w)
+
+  assertEquals(val, 15, "Nested calls work")
+  assert(isEmpty(log), "Log type preserved through nesting")
+})
+
+// Test 7: Multiple type aliases
+// This demonstrates that different aliases work correctly
+testRun("Multiple aliases: StringList witness (Proposal 002)", fun() -> {
+  w: Writer<StringList, String> = pure("hello")
+
+  (val, log) = runWriter(w)
+
+  assertEquals(val, "hello", "String value preserved")
+  assert(isEmpty(log), "StringList alias works")
+})
+
+// Test 8: ResultT with witness
+testRun("ResultT: Pure with witness (Proposal 002)", fun() -> {
+  rt: ResultT<Identity, String, Int> = pure(99)
+
+  val = runIdentity(runResultT(rt))
+  match val {
+    Ok(v) -> assertEquals(99, v, "ResultT pure works"),
+    Fail(_) -> assert(false, "ResultT pure failed")
+  }
+})
+

@@ -1,10 +1,10 @@
 // Test comprehensive Tuple Spread Patterns
 
 // 1. Variadic arguments (Unknown Size Tuple)
-fun sum(args...) {
+fun sum(...args) {
     match args {
         () -> 0,
-        (x, xs...) -> x + sum(xs...)
+        (x, ...xs) -> x + sum(...xs)
     }
 }
 
@@ -13,22 +13,22 @@ print(sum(1, 2, 3, 4, 5)) // 15
 // 2. Fixed Tuple matching
 t = (10, 20, 30)
 match t {
-    (a, rest...) -> {
+    (a, ...rest) -> {
         print(a)    // 10
         print(rest) // (20, 30)
     }
 }
 
 // 3. Nested Spread Pattern
-// (x, rest...) matches (1, 2, 3, 4)
+// (x, ...rest) matches (1, 2, 3, 4)
 // x=1
 // rest=(2, 3, 4)
-// We want to match rest against (y, z...).
-// So we use nested pattern: (x, (y, z...)...)
+// We want to match rest against (y, ...z).
+// So we use nested pattern: (x, ...(y, ...z))
 
 fun nested(t) {
     match t {
-        (x, (y, z...)...) -> {
+        (x, ...(y, ...z)) -> {
             print(x)
             print(y)
             print(z)
@@ -42,7 +42,7 @@ nested((1, 2, 3, 4))
 // 4. Empty spread
 // (1, 2) -> head=1, tail=(2)
 match (1, 2) {
-    (head, tail...) -> {
+    (head, ...tail) -> {
         print(head) // 1
         print(tail) // (2)
     }

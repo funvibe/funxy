@@ -47,7 +47,7 @@ type TestRunner struct {
 
 // Global test runner instance
 var (
-	testRunner *TestRunner
+	testRunner     *TestRunner
 	testRunnerOnce sync.Once
 )
 
@@ -271,6 +271,8 @@ func TestBuiltins() map[string]*Builtin {
 
 		// Assertions
 		"assert":       {Fn: builtinAssert, Name: "assert"},
+		"assertTrue":   {Fn: builtinAssertTrue, Name: "assertTrue"},
+		"assertFalse":  {Fn: builtinAssertFalse, Name: "assertFalse"},
 		"assertEquals": {Fn: builtinAssertEquals, Name: "assertEquals"},
 		"assertOk":     {Fn: builtinAssertOk, Name: "assertOk"},
 		"assertFail":   {Fn: builtinAssertFail, Name: "assertFail"},
@@ -447,6 +449,48 @@ func builtinAssert(e *Evaluator, args ...Object) Object {
 			return newError("assertion failed: %s", msg)
 		}
 		return newError("assertion failed")
+	}
+
+	return &Nil{}
+}
+
+func builtinAssertTrue(e *Evaluator, args ...Object) Object {
+	if len(args) < 1 || len(args) > 2 {
+		return newError("assertTrue expects 1-2 arguments, got %d", len(args))
+	}
+
+	boolVal, ok := args[0].(*Boolean)
+	if !ok {
+		return newError("assertTrue expects a boolean, got %s", args[0].Type())
+	}
+
+	if !boolVal.Value {
+		msg := extractMessage(args, 1)
+		if msg != "" {
+			return newError("assertTrue failed: expected true, got false - %s", msg)
+		}
+		return newError("assertTrue failed: expected true, got false")
+	}
+
+	return &Nil{}
+}
+
+func builtinAssertFalse(e *Evaluator, args ...Object) Object {
+	if len(args) < 1 || len(args) > 2 {
+		return newError("assertFalse expects 1-2 arguments, got %d", len(args))
+	}
+
+	boolVal, ok := args[0].(*Boolean)
+	if !ok {
+		return newError("assertFalse expects a boolean, got %s", args[0].Type())
+	}
+
+	if boolVal.Value {
+		msg := extractMessage(args, 1)
+		if msg != "" {
+			return newError("assertFalse failed: expected false, got true - %s", msg)
+		}
+		return newError("assertFalse failed: expected false, got true")
 	}
 
 	return &Nil{}
@@ -830,6 +874,8 @@ func SetTestBuiltinTypes(builtins map[string]*Builtin) {
 		"testSkip":       typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Nil},
 		"testExpectFail": typesystem.TFunc{Params: []typesystem.Type{stringType, testBodyType}, ReturnType: typesystem.Nil},
 		"assert":         typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
+		"assertTrue":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
+		"assertFalse":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
 		"assertEquals":   typesystem.TFunc{Params: []typesystem.Type{T, T, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
 		"assertOk":       typesystem.TFunc{Params: []typesystem.Type{resultTE, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
 		"assertFail":     typesystem.TFunc{Params: []typesystem.Type{resultTE, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},

@@ -1,0 +1,72 @@
+// Test flow-sensitive typing using the unit test framework
+
+import "lib/test" (*)
+
+testRun("Basic Positive Narrowing", fun() -> {
+  x = 10
+
+  l = [1, 2, 3]
+  if typeOf(l, List) {
+    // Should be statically known as List<Int> (or List<T>)
+    assert(len(l) == 3, "List length check")
+  }
+})
+
+testRun("Union Type Narrowing", fun() -> {
+  // We need a helper function to force a union type
+  // Use function statement instead of literal to avoid potential parser ambiguity with return type
+  fun get_union(b: Bool) -> Int | String {
+    if b { 10 } else { "hello" }
+  }
+
+  val = get_union(true)
+
+  if typeOf(val, Int) {
+    // Here val should be Int
+    res = val + 5
+    assert(res == 15, "Int branch executed")
+  } else {
+    // Here val should be String (negative narrowing)
+    l = len(val)
+    assert(l == 5, "String branch executed")
+  }
+})
+
+testRun("Negative Narrowing (Else branch)", fun() -> {
+    fun process(x: Int | String) -> Int {
+        if typeOf(x, Int) {
+            x // Return Int
+        } else {
+            len(x) // Return Int (length of String)
+        }
+    }
+
+    assert(process(10) == 10, "Int path")
+    assert(process("abc") == 3, "String path (narrowed)")
+})
+
+testRun("Generic Constructor Narrowing", fun() -> {
+    fun check_list(x: Int | List<Int>) -> Int {
+        if typeOf(x, List) {
+            // x is narrowed to List<T>
+            len(x)
+        } else {
+            -1
+        }
+    }
+
+    assert(check_list([1, 2]) == 2, "List matched")
+    assert(check_list(123) == -1, "Int not matched")
+})
+
+testRun("Nested Narrowing", fun() -> {
+    fun nested(x: Int | List<Int>) -> Bool {
+        if typeOf(x, List) {
+            true
+        } else {
+            false
+        }
+    }
+
+    assert(nested([1]), "Nested check passed")
+})

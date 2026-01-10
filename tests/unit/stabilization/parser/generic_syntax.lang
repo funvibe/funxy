@@ -1,0 +1,212 @@
+// =============================================================================
+// Stabilization Test: Generic Syntax and Constraints
+// =============================================================================
+// Tests parsing of generic type parameters, constraints, and instantiation.
+// Critical for correct type inference and trait dispatch.
+
+import "lib/test" (testRun, assertEquals, assertTrue)
+
+// =============================================================================
+// BASIC GENERIC FUNCTIONS
+// =============================================================================
+
+testRun("Generic: identity function", \ -> {
+    fun myId<t>(x: t) -> t { x }
+    assertEquals(42, myId(42), "id Int")
+    assertEquals("hello", myId("hello"), "id String")
+    assertEquals([1, 2, 3], myId([1, 2, 3]), "id List")
+})
+
+testRun("Generic: multiple type params", \ -> {
+    fun pair<a, b>(x: a, y: b) -> (a, b) { (x, y) }
+    assertEquals((1, "a"), pair(1, "a"), "pair Int String")
+    assertEquals((true, 3.14), pair(true, 3.14), "pair Bool Float")
+})
+
+testRun("Generic: three type params", \ -> {
+    fun triple<a, b, c>(x: a, y: b, z: c) -> (a, b, c) { (x, y, z) }
+    assertEquals((1, "two", 3.0), triple(1, "two", 3.0), "triple")
+})
+
+testRun("Generic: nested generic type", \ -> {
+    fun wrapOpt<t>(x: t) -> Option<t> { Some(x) }
+    assertEquals(Some(42), wrapOpt(42), "wrap Option")
+})
+
+testRun("Generic: list of generic", \ -> {
+    fun singleton<t>(x: t) -> List<t> { [x] }
+    assertEquals([1], singleton(1), "singleton Int")
+    assertEquals(["a"], singleton("a"), "singleton String")
+})
+
+// =============================================================================
+// GENERIC TYPES (ADT) - defined at module level
+// =============================================================================
+
+type GsBox<t> = GsBoxed(t)
+
+testRun("Generic ADT: simple wrapper", \ -> {
+    box = GsBoxed(42)
+    match box {
+        GsBoxed(x) -> assertEquals(42, x, "unbox")
+    }
+})
+
+// Note: Multi-param generic ADT constructors with separate args have issues
+// Using tuple wrapper instead
+type GsPairWrapper<a, b> = GsMkPair((a, b))
+
+testRun("Generic ADT: two params via tuple", \ -> {
+    p = GsMkPair((1, "one"))
+    match p {
+        GsMkPair((n, s)) -> {
+            assertEquals(1, n, "pair first")
+            assertEquals("one", s, "pair second")
+        }
+    }
+})
+
+// =============================================================================
+// SINGLE CONSTRAINT
+// =============================================================================
+
+trait Printable<t> {
+    fun format(x: t) -> String
+}
+
+instance Printable Int {
+    fun format(x) { show(x) }
+}
+
+instance Printable String {
+    fun format(x) { x }
+}
+
+instance Printable Bool {
+    fun format(x) { if x { "yes" } else { "no" } }
+}
+
+testRun("Single constraint: basic", \ -> {
+    fun display<t: Printable>(x: t) -> String {
+        format(x)
+    }
+    assertEquals("42", display(42), "display Int")
+    assertEquals("hello", display("hello"), "display String")
+    assertEquals("yes", display(true), "display Bool true")
+    assertEquals("no", display(false), "display Bool false")
+})
+
+// =============================================================================
+// MULTIPLE CONSTRAINTS (NEW SYNTAX)
+// =============================================================================
+
+trait Comparable<t> {
+    fun cmp(a: t, b: t) -> Bool
+}
+
+instance Comparable Int {
+    fun cmp(a, b) { a == b }
+}
+
+instance Comparable String {
+    fun cmp(a, b) { a == b }
+}
+
+testRun("Multiple constraints: new syntax t: A, B", \ -> {
+    fun displayIfEqual<t: Printable, Comparable>(a: t, b: t) -> String {
+        if cmp(a, b) {
+            format(a)
+        } else {
+            "different"
+        }
+    }
+    assertEquals("42", displayIfEqual(42, 42), "equal Int")
+    assertEquals("different", displayIfEqual(42, 43), "different Int")
+    assertEquals("hello", displayIfEqual("hello", "hello"), "equal String")
+})
+
+// =============================================================================
+// MULTIPLE TYPE VARIABLES WITH CONSTRAINTS
+// =============================================================================
+
+testRun("Two type vars: each with one constraint", \ -> {
+    fun formatPair<a: Printable, b: Printable>(x: a, y: b) -> String {
+        format(x) ++ ", " ++ format(y)
+    }
+    assertEquals("42, hello", formatPair(42, "hello"), "pair format")
+    assertEquals("yes, 100", formatPair(true, 100), "pair format mixed")
+})
+
+testRun("Two type vars: one with multiple constraints", \ -> {
+    fun formatIfEqual<a: Printable, Comparable, b: Printable>(x: a, y: a, z: b) -> String {
+        if cmp(x, y) {
+            format(x) ++ " (equal) and " ++ format(z)
+        } else {
+            "not equal"
+        }
+    }
+    assertEquals("42 (equal) and hello", formatIfEqual(42, 42, "hello"), "first equal")
+    assertEquals("not equal", formatIfEqual(42, 43, "hello"), "first not equal")
+})
+
+// =============================================================================
+// GENERIC WITH RETURN TYPE ANNOTATION
+// =============================================================================
+
+testRun("Generic: explicit return type", \ -> {
+    fun makeList<t>(x: t) -> List<t> {
+        [x]
+    }
+    assertEquals([42], makeList(42), "makeList Int")
+    assertEquals(["a"], makeList("a"), "makeList String")
+})
+
+testRun("Generic: option return", \ -> {
+    fun maybeFirst<t>(list: List<t>) -> Option<t> {
+        match list {
+            [] -> Zero
+            [h, ...rest] -> Some(h)
+        }
+    }
+    assertEquals(Some(1), maybeFirst([1, 2, 3]), "maybeFirst some")
+    assertEquals(Zero, maybeFirst([]), "maybeFirst none")
+})
+
+// =============================================================================
+// HIGHER-KINDED TYPE PATTERNS
+// =============================================================================
+
+testRun("HKT: functor usage", \ -> {
+    // Test fmap without HKT constraint - using concrete types
+    listResult = fmap(\x -> x * 2, [1, 2, 3])
+    assertEquals([2, 4, 6], listResult, "fmap List")
+
+    optResult = fmap(\x -> x * 2, Some(42))
+    assertEquals(Some(84), optResult, "fmap Option")
+})
+
+// Note: HKT with f<Int> syntax has type inference issues
+testRun("HKT: functor-like constraint", \ -> {
+    fun doubleInside<f: Functor>(container: f<Int>) -> f<Int> {
+        fmap(\x -> x * 2, container)
+    }
+    assertEquals([2, 4, 6], doubleInside([1, 2, 3]), "double List")
+})
+
+// =============================================================================
+// EDGE CASES
+// =============================================================================
+
+type GsNested<t> = GsInner(Option<List<t>>)
+
+testRun("Edge: deeply nested generic", \ -> {
+    n = GsInner(Some([1, 2, 3]))
+    match n {
+        GsInner(opt) -> match opt {
+            Some(list) -> assertEquals([1, 2, 3], list, "deeply nested")
+            Zero -> assertTrue(false, "should be Some")
+        }
+    }
+})
+
+print("=== Generic Syntax Tests Complete ===")

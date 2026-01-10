@@ -1,0 +1,14 @@
+import "lib/test" (*)
+
+type Proxy<t> = Proxy
+
+// This test demonstrates the "Kind Check Lite" requirement.
+// Ideally, mismatched kinds/arities should be caught.
+
+testRun("Future: Kind Check Lite", fun() -> {
+    // Proxy expects Kind * (arity 0).
+    // List has Kind * -> * (arity 1).
+    // This should FAIL compilation.
+    p: Proxy<List> = Proxy
+})
+

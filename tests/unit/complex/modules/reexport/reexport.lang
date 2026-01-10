@@ -1,0 +1,5 @@
+package reexport (pubVal, PubType, extra)
+
+import "../basic" (*)
+
+extra = "extra"

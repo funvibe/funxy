@@ -1,0 +1,132 @@
+// =============================================================================
+// Type System Edge Cases
+// =============================================================================
+// Tests advanced features:
+// 1. Recursive Data Types
+// 2. Rank-N Polymorphism
+// 3. Higher-Kinded Types (HKT)
+// 4. Generic Type Aliases
+// =============================================================================
+
+import "lib/test" (testRun, assertEquals, assertTrue)
+
+// 1. Recursive Data Types
+// =============================================================================
+// Custom linked list definition
+type MyList<t> = MyCons t MyList<t> | MyNil
+type MyParList<t> = MyParCons(t, MyParList<t>) | MyParNil
+
+fun myListLen<t>(l: MyList<t>) -> Int {
+    match l {
+        MyNil -> 0
+        MyCons h tail -> 1 + myListLen(tail)
+    }
+}
+
+fun myParListLen<t>(l: MyParList<t>) -> Int {
+    match l {
+        MyParNil -> 0
+        MyParCons h tail -> 1 + myParListLen(tail)
+    }
+}
+
+testRun("Recursive Data Types", \ -> {
+    l = MyCons(1, MyCons(2, MyCons(3, MyNil)))
+    pl = MyParCons(1, MyParCons(2, MyParCons(3, MyParNil)))
+
+    assertEquals(3, myListLen(l), "recursive type length")
+    assertEquals(3, myParListLen(pl), "recursive parallel type length")
+})
+
+
+// 2. Rank-N Polymorphism
+// =============================================================================
+// Function that takes a polymorphic function as argument.
+// Syntax note: parser might expect `forall` or just `fun<a>` syntax in type.
+// Based on docs, syntax is `forall A. ...` or implied.
+// Let's try passing `id` to a function that uses it on different types.
+
+// This requires the type system to NOT instantiate `f` immediately,
+// but keep it polymorphic.
+fun applyPoly(f: forall a. (a) -> a) -> (Int, String) {
+    (f(1), f("hello"))
+}
+
+testRun("Rank-N Polymorphism", \ -> {
+    // Built-in `id` is now forall a. (a) -> a, preserving polymorphism
+    res = applyPoly(id)
+    assertEquals(1, res[0], "applyPoly Int")
+    assertEquals("hello", res[1], "applyPoly String")
+})
+
+// 3. Higher-Kinded Types (HKT)
+// =============================================================================
+// Trait for a container that can hold a value
+trait Container<f> {
+    fun box<a>(val: a) -> f<a>
+}
+
+// Implement for Option
+instance Container Option {
+    fun box<a>(val: a) -> Option<a> {
+        Some(val)
+    }
+}
+
+// Implement for List
+instance Container List {
+    fun box<a>(val: a) -> List<a> {
+        [val]
+    }
+}
+
+fun doubleBox<c: Container>(x: Int) -> c<Int> {
+    box(x * 2)
+}
+
+testRun("Higher-Kinded Types", \ -> {
+    // Inference should pick the instance based on return type context or explicit annotation
+    o: Option<Int> = doubleBox(10)
+    assertEquals(Some(20), o, "HKT Option")
+
+    l: List<Int> = doubleBox(5)
+    assertEquals([10], l, "HKT List")
+})
+
+// 4. Generic Type Aliases
+// =============================================================================
+type alias IntMap<v> = Map<Int, v>
+type alias StringResult<e> = Result<e, String>
+
+testRun("Generic Type Aliases", \ -> {
+    // Type aliases are now transparently resolved in assignments
+    r: StringResult<Int> = Ok("success")
+    match r {
+        Ok(s) -> assertEquals("success", s, "StringResult Ok")
+        Fail(_) -> assertTrue(false, "StringResult Fail")
+        _ -> assertTrue(false, "Unexpected case")
+    }
+
+    // IntMap alias works with index operator
+    m: IntMap<String> = %{ 1 => "one" }
+    assertEquals(Some("one"), m[1], "IntMap lookup")
+})
+
+// 5. Generic ADT Matching
+// =============================================================================
+type Expr<a> = LitInt(Int) | LitBool(Bool)
+
+// Checking simple ADT matching with generics
+type Wrapped<t> = Wrap(t)
+
+fun unwrapVal<t>(w: Wrapped<t>) -> t {
+    match w {
+        Wrap(x) -> x
+    }
+}
+
+testRun("Generic ADT Matching", \ -> {
+    w = Wrap(123)
+    assertEquals(123, unwrapVal(w), "Generic ADT unwrap")
+})
+

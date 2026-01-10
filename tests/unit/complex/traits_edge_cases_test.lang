@@ -1,0 +1,161 @@
+import "lib/test" (testRun, assertEquals, assertTrue, assertFalse)
+
+import "lib/list" (length, map)
+
+// 1. Multiple Constraints
+// =============================================================================
+trait TraitA<t> { fun methodA(x: t) -> Bool }
+trait TraitB<t> { fun methodB(x: t) -> Bool }
+
+instance TraitA Int { fun methodA(x: Int) -> Bool { true } }
+instance TraitB Int { fun methodB(x: Int) -> Bool { true } }
+
+// Syntax from docs: <T: Trait1, T: Trait2>
+fun checkConstraints<t: TraitA, t: TraitB>(x: t) -> Bool {
+    methodA(x) && methodB(x)
+}
+
+testRun("Traits: Multiple Constraints", \ -> {
+    assertTrue(checkConstraints(42), "Int satisfies both A and B")
+})
+
+// 2. Super Traits & Inheritance
+// =============================================================================
+trait BaseTrait<t> { fun baseOp(x: t) -> Int }
+trait SubTrait<t> : BaseTrait<t> { fun subOp(x: t) -> Int }
+
+instance BaseTrait Int { fun baseOp(x: Int) -> Int { 10 } }
+instance SubTrait Int { fun subOp(x: Int) -> Int { 20 } }
+
+fun useSub<t: SubTrait>(x: t) -> Int {
+    baseOp(x) + subOp(x)
+}
+
+testRun("Traits: Inheritance", \ -> {
+    assertEquals(30, useSub(5), "Call methods from Base and Sub")
+})
+
+// 3. Default Methods & Overriding
+// =============================================================================
+trait DefTrait<t> {
+    fun def1(x: t) -> Int { 1 }
+    fun def2(x: t) -> Int { def1(x) + 1 }
+}
+
+instance DefTrait Int {
+    fun def1(x: Int) -> Int { 10 }
+    // def2 uses overridden def1 -> 10 + 1 = 11
+}
+
+instance DefTrait String {
+    fun def1(x: String) -> Int { 20 }
+}
+
+instance DefTrait Bool {
+    // Empty body, should use defaults
+}
+
+testRun("Traits: Default Methods", \ -> {
+    resInt = def2(0)
+    resBool = def2(true)
+
+    // Check intermediate values
+    d1Bool = def1(true)
+
+    assertEquals(11, resInt, "Int overrides def1")
+    assertEquals(1, d1Bool, "Bool default def1")
+    assertEquals(2, resBool, "Bool uses defaults")
+})
+
+// 4. Multi-parameter Traits
+// =============================================================================
+trait Converter<from, to> {
+    fun convert(f: from) -> to
+}
+
+// Try using angle brackets for multi-param instance
+instance Converter<Int, String> {
+    fun convert(f: Int) -> String { "Int(" ++ show(f) ++ ")" }
+}
+
+instance Converter<Bool, Int> {
+    fun convert(f: Bool) -> Int { if f { 1 } else { 0 } }
+}
+
+testRun("Traits: Multi-parameter", \ -> {
+    // Explicit type application might be needed if inference fails?
+    // Let's try direct call
+    assertEquals("Int(42)", convert(42), "Int -> String")
+    assertEquals(1, convert(true), "Bool -> Int")
+})
+
+// 5. Generic Instances (List<T>)
+// =============================================================================
+trait Size<t> { fun getSize(x: t) -> Int }
+
+instance Size Int { fun getSize(x: Int) -> Int { x } }
+
+// Generic instance for List<T>
+// Syntax guess: instance Size List<t> ? Or instance<t> Size List<t>?
+// The docs show `instance MyShow Int` (concrete).
+// Let's try concrete List<Int> first.
+instance Size List<Int> {
+    fun getSize(x: List<Int>) -> Int { length(x) }
+}
+
+testRun("Traits: Concrete List Instance", \ -> {
+    assertEquals(3, getSize([1, 2, 3]), "List<Int> size")
+})
+
+// 6. Higher-Kinded Traits (Functor)
+// =============================================================================
+// Re-defining a local functor to test HKT logic
+trait MyFunctor<f> {
+    fun myMap<a, b>(fn: (a) -> b, x: f<a>) -> f<b>
+}
+
+instance MyFunctor List {
+    fun myMap<a, b>(fn: (a) -> b, x: List<a>) -> List<b> {
+        map(fn, x)
+    }
+}
+
+instance MyFunctor Option {
+    fun myMap<a, b>(fn: (a) -> b, x: Option<a>) -> Option<b> {
+        match x {
+            Some(v) -> Some(fn(v))
+            Zero -> Zero
+        }
+    }
+}
+
+testRun("Traits: HKT", \ -> {
+    l = myMap(\x -> x * 2, [1, 2, 3])
+    assertEquals([2, 4, 6], l, "HKT List")
+
+    o = myMap(\x -> x + 1, Some(10))
+    // We can't easily assert Option equality without Eq instance for Option in test lib?
+    // Assuming standard library has it.
+    // assertEquals(Some(11), o, "HKT Option")
+    // If not, check inner
+    val = match o { Some(v) -> v, Zero -> -1 }
+    assertEquals(11, val, "HKT Option value")
+})
+
+// 7. Recursive / Conditional Instances
+// =============================================================================
+// e.g. impl Eq a => Eq List<a>
+// Syntax for conditional implementation is tricky.
+// Docs don't explicitly show `instance Eq a => Eq List<a>`.
+// They show `instance Functor List`.
+// Let's try to see if we can define a generic instance.
+
+trait MyEq<t> { fun myEq(a: t, b: t) -> Bool }
+instance MyEq Int { fun myEq(a: Int, b: Int) { a == b } }
+
+// Attempting generic instance:
+// instance<t> MyEq List<t> ?
+// or instance MyEq List<t> ?
+// Let's comment this out for now and report it as "To Explore".
+
+

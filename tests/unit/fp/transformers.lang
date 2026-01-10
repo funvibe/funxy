@@ -1,0 +1,147 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+// Tests for built-in OptionT and ResultT transformers
+
+// --- OptionT Tests with Identity ---
+
+testRun("OptionT Identity: Bind Some", \ -> {
+    // Construct: optionT(Identity(Some(10)))
+    base = identity(Some(10))
+    ot = optionT(base)
+
+    // Bind: x * 2
+    // We use identity() explicitly to avoid runtime ambiguity of pure()
+    resT = ot >>= \x ->
+        optionT(identity(Some(x * 2)))
+
+    // Run and check
+    res = runOptionT(resT)
+    val = runIdentity(res)
+
+    match val {
+        Some(x) -> assertEquals(20, x, "OptionT bind works"),
+        Zero -> assert(false, "Should be Some")
+    }
+})
+
+testRun("OptionT Identity: Bind Zero", \ -> {
+    base = identity(Zero)
+    ot = optionT(base)
+
+    resT = ot >>= \x -> optionT(identity(Some(x * 2)))
+
+    val = runIdentity(runOptionT(resT))
+    match val {
+        Some(_) -> assert(false, "Should be Zero"),
+        Zero -> assert(true, "Correctly propagated Zero")
+    }
+})
+
+testRun("OptionT Identity: Fail inside Bind", \ -> {
+    base = identity(Some(10))
+    ot = optionT(base)
+
+    // Fail inside bind (return Zero)
+    resT = ot >>= \x -> optionT(identity(Zero))
+
+    val = runIdentity(runOptionT(resT))
+    match val {
+        Some(_) -> assert(false, "Should be Zero"),
+        Zero -> assert(true, "Correctly handled failure in bind")
+    }
+})
+
+// --- OptionT Tests with List ---
+
+testRun("OptionT List: Bind", \ -> {
+    list = [Some(1), Zero, Some(3)]
+    ot = optionT(list)
+
+    // Bind: x -> [Some(x), Some(x*10)]
+    resT = ot >>= \x ->
+        optionT([Some(x), Some(x * 10)])
+
+    res = runOptionT(resT)
+    assertEquals(5, len(res), "List length correct")
+
+    // Check values
+    match res[0] { Some(x) -> assertEquals(1, x, "0 is 1"), _ -> assert(false, "0 fail") }
+    match res[1] { Some(x) -> assertEquals(10, x, "1 is 10"), _ -> assert(false, "1 fail") }
+    match res[2] { Zero -> assert(true, "2 is Zero"), _ -> assert(false, "2 fail") }
+    match res[3] { Some(x) -> assertEquals(3, x, "3 is 3"), _ -> assert(false, "3 fail") }
+    match res[4] { Some(x) -> assertEquals(30, x, "4 is 30"), _ -> assert(false, "4 fail") }
+})
+
+// --- ResultT Tests ---
+
+testRun("ResultT Identity: Bind", \ -> {
+    base = identity(Ok(42))
+    rt = resultT(base)
+
+    resT = rt >>= \x -> resultT(identity(Ok(x + 1)))
+
+    val = runIdentity(runResultT(resT))
+    match val {
+        Ok(x) -> assertEquals(43, x, "ResultT bind Ok"),
+        Fail(_) -> assert(false, "Should be Ok")
+    }
+})
+
+testRun("ResultT Identity: Propagate Fail", \ -> {
+    base = identity(Fail("error"))
+    rt = resultT(base)
+
+    resT = rt >>= \x -> resultT(identity(Ok(x + 1)))
+
+    val = runIdentity(runResultT(resT))
+    match val {
+        Ok(_) -> assert(false, "Should be Fail"),
+        Fail(e) -> assertEquals("error", e, "ResultT prop Fail")
+    }
+})
+
+testRun("OptionT Identity: Pure with Annotation", \ -> {
+    // This relies on Witness passing mechanism (Proposal 002 Phase 1)
+    // The type annotation constrains pure() to use OptionT<Identity>
+    // The Analyzer captures this witness and passes it to runtime.
+    x: OptionT<Identity, Int> = pure(10)
+
+    val = runIdentity(runOptionT(x))
+    match val {
+        Some(v) -> assertEquals(10, v, "pure worked with witness"),
+        Zero -> assert(false, "pure failed")
+    }
+})
+
+testRun("OptionT Identity: Pure inside Lambda", \ -> {
+    // This demonstrates why Witness Passing is superior to CurrentTypeHint.
+    // The type context needs to be captured inside the lambda body.
+
+    // Explicitly annotate f so analyzer infers the body's pure return type
+    f = \ -> {
+        p: OptionT<Identity, Int> = pure(100)
+        p
+    }
+
+    // At runtime, calling f() without arguments typically loses TypeHint context
+    // but the AST node for 'pure' inside f matches the Witness.
+    val = runIdentity(runOptionT(f()))
+
+    match val {
+        Some(v) -> assertEquals(100, v, "pure inside lambda worked"),
+        Zero -> assert(false, "pure failed inside lambda")
+    }
+})
+
+testRun("OptionT Identity: Pure with Inference", \ -> {
+    x = pure(10)
+
+    // Bind with a function returning OptionT
+    resT = x >>= \v -> optionT(identity(Some(v * 2)))
+
+    val = runIdentity(runOptionT(resT))
+    match val {
+        Some(v) -> assertEquals(20, v, "inference worked"),
+        Zero -> assert(false, "inference failed")
+    }
+})

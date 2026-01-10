@@ -1,0 +1,26 @@
+--- 1. Block Scope Mutation (No Shadowing) ---
+10
+20
+20
+30
+--- 2. Closure Mutation ---
+0
+1
+2
+2
+0
+1
+2
+--- 3. Deeply Nested Closures ---
+[11, 22, 33]
+[21, 42, 63]
+--- 4. Parameter Shadowing ---
+51
+100
+--- 5. Local Variable Shadowing Global (Explicit) ---
+11
+--- 6. Complex Flow & Mutation ---
+10
+5
+All scoping semantics tests passed!
+

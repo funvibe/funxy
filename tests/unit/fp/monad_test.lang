@@ -1,0 +1,93 @@
+import "lib/test" (testRun, assert, assertEquals)
+
+testRun("Identity Monad", \ -> {
+    // 1. Basic creation and run
+    idVal = identity(42)
+    val = runIdentity(idVal)
+    assertEquals(42, val, "identity(42)")
+
+    // 2. Functor (fmap)
+    // fmap (\x -> x * 2) (identity(10)) == identity(20)
+    id2 = fmap(\x -> x * 2, identity(10))
+    assertEquals(20, runIdentity(id2), "fmap identity")
+
+    // 3. Applicative (pure, <*>)
+    // (<*>)
+    // identity(\x -> x + 1) <*> identity(10) == identity(11)
+    f = identity(\x -> x + 1)
+    v = identity(10)
+    res = f <*> v
+    assertEquals(11, runIdentity(res), "applicative identity")
+
+    // 4. Monad (>>=)
+    // identity(5) >>= \x -> identity(x * 3) == identity(15)
+    resBind = identity(5) >>= \x -> identity(x * 3)
+    assertEquals(15, runIdentity(resBind), "monad bind identity")
+})
+
+testRun("State Monad", \ -> {
+    // 1. Basic state transition
+    // pop: State([1, 2, 3]) -> (1, [2, 3])
+    pop = state(\s ->
+        match s {
+            [h, ...t] -> (h, t),
+            [] -> (0, [])
+        }
+    )
+
+    res = runState(pop, [1, 2, 3])
+    val = res[0]
+    newState = res[1]
+    assertEquals(1, val, "state pop val")
+    assertEquals([2, 3], newState, "state pop state")
+
+    // 2. Monad Chain (>>=)
+    // push(x): State(s) -> ((), [x, ...s])
+    push = \x -> state(\s -> ((), [x, ...s]))
+
+    // stackOp = pop >>= \x -> push(x * 10)
+    // [1, 2] -> pop -> (1, [2]) -> push(10) -> ((), [10, 2])
+    stackOp = pop >>= \x -> push(x * 10)
+
+    res2 = runState(stackOp, [1, 2])
+    // res2 is ((), [10, 2])
+    finalState = res2[1]
+    assertEquals([10, 2], finalState, "state bind")
+
+    // 3. get/put helpers
+    // increment: sGet >>= \s -> sPut(s + 1)
+    increment = sGet() >>= \s -> sPut(s + 1)
+
+    res3 = execState(increment, 10) // Should be 11
+    assertEquals(11, res3, "state get/put")
+})
+
+testRun("Writer Monad", \ -> {
+    // 0. Verify Semigroup for List directly
+    l1 = [1, 2]
+    l2 = [3, 4]
+    l3 = l1 <> l2
+    assertEquals([1, 2, 3, 4], l3, "List Semigroup <> works")
+
+    // 1. Basic writer
+    // writer(val, log)
+    w = writer(42, ["start"])
+    res = runWriter(w)
+    assertEquals(42, res[0], "writer val")
+    assertEquals(["start"], res[1], "writer log")
+
+    // 2. Monad Chain and tell
+    // logAndAdd(x): wTell(["got " + show(x)]) >>= \_ -> writer(x + 1, [])
+    logAndAdd = \x ->
+        wTell(["got " ++ show(x)]) >>= \_ ->
+        writer(x + 1, [])
+
+    w2 = writer(10, ["init"]) >>= logAndAdd
+
+    res2 = runWriter(w2)
+    val2 = res2[0]
+    log2 = res2[1]
+
+    assertEquals(11, val2, "writer bind val")
+    assertEquals(["init", "got 10"], log2, "writer bind log")
+})

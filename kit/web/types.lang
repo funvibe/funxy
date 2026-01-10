@@ -1,6 +1,6 @@
 package web
 
-import "kit/ui"
+import "kit/ui" (VNode)
 import "lib/json" (Json)
 
 type HttpRequest = {
@@ -23,7 +23,7 @@ type HttpResponse = {
 type ResponseBody =
     BodyString String
     | BodyJson Json
-    | BodyHtml ui.VNode
+    | BodyHtml VNode
     | BodyEmpty
 
 // High-level response object
@@ -39,7 +39,8 @@ type Context = {
     store: Map<String, Json>
 }
 
-// Handler returns the high-level Response
-type Handler = (Context) -> Result<String, Response>
+type alias HandlerResult = Response | VNode | String | Json
 
-type Middleware = (Handler) -> Handler
+type alias Handler = (Context) -> Result<String, HandlerResult>
+
+type alias Middleware = (Handler) -> Handler

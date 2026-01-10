@@ -1,9 +1,9 @@
 package db (*)
 
 // Storage trait - будет коллизия с cache/storage!
-trait Storage<T> {
-    fun save(item: T) -> Bool
-    fun load(id: Int) -> Option<T>
+trait Storage<t> {
+    fun save(item: t) -> Bool
+    fun load(id: Int) -> Option<t>
     fun delete(id: Int) -> Bool
 }
 

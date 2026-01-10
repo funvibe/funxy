@@ -26,17 +26,17 @@ fun range(start: Int, end: Int) -> () -> Option<Int> {
 }
 
 // Wrapper struct for range
-type Range = { start: Int, end: Int }
+type RangeStruct = { start: Int, end: Int }
 
-// Implement Iter for Range
-instance Iter Range {
-    fun iter(r: Range) -> () -> Option<Int> {
+// Implement Iter for RangeStruct
+instance Iter RangeStruct {
+    fun iter(r: RangeStruct) -> () -> Option<Int> {
         range(r.start, r.end)
     }
 }
 
 sum_range = 0
-r: Range = { start: 0, end: 5 }
+r: RangeStruct = { start: 0, end: 5 }
 for i in r {
     sum_range = sum_range + i
 }

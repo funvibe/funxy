@@ -296,16 +296,108 @@ result2 = Some(100) >>= fun(x) -> safeDiv(x, 0) >>= fun(x) -> safeDiv(x, 5)
 print(result2)  // Zero
 ```
 
+## Standard Monads
+
+In addition to container types (List, Option, Result), the language provides several standard monads for common side-effects.
+
+### Identity Monad
+
+The simplest monad, just wraps a value. Useful when a monad is expected but you need no extra effects.
+
+```rust
+// Type: Identity<A>
+idVal = identity(42)
+res = idVal >>= \x -> identity(x * 2)
+print(runIdentity(res)) // 84
+```
+
+### Reader Monad
+
+Encapsulates computation with access to a shared environment.
+
+```rust
+// Type: Reader<E, A> (where E is environment type)
+// Computes value using env (Int)
+op = reader(\env -> env * 2)
+
+// Chain: gets env, adds 10
+op2 = op >>= \x -> reader(\env -> x + env + 10)
+
+// Run with environment 5
+// op: 5 * 2 = 10
+// op2: 10 + 5 + 10 = 25
+result = runReader(op2, 5)
+print(result) // 25
+```
+
+### Writer Monad
+
+Accumulates a log (using `Semigroup` `<>`) while computing a value.
+
+```rust
+// Type: Writer<W, A> (where W is log type, must implement Semigroup)
+// writer(value, log) -> Writer<W, A>
+// pure(value) -> Writer<W, A> (requires W to implement Monoid for empty log)
+
+// Using explicit Writer constructor
+w = writer(10, ["started"])
+
+// Chain: logs message and modifies value
+op = w >>= \x ->
+    // wTell is not built-in, but easy to simulate:
+    writer((), ["processing " ++ show(x)]) >>= \_ ->
+    writer(x * 2, ["done"])
+
+// Run
+// Result is a Tuple (value, log)
+res = runWriter(op)
+val = res[0] // 20
+log = res[1] // ["started", "processing 10", "done"]
+
+// Using pure with Writer
+// Requires explicit type annotation so runtime knows the Log type (W)
+// to call the correct mempty() (empty log)
+type MyLog = List<String>
+wPure: Writer<MyLog, Int> = pure(42) // Writer(42, [])
+```
+
+### State Monad
+
+Encapsulates stateful computations `S -> (A, S)`.
+
+```rust
+// Type: State<S, A>
+// state(fn) where fn: S -> (A, S)
+
+pop = state(\s -> match s {
+    [h, ...t] -> (h, t),
+    [] -> (0, [])
+})
+
+push = \x -> state(\s -> ((), [x, ...s]))
+
+// Stack operation: pop, multiply by 10, push back
+stackOp = pop >>= \x -> push(x * 10)
+
+// Run with initial stack [1, 2]
+// pop 1 -> stack becomes [2]
+// push 10 -> stack becomes [10, 2]
+res = runState(stackOp, [1, 2])
+finalStack = res[1] // [10, 2]
+```
+
+Helpers `sGet` (read state) and `sPut` (write state) are also available via `state` primitives.
+
 ## Creating Custom Instances
 
 You can implement FP traits for your own types:
 
 ```rust
-type Box<T> = MkBox T
+type Box<t> = MkBox t
 
 // Functor instance
 instance Functor Box {
-    fun fmap<A, B>(f: (A) -> B, fa: Box<A>) -> Box<B> {
+    fun fmap<a, b>(f: (a) -> b, fa: Box<a>) -> Box<b> {
         match fa {
             MkBox(x) -> MkBox(f(x))
         }

@@ -6,6 +6,7 @@ import (
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"strings"
 )
 
 // CallFrame represents a single frame in the call stack
@@ -28,8 +29,8 @@ type Evaluator struct {
 	// Map: ClassName -> TypeName -> FunctionObject
 	ClassImplementations map[string]map[string]Object
 	// Registry for extension methods.
-	// Map: TypeName -> MethodName -> FunctionObject
-	ExtensionMethods map[string]map[string]*Function
+	// Map: TypeName -> MethodName -> Object (Function or Builtin)
+	ExtensionMethods map[string]map[string]Object
 	// Loader for modules
 	Loader ModuleLoader
 	// BaseDir for import resolution (optional)
@@ -38,15 +39,22 @@ type Evaluator struct {
 	ModuleCache map[string]Object
 	// Trait default implementations: "TraitName.methodName" -> FunctionStatement
 	TraitDefaults map[string]*ast.FunctionStatement
+	// Builtin trait default implementations: "TraitName.methodName" -> Builtin
+	// Used for built-in traits like Show that don't have AST
+	BuiltinTraitDefaults map[string]*Builtin
 	// Global environment (for default implementations to access trait methods)
 	GlobalEnv *Environment
 	// Operator -> Trait mapping for dispatch: "+" -> "Add", "==" -> "Equal"
 	OperatorTraits map[string]string
+	// Registry for Trait SuperTraits: TraitName -> [SuperTraitName]
+	TraitSuperTraits map[string][]string
 	// TypeMap from analyzer - maps AST nodes to their inferred types
 	TypeMap map[ast.Node]typesystem.Type
 	// CurrentCallNode - temporarily stores the AST node being evaluated
 	// Used for type-based dispatch (e.g., pure/mempty)
 	CurrentCallNode ast.Node
+	// TypeContextStack stores the stack of expected types from AnnotatedExpressions
+	TypeContextStack []string
 	// CallStack for stack traces on errors
 	CallStack []CallFrame
 	// CurrentFile being evaluated
@@ -54,6 +62,9 @@ type Evaluator struct {
 	// ContainerContext tracks the expected container type for `pure` when inside >>=
 	// e.g., when evaluating `Some(42) >>= pure`, this is set to "Option"
 	ContainerContext string
+	// WitnessStack stores the stack of type witnesses (dictionaries) for generic calls.
+	// Each frame maps "TraitName" -> ConcreteTypes and "TypeVarName" -> ConcreteTypes.
+	WitnessStack []map[string][]typesystem.Type
 	// TypeAliases stores underlying types for type aliases
 	// e.g., "Point" -> TRecord{Fields: {x: Int, y: Int}}
 	// Used by default() to create default values for alias types
@@ -64,6 +75,9 @@ type Evaluator struct {
 	AsyncHandler AsyncHandler
 	// CaptureHandler is a callback for safe capturing of closures for async execution
 	CaptureHandler func(Object) Object
+
+	// CurrentEnv stores the current environment being evaluated (for witness lookup)
+	CurrentEnv *Environment
 
 	// Fork creates a thread-safe copy of the evaluator for background execution
 	Fork func() *Evaluator
@@ -79,22 +93,44 @@ type LoadedModule interface {
 }
 
 func New() *Evaluator {
-	return &Evaluator{
+	e := &Evaluator{
 		Out:                  os.Stdout,
 		ClassImplementations: make(map[string]map[string]Object),
-		ExtensionMethods:     make(map[string]map[string]*Function),
+		ExtensionMethods:     make(map[string]map[string]Object),
 		ModuleCache:          make(map[string]Object),
+		TraitSuperTraits:     make(map[string][]string),
 		TypeMap:              make(map[ast.Node]typesystem.Type),
 		TypeAliases:          make(map[string]typesystem.Type),
 	}
+
+	// Pre-populate standard aliases
+	// String = List<Char>
+	e.TypeAliases["String"] = typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "List"},
+		Args:        []typesystem.Type{typesystem.TCon{Name: "Char"}},
+	}
+
+	return e
 }
 
-// lookupTraitMethod looks up a method for a type in a trait, including super traits.
-// Returns the method and true if found, nil and false otherwise.
-func (e *Evaluator) lookupTraitMethod(traitName, typeName, methodName string) (Object, bool) {
+// lookupTraitMethod looks up a method for a type (or types) in a trait, including super traits.
+// Supports Multi-Parameter Type Classes (MPTC) via variadic typeNames.
+func (e *Evaluator) lookupTraitMethod(traitName, methodName string, typeNames ...string) (Object, bool) {
+	if len(typeNames) == 0 {
+		return nil, false
+	}
+
+	// Form key: "Type" or "Type1_Type2"
+	var key string
+	if len(typeNames) == 1 {
+		key = typeNames[0]
+	} else {
+		key = strings.Join(typeNames, "_")
+	}
+
 	// Check the trait itself
 	if typesMap, ok := e.ClassImplementations[traitName]; ok {
-		if methodTableObj, ok := typesMap[typeName]; ok {
+		if methodTableObj, ok := typesMap[key]; ok {
 			if methodTable, ok := methodTableObj.(*MethodTable); ok {
 				if method, ok := methodTable.Methods[methodName]; ok {
 					return method, true
@@ -106,7 +142,7 @@ func (e *Evaluator) lookupTraitMethod(traitName, typeName, methodName string) (O
 	// Check super traits using config
 	if traitInfo := config.GetTraitInfo(traitName); traitInfo != nil {
 		for _, superTrait := range traitInfo.SuperTraits {
-			if method, ok := e.lookupTraitMethod(superTrait, typeName, methodName); ok {
+			if method, ok := e.lookupTraitMethod(superTrait, methodName, typeNames...); ok {
 				return method, true
 			}
 		}
@@ -164,6 +200,7 @@ func (e *Evaluator) Clone() *Evaluator {
 		BaseDir:              e.BaseDir,
 		ModuleCache:          e.ModuleCache, // shared
 		TraitDefaults:        e.TraitDefaults,
+		BuiltinTraitDefaults: e.BuiltinTraitDefaults,
 		GlobalEnv:            e.GlobalEnv,
 		OperatorTraits:       e.OperatorTraits,
 		TypeMap:              e.TypeMap,
@@ -171,13 +208,20 @@ func (e *Evaluator) Clone() *Evaluator {
 		CallStack:            make([]CallFrame, 0), // new per goroutine
 		CurrentFile:          e.CurrentFile,
 		ContainerContext:     "",
-		TypeAliases:          e.TypeAliases,   // shared, read-only
-		VMCallHandler:        e.VMCallHandler, // shared, for calling VM closures from builtins
-		CaptureHandler:       e.CaptureHandler, // shared
+		WitnessStack:         make([]map[string][]typesystem.Type, 0), // new per goroutine
+		TypeAliases:          e.TypeAliases,                           // shared, read-only
+		VMCallHandler:        e.VMCallHandler,                         // shared, for calling VM closures from builtins
+		CaptureHandler:       e.CaptureHandler,                        // shared
 	}
 }
 
 func (e *Evaluator) Eval(node ast.Node, env *Environment) Object {
+	// Update CurrentEnv for access in ApplyFunction (Witness Passing)
+	oldEnv := e.CurrentEnv
+	e.CurrentEnv = env
+	// Restore on return (defer is slightly expensive but necessary for correctness here)
+	defer func() { e.CurrentEnv = oldEnv }()
+
 	obj := e.evalCore(node, env)
 	if err, ok := obj.(*Error); ok {
 		if err.Line == 0 && node != nil {
@@ -218,13 +262,14 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 
 		// Register function in current environment
 		fn := &Function{
-			Name:       node.Name.Value,
-			Parameters: node.Parameters,
-			ReturnType: node.ReturnType,
-			Body:       node.Body,
-			Env:        env, // Closure
-			Line:       node.Token.Line,
-			Column:     node.Token.Column,
+			Name:          node.Name.Value,
+			Parameters:    node.Parameters,
+			WitnessParams: node.WitnessParams,
+			ReturnType:    node.ReturnType,
+			Body:          node.Body,
+			Env:           env, // Closure
+			Line:          node.Token.Line,
+			Column:        node.Token.Column,
 		}
 		env.Set(node.Name.Value, fn)
 		return &Nil{}
@@ -248,6 +293,8 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		return e.evalTupleLiteral(node, env)
 	case *ast.ListLiteral:
 		return e.evalListLiteral(node, env)
+	case *ast.ListComprehension:
+		return e.evalListComprehension(node, env)
 	case *ast.MapLiteral:
 		return e.evalMapLiteral(node, env)
 	case *ast.RecordLiteral:
@@ -322,7 +369,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			typeName := getRuntimeTypeName(left)
 
 			// Find isEmpty (in Optional or its super trait Empty)
-			isEmptyMethod, hasIsEmpty := e.lookupTraitMethod("Optional", typeName, "isEmpty")
+			isEmptyMethod, hasIsEmpty := e.lookupTraitMethod("Optional", "isEmpty", typeName)
 			if hasIsEmpty {
 				isEmpty := e.ApplyFunction(isEmptyMethod, []Object{left})
 				if isError(isEmpty) {
@@ -335,7 +382,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			}
 
 			// Not empty: call unwrap
-			if unwrapMethod, hasUnwrap := e.lookupTraitMethod("Optional", typeName, "unwrap"); hasUnwrap {
+			if unwrapMethod, hasUnwrap := e.lookupTraitMethod("Optional", "unwrap", typeName); hasUnwrap {
 				return e.ApplyFunction(unwrapMethod, []Object{left})
 			}
 
@@ -344,11 +391,60 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		}
 
 		// Pipe operator: x |> f  is equivalent to f(x)
+		// x |> f(a) is equivalent to f(a, x)
+		// x |> f(_, a) is equivalent to f(x, a)
 		if node.Operator == "|>" {
 			left := e.Eval(node.Left, env)
 			if isError(left) {
 				return left
 			}
+
+			// Check if right side is a call expression for special handling
+			if callExpr, ok := node.Right.(*ast.CallExpression); ok {
+				// Evaluate function
+				fn := e.Eval(callExpr.Function, env)
+				if isError(fn) {
+					return fn
+				}
+
+				// Collect arguments, handling placeholder
+				args := make([]Object, 0, len(callExpr.Arguments)+1)
+				placeholderFound := false
+
+				for _, argExpr := range callExpr.Arguments {
+					// Check for placeholder
+					if ident, ok := argExpr.(*ast.Identifier); ok && ident.Value == "_" {
+						if !placeholderFound {
+							args = append(args, left)
+							placeholderFound = true
+							continue
+						} else {
+							return newError("multiple placeholders in pipe expression not supported")
+						}
+					}
+
+					val := e.Eval(argExpr, env)
+					if isError(val) {
+						return val
+					}
+					args = append(args, val)
+				}
+
+				// If no placeholder, append piped value to end
+				if !placeholderFound {
+					args = append(args, left)
+				}
+
+				// Push call frame
+				funcName := getFunctionName(fn)
+				tok := callExpr.GetToken()
+				e.PushCall(funcName, e.CurrentFile, tok.Line, tok.Column)
+				result := e.ApplyFunction(fn, args)
+				e.PopCall()
+				return result
+			}
+
+			// Standard pipe: x |> f -> f(x)
 			fn := e.Eval(node.Right, env)
 			if isError(fn) {
 				return fn
@@ -426,7 +522,67 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		oldCallNode := e.CurrentCallNode
 		e.CurrentCallNode = node
 
+		// Push expected type name to stack for nested calls (e.g. CallExpression inside AnnotatedExpression)
+		// This fixes dispatch for (mempty : Attempt<Int>) where mempty is parsed as CallExpression
+		if node.TypeAnnotation != nil {
+			typeName := extractTypeNameFromAST(node.TypeAnnotation)
+			if typeName != "" {
+				e.TypeContextStack = append(e.TypeContextStack, typeName)
+			}
+		}
+
+		// Proposal 002: Extract witness from TypeMap if available
+		// This enables pure(10) inside w: Writer<MySum, Int> = pure(10) to get the correct witness
+		var pushedWitness bool
+
+		// Proactive Push: Use AST annotation directly if available (Robustness)
+		if node.TypeAnnotation != nil {
+			sysType := astTypeToTypesystem(node.TypeAnnotation)
+			// Resolve generics using Env (e.g. t -> Int)
+			resolvedType := e.resolveTypeFromEnv(sysType, env)
+
+			witness := make(map[string][]typesystem.Type)
+			// Generic context dispatch: pass expected result type
+			witness["$ContextType"] = []typesystem.Type{resolvedType}
+			// Also push general return context for backward compatibility
+			witness["$Return"] = []typesystem.Type{resolvedType}
+
+			e.PushWitness(witness)
+			pushedWitness = true
+		} else if e.TypeMap != nil {
+			// Fallback to TypeMap if no explicit annotation in AST (inferred types)
+			if annotatedType := e.TypeMap[node]; annotatedType != nil {
+				// Check if annotated type implements Applicative (for pure, etc.)
+				// We'll create a witness map for Applicative trait
+				witnesses := make(map[string][]typesystem.Type)
+				// For now, assume if it's a generic type, it might implement Applicative
+				if _, ok := annotatedType.(typesystem.TApp); ok {
+					witnesses["Applicative"] = []typesystem.Type{annotatedType}
+					e.PushWitness(witnesses)
+					pushedWitness = true
+				} else if _, ok := annotatedType.(typesystem.TCon); ok {
+					// For simple types, check if they're known Applicative instances
+					witnesses["Applicative"] = []typesystem.Type{annotatedType}
+					e.PushWitness(witnesses)
+					pushedWitness = true
+				}
+			}
+		}
+
 		val := e.Eval(node.Expression, env)
+
+		// Pop expected type from stack
+		if node.TypeAnnotation != nil {
+			typeName := extractTypeNameFromAST(node.TypeAnnotation)
+			if typeName != "" && len(e.TypeContextStack) > 0 {
+				e.TypeContextStack = e.TypeContextStack[:len(e.TypeContextStack)-1]
+			}
+		}
+
+		// Pop witness if we pushed it
+		if pushedWitness {
+			e.PopWitness()
+		}
 
 		// Restore previous call node
 		e.CurrentCallNode = oldCallNode
@@ -438,6 +594,15 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		// If value is a nullary ClassMethod (Arity == 0), auto-call with type context
 		if cm, ok := val.(*ClassMethod); ok && cm.Arity == 0 {
 			e.CurrentCallNode = node
+			// Push witness again for the auto-call
+			if e.TypeMap != nil {
+				if annotatedType := e.TypeMap[node]; annotatedType != nil {
+					witnesses := make(map[string][]typesystem.Type)
+					witnesses["Applicative"] = []typesystem.Type{annotatedType}
+					e.PushWitness(witnesses)
+					defer e.PopWitness()
+				}
+			}
 			result := e.ApplyFunction(cm, []Object{})
 			if !isError(result) {
 				val = result
@@ -469,17 +634,29 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		// If called directly, just unwrap.
 		return e.Eval(node.Expression, env)
 	case *ast.FunctionLiteral:
+		// Capture current WitnessStack
+		// We must copy it to prevent mutation of the captured stack
+		var capturedStack []map[string][]typesystem.Type
+		if len(e.WitnessStack) > 0 {
+			capturedStack = make([]map[string][]typesystem.Type, len(e.WitnessStack))
+			copy(capturedStack, e.WitnessStack)
+		}
+
 		return &Function{
-			Name:       "", // Lambda has no name
-			Parameters: node.Parameters,
-			ReturnType: node.ReturnType,
-			Body:       node.Body,
-			Env:        env, // Capture closure
-			Line:       node.Token.Line,
-			Column:     node.Token.Column,
+			Name:                 "", // Lambda has no name
+			Parameters:           node.Parameters,
+			WitnessParams:        node.WitnessParams,
+			ReturnType:           node.ReturnType,
+			Body:                 node.Body,
+			Env:                  env,           // Capture closure
+			CapturedWitnessStack: capturedStack, // Capture witness stack
+			Line:                 node.Token.Line,
+			Column:               node.Token.Column,
 		}
 	case *ast.ForExpression:
 		return e.evalForExpression(node, env)
+	case *ast.RangeExpression:
+		return e.evalRangeExpression(node, env)
 	case *ast.BreakStatement:
 		return e.evalBreakStatement(node, env)
 	case *ast.ContinueStatement:
@@ -487,6 +664,18 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 	}
 
 	return nil
+}
+
+// getDispatchTypeName returns the base type name for dispatch.
+// For List<Int>, returns "List". For Option<String>, returns "Option".
+// This matches how keys are stored in ClassImplementations for generic types.
+func (e *Evaluator) getDispatchTypeName(obj Object) string {
+	typeName := getRuntimeTypeName(obj)
+	// Check if it's a generic type (e.g. List<Int>) and extract the base
+	if idx := strings.Index(typeName, "<"); idx > 0 {
+		return typeName[:idx]
+	}
+	return typeName
 }
 
 // getDefaultForType returns the default value for a type
@@ -558,3 +747,5 @@ func (e *Evaluator) tryDefaultMethod(typeName string) Object {
 func (e *Evaluator) CompareValues(a, b Object, operator string) Object {
 	return e.EvalInfixExpression(operator, a, b)
 }
+
+// ApplyFunction applies a function to arguments (exported for VM)

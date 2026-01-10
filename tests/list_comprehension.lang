@@ -1,0 +1,45 @@
+// Basic list comprehension - double each element
+doubled = [x * 2 | x <- [1, 2, 3]]
+print(doubled) // [2, 4, 6]
+
+// List comprehension with filter
+evens = [x | x <- [1, 2, 3, 4, 5, 6], x % 2 == 0]
+print(evens) // [2, 4, 6]
+
+// Combined: filter and transform
+doubledEvens = [x * 2 | x <- [1, 2, 3, 4, 5], x > 2]
+print(doubledEvens) // [6, 8, 10]
+
+// Multiple generators (cartesian product)
+pairs = [(x, y) | x <- [1, 2], y <- [3, 4]]
+print(pairs) // [(1, 3), (1, 4), (2, 3), (2, 4)]
+
+// Tuple pattern in generator
+sums = [a + b | (a, b) <- [(1, 2), (3, 4), (5, 6)]]
+print(sums) // [3, 7, 11]
+
+// Nested list comprehension
+matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+flattened = [x | row <- matrix, x <- row]
+print(flattened) // [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+// String comprehension (strings are List<Char>)
+upper = [c | c <- "abc"]
+print(upper) // "abc"
+
+// Empty result from filter
+empty = [x | x <- [1, 2, 3], x > 10]
+print(empty) // []
+
+// Multiple filters
+filtered = [x | x <- [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], x > 3, x < 8]
+print(filtered) // [4, 5, 6, 7]
+
+// Using variables from outer scope
+multiplier = 3
+scaled = [x * multiplier | x <- [1, 2, 3]]
+print(scaled) // [3, 6, 9]
+
+// Dependent generators (y depends on x)
+triangular = [(x, y) | x <- [1, 2, 3], y <- [1, 2, 3], y <= x]
+print(triangular) // [(1, 1), (2, 1), (2, 2), (3, 1), (3, 2), (3, 3)]

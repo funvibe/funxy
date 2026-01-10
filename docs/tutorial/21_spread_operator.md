@@ -18,7 +18,7 @@ l3 = [0, ...l1, ...l2, 5]
 You can define functions that accept a variable number of arguments using `...`. The arguments are collected into a List.
 
 ```rust
-fun sum(args: Int...) -> Int {
+fun sum(args: ...Int) -> Int {
     acc = 0
     for x in args {
         acc = acc + x
@@ -35,7 +35,7 @@ Anonymous functions (lambdas) also support variadic parameters.
 
 ```rust
 // Variadic lambda
-variadicSum = fun (args: Int...) Int {
+variadicSum = fun (args: ...Int) Int {
     total = 0
     for x in args {
         total = total + x
@@ -59,7 +59,7 @@ appendAll(1, 2, 3)  // [0, 1, 2, 3]
 You can pass a list (or tuple) to a variadic function using the spread operator.
 
 ```rust
-fun sum(args: Int...) -> Int {
+fun sum(args: ...Int) -> Int {
     acc = 0
     for x in args { acc = acc + x }
     acc

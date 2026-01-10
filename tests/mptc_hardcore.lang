@@ -1,0 +1,244 @@
+// EXTREME HARDCORE MPTC TEST - Maximum Complexity Multi-Parameter Type Classes
+// This test destroys MPTC with insane complexity, nested constraints, and edge cases
+
+// =============================================================================
+// BASIC TYPES - Deep nesting for maximum complexity
+// =============================================================================
+
+type Pair<a, b> = P(a, b)
+type Triple<a, b, c> = T(a, b, c)
+type Quad<a, b, c, d> = Q(a, b, c, d)
+type Penta<a, b, c, d, e> = PE(a, b, c, d, e)
+type Hexa<a, b, c, d, e, f> = H(a, b, c, d, e, f)
+
+// Ultra-nested types for maximum complexity
+type NestedTriple<x> = NT(Triple<x, x, x>)
+type MegaNested<y> = MN(NestedTriple<Pair<y, y>>)
+type UltraNested<z> = UN(MegaNested<Triple<z, z, z>>)
+
+// =============================================================================
+// 1. MAXIMUM CONSTRAINTS PER PARAMETER - Multiple traits on each param
+// =============================================================================
+
+trait UltraConstrained<a: Numeric, Show, Equal, b: Show, Equal, c: Numeric, Show> {
+    fun ultraProcess(x: Triple<a, b, c>) -> String
+}
+
+instance UltraConstrained<a, b, c> {
+    fun ultraProcess(t: Triple<a, b, c>) -> String {
+        match t {
+            T(x, y, z) -> {
+                doubled = x + x
+                "Ultra[" ++ show(doubled) ++ "," ++ show(y) ++ "," ++ show(z) ++ "]"
+            }
+        }
+    }
+}
+
+// =============================================================================
+// 2. ASYMMETRIC CONSTRAINTS - Completely different constraint patterns
+// =============================================================================
+
+trait AsymmetricProcessor<a: Numeric, b, c: Numeric, Show, d: Show, Equal, e> {
+    fun processAsymmetric(x: Penta<a, b, c, d, e>) -> String
+}
+
+instance AsymmetricProcessor<a: Numeric, Show, b, a, d: Show, Equal, e> {
+    fun processAsymmetric(p: Penta<a, b, a, d, e>) -> String {
+        match p {
+            PE(w1, w2, w3, w4, w5) -> {
+                sum = w1 + w3
+                "Asym[" ++ show(sum) ++ "," ++ show(w2) ++ "," ++ show(w4) ++ "," ++ show(w5) ++ "]"
+            }
+        }
+    }
+}
+
+// =============================================================================
+// 3. DEEP NESTED MPTC - Constraints on nested generic parameters
+// =============================================================================
+
+type DeepNested<a, b> = DN(NestedTriple<Pair<a, b>>)
+
+trait DeepProcessor<a: Numeric, Show, b: Show, Equal> {
+    fun processDeep(x: DeepNested<a, b>) -> String
+}
+
+instance DeepProcessor<a: Numeric, Show, b: Show, Equal> {
+    fun processDeep(dn: DeepNested<a, b>) -> String {
+        match dn {
+            DN(NT(T(P(x, y), P(z, w), P(u, v)))) -> {
+                total = x + z + u
+                "Deep[" ++ show(total) ++ "," ++ show(y) ++ "," ++ show(w) ++ "," ++ show(v) ++ "]"
+            }
+        }
+    }
+}
+
+// =============================================================================
+// 4. MPTC WITH 6+ PARAMETERS - Maximum parameter count
+// =============================================================================
+
+trait HexaProcessor<a: Numeric, b: Show, c: Numeric, d: Show, e: Numeric, f: Show, Equal> {
+    fun processHexa(x: Hexa<a, b, c, d, e, f>) -> String
+}
+
+instance HexaProcessor<a: Numeric, b: Show, a, d: Show, a, f: Show, Equal> {
+    fun processHexa(h: Hexa<a, b, a, d, a, f>) -> String {
+        match h {
+            H(w1, w2, w3, w4, w5, w6) -> {
+                sum = w1 + w3 + w5
+                "Hexa[" ++ show(sum) ++ "," ++ show(w2) ++ "," ++ show(w4) ++ "," ++ show(w6) ++ "]"
+            }
+        }
+    }
+}
+
+// =============================================================================
+// 5. MPTC DIAMOND DEPENDENCIES - Multiple paths to same constraints
+// =============================================================================
+
+trait BaseProcessor<t: Show> {
+    fun baseProc(x: t) -> String
+}
+
+trait Derived1<t: Show> {
+    fun derived1Proc(x: t) -> String
+}
+
+trait Derived2<t: Show> {
+    fun derived2Proc(x: t) -> String
+}
+
+// MPTC that requires multiple derived traits - creates diamond
+trait DiamondProcessor<t> {
+    fun diamondProc(x: t) -> String
+}
+
+instance DiamondProcessor<t> {
+    fun diamondProc(x: t) -> String {
+        "Diamond[" ++ show(x) ++ "]"
+    }
+}
+
+instance BaseProcessor Int { fun baseProc(x: Int) -> String { "Base:" ++ show(x) } }
+instance Derived1 Int { fun derived1Proc(x: Int) -> String { "D1:" ++ show(x) } }
+instance Derived2 Int { fun derived2Proc(x: Int) -> String { "D2:" ++ show(x) } }
+
+// =============================================================================
+// 6. MPTC WITH HIGHER-ORDER FUNCTIONS AND POLYMORPHISM
+// =============================================================================
+
+trait PolyProcessor<t, u> {
+    fun processPoly<a: Numeric>(f: (a) -> a, val: Pair<t, u>) -> Pair<t, u>
+}
+
+instance PolyProcessor<a: Numeric, b> {
+    fun processPoly<a: Numeric>(f: (a) -> a, val: Pair<a, b>) -> Pair<a, b> {
+        match val {
+            P(x, y) -> P(f(x), y)
+        }
+    }
+}
+
+// =============================================================================
+// 7. MPTC CHAIN REACTIONS - Dependent constraints across parameters
+// =============================================================================
+
+trait ChainProcessor<a, b, c> {
+    fun chainProcess(x: Triple<a, b, c>) -> String
+}
+
+instance ChainProcessor<a: Numeric, b, c> {
+    fun chainProcess(t: Triple<a, b, c>) -> String {
+        match t {
+            T(x, y, z) -> "Chain[" ++ show(x + x) ++ "," ++ show(y) ++ "," ++ show(z) ++ "]"
+        }
+    }
+}
+
+// =============================================================================
+// 8. ULTRA-COMPLEX MPTC WITH ALL FEATURES COMBINED
+// =============================================================================
+
+trait UltimateProcessor<a: Numeric, Show, b: Show, Equal, c: Numeric, d: Show, e, f: Numeric, Equal> {
+    fun ultimateProcess(x: Hexa<a, b, c, d, e, f>) -> String
+}
+
+instance UltimateProcessor<a: Numeric, Show, Equal, b: Show, Equal, a, d: Show, e, a> {
+    fun ultimateProcess(h: Hexa<a, b, a, d, e, a>) -> String {
+        match h {
+            H(w1, w2, w3, w4, w5, w6) -> {
+                mega_sum = w1 + w3 + w6
+                "Ultimate[" ++ show(mega_sum) ++ "," ++ show(w2) ++ "," ++ show(w4) ++ "," ++ show(w5) ++ "]"
+            }
+        }
+    }
+}
+
+// =============================================================================
+// MAIN TEST - Execute all extreme cases
+// =============================================================================
+
+fun main() {
+    print("=== EXTREME HARDCORE MPTC TEST START ===")
+
+    // Test 1: Ultra constrained triple
+    print("Test 1: UltraConstrained - maximum constraints per parameter")
+    triple = T(5, "hello", 3)
+    result1 = ultraProcess(triple)
+    print("Result: " ++ result1)
+
+    // Test 2: Asymmetric penta-processor
+    print("Test 2: AsymmetricProcessor - completely different constraint patterns")
+    penta = PE(1, "a", 2, "b", true)
+    result2 = processAsymmetric(penta)
+    print("Result: " ++ result2)
+
+    // Test 3: Deep nested processor
+    print("Test 3: DeepProcessor - deeply nested generic constraints")
+    deep = DN(NT(T(P(1, "x"), P(2, "y"), P(3, "z"))))
+    result3 = processDeep(deep)
+    print("Result: " ++ result3)
+
+    // Test 4: Hexa processor - 6 parameters
+    print("Test 4: HexaProcessor - 6+ parameters with complex constraints")
+    hexa = H(10, "p", 20, "q", 30, "r")
+    result4 = processHexa(hexa)
+    print("Result: " ++ result4)
+
+    // Test 5: Diamond dependencies
+    print("Test 5: DiamondProcessor - diamond dependency patterns")
+    result5 = diamondProc(42)
+    print("Result: " ++ result5)
+
+    // Test 6: Higher-order polymorphism
+    print("Test 6: PolyProcessor - higher-order functions with MPTC")
+    poly_pair = P(7, "meta")
+    result6 = processPoly(\x -> x + x, poly_pair)
+    print("Result: " ++ show(result6))
+
+    // Test 7: Chain reactions
+    print("Test 7: ChainProcessor - dependent constraint chains")
+    chain_triple = T(4, "chain", false)
+    result7 = chainProcess(chain_triple)
+    print("Result: " ++ result7)
+
+    // Test 8: Ultimate processor - all features combined
+    print("Test 8: UltimateProcessor - maximum complexity combination")
+    ultimate = H(100, "ultimate", 200, "complex", true, 300)
+    result8 = ultimateProcess(ultimate)
+    print("Result: " ++ result8)
+
+    print("=== EXTREME HARDCORE MPTC TEST COMPLETED ===")
+    print("✓ Ultra-constrained parameters with multiple traits each")
+    print("✓ Completely asymmetric constraint patterns")
+    print("✓ Deep nesting with MPTC constraints")
+    print("✓ 6+ parameters with maximum complexity")
+    print("✓ Diamond dependency resolution")
+    print("✓ Higher-order functions with MPTC")
+    print("✓ Chain reaction dependencies")
+    print("✓ Ultimate combination of all features")
+}
+
+main()

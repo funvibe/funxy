@@ -35,7 +35,7 @@ print(multiply(5, 3))  // 15
 // Default using expression
 fun makeList(n, default = []) {
     if n == 0 { default }
-    else { makeList(n - 1, [n, default...]) }
+    else { makeList(n - 1, [n, ...default]) }
 }
 
 print(makeList(5))  // [1, 2, 3, 4, 5]

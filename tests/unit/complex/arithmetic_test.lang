@@ -6,7 +6,7 @@ testRun("Arithmetic operations", \ -> {
     assertEquals(6, 2 * 3, "Multiplication")
     assertEquals(2, 7 / 3, "Integer division")
     assertEquals(1, 7 % 3, "Remainder")
-    assertEquals(8, 2 ** 3, "Power")
+    assertEquals(512, 2 ** 3 ** 2, "Power")
 })
 
 testRun("Floating point arithmetic", \ -> {

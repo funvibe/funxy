@@ -1,0 +1,143 @@
+import "lib/list" (length)
+import "lib/test" (testRun, assertEquals, assertTrue)
+
+// 1. Basic Type Inference (Literals & Vars)
+// =============================================================================
+testRun("Inference: Basic Literals", \ -> {
+    x = 42
+    y = 3.14
+    z = true
+    s = "hello"
+
+    // Check runtime types match inferred expectations
+    assertEquals(42, x, "Int inference")
+    assertEquals(3.14, y, "Float inference")
+    assertEquals(true, z, "Bool inference")
+    assertEquals("hello", s, "String inference")
+})
+
+// 2. Function Type Inference (No annotations)
+// =============================================================================
+fun add(a, b) { a + b } // Should infer a, b as generic or Numeric?
+// In Funxy, if operators are used, it might infer constraints or specific types if usage dictates.
+
+fun myId(x) { x } // Pure generic
+
+testRun("Inference: Functions", \ -> {
+    res1 = add(1, 2)
+    res2 = add(1.5, 2.5)
+
+    assertEquals(3, res1, "Int addition inferred")
+    assertEquals(4.0, res2, "Float addition inferred")
+
+    assertEquals(10, myId(10), "Generic id with Int")
+    assertEquals("s", myId("s"), "Generic id with String")
+})
+
+// 3. Higher-Order Function Inference
+// =============================================================================
+fun applyOp(f, x) { f(x) }
+
+testRun("Inference: Higher-Order", \ -> {
+    res = applyOp(\n -> n * 2, 10)
+    assertEquals(20, res, "Infer lambda and application")
+
+    // Inferring return type of lambda
+    resStr = applyOp(\s -> s ++ "!", "hi")
+    assertEquals("hi!", resStr, "Infer string op")
+})
+
+// 4. Recursive Type Inference (List)
+// =============================================================================
+testRun("Inference: List Literals", \ -> {
+    // Homogeneous list
+    list1 = [1, 2, 3]
+    // Inferred as List<Int>
+
+    // Nested lists
+    list2 = [[1, 2], [3, 4]]
+    // Inferred as List<List<Int>>
+
+    assertEquals(1, list1[0], "List<Int> access")
+    assertEquals(3, list2[1][0], "List<List<Int>> access")
+})
+
+// 6. Record Inference
+// =============================================================================
+testRun("Inference: Records", \ -> {
+    rec = { x: 10, y: "foo" }
+    // Inferred as { x: Int, y: String }
+
+    assertEquals(10, rec.x, "Record field x")
+    assertEquals("foo", rec.y, "Record field y")
+})
+
+// 7. Generic Record Inference
+// =============================================================================
+fun getX(r) { r.x } // Should infer r has field x
+
+testRun("Inference: Field Access Constraint", \ -> {
+    r1 = { x: 1, y: 2 }
+    r2 = { x: "hi", z: true }
+
+    assertEquals(1, getX(r1), "Row polymorphism 1")
+    assertEquals("hi", getX(r2), "Row polymorphism 2")
+})
+
+// 8. Match Expression Inference
+// =============================================================================
+testRun("Inference: Match", \ -> {
+    val = 10
+    res = match val {
+        0 -> "zero"
+        n -> "non-zero"
+    }
+    // Expected return type of match is String.
+    // Branches must unify.
+    assertEquals("non-zero", res, "Match unification")
+})
+
+// 9. Inference with Type Aliases
+// =============================================================================
+type alias ID = Int
+fun processId(i: ID) -> ID { i + 1 }
+
+testRun("Inference: Type Alias", \ -> {
+    x = 10
+    // x is Int, ID is alias for Int. Should unify.
+    y = processId(x)
+    assertEquals(11, y, "Alias transparency")
+})
+
+// 10. Closures and Partial Application
+// =============================================================================
+fun makeAdder(x) {
+    \y -> x + y
+}
+
+testRun("Inference: Currying/Closure", \ -> {
+    add5 = makeAdder(5) // Inferred: (Int) -> Int
+    res = add5(10)
+    assertEquals(15, res, "Closure inference")
+})
+
+// 11. Empty List Inference
+// =============================================================================
+testRun("Inference: Empty List", \ -> {
+    // Empty list [] is List<t>.
+    // Using it in context should fix t.
+    xs = []
+    ys = [1] ++ xs // xs should unify with List<Int>
+
+    assertEquals(1, length(ys), "Empty list unification")
+})
+
+// 12. Recursive Function Inference
+// =============================================================================
+fun fact(n) {
+    if n == 0 { 1 } else { n * fact(n - 1) }
+}
+
+testRun("Inference: Recursion", \ -> {
+    assertEquals(120, fact(5), "Recursive function inferred as Int -> Int")
+})

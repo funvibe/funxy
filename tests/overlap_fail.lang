@@ -1,12 +1,12 @@
-trait Show<T> {
-    fun show(x: T) -> String
+trait Printable<t> {
+    fun format(x: t) -> String
 }
 
-instance Show Int {
-    fun show(x: Int) -> String { "Int" }
+instance Printable Int {
+    fun format(x: Int) -> String { "Int" }
 }
 
-instance Show Int {
-    fun show(x: Int) -> String { "Int2" }
+instance Printable Int {
+    fun format(x: Int) -> String { "Int2" }
 }
 

@@ -1,15 +1,15 @@
 // Advanced Extension Methods Tests
 
-type MyOption<T> = Yes T | NoVal
+type MyOption<t> = Yes t | NoVal
 
-fun<T, R> (o: MyOption<T>) map(f: (T) -> R) -> MyOption<R> {
+fun (o: MyOption<t>) map(f: (t) -> r) -> MyOption<r> {
     match o {
         Yes(v) -> Yes(f(v))
         NoVal -> NoVal
     }
 }
 
-fun<T> (o: MyOption<T>) unwrapOr(default: T) -> T {
+fun (o: MyOption<t>) unwrapOr(default: t) -> t {
     match o {
         Yes(v) -> v
         NoVal -> default
@@ -35,10 +35,10 @@ res2 = noneVal.map(fun(x: Int) Int { x + 1 }).unwrapOr(-1).double()
 print(res2) // map -> None, unwrap -> -1, double -> -2
 
 // Extension on List
-fun<T, R> (l: List<T>) mapList(f: (T) -> R) -> List<R> {
+fun (l: List<t>) mapList(f: (t) -> r) -> List<r> {
     match l {
         [] -> []
-        [head, tail...] -> [f(head), tail.mapList(f)...]
+        [head, ...tail] -> [f(head), ...tail.mapList(f)]
     }
 }
 
@@ -50,7 +50,7 @@ print(mapped)
 type Point = { x: Int, y: Int }
 fun (p: Point) magnitude() Int {
     // Approximation for integer arithmetic
-    p.x + p.y 
+    p.x + p.y
 }
 
 pt: Point = { x: 3, y: 4 }
@@ -58,11 +58,11 @@ print(pt.magnitude())
 
 // Extension on String (List Char)
 fun (s: String) shout() String {
-    // This would be complex without char conversion functions, 
+    // This would be complex without char conversion functions,
     // let's just append "!"
     // String is List Char, so we can append ['!']
     // Note: We don't have '+' for lists yet, but we have spread syntax in list literal
-    [s..., '!']
+    [...s, '!']
 }
 
 print("hello".shout())

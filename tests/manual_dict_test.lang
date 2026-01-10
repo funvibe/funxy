@@ -1,0 +1,20 @@
+import "lib/test" (*)
+
+trait MyTrait<t> {
+  fun myOp(x: t) -> String
+}
+
+instance MyTrait Int {
+  fun myOp(x: Int) -> String {
+    "Int " ++ show(x)
+  }
+}
+
+fun callOp<t: MyTrait>(x: t) -> String {
+  myOp(x)
+}
+
+testRun("Manual Dictionary Test", fun() {
+  res = callOp(100)
+  assertEquals(res, "Int 100", "Result matches")
+})

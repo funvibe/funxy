@@ -17,7 +17,7 @@ fun getX(r) {
 }
 `
 	ctx := pipeline.NewPipelineContext(input)
-	
+
 	// Setup token stream using LexerProcessor
 	lp := &lexer.LexerProcessor{}
 	ctx = lp.Process(ctx)

@@ -1,5 +1,4 @@
-import "kit/web"
-import "kit/web" (BodyString, BodyHtml, BodyJson)
+import "kit/web" (*)
 import "kit/ui"
 import "lib/test" (*)
 import "lib/list" (find, foldl)
@@ -9,10 +8,11 @@ import "lib/path" (pathTemp, pathJoin)
 import "lib/string" (stringIndexOf)
 import "lib/crypto" (base64Encode)
 import "lib/map" (mapFromRecord)
+import "lib/json" (jsonFromValue)
 
 // Mock Handler
 fun helloHandler(ctx) {
-    Ok(ui.div(ui.text("Hello")))
+    Ok(ui.render(ui.div([ui.text("Hello")])))
 }
 
 // Middleware Test
@@ -21,8 +21,8 @@ fun headerMiddleware(next) {
         // Post-processing: add header after handler runs
         match next(ctx) {
             Ok(res) -> {
-                response = web.autoResponse(res)
-                Ok(web.setHeader("X-Middleware", "True", response))
+                resp = autoResponse(res)
+                Ok(setHeader("X-Middleware", "True", resp))
             }
             Fail(e) -> Fail(e)
         }
@@ -38,26 +38,26 @@ fun containsStr(haystack, needle) {
 }
 
 // Test handlers
-fun jsonHandler(ctx: web.Context) {
+fun jsonHandler(ctx: Context) {
     contentType = ctx.req.headers |> find(fun(p) { fst(p) == "Content-Type" })
     match contentType {
         Some((_, "application/json")) -> {
             if ctx.req.body != "" {
-                Ok({ success: true, received: ctx.req.body })
+                Ok(jsonFromValue({ success: true, received: ctx.req.body }))
             } else {
-                Ok({ error: "Empty JSON body" })
+                Ok(jsonFromValue({ error: "Empty JSON body" }))
             }
         }
         _ -> Ok("Not JSON")
     }
 }
 
-fun formHandler(ctx: web.Context) {
+fun formHandler(ctx: Context) {
     contentType = ctx.req.headers |> find(fun(p) { fst(p) == "Content-Type" })
     match contentType {
         Some((_, "application/x-www-form-urlencoded")) -> {
-            name = web.formParam("name", ctx)
-            email = web.formParam("email", ctx)
+            name = formParam("name", ctx)
+            email = formParam("email", ctx)
 
             match (name, email) {
                 (Some(n), Some(e)) -> Ok("Form: " ++ n ++ " <" ++ e ++ ">")
@@ -69,21 +69,21 @@ fun formHandler(ctx: web.Context) {
 }
 
 fun stringResponder(ctx) { Ok("Hello String") }
-fun htmlResponder(ctx) { Ok(ui.div(ui.text("Hello HTML"))) }
-fun jsonResponder(ctx) { Ok({ message: "Hello JSON" }) }
+fun htmlResponder(ctx) { Ok(ui.render(ui.div([ui.text("Hello HTML")]))) }
+fun jsonResponder(ctx) { Ok(jsonFromValue({ message: "Hello JSON" })) }
 
-fun redirectHandler(ctx) { Ok(web.redirect("/new-location")) }
-fun customStatusHandler(ctx) { Ok(web.resText("Not Found") |> web.withStatus(404)) }
+fun redirectHandler(ctx) { Ok(redirect("/new-location")) }
+fun customStatusHandler(ctx) { Ok(resText("Not Found") |> withStatus(404)) }
 fun headerHandler(ctx) {
-    Ok(web.resText("OK") |> web.setHeader("X-Custom", "Value") |> web.setCookie("session", "abc123"))
+    Ok(resText("OK") |> setHeader("X-Custom", "Value") |> setCookie("session", "abc123"))
 }
 
 fun failingHandler(ctx) { Fail("Test error") }
 fun corsHandler(ctx) { Ok("CORS OK") }
 
 fun sessionHandler(ctx) {
-    response = web.resText("Session set")
-    Ok(web.setSession(ctx, "user:alice", "my-secret-key", response))
+    resp = resText("Session set")
+    Ok(setSession(ctx, "user:alice", "my-secret-key", resp))
 }
 
 fun successHandler(ctx) { Ok("Success") }
@@ -100,16 +100,16 @@ testRun("web framework core", fun() {
     }
 
     // Test Context & Helpers (Directly)
-    ctx = web.context(req)
+    ctx = context(req)
 
     // Test Response Factory (Response type)
-    respText: web.Response = web.resText("Hello")
+    respText: Response = resText("Hello")
     print("Debug respText: " ++ show(respText))
     print("Debug respText Type: " ++ show(getType(respText)))
     assertEquals(respText.status, 200, "Text response status 200")
 
     // Explicit type check
-    // finalResp = web.finalizeResponse(respText)
+    // finalResp = finalizeResponse(respText)
     // assertEquals(finalResp.body, "Hello", "Text response body correct")
 
     // Check body manually
@@ -119,10 +119,10 @@ testRun("web framework core", fun() {
     }
 
     // Test Router & Handler
-    appRouter = web.newRouter() |> web.get("/", helloHandler)
+    appRouter = newRouter() |> get("/", helloHandler)
 
     // handleRequest returns finalized HttpResponse
-    res = web.handleRequest(appRouter, req)
+    res = handleRequest(appRouter, req)
 
     assertEquals(res.status, 200, "Router returns 200 on match")
     assert(res.body == "<div>Hello</div>", "Body is rendered HTML")
@@ -137,16 +137,16 @@ testRun("web framework core", fun() {
         cookies: req.cookies,
         body: req.body
     }
-    res404 = web.handleRequest(appRouter, req404)
+    res404 = handleRequest(appRouter, req404)
     assertEquals(res404.status, 404, "Router returns 404 on miss")
 
 
     // Test Middleware
-    rWithMw = web.newRouter()
-        |> web.use(headerMiddleware)
-        |> web.get("/", helloHandler)
+    rWithMw = newRouter()
+        |> use(headerMiddleware)
+        |> get("/", helloHandler)
 
-    resMw = web.handleRequest(rWithMw, req)
+    resMw = handleRequest(rWithMw, req)
     assertEquals(resMw.status, 200, "Middleware chain works")
 
     // Check header
@@ -157,11 +157,11 @@ testRun("web framework core", fun() {
     }
 
     // Test Logger Middleware
-    rLog = web.newRouter()
-        |> web.use(web.logger)
-        |> web.get("/", helloHandler)
+    rLog = newRouter()
+        |> use(logger)
+        |> get("/", helloHandler)
 
-    resLog = web.handleRequest(rLog, req)
+    resLog = handleRequest(rLog, req)
     assertEquals(resLog.status, 200, "Logger middleware works")
 
 
@@ -174,28 +174,28 @@ testRun("web framework core", fun() {
         cookies: [],
         body: ""
     }
-    ctxQuery = web.context(reqQuery)
+    ctxQuery = context(reqQuery)
 
-    paramFoo = web.queryParam("foo", ctxQuery)
+    paramFoo = queryParam("foo", ctxQuery)
     match paramFoo {
         Some(val) -> assertEquals(val, "bar", "Query param foo found")
         Zero -> assertEquals(1, 0, "Query param foo missing")
     }
 
-    paramBaz = web.queryParam("baz", ctxQuery)
+    paramBaz = queryParam("baz", ctxQuery)
     match paramBaz {
         Some(val) -> assertEquals(val, "qux", "Query param baz found")
         Zero -> assertEquals(1, 0, "Query param baz missing")
     }
 
     // Test Cookies (Helper functions)
-    cookieCtx = web.context(req)
-    match web.cookie("session", cookieCtx) {
+    cookieCtx = context(req)
+    match cookie("session", cookieCtx) {
         Some(val) -> assertEquals(val, "123", "Cookie session found")
         Zero -> assertEquals(1, 0, "Cookie session missing")
     }
 
-    match web.cookie("missing", cookieCtx) {
+    match cookie("missing", cookieCtx) {
         Some(val) -> assertEquals(1, 0, "Cookie missing found")
         Zero -> assertEquals(1, 1, "Cookie missing not found")
     }
@@ -209,13 +209,13 @@ testRun("web framework core", fun() {
         cookies: [],
         body: ""
     }
-    ctxQueryAll = web.context(reqQueryAll)
-    allParams = web.queryParams(ctxQueryAll)
+    ctxQueryAll = context(reqQueryAll)
+    allParams = queryParams(ctxQueryAll)
     // queryParams returns Map<String, List<String>> for multi-value params
     assert(true, "queryParams function called") // Just ensure it doesn't crash
 
     // Test Redirect (Helper)
-    redirResp = web.redirect("/new-location")
+    redirResp = redirect("/new-location")
     assertEquals(redirResp.status, 302, "Redirect status correct")
 
     foundLoc = redirResp.headers |> find(fun(p) { fst(p) == "Location" })
@@ -240,10 +240,10 @@ testRun("web framework core", fun() {
     }
 
     // Router with static handler for /static/*
-    rStatic = web.newRouter()
-        |> web.get("/static/*", web.staticHandler(testDir))
+    rStatic = newRouter()
+        |> get("/static/*", staticHandler(testDir))
 
-    resStatic = web.handleRequest(rStatic, reqStatic)
+    resStatic = handleRequest(rStatic, reqStatic)
     assertEquals(resStatic.status, 200, "Static file found")
     assertEquals(resStatic.body, "<html></html>", "Static file content correct")
 
@@ -254,8 +254,8 @@ testRun("web framework core", fun() {
 testRun("Web JSON/Form Parsing", fun() {
 
     // Test JSON request
-    routerJson = web.newRouter()
-        |> web.post("/api/json", jsonHandler)
+    routerJson = newRouter()
+        |> post("/api/json", jsonHandler)
 
     reqJson = {
         method: "POST",
@@ -266,9 +266,9 @@ testRun("Web JSON/Form Parsing", fun() {
         body: "{\"user\":\"alice\",\"age\":25}"
     }
 
-    resJson = web.handleRequest(routerJson, reqJson)
-    assertEquals(resJson.status, 200, "JSON request handled")
-    assert(containsStr(resJson.body, "\\\"user\\\":\\\"alice\\\""),
+    respJson = handleRequest(routerJson, reqJson)
+    assertEquals(respJson.status, 200, "JSON request handled")
+    assert(containsStr(respJson.body, "\\\"user\\\":\\\"alice\\\""),
            "JSON response contains received data")
 
     // Test wrong content type
@@ -281,17 +281,17 @@ testRun("Web JSON/Form Parsing", fun() {
         body: "not json"
     }
 
-    resWrongType = web.handleRequest(routerJson, reqWrongType)
+    resWrongType = handleRequest(routerJson, reqWrongType)
     assertEquals(resWrongType.status, 200, "Wrong content type handled")
     assertEquals(resWrongType.body, "Not JSON", "Content type validation works")
 })
 
 testRun("Web Responder Trait Coverage", fun() {
 
-    router = web.newRouter()
-        |> web.get("/string", stringResponder)
-        |> web.get("/html", htmlResponder)
-        |> web.get("/json", jsonResponder)
+    router = newRouter()
+        |> get("/string", stringResponder)
+        |> get("/html", htmlResponder)
+        |> get("/json", jsonResponder)
 
     // Test string responder
     reqString = {
@@ -302,8 +302,8 @@ testRun("Web Responder Trait Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resString = web.handleRequest(router, reqString)
-    // web.render("Hello String") creates a Response, handleRequest finalizes it to HttpResponse
+    resString = handleRequest(router, reqString)
+    // render("Hello String") creates a Response, handleRequest finalizes it to HttpResponse
     assertEquals(resString.body, "Hello String", "String responder works")
 
     // Test HTML responder (VNode)
@@ -315,8 +315,8 @@ testRun("Web Responder Trait Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resHtml = web.handleRequest(router, reqHtml)
-    assertEquals("<div>Hello HTML</div>", resHtml.body, "HTML rendered correctly")
+    respHtml = handleRequest(router, reqHtml)
+    assertEquals("<div>Hello HTML</div>", respHtml.body, "HTML rendered correctly")
 
     // Test JSON responder
     reqJson = {
@@ -327,17 +327,17 @@ testRun("Web Responder Trait Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resJson = web.handleRequest(router, reqJson)
-    assertEquals(resJson.status, 200, "JSON responder works")
-    assert(containsStr(resJson.body, "Hello JSON"), "JSON response correct")
+    respJson = handleRequest(router, reqJson)
+    assertEquals(respJson.status, 200, "JSON responder works")
+    assert(containsStr(respJson.body, "Hello JSON"), "JSON response correct")
 })
 
 testRun("Web Response Helpers Coverage", fun() {
 
-    router = web.newRouter()
-        |> web.get("/redirect", redirectHandler)
-        |> web.get("/custom-status", customStatusHandler)
-        |> web.get("/headers", headerHandler)
+    router = newRouter()
+        |> get("/redirect", redirectHandler)
+        |> get("/custom-status", customStatusHandler)
+        |> get("/headers", headerHandler)
 
     // Test redirect
     reqRedirect = {
@@ -348,7 +348,7 @@ testRun("Web Response Helpers Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resRedirect = web.handleRequest(router, reqRedirect)
+    resRedirect = handleRequest(router, reqRedirect)
     assertEquals(resRedirect.status, 302, "Redirect status correct")
     locationHeader = resRedirect.headers |> find(fun(p) { fst(p) == "Location" })
     match locationHeader {
@@ -365,7 +365,7 @@ testRun("Web Response Helpers Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resStatus = web.handleRequest(router, reqStatus)
+    resStatus = handleRequest(router, reqStatus)
     assertEquals(resStatus.status, 404, "Custom status works")
     assertEquals(resStatus.body, "Not Found", "Body preserved with status change")
 
@@ -378,7 +378,7 @@ testRun("Web Response Helpers Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resHeaders = web.handleRequest(router, reqHeaders)
+    resHeaders = handleRequest(router, reqHeaders)
     assertEquals(resHeaders.status, 200, "Headers work")
 
     // Check custom header
@@ -397,9 +397,9 @@ testRun("Web Response Helpers Coverage", fun() {
 })
 
 testRun("Web Middleware Coverage", fun() {
-    routerRecover = web.newRouter()
-        |> web.use(web.recover)
-        |> web.get("/fail", failingHandler)
+    routerRecover = newRouter()
+        |> use(recover)
+        |> get("/fail", failingHandler)
 
     reqFail = {
         method: "GET",
@@ -409,15 +409,15 @@ testRun("Web Middleware Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resFail = web.handleRequest(routerRecover, reqFail)
+    resFail = handleRequest(routerRecover, reqFail)
     assertEquals(resFail.status, 500, "Recover middleware catches errors")
     assertEquals(resFail.body, "Internal Server Error", "Default error response")
 
     // Test CORS middleware
-    routerCors = web.newRouter()
-        |> web.use(web.cors)
-        |> web.options("/cors", corsHandler)
-        |> web.get("/cors", corsHandler)
+    routerCors = newRouter()
+        |> use(cors)
+        |> options("/cors", corsHandler)
+        |> get("/cors", corsHandler)
 
     // Test OPTIONS preflight
     reqOptions = {
@@ -428,7 +428,7 @@ testRun("Web Middleware Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resOptions = web.handleRequest(routerCors, reqOptions)
+    resOptions = handleRequest(routerCors, reqOptions)
     assertEquals(204, resOptions.status, "CORS OPTIONS returns 204")
 
     corsHeaders = ["Access-Control-Allow-Origin", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"]
@@ -452,7 +452,7 @@ testRun("Web Middleware Coverage", fun() {
         cookies: [],
         body: ""
     }
-    resCors = web.handleRequest(routerCors, reqCors)
+    resCors = handleRequest(routerCors, reqCors)
     assertEquals(200, resCors.status, "CORS GET works")
     assertEquals("CORS OK", resCors.body, "Handler executed")
 

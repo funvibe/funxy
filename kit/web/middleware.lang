@@ -5,7 +5,7 @@ import "lib/time" (clockMs)
 // --- Middleware ---
 
 fun logger(next) {
-    fun(ctx) {
+    fun(ctx: Context) {
         start = clockMs()
         result = next(ctx)
         duration = clockMs() - start
@@ -34,7 +34,7 @@ fun logger(next) {
 }
 
 fun recover(next) {
-    fun(ctx) {
+    fun(ctx: Context) {
         match next(ctx) {
             Ok(res) -> Ok(res)
             Fail(err) -> {
@@ -46,7 +46,7 @@ fun recover(next) {
 }
 
 fun cors(next) {
-    fun(ctx) {
+    fun(ctx: Context) {
         if ctx.req.method == "OPTIONS" {
              resp: Response = {
                 status: 204,

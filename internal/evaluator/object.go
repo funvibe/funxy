@@ -18,22 +18,22 @@ import (
 type ObjectType string
 
 const (
-	INTEGER_OBJ       = "INTEGER"
-	FLOAT_OBJ         = "FLOAT"
-	NIL_OBJ           = "NIL"
-	ERROR_OBJ         = "ERROR"
-	FUNCTION_OBJ      = "FUNCTION"
-	BUILTIN_OBJ       = "BUILTIN"
-	DATA_INSTANCE_OBJ = "DATA_INSTANCE"
-	CONSTRUCTOR_OBJ   = "CONSTRUCTOR"
-	BOOLEAN_OBJ       = "BOOLEAN"
-	TUPLE_OBJ         = "TUPLE"
-	TYPE_OBJ          = "TYPE"
-	LIST_OBJ          = "LIST"
-	CHAR_OBJ          = "CHAR"
-	RETURN_VALUE_OBJ  = "RETURN_VALUE"
-	CLASS_METHOD_OBJ  = "CLASS_METHOD" // New
-	RECORD_OBJ        = "RECORD"       // New
+	INTEGER_OBJ         = "INTEGER"
+	FLOAT_OBJ           = "FLOAT"
+	NIL_OBJ             = "NIL"
+	ERROR_OBJ           = "ERROR"
+	FUNCTION_OBJ        = "FUNCTION"
+	BUILTIN_OBJ         = "BUILTIN"
+	DATA_INSTANCE_OBJ   = "DATA_INSTANCE"
+	CONSTRUCTOR_OBJ     = "CONSTRUCTOR"
+	BOOLEAN_OBJ         = "BOOLEAN"
+	TUPLE_OBJ           = "TUPLE"
+	TYPE_OBJ            = "TYPE"
+	LIST_OBJ            = "LIST"
+	CHAR_OBJ            = "CHAR"
+	RETURN_VALUE_OBJ    = "RETURN_VALUE"
+	CLASS_METHOD_OBJ    = "CLASS_METHOD"    // New
+	RECORD_OBJ          = "RECORD"          // New
 	BREAK_SIGNAL_OBJ    = "BREAK_SIGNAL"    // New
 	CONTINUE_SIGNAL_OBJ = "CONTINUE_SIGNAL" // New
 	MAP_OBJ             = "MAP"             // Immutable hash map
@@ -41,23 +41,26 @@ const (
 	BITS_OBJ            = "BITS"            // Bit sequence
 
 	// Runtime Type Names (Canonical)
-	RUNTIME_TYPE_INT    = "Int"
-	RUNTIME_TYPE_FLOAT  = "Float"
-	RUNTIME_TYPE_BOOL   = "Bool"
-	RUNTIME_TYPE_CHAR   = "Char"
-	RUNTIME_TYPE_STRING = "String" // Not used directly as type of object, but conceptually
-	RUNTIME_TYPE_LIST   = "List"
-	RUNTIME_TYPE_TUPLE  = "TUPLE"
-	RUNTIME_TYPE_RECORD = "RECORD"
-	RUNTIME_TYPE_FUNCTION = "FUNCTION"
-	RUNTIME_TYPE_BIGINT   = "BigInt" // New
-	RUNTIME_TYPE_RATIONAL = "Rational" // New
-	BOUND_METHOD_OBJ    = "BOUND_METHOD" // New
-	TAIL_CALL_OBJ       = "TAIL_CALL"    // New for TCO
-	BIG_INT_OBJ         = "BIG_INT"
-	RATIONAL_OBJ        = "RATIONAL"
+	RUNTIME_TYPE_INT        = "Int"
+	RUNTIME_TYPE_FLOAT      = "Float"
+	RUNTIME_TYPE_BOOL       = "Bool"
+	RUNTIME_TYPE_CHAR       = "Char"
+	RUNTIME_TYPE_STRING     = "String" // Not used directly as type of object, but conceptually
+	RUNTIME_TYPE_LIST       = "List"
+	RUNTIME_TYPE_TUPLE      = "TUPLE"
+	RUNTIME_TYPE_RECORD     = "RECORD"
+	RUNTIME_TYPE_FUNCTION   = "FUNCTION"
+	RUNTIME_TYPE_RANGE      = "Range"        // New
+	RUNTIME_TYPE_BIGINT     = "BigInt"       // New
+	RUNTIME_TYPE_RATIONAL   = "Rational"     // New
+	BOUND_METHOD_OBJ        = "BOUND_METHOD" // New
+	TAIL_CALL_OBJ           = "TAIL_CALL"    // New for TCO
+	BIG_INT_OBJ             = "BIG_INT"
+	RATIONAL_OBJ            = "RATIONAL"
 	COMPOSED_FUNC_OBJ       = "COMPOSED_FUNC"
 	PARTIAL_APPLICATION_OBJ = "PARTIAL_APPLICATION"
+	DICTIONARY_OBJ          = "DICTIONARY" // New: VTable for Type Classes
+	RANGE_OBJ               = "RANGE"
 )
 
 type Object interface {
@@ -76,26 +79,28 @@ func hashString(s string) uint32 {
 
 // TailCall represents a function call that should be executed via trampoline.
 type TailCall struct {
-	Func   Object
-	Args   []Object
-	Line   int
-	Column int
-	Name   string // Function name for stack trace
-	File   string // File name for stack trace
+	Func     Object
+	Args     []Object
+	Line     int
+	Column   int
+	Name     string                       // Function name for stack trace
+	File     string                       // File name for stack trace
+	Witness  map[string][]typesystem.Type // Witnesses for this call
+	CallNode ast.Node                     // Original call node for type dispatch
 }
 
-func (tc *TailCall) Type() ObjectType      { return TAIL_CALL_OBJ }
-func (tc *TailCall) Inspect() string       { return "TailCall" }
+func (tc *TailCall) Type() ObjectType             { return TAIL_CALL_OBJ }
+func (tc *TailCall) Inspect() string              { return "TailCall" }
 func (tc *TailCall) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "TailCall"} }
-func (tc *TailCall) Hash() uint32          { return 0 }
+func (tc *TailCall) Hash() uint32                 { return 0 }
 
 // Boolean
 type Boolean struct {
 	Value bool
 }
 
-func (b *Boolean) Type() ObjectType        { return BOOLEAN_OBJ }
-func (b *Boolean) Inspect() string         { return fmt.Sprintf("%t", b.Value) }
+func (b *Boolean) Type() ObjectType             { return BOOLEAN_OBJ }
+func (b *Boolean) Inspect() string              { return fmt.Sprintf("%t", b.Value) }
 func (b *Boolean) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Bool"} }
 func (b *Boolean) Hash() uint32 {
 	if b.Value {
@@ -109,8 +114,8 @@ type Integer struct {
 	Value int64
 }
 
-func (i *Integer) Type() ObjectType        { return INTEGER_OBJ }
-func (i *Integer) Inspect() string         { return fmt.Sprintf("%d", i.Value) }
+func (i *Integer) Type() ObjectType             { return INTEGER_OBJ }
+func (i *Integer) Inspect() string              { return fmt.Sprintf("%d", i.Value) }
 func (i *Integer) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Int"} }
 func (i *Integer) Hash() uint32 {
 	return uint32(i.Value ^ (i.Value >> 32))
@@ -121,8 +126,8 @@ type Float struct {
 	Value float64
 }
 
-func (f *Float) Type() ObjectType        { return FLOAT_OBJ }
-func (f *Float) Inspect() string         { return fmt.Sprintf("%g", f.Value) }
+func (f *Float) Type() ObjectType             { return FLOAT_OBJ }
+func (f *Float) Inspect() string              { return fmt.Sprintf("%g", f.Value) }
 func (f *Float) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Float"} }
 func (f *Float) Hash() uint32 {
 	bits := math.Float64bits(f.Value)
@@ -134,8 +139,8 @@ type BigInt struct {
 	Value *big.Int
 }
 
-func (bi *BigInt) Type() ObjectType         { return BIG_INT_OBJ }
-func (bi *BigInt) Inspect() string          { return bi.Value.String() }
+func (bi *BigInt) Type() ObjectType             { return BIG_INT_OBJ }
+func (bi *BigInt) Inspect() string              { return bi.Value.String() }
 func (bi *BigInt) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "BigInt"} }
 func (bi *BigInt) Hash() uint32 {
 	return hashString(bi.Value.String())
@@ -146,8 +151,8 @@ type Rational struct {
 	Value *big.Rat
 }
 
-func (r *Rational) Type() ObjectType         { return RATIONAL_OBJ }
-func (r *Rational) Inspect() string          { return r.Value.FloatString(10) }
+func (r *Rational) Type() ObjectType             { return RATIONAL_OBJ }
+func (r *Rational) Inspect() string              { return r.Value.FloatString(10) }
 func (r *Rational) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Rational"} }
 func (r *Rational) Hash() uint32 {
 	return hashString(r.Value.String())
@@ -156,10 +161,10 @@ func (r *Rational) Hash() uint32 {
 // Nil (e.g. for statements that don't return a value, or print)
 type Nil struct{}
 
-func (n *Nil) Type() ObjectType        { return NIL_OBJ }
-func (n *Nil) Inspect() string         { return "Nil" }
+func (n *Nil) Type() ObjectType             { return NIL_OBJ }
+func (n *Nil) Inspect() string              { return "Nil" }
 func (n *Nil) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Nil"} }
-func (n *Nil) Hash() uint32            { return 0 }
+func (n *Nil) Hash() uint32                 { return 0 }
 
 // Error
 type Error struct {
@@ -220,38 +225,40 @@ type ReturnValue struct {
 	Value Object
 }
 
-func (rv *ReturnValue) Type() ObjectType         { return RETURN_VALUE_OBJ }
-func (rv *ReturnValue) Inspect() string          { return rv.Value.Inspect() }
+func (rv *ReturnValue) Type() ObjectType             { return RETURN_VALUE_OBJ }
+func (rv *ReturnValue) Inspect() string              { return rv.Value.Inspect() }
 func (rv *ReturnValue) RuntimeType() typesystem.Type { return rv.Value.RuntimeType() }
-func (rv *ReturnValue) Hash() uint32             { return rv.Value.Hash() }
+func (rv *ReturnValue) Hash() uint32                 { return rv.Value.Hash() }
 
 // BreakSignal is an internal object used to signal a break from a loop.
 type BreakSignal struct {
 	Value Object // Optional value to return from loop (default Zero)
 }
 
-func (bs *BreakSignal) Type() ObjectType         { return BREAK_SIGNAL_OBJ }
-func (bs *BreakSignal) Inspect() string          { return "Break" }
+func (bs *BreakSignal) Type() ObjectType             { return BREAK_SIGNAL_OBJ }
+func (bs *BreakSignal) Inspect() string              { return "Break" }
 func (bs *BreakSignal) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Break"} }
-func (bs *BreakSignal) Hash() uint32             { return 0 }
+func (bs *BreakSignal) Hash() uint32                 { return 0 }
 
 // ContinueSignal is an internal object used to signal a continue in a loop.
 type ContinueSignal struct{}
 
-func (cs *ContinueSignal) Type() ObjectType         { return CONTINUE_SIGNAL_OBJ }
-func (cs *ContinueSignal) Inspect() string          { return "Continue" }
+func (cs *ContinueSignal) Type() ObjectType             { return CONTINUE_SIGNAL_OBJ }
+func (cs *ContinueSignal) Inspect() string              { return "Continue" }
 func (cs *ContinueSignal) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Continue"} }
-func (cs *ContinueSignal) Hash() uint32             { return 0 }
+func (cs *ContinueSignal) Hash() uint32                 { return 0 }
 
 // Function (User defined)
 type Function struct {
-	Name       string           // Function name (empty for lambdas)
-	Parameters []*ast.Parameter
-	ReturnType ast.Type // Optional, for type display
-	Body       *ast.BlockStatement
-	Env        *Environment
-	Line       int // Source location for stack traces
-	Column     int
+	Name                 string // Function name (empty for lambdas)
+	Parameters           []*ast.Parameter
+	WitnessParams        []string // Names of implicit dictionary parameters
+	ReturnType           ast.Type // Optional, for type display
+	Body                 *ast.BlockStatement
+	Env                  *Environment
+	CapturedWitnessStack []map[string][]typesystem.Type // Captured witness stack for closures
+	Line                 int                            // Source location for stack traces
+	Column               int
 }
 
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
@@ -309,8 +316,8 @@ func (of *OperatorFunction) GobDecode(data []byte) error {
 	return nil
 }
 
-func (of *OperatorFunction) Type() ObjectType         { return FUNCTION_OBJ }
-func (of *OperatorFunction) Inspect() string          { return "(" + of.Operator + ")" }
+func (of *OperatorFunction) Type() ObjectType { return FUNCTION_OBJ }
+func (of *OperatorFunction) Inspect() string  { return "(" + of.Operator + ")" }
 func (of *OperatorFunction) RuntimeType() typesystem.Type {
 	// Operators are polymorphic, return generic type
 	return typesystem.TFunc{
@@ -330,8 +337,8 @@ type ComposedFunction struct {
 	Evaluator *Evaluator // Need evaluator reference for applyFunction
 }
 
-func (cf *ComposedFunction) Type() ObjectType         { return COMPOSED_FUNC_OBJ }
-func (cf *ComposedFunction) Inspect() string          { return "(composed function)" }
+func (cf *ComposedFunction) Type() ObjectType { return COMPOSED_FUNC_OBJ }
+func (cf *ComposedFunction) Inspect() string  { return "(composed function)" }
 func (cf *ComposedFunction) RuntimeType() typesystem.Type {
 	return typesystem.TFunc{
 		Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
@@ -366,12 +373,12 @@ func (b *Builtin) Hash() uint32 {
 
 // PartialApplication represents a function with some arguments already applied.
 type PartialApplication struct {
-	Function    *Function    // User-defined function (nil if builtin/constructor)
-	Builtin     *Builtin     // Builtin function (nil if user-defined/constructor)
-	Constructor *Constructor // Type constructor (nil if function/builtin)
-	VMClosure   Object       // VM closure (ObjClosure) for VM partial application
-	AppliedArgs []Object     // Already applied arguments
-	RemainingParams int      // Number of remaining required parameters
+	Function        *Function    // User-defined function (nil if builtin/constructor)
+	Builtin         *Builtin     // Builtin function (nil if user-defined/constructor)
+	Constructor     *Constructor // Type constructor (nil if function/builtin)
+	VMClosure       Object       // VM closure (ObjClosure) for VM partial application
+	AppliedArgs     []Object     // Already applied arguments
+	RemainingParams int          // Number of remaining required parameters
 }
 
 func (p *PartialApplication) Type() ObjectType { return PARTIAL_APPLICATION_OBJ }
@@ -477,8 +484,8 @@ type Constructor struct {
 	Arity    int // Number of expected arguments
 }
 
-func (c *Constructor) Type() ObjectType            { return CONSTRUCTOR_OBJ }
-func (c *Constructor) Inspect() string             { return "constructor " + c.Name }
+func (c *Constructor) Type() ObjectType { return CONSTRUCTOR_OBJ }
+func (c *Constructor) Inspect() string  { return "constructor " + c.Name }
 func (c *Constructor) RuntimeType() typesystem.Type {
 	// Constructor is a function that returns its TypeName
 	paramTypes := make([]typesystem.Type, c.Arity)
@@ -529,22 +536,23 @@ func (t *Tuple) Hash() uint32 {
 // TypeObject represents a runtime type value.
 type TypeObject struct {
 	TypeVal typesystem.Type
+	Alias   string // Optional: nominal alias name (e.g. "String" for List<Char>)
 }
 
-func (t *TypeObject) Type() ObjectType          { return TYPE_OBJ }
-func (t *TypeObject) Inspect() string           { return "type(" + t.TypeVal.String() + ")" }
+func (t *TypeObject) Type() ObjectType             { return TYPE_OBJ }
+func (t *TypeObject) Inspect() string              { return "type(" + t.TypeVal.String() + ")" }
 func (t *TypeObject) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Type"} }
-func (t *TypeObject) Hash() uint32              { return hashString(t.TypeVal.String()) }
+func (t *TypeObject) Hash() uint32                 { return hashString(t.TypeVal.String()) }
 
 // Char represents a character.
 type Char struct {
 	Value int64
 }
 
-func (c *Char) Type() ObjectType          { return CHAR_OBJ }
-func (c *Char) Inspect() string           { return fmt.Sprintf("'%c'", c.Value) }
+func (c *Char) Type() ObjectType             { return CHAR_OBJ }
+func (c *Char) Inspect() string              { return fmt.Sprintf("'%c'", c.Value) }
 func (c *Char) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Char"} }
-func (c *Char) Hash() uint32              { return uint32(c.Value) }
+func (c *Char) Hash() uint32                 { return uint32(c.Value) }
 
 // List represents a homogeneous (in principle, though runtime allows heterogenous) immutable collection.
 // It uses a hybrid representation:
@@ -581,7 +589,7 @@ func (l *List) Type() ObjectType { return LIST_OBJ }
 // len returns the number of elements in the list
 func (l *List) len() int {
 	if l.vector != nil {
-	return l.vector.Len()
+		return l.vector.Len()
 	}
 	return l.length
 }
@@ -598,7 +606,7 @@ func (l *List) get(i int) Object {
 	}
 	// Fast path for vector
 	if l.vector != nil {
-	return l.vector.Get(i)
+		return l.vector.Get(i)
 	}
 
 	// Traversal for Cons
@@ -643,7 +651,7 @@ func (l *List) Set(i int, value Object) *List {
 // toSlice returns a copy of elements as a slice (for iteration)
 func (l *List) ToSlice() []Object {
 	if l.vector != nil {
-	return l.vector.ToSlice()
+		return l.vector.ToSlice()
 	}
 
 	result := make([]Object, 0, l.len())
@@ -662,7 +670,7 @@ func (l *List) ToSlice() []Object {
 func (l *List) Slice(start, end int) *List {
 	// If it's a vector, delegate
 	if l.vector != nil {
-	return &List{vector: l.vector.Slice(start, end), ElementType: l.ElementType}
+		return &List{vector: l.vector.Slice(start, end), ElementType: l.ElementType}
 	}
 
 	length := l.len()
@@ -680,7 +688,9 @@ func (l *List) Slice(start, end int) *List {
 	if end == length {
 		curr := l
 		for i := 0; i < start; i++ {
-			if curr == nil { break }
+			if curr == nil {
+				break
+			}
 			curr = curr.tail
 		}
 		if curr != nil {
@@ -714,7 +724,7 @@ func (l *List) Prepend(val Object) *List {
 func (l *List) concat(other *List) *List {
 	// If both are vectors, use vector concat
 	if l.vector != nil && other.vector != nil {
-	return &List{vector: l.vector.Concat(other.vector), ElementType: l.ElementType}
+		return &List{vector: l.vector.Concat(other.vector), ElementType: l.ElementType}
 	}
 
 	// Fallback: convert to slice and create new Vector-based list
@@ -828,9 +838,9 @@ func (l *List) GobDecode(data []byte) error {
 
 // Map represents an immutable hash map (HAMT-based)
 type Map struct {
-	hamt     *PersistentMap
-	KeyType  string // Optional: declared key type
-	ValType  string // Optional: declared value type
+	hamt    *PersistentMap
+	KeyType string // Optional: declared key type
+	ValType string // Optional: declared value type
 }
 
 // newMap creates a new empty Map
@@ -1366,8 +1376,10 @@ type ClassMethod struct {
 	Arity     int    // number of arguments (0 for nullary like mempty/pure)
 }
 
-func (tm *ClassMethod) Type() ObjectType           { return CLASS_METHOD_OBJ }
-func (tm *ClassMethod) Inspect() string            { return fmt.Sprintf("class method %s.%s", tm.ClassName, tm.Name) }
+func (tm *ClassMethod) Type() ObjectType { return CLASS_METHOD_OBJ }
+func (tm *ClassMethod) Inspect() string {
+	return fmt.Sprintf("class method %s.%s", tm.ClassName, tm.Name)
+}
 func (tm *ClassMethod) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "ClassMethod"} }
 func (tm *ClassMethod) Hash() uint32 {
 	return hashString(tm.ClassName + "." + tm.Name)
@@ -1382,8 +1394,9 @@ type RecordField struct {
 // RecordInstance represents an instance of a Record/Struct.
 // Uses a sorted slice of fields for compact memory and efficient access (O(log N)).
 type RecordInstance struct {
-	Fields   []RecordField // Sorted by Key
-	TypeName string        // Optional: nominal type name
+	Fields          []RecordField // Sorted by Key
+	TypeName        string        // Optional: nominal type name
+	RowPolyExtended bool          // If true, record was extended via Row Polymorphism and should use structural typing
 }
 
 // NewRecord creates a new RecordInstance from a map of fields.
@@ -1472,6 +1485,14 @@ func (r *RecordInstance) Inspect() string {
 }
 
 func (r *RecordInstance) RuntimeType() typesystem.Type {
+	// If record was extended via Row Polymorphism, always use structural typing
+	if r.RowPolyExtended {
+		fields := make(map[string]typesystem.Type)
+		for _, f := range r.Fields {
+			fields[f.Key] = f.Value.RuntimeType()
+		}
+		return typesystem.TRecord{Fields: fields}
+	}
 	if r.TypeName != "" {
 		return typesystem.TCon{Name: r.TypeName}
 	}
@@ -1498,12 +1519,38 @@ func (r *RecordInstance) Hash() uint32 {
 // BoundMethod represents a method bound to a receiver object (Extension Method or similar).
 type BoundMethod struct {
 	Receiver Object
-	Function *Function
+	Function Object // Can be *Function or *Builtin
 }
 
-func (bm *BoundMethod) Type() ObjectType           { return BOUND_METHOD_OBJ }
-func (bm *BoundMethod) Inspect() string            { return fmt.Sprintf("bound method %s", bm.Function.Inspect()) }
+func (bm *BoundMethod) Type() ObjectType             { return BOUND_METHOD_OBJ }
+func (bm *BoundMethod) Inspect() string              { return fmt.Sprintf("bound method %s", bm.Function.Inspect()) }
 func (bm *BoundMethod) RuntimeType() typesystem.Type { return bm.Function.RuntimeType() }
 func (bm *BoundMethod) Hash() uint32 {
 	return bm.Receiver.Hash() ^ bm.Function.Hash()
+}
+
+// Dictionary represents a Virtual Method Table (VTable) for a Type Class instance.
+// It allows O(1) dynamic dispatch by passing explicit dictionaries.
+type Dictionary struct {
+	TraitName string
+	// Array of implementation functions. Index corresponds to method index in trait definition.
+	// Example for Monad: [0: BindFn, 1: ReturnFn]
+	Methods []Object
+
+	// References to parent dictionaries (Super Traits).
+	// Example for Ord: [0: EqDictionary]
+	Supers []*Dictionary
+}
+
+func (d *Dictionary) Type() ObjectType { return DICTIONARY_OBJ }
+func (d *Dictionary) Inspect() string {
+	return fmt.Sprintf("<dict %s>", d.TraitName)
+}
+func (d *Dictionary) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Dictionary"} }
+func (d *Dictionary) Hash() uint32 {
+	h := hashString(d.TraitName)
+	for _, m := range d.Methods {
+		h = 31*h + m.Hash()
+	}
+	return h
 }

@@ -1,0 +1,35 @@
+=== Test 1: Single type variable, multiple constraints ===
+Same: 42
+Different: 1 vs 2
+Same: hello
+Different: a vs b
+=== Test 2: Three constraints ===
+same, hash=42
+diff: 1 vs 2, hash=1
+same, hash=5
+diff: a vs bb, hash=1
+=== Test 3: Two type variables, single constraint each ===
+(42, hello)
+(true, 100)
+(a, b)
+=== Test 4: Two type variables, one with multiple constraints ===
+1 and 1 are same, also: tag
+1 and 2 are different, also: true
+=== Test 5: Two type variables, both with multiple constraints ===
+a: 1 (=), b: a (=)
+a: 1 (!=), b: a (!=)
+a: 42 (=), b: x (!=)
+=== Test 6: Three type variables, mixed constraints ===
+[100] [a same a] [true]
+[200] [a diff b] [false]
+=== Test 7: Built-in traits ===
+1 < 2
+5 = 5
+10 > 3
+apple < banana
+=== Test 8: Complex example ===
+[5 .. 10]
+[1 .. 100]
+[a .. z]
+=== All constraint syntax tests passed ===
+
