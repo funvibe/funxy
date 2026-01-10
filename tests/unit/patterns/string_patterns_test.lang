@@ -25,7 +25,7 @@ testRun("Multiple captures", fun() {
 testRun("Greedy capture", fun() {
     path = "/static/css/main/style.css"
     result = match path {
-        "/static/{file...}" -> file
+        "/static/{...file}" -> file
         _ -> "fail"
     }
     assertEquals("css/main/style.css", result)

@@ -908,7 +908,7 @@ match "/users/42/posts/123" {
 
 // Greedy capture
 match "/static/css/main/style.css" {
-    "/static/{file...}" -> print("Serving: " ++ file)  // css/main/style.css
+    "/static/{...file}" -> print("Serving: " ++ file)  // css/main/style.css
 }
 
 // Escaping braces

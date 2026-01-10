@@ -307,7 +307,7 @@ func (p *Parser) parseConstructorPattern() ast.Pattern {
 	return cp
 }
 
-// parseStringPatternParts parses a string looking for {name} or {name...} capture patterns.
+// parseStringPatternParts parses a string looking for {name} or {...name} capture patterns.
 // Returns nil if no captures found AND no escape sequences (plain string), otherwise returns the parts.
 // Supports escaping: {{ becomes literal {, }} becomes literal }
 func (p *Parser) parseStringPatternParts(s string) []ast.StringPatternPart {
@@ -353,9 +353,9 @@ func (p *Parser) parseStringPatternParts(s string) []ast.StringPatternPart {
 			name := s[nameStart:i]
 			greedy := false
 
-			// Check for greedy pattern {name...}
-			if len(name) > 3 && name[len(name)-3:] == "..." {
-				name = name[:len(name)-3]
+			// Check for greedy pattern {...name} to match spread operator syntax
+			if len(name) > 3 && name[:3] == "..." {
+				name = name[3:]
 				greedy = true
 			}
 

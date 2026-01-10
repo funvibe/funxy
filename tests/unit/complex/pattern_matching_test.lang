@@ -111,7 +111,7 @@ testRun("String patterns", \ -> {
 
     path2 = "/static/css/style.css"
     res2 = match path2 {
-        "/static/{file...}" -> file
+        "/static/{...file}" -> file
         _ -> "none"
     }
     assertEquals("css/style.css", res2, "String capture greedy")

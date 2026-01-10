@@ -288,7 +288,7 @@ Use `{name...}` to capture the entire remaining path:
 ```rust
 path = "/static/css/main/style.css"
 match path {
-    "/static/{file...}" -> print("Serving: " ++ file)  // Serving: css/main/style.css
+    "/static/{...file}" -> print("Serving: " ++ file)  // Serving: css/main/style.css
     _ -> print("Not found")
 }
 ```
@@ -315,7 +315,7 @@ fun handler(req) {
             status: 200,
             body: "User " ++ id ++ ", Post " ++ postId
         }
-        ("GET", "/static/{file...}") -> {
+        ("GET", "/static/{...file}") -> {
             status: 200,
             body: "File: " ++ file
         }

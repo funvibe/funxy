@@ -119,7 +119,7 @@ match user {
 fun route(method, path) {
     match (method, path) {
         ("GET", "/users/{id}") -> "User: ${id}"
-        ("GET", "/files/{path...}") -> "File: ${path}"
+        ("GET", "/files/{...path}") -> "File: ${path}"
         _ -> "Not found"
     }
 }
