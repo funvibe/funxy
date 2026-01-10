@@ -301,8 +301,8 @@ Run `./funxy -help lib/<name>` for documentation.
 
 ## Documentation
 
+- [reference](docs/REFERENCE.md) — Reference Manual
 - [tutorial](docs/tutorial) — Step-by-step tutorials
-- [funbook](docs/funbook) — HOW-TO's
 - [playground](playground) — Run code in a browser
 
 ## Editor Support
