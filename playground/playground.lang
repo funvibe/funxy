@@ -6,6 +6,7 @@ import "lib/json" (jsonEncode, jsonDecode)
 import "lib/uuid" (uuidNew, uuidToString)
 import "lib/path" (pathJoin, pathTemp, pathDir)
 import "lib/list" (head)
+import "lib/string" (stringIndexOf)
 
 // Get directory of this script
 scriptDir = match sysArgs() {
@@ -19,13 +20,25 @@ fun runCode(code: String) -> { output: String, error: String } {
     match fileWrite(tmpFile, code) {
         Fail(e) -> { output: "", error: "Failed to write: " ++ e }
         Ok(_) -> {
+            // Try ./funxy first, then fallback to funxy in PATH
             result = sysExec("./funxy", [tmpFile])
+
+            finalResult = if result.code == -1 {
+                 // If ./funxy failed to execute (likely not found), try 'funxy' from PATH
+                 match stringIndexOf(result.stderr, "no such file") {
+                     Some(_) -> sysExec("funxy", [tmpFile])
+                     _ -> result
+                 }
+            } else {
+                 result
+            }
+
             fileDelete(tmpFile)
 
-            if result.code == 0 {
-                { output: result.stdout, error: "" }
+            if finalResult.code == 0 {
+                { output: finalResult.stdout, error: "" }
             } else {
-                { output: result.stdout, error: result.stderr }
+                { output: finalResult.stdout, error: finalResult.stderr }
             }
         }
     }
