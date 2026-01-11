@@ -1,0 +1,3 @@
+Processing failed with errors:
+- error at 10:32 [A003]: type error: lambda return type mismatch with expected polytype: expected t?, got $skolem_x_?. (Skolem escape?)
+- error at 25:17 [A003]: type error: lambda return type mismatch with expected polytype: expected t?, got $skolem_s_?. (Skolem escape?)
