@@ -167,7 +167,7 @@ func (ctx *InferenceContext) AddMPTCConstraint(typeVarName, traitName string, ar
 	ctx.ActiveConstraints[typeVarName] = append(ctx.ActiveConstraints[typeVarName], c)
 }
 
-// AddDeferredConstraint adds a constraint to be solved later (Proposal 002)
+// AddDeferredConstraint adds a constraint to be solved later
 func (ctx *InferenceContext) AddDeferredConstraint(c Constraint) {
 	// Migration: Ensure Args is populated if Left is set
 	if c.Kind == ConstraintImplements && len(c.Args) == 0 && c.Left != nil {

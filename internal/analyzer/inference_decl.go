@@ -28,7 +28,7 @@ func inferAnnotatedExpression(ctx *InferenceContext, n *ast.AnnotatedExpression,
 		return nil, nil, inferError(n, "type annotation must be type (kind *), got kind "+k.String())
 	}
 
-	// Proposal 003: Push expected type to inner expression to guide inference (e.g. MPTC resolution)
+	// Contextual Type Propagation: Push expected type to inner expression to guide inference (e.g. MPTC resolution)
 	if ctx.ExpectedReturnTypes == nil {
 		ctx.ExpectedReturnTypes = make(map[ast.Node]typesystem.Type)
 	}
@@ -69,7 +69,7 @@ func inferAnnotatedExpression(ctx *InferenceContext, n *ast.AnnotatedExpression,
 	totalSubst = subst.Compose(totalSubst)
 	finalType := exprType.Apply(ctx.GlobalSubst).Apply(totalSubst)
 
-	// Proposal 002: If inner expression is a CallExpression (e.g., pure(10)),
+	// Witness Resolution for Call Expressions: If inner expression is a CallExpression (e.g., pure(10)),
 	// set witness based on annotated type to enable runtime dispatch
 	if callExpr, ok := n.Expression.(*ast.CallExpression); ok {
 		// Extract trait constraints from annotated type
@@ -161,12 +161,12 @@ func inferIdentifier(ctx *InferenceContext, n *ast.Identifier, table *symbols.Sy
 			// Resolve alias if any
 			resolved := table.ResolveTypeAlias(expectedType)
 			if _, isExpectedForall := resolved.(typesystem.TForall); isExpectedForall {
-				// 1. If symbol is already explicit Forall, return it directly.
+				// If symbol is already explicit Forall, return it directly.
 				if _, isSymForall := sym.Type.(typesystem.TForall); isSymForall {
 					return sym.Type, typesystem.Subst{}, nil
 				}
 
-				// 2. If symbol is TFunc (implicit generic), lift it to TForall
+				// If symbol is TFunc (implicit generic), lift it to TForall
 				// We check if it has free variables that would normally be instantiated.
 				// Important: Only do this for definitions (Kind == Variable/Constant), not for locally bound variables if we tracked them differently.
 				// But generally, free vars in symbol table entries imply generics.
@@ -233,7 +233,7 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 	// we might want to allow refinement.
 
 	if n.AnnotatedType != nil {
-		// Proposal 003: Use annotation as expected type for context propagation
+		// Use annotation as expected type for context propagation
 		var errs []*diagnostics.DiagnosticError
 		explicitType := BuildType(n.AnnotatedType, table, &errs)
 		if err := wrapBuildTypeError(errs); err != nil {
@@ -370,7 +370,7 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 			typeMap[n.Value] = valType
 		}
 
-		// Proposal 002: If value is a CallExpression (e.g., pure(10)),
+		// Witness Resolution for Call Expressions: If value is a CallExpression (e.g., pure(10)),
 		// set witness based on annotated type to enable runtime dispatch
 		if callExpr, ok := n.Value.(*ast.CallExpression); ok {
 			// Extract trait constraints from annotated type
@@ -490,8 +490,8 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 			// variables defined in the Global/Module scope.
 			//
 			// Logic:
-			// 1. Is 'defScope' the Global Scope?
-			// 2. Is 'table' (current scope) a Function or Block scope nested within a Function?
+			// - Is 'defScope' the Global Scope?
+			// - Is 'table' (current scope) a Function or Block scope nested within a Function?
 			//
 			// We iterate up from 'table' to check if we cross a Function boundary before hitting 'defScope'.
 			if defScope.IsGlobalScope() {
@@ -565,7 +565,7 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 }
 
 func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
-	// 1. Create scope
+	// Create scope
 	enclosedTable := symbols.NewEnclosedSymbolTable(table, symbols.ScopeFunction)
 	totalSubst := typesystem.Subst{}
 
@@ -604,7 +604,7 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 		}
 	}
 
-	// 2. Define params
+	// Define params
 	var paramTypes []typesystem.Type
 	isVariadic := false
 	defaultCount := 0
@@ -658,7 +658,7 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 		ctx.ExpectedReturnTypes[n.Body] = expectedFuncType.ReturnType
 	}
 
-	// 3. Infer body
+	// Infer body
 	bodyType, sBody, err := inferFn(n.Body, enclosedTable)
 	if err != nil {
 		return nil, nil, err
@@ -685,7 +685,7 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 		paramTypes[i] = paramTypes[i].Apply(ctx.GlobalSubst).Apply(totalSubst)
 	}
 
-	// 4. Check explicit return type if present
+	// Check explicit return type if present
 	if n.ReturnType != nil {
 		var errs []*diagnostics.DiagnosticError
 		retType := BuildType(n.ReturnType, enclosedTable, &errs)
@@ -749,7 +749,7 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 		return nil, nil, inferError(n, err.Error())
 	}
 
-	// 5. Generalize / Capture Constraints
+	// Generalize / Capture Constraints
 	// Identify constraints that depend ONLY on local type variables (params/body) and not outer scope.
 	// This makes the lambda generic over these constraints (e.g. fun(m) { m >>= ... } becomes Monad m => m -> m).
 

@@ -34,7 +34,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		return
 	}
 
-	// 1. Check if Trait exists
+	// Check if Trait exists
 	var sym *symbols.Symbol
 	var ok bool
 	var traitName string // Full trait name (qualified if module is specified)
@@ -110,7 +110,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		return
 	}
 
-	// 1b. Check that super traits are implemented for the target type
+	// Check that super traits are implemented for the target type
 	// We need to build target type first to check implementations
 	if len(n.Args) == 0 {
 		w.addError(diagnostics.NewError(
@@ -268,7 +268,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 	}
 
-	// 2. Extract type name from target
+	// Extract type name from target
 	var typeName string
 	if tCon, ok := targetType.(typesystem.TCon); ok {
 		typeName = tCon.Name
@@ -312,15 +312,15 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 	// Prepare requirements for generic instance constraints
 	var requirements []typesystem.Constraint
 
-	// 0. Add recovered requirements from parsed arguments
+	// Add recovered requirements from parsed arguments
 	requirements = append(requirements, recoveredRequirements...)
 
-	// 0b. Extract constraints from inline declarations in Args (e.g. Pair<a: Eq>)
+	// Extract constraints from inline declarations in Args (e.g. Pair<a: Eq>)
 	for _, argNode := range n.Args {
 		CollectConstraintsFromType(argNode, &requirements)
 	}
 
-	// 1. Collect constraints from Type Parameters (inline: <T: Show>)
+	// Collect constraints from Type Parameters (inline: <T: Show>)
 	for _, tp := range n.TypeParams {
 		for _, c := range tp.Constraints {
 			var constraintArgs []typesystem.Type
@@ -342,7 +342,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 	}
 
-	// 2. Collect constraints from Where Clause
+	// Collect constraints from Where Clause
 	for _, c := range n.Constraints {
 		var constraintArgs []typesystem.Type
 		for _, argNode := range c.Args {
@@ -357,7 +357,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		})
 	}
 
-	// 3. Register Implementation
+	// Register Implementation
 	// Register if in header scan (Global) OR if in function body (Local)
 	if w.mode != ModeBodies || w.inFunctionBody {
 		// Populate AST for Evaluator
@@ -382,7 +382,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 	}
 
-	// 3b. Check that all required methods are implemented
+	// Check that all required methods are implemented
 	requiredMethods := w.symbolTable.GetTraitRequiredMethods(traitName)
 	implementedMethods := make(map[string]bool)
 	for _, method := range n.Methods {
@@ -406,7 +406,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 	}
 
-	// 4. Analyze methods
+	// Analyze methods
 	// Reuse targetScope which already contains the instance type parameters (including implicit ones)
 	// and has the correct parent (module scope).
 	outer := w.symbolTable
@@ -496,7 +496,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 
 		// Verify signature matches Trait definition
-		// 1. Find generic signature
+		// Find generic signature
 		genericSymbol, ok := w.symbolTable.Find(originalName)
 		if !ok {
 			// Method not in trait?
@@ -518,7 +518,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 			continue
 		}
 
-		// 2. Create Expected Type (Generic signature with substitution)
+		// Create Expected Type (Generic signature with substitution)
 		expectedType := genericSymbol.Type.Apply(subst)
 
 		// Inject expected types into AST parameters if missing
@@ -555,7 +555,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 			continue
 		}
 
-		// 3. Get Actual Type from the method definition in CURRENT scope
+		// Get Actual Type from the method definition in CURRENT scope
 		// VisitFunctionStatement (called by method.Accept(w)) defined it in w.symbolTable (the inner scope).
 		actualSymbol, ok := w.symbolTable.Find(mangledName)
 		if !ok {
@@ -564,7 +564,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 		actualType := actualSymbol.Type
 
-		// 4. Unify
+		// Unify
 		// If the actual method type is polymorphic (Rank-N), it means the method implementation
 		// is generic. We need to check if this generic implementation satisfies the required
 		// instance signature. This corresponds to subsumption check: actual <= expected.
@@ -583,7 +583,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 				"method signature mismatch: expected "+expectedType.String()+", got "+actualType.String(),
 			))
 		} else {
-			// 5. Register instance method signature for use in type inference
+			// Register instance method signature for use in type inference
 			// This allows traits like Optional to correctly extract inner types
 			// for any user-defined type, not just built-in types.
 			// We flatten the type to ensure TApp(TApp(C, args1), args2) becomes TApp(C, args1+args2)
@@ -593,7 +593,7 @@ func (w *walker) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
 		}
 	}
 
-	// 2.2 Dictionary Generation (Static & Constructors)
+	// Dictionary Generation (Static & Constructors)
 	// Only generate dictionaries in ModeInstances or ModeFull to avoid duplication/premature generation
 	// UNLESS it is a local instance (ModeBodies + inFunctionBody), which is only visited in ModeBodies.
 	if (w.mode != ModeInstances && w.mode != ModeFull) && !w.inFunctionBody {

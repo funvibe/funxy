@@ -427,7 +427,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 			// Register function in the block scope for type inference
 			// We build a simplified signature here for inference purposes
 
-			// 1. Analyze Type Parameters and Kinds
+			// Analyze Type Parameters and Kinds
 			typeParamVars := make([]typesystem.TVar, len(fs.TypeParams))
 			typeParamNames := make([]string, len(fs.TypeParams))
 
@@ -442,7 +442,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				sigScope.DefineType(tp.Value, tv, "")
 			}
 
-			// 2. Build params (using TVars)
+			// Build params (using TVars)
 			var params []typesystem.Type
 			for _, p := range fs.Parameters {
 				var pt typesystem.Type
@@ -459,7 +459,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				params = append(params, pt)
 			}
 
-			// 3. Return type (using TVars)
+			// Return type (using TVars)
 			var retType typesystem.Type
 			if fs.ReturnType != nil {
 				var errs []*diagnostics.DiagnosticError
@@ -472,7 +472,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				retType = ctx.FreshVar()
 			}
 
-			// 4. Constraints (using TVars)
+			// Constraints (using TVars)
 			var fnConstraints []typesystem.Constraint
 			for _, c := range fs.Constraints {
 				var cArgs []typesystem.Type
@@ -509,7 +509,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 			}
 			enclosedTable.DefineConstant(fs.Name.Value, definedType, "")
 
-			// 5. Analyze Body (Recursively)
+			// Analyze Body (Recursively)
 			// Create scope for body
 			fnScope := symbols.NewEnclosedSymbolTable(enclosedTable, symbols.ScopeFunction)
 
@@ -693,7 +693,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				ctx.GlobalSubst = subst.Compose(ctx.GlobalSubst) // CRITICAL: Update global context
 				t = t.Apply(ctx.GlobalSubst).Apply(totalSubst)
 
-				// Proposal 002: If value is a CallExpression (e.g., pure(10)),
+				// Witness Resolution for Call Expressions: If value is a CallExpression (e.g., pure(10)),
 				// set witness based on annotated type to enable runtime dispatch
 				if callExpr, ok := cd.Value.(*ast.CallExpression); ok {
 					declaredType := explicitType.Apply(ctx.GlobalSubst).Apply(totalSubst)

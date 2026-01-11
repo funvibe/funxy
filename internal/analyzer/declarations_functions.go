@@ -82,7 +82,7 @@ func inferKindFromFunction(n *ast.FunctionStatement, tpName string, table *symbo
 		}
 	}
 
-	// Decision Logic:
+	// Determine Kind based on constraints and usage
 	// If we have explicit constraints, they are usually the source of truth for Kinds (e.g. T: Functor => *->*).
 	// However, if usage implies a different structure, we might have a mismatch.
 	// For now, we trust the constraint if it provides a higher-kinded type.
@@ -112,7 +112,7 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		return
 	}
 
-	// 1. Register Generic Constraints / Type Params (Temporarily in scope for signature building)
+	// Register Generic Constraints / Type Params (Temporarily in scope for signature building)
 	// Create a temporary scope for building the signature.
 	// This ensures type params (both explicit and implicit) are captured and resolved correctly.
 	sigScope := symbols.NewEnclosedSymbolTable(w.symbolTable, symbols.ScopeFunction) // Function signature scope
@@ -125,7 +125,7 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		sigScope.RegisterKind(tp.Value, kind)
 	}
 
-	// 2. Prepare types for Signature
+	// Prepare types for Signature
 	// Implicit Row Polymorphism: Open all closed records in signature
 	var retType typesystem.Type
 	if n.ReturnType != nil {
@@ -265,7 +265,7 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		))
 	}
 
-	// 3. Define in Symbol Table
+	// Define in Symbol Table
 	// In ModeHeaders: We are defining top-level functions.
 	// In ModeBodies: We are defining nested functions (since top-level uses analyzeFunctionBody).
 	// In both cases, we want to define the symbol in the current scope.
@@ -326,10 +326,10 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		w.symbolTable.DefineConstant(n.Name.Value, fnType, module)
 	}
 
-	// 4. Store Function Type in TypeMap
+	// Store Function Type in TypeMap
 	w.TypeMap[n] = fnType
 
-	// 5. Analyze Body
+	// Analyze Body
 	// If ModeHeaders: Skip body.
 	// If ModeBodies: Analyze body (this is a nested function).
 	// If ModeFull: Analyze body.

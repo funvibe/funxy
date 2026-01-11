@@ -78,10 +78,10 @@ func (w *walker) VisitAnnotatedExpression(expr *ast.AnnotatedExpression) {
 }
 
 func (w *walker) VisitTypeApplicationExpression(n *ast.TypeApplicationExpression) {
-	// 1. Analyze the base expression (e.g., the identifier/function being applied)
+	// Analyze the base expression (e.g., the identifier/function being applied)
 	n.Expression.Accept(w)
 
-	// 2. Validate Type Arguments
+	// Validate Type Arguments
 	for _, t := range n.TypeArguments {
 		// We could use BuildType to verify they are valid types in current scope
 		// (e.g., defined type names)
@@ -103,12 +103,12 @@ func (w *walker) VisitSpreadExpression(n *ast.SpreadExpression) {
 func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	// Similar to FunctionStatement but no name registration in outer scope
 
-	// 1. Create new scope for function body
+	// Create new scope for function body
 	outer := w.symbolTable
 	w.symbolTable = symbols.NewEnclosedSymbolTable(outer, symbols.ScopeFunction)
 	defer func() { w.symbolTable = outer }()
 
-	// 1.5 Pre-calculate declared return type (to define implicit generics BEFORE params overwrite them)
+	// Pre-calculate declared return type (to define implicit generics BEFORE params overwrite them)
 	var declaredRet typesystem.Type
 	if n.ReturnType != nil {
 		declaredRet = BuildType(n.ReturnType, w.symbolTable, &w.errors)
@@ -128,7 +128,7 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 		}
 	}
 
-	// 2. Register parameters
+	// Register parameters
 	for _, param := range n.Parameters {
 		var paramType typesystem.Type
 		if param.Type != nil {
@@ -151,7 +151,7 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 		}
 	}
 
-	// 3. Analyze body
+	// Analyze body
 	prevInLoop := w.inLoop
 	w.inLoop = false
 
@@ -167,7 +167,7 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	w.markTailCalls(n.Body) // Mark tail calls in lambda body
 	w.inLoop = prevInLoop
 
-	// 4. Check return type if explicit
+	// Check return type if explicit
 	// Only run explicit inference if we are NOT inside another function body
 	// (because nested functions are already inferred by the outer function's inference pass)
 	if n.ReturnType != nil && !prevInFn {

@@ -781,7 +781,7 @@ func inferHKTOperator(ctx *InferenceContext, n *ast.InfixExpression, l, r typesy
 			checkType = concreteType
 		}
 
-		// If type is still a variable, defer constraint check (Proposal 002)
+		// If type is still a variable, defer constraint check
 		if _, stillVar := concreteType.(typesystem.TVar); stillVar {
 			ctx.AddDeferredConstraint(Constraint{
 				Kind:  ConstraintImplements,

@@ -602,10 +602,10 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			lowerParams = append(lowerParams, strings.ToLower(p))
 		}
 
-		// 1. Define Trait
+		// Define Trait
 		table.DefineTrait(trait.Name, lowerParams, trait.SuperTraits, prelude)
 
-		// 2. Register Kind
+		// Register Kind
 		var traitParamKind typesystem.Kind = typesystem.Star
 		if trait.Kind == "* -> *" {
 			traitParamKind = typesystem.KArrow{Left: typesystem.Star, Right: typesystem.Star}
@@ -620,12 +620,12 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			table.RegisterTraitTypeParamKind(trait.Name, param, traitParamKind)
 		}
 
-		// 3. Register Operators
+		// Register Operators
 		for _, op := range trait.Operators {
 			table.RegisterOperatorTrait(op, trait.Name)
 		}
 
-		// 4. Register Methods (Specific logic per trait)
+		// Register Methods (Specific logic per trait)
 		switch trait.Name {
 		case "Show":
 			// show : T -> String

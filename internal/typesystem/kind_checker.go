@@ -25,18 +25,6 @@ func KindCheck(t Type) (Kind, error) {
 	case TVar:
 		return typ.Kind(), nil
 	case *TApp:
-		// Pointer receiver case if we change TApp to pointer, but it's struct in types.go
-		// Wait, types.go defines TApp as struct. Type interface is implemented by value receiver usually?
-		// types.go: func (t TApp) Kind() ...
-		// But to modify it (set KindVal), we need pointer?
-		// The Type interface handles values. TApp is immutable usually?
-		// If I add KindVal to TApp struct, and TApp is passed by value, I can't update it in place unless I return a new TApp.
-		// The `KindCheck` should probably return the Type with KindVal filled?
-		// Or assume Types are immutable and we just calculate Kind.
-		// The user said: "Add Kind field... Implement KindChecker".
-		// If I add `KindVal` to `TApp`, `KindCheck` can return the Kind.
-		// If `TApp` is immutable, `KindVal` must be set at construction.
-		// But we have `types_builder.go` and `BuildType`.
 		return checkTAppKind(*typ)
 	case TApp:
 		return checkTAppKind(typ)
@@ -137,7 +125,6 @@ func checkTAppKind(t TApp) (Kind, error) {
 		} else {
 			// Relaxed check for TVars: if we are applying arguments to a Type Variable,
 			// we assume it has the appropriate Higher Kind (inference fallback).
-			// This allows HKTs like f<T> without explicit kind annotations.
 			if isTVar {
 				currKind = Star
 				continue

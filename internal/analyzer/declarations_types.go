@@ -28,7 +28,7 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 		// If it is pending, we proceed to overwrite it
 	}
 
-	// 0. Discover Implicit Generics (Case Sensitivity Rule)
+	// Discover Implicit Generics (Case Sensitivity Rule)
 	// If no explicit type parameters are provided, scan the definition for lowercase identifiers
 	// that are not defined in the scope. These are implicit type variables.
 	if len(stmt.TypeParameters) == 0 {
@@ -70,7 +70,7 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 		tCon.TypeParams = &params
 	}
 
-	// 1. Create temporary scope for type parameters
+	// Create temporary scope for type parameters
 	typeScope := symbols.NewEnclosedSymbolTable(table, symbols.ScopeFunction) // Type definition scope behaves like function scope for type params
 	for _, tp := range stmt.TypeParameters {
 		typeScope.DefineType(tp.Value, typesystem.TVar{Name: tp.Value}, "")
@@ -253,7 +253,7 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 		return
 	}
 
-	// 0.1. Check for redefinition of existing trait (including built-ins)
+	// Check for redefinition of existing trait (including built-ins)
 	if sym, ok := w.symbolTable.Find(n.Name.Value); ok && sym.Kind == symbols.TraitSymbol {
 		if !sym.IsPending {
 			w.addError(diagnostics.NewError(
@@ -265,7 +265,7 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 		}
 	}
 
-	// 1. Extract super trait names and verify they exist
+	// Extract super trait names and verify they exist
 	superTraitNames := make([]string, 0, len(n.SuperTraits))
 	for _, st := range n.SuperTraits {
 		var superName string
@@ -286,14 +286,14 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 		}
 	}
 
-	// 2. Register Trait with type params and super traits
+	// Register Trait with type params and super traits
 	typeParamNames := make([]string, len(n.TypeParams))
 	for i, tp := range n.TypeParams {
 		typeParamNames[i] = tp.Value
 	}
 	w.symbolTable.DefineTrait(n.Name.Value, typeParamNames, superTraitNames, w.currentModuleName)
 
-	// 3. Register methods
+	// Register methods
 	// Methods are generic functions where the TypeParam is the trait variable.
 	// e.g. show(val: a) -> String. 'a' is bound to the trait param.
 
@@ -407,7 +407,7 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 		// And associate with Trait
 		outer.RegisterTraitMethod(method.Name.Value, n.Name.Value, methodType, w.currentModuleName)
 
-		// 2.1 Trait Method Indexing
+		// Trait Method Indexing
 		// Assign unique index to method for O(1) vtable lookup
 		outer.RegisterTraitMethodIndex(n.Name.Value, method.Name.Value, len(outer.TraitMethodIndices[n.Name.Value]))
 

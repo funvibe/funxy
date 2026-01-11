@@ -428,7 +428,7 @@ func inferCallWithFuncType(
 			isRigid = true
 		}
 		if _, stillVar := concreteType.(typesystem.TVar); stillVar || isRigid || hasUnresolvedArg {
-			// If type is still a variable, defer constraint check (Proposal 002)
+			// If type is still a variable, defer constraint check
 			// We need to pass the *original* arguments (with potentially unresolved vars) to AddDeferredConstraint,
 			// but wrapped in appropriate structure. AddDeferredConstraint takes Constraint struct.
 			// We should use the constraints from TFunc but with substituted vars where possible.

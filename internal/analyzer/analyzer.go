@@ -315,7 +315,7 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
 		w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), "GLOBAL RESOLVE: "+err.Error()))
 	})
 
-	// Solve Deferred Constraints (Proposal 002)
+	// Solve Deferred Constraints
 	constraintErrors := a.inferCtx.SolveConstraints(a.symbolTable)
 	for _, err := range constraintErrors {
 		// If the error is already a DiagnosticError, it has location info.
