@@ -1368,7 +1368,7 @@ func registerWriterInstances(e *Evaluator) {
 
 					var logType typesystem.Type
 
-					// 1. Check Witness (Stack-based - Proposal 002)
+					// 1. Check Witness (Stack-based resolution)
 					if ts := eval.GetWitness("Applicative"); len(ts) > 0 {
 						t := ts[0]
 						if tApp, ok := t.(typesystem.TApp); ok {
@@ -1394,7 +1394,7 @@ func registerWriterInstances(e *Evaluator) {
 						}
 					}
 
-					// Proposal 002: TypeMap fallback (Analyzer-inferred type)
+					// Fallback: TypeMap (Analyzer-inferred type)
 					if logType == nil && eval.TypeMap != nil && eval.CurrentCallNode != nil {
 						if t := eval.TypeMap[eval.CurrentCallNode]; t != nil {
 							if tApp, ok := t.(typesystem.TApp); ok {
@@ -1449,7 +1449,7 @@ func registerWriterInstances(e *Evaluator) {
 						}
 					}
 
-					// Explicit error instead of fallback (Proposal 002 recommendation)
+					// Explicit error instead of fallback
 					return newError("pure for Writer requires witness to determine Log Monoid type")
 				},
 			},
@@ -1670,7 +1670,7 @@ func registerOptionTInstances(e *Evaluator) {
 					// Helper to extract Monad type from Witness or Hint
 					var mType typesystem.Type
 
-					// 1. Check Witness (Stack-based - Proposal 002)
+					// 1. Check Witness (Stack-based resolution)
 					if ts := eval.GetWitness("Applicative"); len(ts) > 0 {
 						t := ts[0]
 						if tApp, ok := t.(typesystem.TApp); ok {
@@ -1697,7 +1697,7 @@ func registerOptionTInstances(e *Evaluator) {
 						}
 					}
 
-					// Proposal 002: TypeMap fallback (Analyzer-inferred type)
+					// Fallback: TypeMap (Analyzer-inferred type)
 					if mType == nil && eval.TypeMap != nil && eval.CurrentCallNode != nil {
 						if t := eval.TypeMap[eval.CurrentCallNode]; t != nil {
 							if tApp, ok := t.(typesystem.TApp); ok {
@@ -1834,7 +1834,7 @@ func registerOptionTInstances(e *Evaluator) {
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
 				Fn: func(eval *Evaluator, args ...Object) Object {
-					// Check for explicit dictionary witness (Proposal 002)
+					// Check for explicit dictionary witness
 					// If passed explicitly, consume it.
 					if len(args) > 0 {
 						if _, ok := args[0].(*Dictionary); ok {
@@ -2060,7 +2060,7 @@ func registerResultTInstances(e *Evaluator) {
 
 					var mType typesystem.Type
 
-					// 1. Check Witness (Stack-based - Proposal 002)
+					// 1. Check Witness (Stack-based resolution)
 					if ts := eval.GetWitness("Applicative"); len(ts) > 0 {
 						t := ts[0]
 						if tApp, ok := t.(typesystem.TApp); ok {
@@ -2087,7 +2087,7 @@ func registerResultTInstances(e *Evaluator) {
 						}
 					}
 
-					// Proposal 002: TypeMap fallback (Analyzer-inferred type)
+					// Fallback: TypeMap (Analyzer-inferred type)
 					if mType == nil && eval.TypeMap != nil && eval.CurrentCallNode != nil {
 						if t := eval.TypeMap[eval.CurrentCallNode]; t != nil {
 							if tApp, ok := t.(typesystem.TApp); ok {

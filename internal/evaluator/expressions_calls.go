@@ -22,7 +22,7 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		return e.GetDefaultForType(typeObj.TypeVal)
 	}
 
-	// Push Witness if present in AST (Proposal 002: Dynamic Dictionary Passing)
+	// Push Witness if present in AST
 	var pushedWitness bool
 	if node.Witness != nil {
 		if witnesses, ok := node.Witness.(map[string][]typesystem.Type); ok {

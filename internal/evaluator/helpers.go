@@ -627,7 +627,7 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				// Push tail call frame for stack trace
 				e.PushCall(tc.Name, tc.File, tc.Line, tc.Column)
 
-				// Restore Witness from TailCall (Proposal 002: Dynamic Dictionary Passing)
+				// Restore Witness from TailCall
 				// We need to pop previous iteration's witness if any was pushed.
 				e.RestoreWitnessStack(initialWitnessDepth)
 
@@ -1009,7 +1009,7 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 
 		// Continue with context-based dispatch and other strategies
 
-		// 1. Try Explicit Witness Argument (Proposal 002)
+		// 1. Try Explicit Witness Argument
 		// If the first argument is a Dictionary, check if it contains the method.
 		// This handles cases where the compiler/analyzer explicitly passed a witness.
 		// Also strip placeholder dictionaries or other explicit dictionaries that don't match this method.
@@ -1121,7 +1121,7 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		if fn.Arity >= 0 && len(args) == fn.Arity+1 {
 			if typeHint, ok := args[len(args)-1].(*TypeObject); ok {
 				// It's a Type object hint
-				// Push witness for trait dispatch (Proposal 002)
+				// Push witness for trait dispatch
 				e.PushWitness(map[string][]typesystem.Type{"Applicative": {typeHint.TypeVal}})
 				defer e.PopWitness()
 				// Use the type name
@@ -1429,7 +1429,7 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		}
 		// If no candidate found, fall through to trait defaults
 		if foundMethod != nil {
-			// Push witness if we dispatched via context/TypeMap (Proposal 002)
+			// Push witness if we dispatched via context/TypeMap
 			// This is crucial for generic types like OptionT<M> which need M's witness
 			if expectedType != nil && dispatchTypeName == contextTypeName {
 				e.PushWitness(map[string][]typesystem.Type{fn.ClassName: {expectedType}})
@@ -1835,7 +1835,7 @@ func (e *Evaluator) getReturnTypeName(obj Object) string {
 }
 
 // ============================================================================
-// Helpers for Dictionary Passing (Proposal 002)
+// Helpers for Dictionary Passing
 // ============================================================================
 
 // FindMethodInDictionary searches for a method in a dictionary or its supers.
@@ -1905,7 +1905,7 @@ func (e *Evaluator) resolveTypeFromEnv(t typesystem.Type, env *Environment) type
 		if val, ok := env.Get(typ.Name); ok {
 			// If it's a TypeObject, unwrap it
 			if typeObj, ok := val.(*TypeObject); ok {
-				// Proposal 002 (Step 3): Use Alias if available to preserve nominal typing
+				// Use Alias if available to preserve nominal typing
 				if typeObj.Alias != "" {
 					return typesystem.TCon{Name: typeObj.Alias}
 				}

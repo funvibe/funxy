@@ -747,7 +747,7 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 			// We should probably convert method to Value if it's an object
 			// vm.push(ObjectToValue(method))
 
-			// Push witness on evaluator (Proposal 002)
+			// Push witness on evaluator
 			if explicitTypeHint != nil {
 				vm.getEvaluator().PushWitness(map[string][]typesystem.Type{"Applicative": {explicitTypeHint}})
 				// Witness will be popped when the builtin call completes
@@ -907,7 +907,7 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 
 	vm.stack[vm.sp-argCount-1] = ObjectToValue(method)
 
-	// Push witness on evaluator (Proposal 002)
+	// Push witness on evaluator
 	if explicitTypeHint != nil {
 		vm.getEvaluator().PushWitness(map[string][]typesystem.Type{"Applicative": {explicitTypeHint}})
 	}

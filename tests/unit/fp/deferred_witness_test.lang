@@ -1,6 +1,6 @@
 import "lib/test" (testRun, assertEquals)
 
-// Tests for Proposal 002 Extension: Deferred Witness Resolution
+// Tests for Deferred Witness Resolution
 // These tests demonstrate that we can infer the Monad instance
 // based on later usage in the same function, without explicit annotation.
 

@@ -46,7 +46,7 @@ func (e *Evaluator) evalAssignExpression(node *ast.AssignExpression, env *Enviro
 			e.TypeContextStack = append(e.TypeContextStack, pushedTypeName)
 		}
 
-		// Proposal 002: Proactive Witness Push (Step 2.2)
+		// Proactive Witness Push
 		// If AST has explicit type (e.g. x: String), resolve it and push to WitnessStack
 		// This ensures init() sees the correct context "String" even if TypeMap is missing
 		sysType := astTypeToTypesystem(node.AnnotatedType)

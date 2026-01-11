@@ -101,7 +101,7 @@ testRun("ResultT Identity: Propagate Fail", \ -> {
 })
 
 testRun("OptionT Identity: Pure with Annotation", \ -> {
-    // This relies on Witness passing mechanism (Proposal 002 Phase 1)
+    // This relies on Witness passing mechanism
     // The type annotation constrains pure() to use OptionT<Identity>
     // The Analyzer captures this witness and passes it to runtime.
     x: OptionT<Identity, Int> = pure(10)

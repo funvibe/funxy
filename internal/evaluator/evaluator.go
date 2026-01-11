@@ -531,7 +531,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			}
 		}
 
-		// Proposal 002: Extract witness from TypeMap if available
+		// Extract witness from TypeMap if available
 		// This enables pure(10) inside w: Writer<MySum, Int> = pure(10) to get the correct witness
 		var pushedWitness bool
 
