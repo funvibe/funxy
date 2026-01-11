@@ -1,0 +1,26 @@
+// This file contains tests for Skolem Escape vulnerabilities.
+// These should FAIL to compile.
+
+// 1. Unsafe Coerce (The Reddit Exploit)
+// Tries to unify 'bb' (outer var) with 'x' (inner skolem).
+fun unsafeCoerce<aa, bb>(v: aa) -> bb {
+  fun witness(f: (forall r. (forall x. x -> r) -> r) -> bb) -> bb {
+    f(fun(g) -> g(v))
+  }
+  witness(fun(make) -> make(fun(x) -> x))
+}
+
+// 2. Scope Leaking (ST Monad style)
+type ScopeToken<s> = { token: s }
+
+fun runScope<a>(action: (forall s. ScopeToken<s> -> a)) -> a {
+    action({ token: "dummy" })
+}
+
+// Tries to return the scope token itself.
+// The type of token is 's'. 's' is bound by 'forall s'.
+// 'a' is the return type of runScope (outer var).
+// Unifying 'a' with 's' causes Skolem Escape.
+fun leak() {
+    runScope(fun(scope) -> scope.token)
+}

@@ -281,10 +281,23 @@ func (t TCon) Kind() Kind {
 }
 
 func (t TCon) String() string {
-	if t.Module != "" {
-		return t.Module + "." + t.Name
+	name := t.Name
+	if config.IsTestMode && strings.HasPrefix(name, "$skolem_") {
+		// Normalize skolem constants (e.g. $skolem_x_8 -> $skolem_x_?)
+		// This ensures deterministic output in tests
+		lastIdx := strings.LastIndex(name, "_")
+		if lastIdx > 0 {
+			suffix := name[lastIdx+1:]
+			if _, err := strconv.Atoi(suffix); err == nil {
+				name = name[:lastIdx] + "_?"
+			}
+		}
 	}
-	return t.Name
+
+	if t.Module != "" {
+		return t.Module + "." + name
+	}
+	return name
 }
 
 func (t TCon) Apply(s Subst) Type {

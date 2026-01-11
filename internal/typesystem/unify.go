@@ -3,6 +3,8 @@ package typesystem
 import (
 	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 )
 
 // Resolver interface allows Unify to look up type definitions (e.g. from SymbolTable)
@@ -678,7 +680,98 @@ func Bind(tv TVar, t Type) (Subst, error) {
 		return nil, errMismatch(fmt.Sprintf("infinite type detected: %s in %s", tv, t))
 	}
 
+	// Skolem Escape Check: ensure tv does not capture a Skolem introduced in a narrower scope
+	if err := CheckSkolemEscape(tv, t); err != nil {
+		return nil, err
+	}
+
 	return Subst{tv.Name: t}, nil
+}
+
+// CheckSkolemEscape returns an error if tv (from an outer scope) tries to bind to
+// a type containing a Skolem constant (from an inner scope).
+// It relies on the naming convention: t%d for vars, $skolem_%s_%d for skolems.
+// Higher ID means deeper/newer scope.
+func CheckSkolemEscape(tv TVar, t Type) error {
+	// Parse ID of the type variable
+	// If it's not a numbered variable (e.g. generic T), we assume it's global/old (ID 0)
+	tvID := 0
+	if _, err := fmt.Sscanf(tv.Name, "t%d", &tvID); err != nil {
+		tvID = 0
+	}
+
+	var visit func(Type) error
+	visit = func(curr Type) error {
+		switch typ := curr.(type) {
+		case TCon:
+			if strings.HasPrefix(typ.Name, "$skolem_") {
+				parts := strings.Split(typ.Name, "_")
+				if len(parts) > 0 {
+					last := parts[len(parts)-1]
+					if skolemID, err := strconv.Atoi(last); err == nil {
+						// If Variable is OLDER (smaller ID) than Skolem (larger ID),
+						// it means the variable exists outside the Skolem's scope.
+						// Binding the variable to the Skolem would allow the Skolem to escape.
+						if tvID < skolemID {
+							return fmt.Errorf("skolem escape: variable %s (level %d) cannot unify with type containing local skolem %s (level %d)", tv.Name, tvID, typ.Name, skolemID)
+						}
+					}
+				}
+			}
+		case TApp:
+			if err := visit(typ.Constructor); err != nil {
+				return err
+			}
+			for _, arg := range typ.Args {
+				if err := visit(arg); err != nil {
+					return err
+				}
+			}
+		case TRecord:
+			for _, field := range typ.Fields {
+				if err := visit(field); err != nil {
+					return err
+				}
+			}
+			if typ.Row != nil {
+				if err := visit(typ.Row); err != nil {
+					return err
+				}
+			}
+		case TTuple:
+			for _, elem := range typ.Elements {
+				if err := visit(elem); err != nil {
+					return err
+				}
+			}
+		case TUnion:
+			for _, member := range typ.Types {
+				if err := visit(member); err != nil {
+					return err
+				}
+			}
+		case TFunc:
+			for _, param := range typ.Params {
+				if err := visit(param); err != nil {
+					return err
+				}
+			}
+			if err := visit(typ.ReturnType); err != nil {
+				return err
+			}
+		case TForall:
+			if err := visit(typ.Type); err != nil {
+				return err
+			}
+		case TType:
+			if err := visit(typ.Type); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return visit(t)
 }
 
 // OccursCheck returns true if tv appears free in t.

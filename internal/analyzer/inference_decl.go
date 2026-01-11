@@ -592,8 +592,9 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 			subst := make(typesystem.Subst)
 			for _, v := range tForall.Vars {
 				// Use TCon with special name as Skolem (rigid type constant)
-				skolemName := fmt.Sprintf("$skolem_%s_%d", v.Name, ctx.counter)
+				// Increment counter BEFORE creating name to ensure ID > any existing TVar ID
 				ctx.counter++
+				skolemName := fmt.Sprintf("$skolem_%s_%d", v.Name, ctx.counter)
 				skolem := typesystem.TCon{Name: skolemName, KindVal: v.Kind()}
 				subst[v.Name] = skolem
 			}
@@ -677,6 +678,10 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 			// Explicitly update GlobalSubst to ensure deferred constraints can see the resolution
 			ctx.GlobalSubst = subst.Compose(ctx.GlobalSubst)
 			bodyType = bodyType.Apply(ctx.GlobalSubst).Apply(totalSubst)
+		} else if expectedForall != nil {
+			// If we are checking against a strict polytype (Rank-2), mismatch is fatal.
+			// Specifically, this catches Skolem Escape (unifying outer variable with inner skolem).
+			return nil, nil, inferErrorf(n, "lambda return type mismatch with expected polytype: expected %s, got %s. (Skolem escape?)", expectedRet, bodyType)
 		}
 	}
 

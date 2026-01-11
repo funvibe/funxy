@@ -1,0 +1,43 @@
+// A. Simple Rank-2 Function
+// Syntax: (forall a. a -> a) - parens are crucial
+fun runPoly(f: (forall a. a -> a)) -> (Int, String) {
+    (f(1), f("hello"))
+}
+
+fun myId<t>(x: t) -> t { x }
+
+res1 = runPoly(myId)
+print(res1) // (1, "hello")
+
+
+// B. ST-Monad style Scope Encapsulation (Rank-2)
+// We use this to ensure that 's' cannot escape the scope.
+
+type ScopeToken<s> = { token: s }
+
+// action: forall s. (ScopeToken<s>) -> a
+// We need to be careful with syntax.
+// (forall s. (ScopeToken<s>) -> a)
+// Note: Function type args need parens if complex?
+// ScopeToken<s> is simple.
+fun runScope<a>(action: (forall s. ScopeToken<s> -> a)) -> a {
+    // Instantiate s with a fresh local type (Skolem)
+    action({ token: "dummy" })
+}
+
+// Correct usage: return Int (does not depend on s)
+val = runScope(fun(scope) -> 42)
+print(val) // 42
+
+// C. Nested Polymorphism
+// (forall x. x -> List<x>)
+fun makeList(f: (forall x. x -> List<x>)) -> (List<Int>, List<String>) {
+    (f(10), f("hi"))
+}
+
+// We pass a generic lambda
+// Note: Funxy infers this lambda as generic because it's being passed to a Rank-2 expectation
+res2 = makeList(fun(x) -> [x])
+print(res2) // ([10], ["hi"])
+
+print("Rank-N allowed tests passed")
