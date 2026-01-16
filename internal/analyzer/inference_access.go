@@ -552,6 +552,12 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 		}
 	}
 
+	// 5. HostObject (Embed API)
+	if tCon, ok := leftType.(typesystem.TCon); ok && tCon.Name == "HostObject" {
+		// Allow any member access on HostObject, return a fresh type variable (dynamic)
+		return ctx.FreshVar(), totalSubst, nil
+	}
+
 	if _, ok := leftType.(typesystem.TRecord); ok {
 		return nil, nil, inferErrorf(n, "record %s has no field or extension method '%s'", leftType, n.Member.Value)
 	}

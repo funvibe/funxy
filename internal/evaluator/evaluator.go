@@ -6,6 +6,7 @@ import (
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"reflect"
 	"strings"
 )
 
@@ -75,6 +76,11 @@ type Evaluator struct {
 	AsyncHandler AsyncHandler
 	// CaptureHandler is a callback for safe capturing of closures for async execution
 	CaptureHandler func(Object) Object
+
+	// HostCallHandler handles calling reflection methods (injected from embed)
+	HostCallHandler func(reflect.Value, []Object) (Object, error)
+	// HostToValueHandler handles converting Go values to Objects (injected from embed)
+	HostToValueHandler func(interface{}) (Object, error)
 
 	// CurrentEnv stores the current environment being evaluated (for witness lookup)
 	CurrentEnv *Environment
@@ -212,6 +218,8 @@ func (e *Evaluator) Clone() *Evaluator {
 		TypeAliases:          e.TypeAliases,                           // shared, read-only
 		VMCallHandler:        e.VMCallHandler,                         // shared, for calling VM closures from builtins
 		CaptureHandler:       e.CaptureHandler,                        // shared
+		HostCallHandler:      e.HostCallHandler,                       // shared
+		HostToValueHandler:   e.HostToValueHandler,                    // shared
 	}
 }
 

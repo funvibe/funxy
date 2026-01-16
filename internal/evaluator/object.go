@@ -61,6 +61,7 @@ const (
 	PARTIAL_APPLICATION_OBJ = "PARTIAL_APPLICATION"
 	DICTIONARY_OBJ          = "DICTIONARY" // New: VTable for Type Classes
 	RANGE_OBJ               = "RANGE"
+	HOST_OBJ                = "HOST"        // New: Host Object
 )
 
 type Object interface {

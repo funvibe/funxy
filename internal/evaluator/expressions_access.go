@@ -136,6 +136,11 @@ func (e *Evaluator) accessMember(obj Object, node *ast.MemberExpression, env *En
 		return newError("field '%s' not found in record", node.Member.Value)
 	}
 
+	// Handle HostObject access via reflection
+	if hostObj, ok := obj.(*HostObject); ok {
+		return e.AccessHostMember(hostObj, node.Member.Value)
+	}
+
 	// Try Extension Method lookup
 	typeName := getRuntimeTypeName(obj)
 	if methods, ok := e.ExtensionMethods[typeName]; ok {

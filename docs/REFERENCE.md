@@ -22,7 +22,8 @@
 18. [Advanced Functional Programming](#18-advanced-functional-programming)
 19. [Compiler Directives](#19-compiler-directives)
 20. [Tools and Debugging](#20-tools-and-debugging)
-21. [Summary Tables](#21-summary-tables)
+21. [Embedding Funxy in Go](#21-embedding-funxy-in-go)
+22. [Summary Tables](#summary-tables)
 
 ---
 
@@ -1931,7 +1932,83 @@ See `docs/DEBUGGER.md` for full documentation.
 
 ---
 
-## 21. Summary Tables
+## 21. Embedding Funxy in Go
+
+Funxy provides a high-level API for embedding the language into Go applications. This allows you to use Funxy as a scripting language, configuration language, or rule engine.
+
+### Package `pkg/embed`
+
+```go
+import "github.com/funvibe/funxy/pkg/embed"
+```
+
+### Initialization
+
+```go
+vm := funxy.New()
+```
+
+### Binding Go Values
+
+You can bind Go functions and values to the VM, making them available in Funxy scripts.
+
+```go
+// Bind a function
+vm.Bind("double", func(x int) int {
+    return x * 2
+})
+
+// Bind a struct (Host Object)
+type User struct {
+    Name  string
+    Score int
+}
+user := &User{Name: "Alice", Score: 100}
+vm.Bind("user", user)
+```
+
+### Executing Code
+
+```go
+// Evaluate a string
+result, err := vm.Eval("double(21)") // returns 42
+
+// Load and execute a file
+err = vm.LoadFile("script.lang")
+```
+
+### Calling Funxy from Go
+
+```go
+// Call a function defined in Funxy
+result, err := vm.Call("process_user", "Bob", 50)
+```
+
+### Host Objects
+
+Go structs bound to Funxy become **Host Objects**. Funxy scripts can:
+- Access exported fields: `user.Name`
+- Call exported methods: `user.UpdateScore(10)`
+
+### Type Mapping
+
+| Go Type | Funxy Type |
+|---------|------------|
+| `int`, `int64` | `Int` |
+| `float64` | `Float` |
+| `bool` | `Bool` |
+| `string` | `String` |
+| `[]T` | `List<T>` |
+| `map[string]T` | `Map<String, T>` |
+| `struct`, `*struct` | `HostObject` |
+| `func` | `HostObject` (callable) |
+| `nil` | `Nil` |
+
+For more details, see the [Embedding Tutorial](docs/tutorial/41_embedding.md).
+
+---
+
+## Summary Tables
 
 ### Operators Precedence
 1. Function application (`$`) - Lowest

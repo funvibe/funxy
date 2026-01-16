@@ -241,36 +241,6 @@ func (l *Loader) Load(path string) (*Module, error) {
 		return nil, err
 	}
 
-	// 2. Scan for imports and load dependencies recursively
-	for _, file := range mod.Files {
-		for _, imp := range file.Imports {
-			// Resolve import path relative to the module directory
-			importPath := imp.Path.Value
-			// Handle relative paths
-			var resolvedPath string
-			if strings.HasPrefix(importPath, ".") {
-				resolvedPath = filepath.Join(mod.Dir, importPath)
-			} else {
-				// TODO: Standard library path or GOPATH-like resolution?
-				resolvedPath, _ = filepath.Abs(importPath)
-			}
-
-			depMod, err := l.Load(resolvedPath) // Recursion
-			if err != nil {
-				return nil, fmt.Errorf("failed to load dependency '%s' in module '%s': %v", importPath, mod.Name, err)
-			}
-
-			// Map import to module
-			alias := ""
-			if imp.Alias != nil {
-				alias = imp.Alias.Value
-			} else {
-				alias = depMod.Name
-			}
-			mod.Imports[alias] = depMod
-		}
-	}
-
 	return mod, nil
 }
 
@@ -307,6 +277,7 @@ func (l *Loader) loadDir(absPath string) (*Module, error) {
 	module := &Module{
 		Dir:         absPath,
 		Exports:     make(map[string]bool),
+		Imports:     make(map[string]*Module),
 		SymbolTable: symbols.NewSymbolTable(), // Module SymbolTable has builtins
 	}
 

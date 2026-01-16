@@ -425,6 +425,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 	for p.curToken.Type == token.IMPORT {
 		imp := p.parseImportStatement()
 		if imp != nil {
+			program.Imports = append(program.Imports, imp)
 			program.Statements = append(program.Statements, imp)
 		}
 		p.nextToken()

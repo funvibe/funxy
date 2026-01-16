@@ -450,6 +450,14 @@ func (vm *VM) getField(obj Value, name string) (Value, error) {
 		}
 		return NilVal(), nil
 
+	case *evaluator.HostObject:
+		// Delegate to evaluator's AccessHostMember
+		res := vm.getEvaluator().AccessHostMember(o, name)
+		if err, ok := res.(*evaluator.Error); ok {
+			return NilVal(), fmt.Errorf("%s", err.Message)
+		}
+		return ObjectToValue(res), nil
+
 	default:
 		if fn := vm.globals.Globals.Get(name); fn != nil {
 			if function, ok := fn.(*evaluator.Function); ok {

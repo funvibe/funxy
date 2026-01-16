@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"reflect"
 )
 
 // callValue dispatches call based on callee type
@@ -34,9 +35,36 @@ func (vm *VM) callValue(callee Value, argCount int) error {
 		return vm.callPartialApplication(fn, argCount)
 	case *BuiltinClosure:
 		return vm.callBuiltinClosure(fn, argCount)
+	case *evaluator.HostObject:
+		return vm.callHostObject(fn, argCount)
 	default:
 		return vm.runtimeError("can only call functions, got %s", callee.RuntimeType().String())
 	}
+}
+
+// callHostObject calls a host object (wrapped Go function)
+func (vm *VM) callHostObject(hostObj *evaluator.HostObject, argCount int) error {
+	// Pop arguments
+	args := make([]evaluator.Object, argCount)
+	for i := argCount - 1; i >= 0; i-- {
+		args[i] = vm.pop().AsObject()
+	}
+	vm.pop() // Pop the HostObject itself
+
+	// Use HostCallHandler from evaluator
+	e := vm.getEvaluator()
+	if e.HostCallHandler != nil {
+		val := reflect.ValueOf(hostObj.Value)
+		if val.Kind() == reflect.Func {
+			res, err := e.HostCallHandler(val, args)
+			if err != nil {
+				return fmt.Errorf("host call error: %v", err)
+			}
+			vm.push(ObjectToValue(res))
+			return nil
+		}
+	}
+	return vm.runtimeError("object %s is not callable", hostObj.Inspect())
 }
 
 // callBuiltinClosure calls a native Go function wrapped as BuiltinClosure

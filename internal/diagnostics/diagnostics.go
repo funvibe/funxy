@@ -41,6 +41,9 @@ const (
 
 	// Runtime Errors
 	ErrR001 ErrorCode = "R001" // Runtime error
+
+	// Compilation Errors
+	ErrC001 ErrorCode = "C001" // Compilation error
 )
 
 var errorTemplates = map[ErrorCode]string{
@@ -60,6 +63,7 @@ var errorTemplates = map[ErrorCode]string{
 	ErrA007: "match expression is not exhaustive. Missing cases: %s",
 	ErrA008: "naming convention: %s",
 	ErrR001: "runtime error: %s",
+	ErrC001: "compilation error: %s",
 }
 
 type DiagnosticError struct {
