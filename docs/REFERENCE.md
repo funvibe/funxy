@@ -2004,7 +2004,7 @@ Go structs bound to Funxy become **Host Objects**. Funxy scripts can:
 | `func` | `HostObject` (callable) |
 | `nil` | `Nil` |
 
-For more details, see the [Embedding Tutorial](docs/tutorial/41_embedding.md).
+For more details, see the [Embedding Tutorial](tutorial/41_embedding.md).
 
 ---
 
