@@ -6,7 +6,7 @@ import "lib/tuple" (fst, snd)
 fun containsStr(needle, haystack) {
     match stringIndexOf(haystack, needle) {
         Some(_) -> true
-        Zero -> false
+        None -> false
     }
 }
 

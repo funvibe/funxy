@@ -1,0 +1,7 @@
+package entry_visibility_test
+
+internalVal = 41
+
+fun add(a: Int, b: Int) -> Int {
+    a + b
+}

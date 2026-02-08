@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"github.com/funvibe/funxy/internal/ast"
+	"github.com/funvibe/funxy/internal/utils"
 )
 
 func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Environment) Object {
@@ -61,6 +62,13 @@ func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Enviro
 		if val := record.Get(node.Member.Value); val != nil {
 			return val
 		}
+		if record.ModuleName != "" {
+			if altName := utils.ModuleMemberFallbackName(record.ModuleName, node.Member.Value); altName != "" {
+				if val := record.Get(altName); val != nil {
+					return val
+				}
+			}
+		}
 	}
 
 	// Try Extension Method lookup
@@ -82,13 +90,19 @@ func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Enviro
 // evalOptionalChain handles the ?. operator using Optional trait
 // F<A>?.field -> F<B> where F implements Optional
 func (e *Evaluator) evalOptionalChain(left Object, node *ast.MemberExpression, env *Environment) Object {
+	// Nullable chaining: if left is Nil, short-circuit to Nil.
+	if _, ok := left.(*Nil); ok {
+		return left
+	}
+
 	// Get the type name for trait dispatch
 	typeName := getRuntimeTypeName(left)
 
 	// Find isEmpty (in Optional or its super trait Empty)
 	isEmptyMethod, hasIsEmpty := e.lookupTraitMethod("Optional", "isEmpty", typeName)
 	if !hasIsEmpty {
-		return newError("type %s does not implement Optional trait (missing isEmpty)", typeName)
+		// Fallback for nullable types without Optional: access member directly.
+		return e.accessMember(left, node, env)
 	}
 
 	isEmpty := e.ApplyFunction(isEmptyMethod, []Object{left})
@@ -133,6 +147,13 @@ func (e *Evaluator) accessMember(obj Object, node *ast.MemberExpression, env *En
 		if val := record.Get(node.Member.Value); val != nil {
 			return val
 		}
+		if record.ModuleName != "" {
+			if altName := utils.ModuleMemberFallbackName(record.ModuleName, node.Member.Value); altName != "" {
+				if val := record.Get(altName); val != nil {
+					return val
+				}
+			}
+		}
 		return newError("field '%s' not found in record", node.Member.Value)
 	}
 
@@ -167,7 +188,7 @@ func (e *Evaluator) evalIndexExpression(node *ast.IndexExpression, env *Environm
 	if mapObj, ok := left.(*Map); ok {
 		val := mapObj.get(index)
 		if val == nil {
-			return makeZero() // Zero (None)
+			return makeNone() // None
 		}
 		return makeSome(val) // Some(value)
 	}
@@ -187,7 +208,7 @@ func (e *Evaluator) evalIndexExpression(node *ast.IndexExpression, env *Environm
 			idx = max + idx
 		}
 		if idx < 0 || idx >= max {
-			return makeZero() // Out of bounds returns Zero
+			return makeNone() // Out of bounds returns None
 		}
 		return makeSome(&Integer{Value: int64(obj.get(idx))})
 

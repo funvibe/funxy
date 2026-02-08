@@ -16,13 +16,13 @@ print(add(1, 2))      // 1 + 2 + 20 = 23
 print(add(1, 2, 3))   // 1 + 2 + 3 = 6
 
 // Mixed required and optional
-fun format(value, prefix = "[", suffix = "]") {
+fun bracket(value, prefix = "[", suffix = "]") {
     prefix ++ value ++ suffix
 }
 
-print(format("test"))           // [test]
-print(format("test", "<"))      // <test]
-print(format("test", "<", ">")) // <test>
+print(bracket("test"))           // [test]
+print(bracket("test", "<"))      // <test]
+print(bracket("test", "<", ">")) // <test>
 
 // Default with type annotation
 fun multiply(x: Int, y: Int = 2) -> Int {

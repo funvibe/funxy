@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error at 3:7 [A003]: type error: cannot assign String to variable x of type Int
+- error at 9:7 [A003]: type error: cannot assign (List String) to variable y of type (List Int)
+- error at 14:7 [A003]: type error: cannot assign { a: Bool } to variable z of type { a: Int }

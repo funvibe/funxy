@@ -43,14 +43,14 @@ testRun("JSON ADT parsing", \ -> {
             match jsonGet(obj, "x") {
                 Some(JNum(n)) -> assertEquals(10.0, n, "Get x as number")
                 Some(_) -> assertEquals(0, 1, "Wrong type")
-                Zero -> assertEquals(0, 1, "Missing field")
+                None -> assertEquals(0, 1, "Missing field")
             }
         }
         Fail(e) -> assertEquals("", e, "Parse failed")
     }
 })
 
-type Config = { port: Int, host: String }
+type alias Config = { port: Int, host: String }
 testRun("Record round-trip", \ -> {
     cfg = { port: 8080, host: "localhost" }
 

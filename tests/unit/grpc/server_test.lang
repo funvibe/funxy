@@ -1,0 +1,40 @@
+import "lib/grpc" (*)
+import "lib/test" (testRun, assert)
+import "lib/time" (sleepMs)
+
+testRun("grpc server and client", fun() {
+    // 1. Load proto
+    unwrapResult(grpcLoadProto("tests/unit/grpc/test.proto"))
+
+    // 2. Define handler
+    handler = {
+        SayHello: fun(req) {
+            { message: "Hello " ++ req.name }
+        }
+    }
+
+    // 3. Start server
+    server = grpcServer()
+    unwrapResult(grpcRegister(server, "test.Greeter", handler))
+
+    // Use port 50052 to avoid conflict with other tests
+    unwrapResult(grpcServeAsync(server, ":50052"))
+
+    // Wait for server to start
+    sleepMs(100)
+
+    // 4. Connect client
+    conn = unwrapResult(grpcConnect("localhost:50052"))
+
+    // 5. Invoke
+    req = { name: "World" }
+    res = unwrapResult(grpcInvoke(conn, "test.Greeter/SayHello", req))
+
+    // Check response
+    assert(res.message == "Hello World", "response mismatch")
+
+    grpcClose(conn)
+
+    // 6. Stop server
+    _ = grpcStop(server)
+})

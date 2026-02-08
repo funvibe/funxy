@@ -2,9 +2,9 @@ package vm
 
 import (
 	"bytes"
-	"hash/fnv"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"hash/fnv"
 	"unsafe"
 )
 

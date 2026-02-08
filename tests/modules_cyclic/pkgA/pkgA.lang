@@ -2,7 +2,7 @@ package pkgA (AType, makeA, getB)
 
 import "../pkgB" as b
 
-type AType = { val: Int }
+type alias AType = { val: Int }
 
 fun getB() b.BType {
     b.makeB()

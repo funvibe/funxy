@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"encoding/hex"
+	"sort"
 	"strings"
 
 	"github.com/funvibe/funxy/internal/ast"
@@ -275,7 +276,16 @@ func (e *Evaluator) evalRecordLiteral(node *ast.RecordLiteral, env *Environment)
 
 	// Override/add fields from explicit field definitions
 	addedNewField := false
-	for k, v := range node.Fields {
+
+	// Sort keys for deterministic evaluation order (crucial for consistent error reporting)
+	keys := make([]string, 0, len(node.Fields))
+	for k := range node.Fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		v := node.Fields[k]
 		val := e.Eval(v, env)
 		if isError(val) {
 			return val
@@ -336,23 +346,27 @@ func (e *Evaluator) evalFormatStringLiteral(node *ast.FormatStringLiteral, env *
 	// For full form (contains %), use as-is
 	fmtStr := node.Value
 	if !strings.Contains(fmtStr, "%") {
-		fmtStr = "%" + fmtStr
+		// Only prepend % if it results in a valid format string
+		// This avoids treating plain text like "A\tB" as invalid format "%A\tB"
+		if _, err := CountFormatVerbs("%" + fmtStr); err == nil {
+			fmtStr = "%" + fmtStr
+		}
 	}
 
-	// Return a variadic builtin function that calls sprintf with captured format string
+	// Return a variadic builtin function that calls format with captured format string
 	return &Builtin{
 		Name: "formatter",
 		Fn: func(eval *Evaluator, args ...Object) Object {
-			// Get sprintf builtin
-			sprintf, ok := Builtins["sprintf"]
+			// Get format builtin
+			format, ok := Builtins["format"]
 			if !ok {
-				return newError("internal error: sprintf not found")
+				return newError("internal error: format not found")
 			}
 			// Prepend format string to args
 			allArgs := make([]Object, 0, len(args)+1)
 			allArgs = append(allArgs, StringToList(fmtStr))
 			allArgs = append(allArgs, args...)
-			return sprintf.Fn(eval, allArgs...)
+			return format.Fn(eval, allArgs...)
 		},
 	}
 }

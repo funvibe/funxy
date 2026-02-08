@@ -109,7 +109,7 @@ func initTestPackage() {
 				ReturnType: typesystem.Nil,
 				IsVariadic: true,
 			},
-			"assertZero": typesystem.TFunc{
+			"assertNone": typesystem.TFunc{
 				Params:     []typesystem.Type{optionT, stringType},
 				ReturnType: typesystem.Nil,
 				IsVariadic: true,

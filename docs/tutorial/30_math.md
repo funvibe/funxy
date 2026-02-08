@@ -212,7 +212,7 @@ import "lib/math" (sqrt, abs)
 fun solveQuadratic(a: Float, b: Float, c: Float) -> Option<(Float, Float)> {
     discriminant = b * b - 4.0 * a * c
     if discriminant < 0.0 {
-        Zero
+        None
     } else {
         sqrtD = sqrt(discriminant)
         x1 = (-b + sqrtD) / (2.0 * a)

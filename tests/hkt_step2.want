@@ -1,5 +1,5 @@
 Some(42)
-Zero
+None
 Some("hello!")
 [10, 20, 30]
 [false, false, true, true]
@@ -8,5 +8,5 @@ Ok(100)
 Fail("error")
 Ok(5)
 []
-Zero
+None
 Step 2 passed!

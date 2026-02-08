@@ -31,7 +31,7 @@ match sendResult {
     Ok(_) -> print("Unexpected success")
 }
 
-// Try to receive on non-existent connection  
+// Try to receive on non-existent connection
 recvResult = wsRecv(99999)
 match recvResult {
     Fail(_) -> print("Invalid connection recv: OK")
@@ -64,39 +64,47 @@ print("5. Testing async server with echo...")
 serverResult = wsServeAsync(9876, echoHandler)
 match serverResult {
     Ok(serverId) -> {
-        print("Server started with ID: " ++ show(serverId))
-        
+        if serverId > 0 {
+            print("Server started with ID: OK")
+        } else {
+            print("Server started with ID: FAIL")
+        }
+
         // Give server time to start
         sleepMs(100)
-        
+
         // Connect to our server
         connResult = wsConnectTimeout("ws://localhost:9876", 5000)
         match connResult {
             Ok(connId) -> {
-                print("Connected with ID: " ++ show(connId))
-                
+                if connId > 0 {
+                    print("Connected with ID: OK")
+                } else {
+                    print("Connected with ID: FAIL")
+                }
+
                 // Send message
                 sendRes = wsSend(connId, "Hello WebSocket!")
                 match sendRes {
                     Ok(_) -> print("Message sent")
                     Fail(err) -> print("Send failed: " ++ err)
                 }
-                
+
                 // Receive echo with timeout
                 recvRes = wsRecvTimeout(connId, 2000)
                 match recvRes {
                     Ok(Some(msg)) -> print("Received: " ++ msg)
-                    Ok(Zero) -> print("Timeout waiting for response")
+                    Ok(None) -> print("Timeout waiting for response")
                     Fail(err) -> print("Receive failed: " ++ err)
                 }
-                
+
                 // Close connection
                 wsClose(connId)
                 print("Connection closed")
             }
             Fail(err) -> print("Connect failed: " ++ err)
         }
-        
+
         // Stop server
         wsServerStop(serverId)
         print("Server stopped")

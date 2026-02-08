@@ -52,6 +52,10 @@ func getRuntimeTypeName(obj Object) string {
 		return RUNTIME_TYPE_RECORD
 	case *Function:
 		return RUNTIME_TYPE_FUNCTION
+	case *BoundMethod:
+		return RUNTIME_TYPE_FUNCTION
+	case *PartialApplication:
+		return RUNTIME_TYPE_FUNCTION
 	case *DataInstance:
 		// Extract local name from qualified name
 		if dotIndex := strings.LastIndex(o.TypeName, "."); dotIndex >= 0 {
@@ -61,6 +65,10 @@ func getRuntimeTypeName(obj Object) string {
 	case *Range:
 		return RUNTIME_TYPE_RANGE
 	default:
+		// Handle VM types that might not be directly accessible (e.g. VMClosure)
+		if string(obj.Type()) == "CLOSURE" {
+			return RUNTIME_TYPE_FUNCTION
+		}
 		return string(obj.Type())
 	}
 }
@@ -76,9 +84,11 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		// Handle Generic Instantiation (from Analyzer)
 		// This binds type variables (e.g. T -> Int) in the environment so they can be resolved
 		// by resolveTypeFromEnv during witness lookup or other type-dependent operations.
+		// We use a "$typevar_" prefix so that type parameters are NOT accessible as regular
+		// values (preventing leakage of type-level names into the value namespace).
 		if callNode, ok := e.CurrentCallNode.(*ast.CallExpression); ok && callNode.Instantiation != nil {
 			for name, t := range callNode.Instantiation {
-				extendedEnv.Set(name, &TypeObject{TypeVal: t})
+				extendedEnv.Set("$typevar_"+name, &TypeObject{TypeVal: t})
 			}
 		}
 
@@ -288,15 +298,39 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 
 					// Handle Witness Params in Tail Call
 					witnessCount := len(fn.WitnessParams)
-					if witnessCount > 0 {
+
+					// Check if nextArgs actually contains dictionaries
+					dictCount := 0
+					for i := 0; i < len(nextArgs); i++ {
+						if _, ok := nextArgs[i].(*Dictionary); ok {
+							dictCount++
+						} else {
+							break
+						}
+					}
+
+					if witnessCount > 0 && dictCount > 0 {
 						if len(nextArgs) < witnessCount {
 							e.RestoreWitnessStack(initialWitnessDepth)
 							return e.newErrorWithStack("wrong number of arguments: expected at least %d witnesses, got %d", witnessCount, len(nextArgs))
 						}
 						for i, name := range fn.WitnessParams {
-							nextEnv.Set(name, nextArgs[i])
+							// Bind witnesses if dictionaries are available. Witnesses typically precede explicit arguments.
+							if i < dictCount {
+								nextEnv.Set(name, nextArgs[i])
+							}
 						}
-						nextArgs = nextArgs[witnessCount:]
+						// Strip witnesses from args
+						if dictCount >= witnessCount {
+							nextArgs = nextArgs[witnessCount:]
+						} else {
+							// If fewer dictionaries are provided than expected witnesses, consume available ones.
+							// This supports scenarios where some witnesses are applied later or implicitly.
+							nextArgs = nextArgs[dictCount:]
+						}
+					} else if dictCount > 0 {
+						// Consume implicit dictionaries even if witnessCount == 0
+						nextArgs = nextArgs[dictCount:]
 					}
 
 					isVariadic = len(fn.Parameters) > 0 && fn.Parameters[len(fn.Parameters)-1].IsVariadic
@@ -314,6 +348,9 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 
 					if len(nextArgs) < requiredParams {
 						e.RestoreWitnessStack(initialWitnessDepth)
+						if len(nextArgs) == 0 {
+							return e.newErrorWithStack("wrong number of arguments: expected %d, got 0", requiredParams)
+						}
 						return &PartialApplication{
 							Function:        fn,
 							AppliedArgs:     nextArgs,
@@ -446,7 +483,13 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		if fn.Constructor != nil {
 			return e.ApplyFunction(fn.Constructor, allArgs)
 		}
-		return newError("invalid partial application")
+		if fn.ClassMethod != nil {
+			return e.ApplyFunction(fn.ClassMethod, allArgs)
+		}
+		if fn.VMClosure != nil && e.VMCallHandler != nil {
+			return e.VMCallHandler(fn.VMClosure, allArgs)
+		}
+		return newError("invalid partial application: fn is nil")
 	case *Constructor:
 		// Support partial application for constructors
 		if fn.Arity > 0 && len(args) < fn.Arity {
@@ -514,20 +557,263 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		var foundMethod Object
 		var dispatchTypeName string
 
-		// 0. First try argument-based dispatch (like VM does)
-		// This ensures we use the correct instance based on runtime argument types
+		// FIX: For MPTC methods (like processPoly), we MUST NOT prematurely strip the dictionary from 'args'
+		// if the method expects it (witness param). But Strategy 3 needs to peek at arguments.
+		// So we calculate 'hintCheckArgs' which are the logical arguments, but keep 'args' as physical arguments.
+
+		// =========================================================================================
+		// 1. Calculate Context Information (Needed for Strategy 3 and Heuristics)
+		// =========================================================================================
+		var contextTypeName string
+		var expectedType typesystem.Type
+		var contextFromExplicitAnnotation bool // true if context comes from user annotation
+
+		// 1a. Container Context (from >>=)
+		if e.ContainerContext != "" {
+			contextTypeName = e.ContainerContext
+			contextFromExplicitAnnotation = true
+		}
+
+		// 1b. Return Type Context (from annotations or inferred types)
+		if contextTypeName == "" {
+			// Check TypeContextStack first (AnnotatedExpression stack)
+			if len(e.TypeContextStack) > 0 {
+				contextTypeName = e.TypeContextStack[len(e.TypeContextStack)-1]
+				contextFromExplicitAnnotation = true
+			} else if e.CurrentCallNode != nil {
+				// Check AST nodes for explicit annotations first
+				if assign, ok := e.CurrentCallNode.(*ast.AssignExpression); ok && assign.AnnotatedType != nil {
+					contextTypeName = extractTypeNameFromAST(assign.AnnotatedType)
+					contextFromExplicitAnnotation = true
+				} else if annotated, ok := e.CurrentCallNode.(*ast.AnnotatedExpression); ok && annotated.TypeAnnotation != nil {
+					contextTypeName = extractTypeNameFromAST(annotated.TypeAnnotation)
+					contextFromExplicitAnnotation = true
+				} else if constant, ok := e.CurrentCallNode.(*ast.ConstantDeclaration); ok && constant.TypeAnnotation != nil {
+					contextTypeName = extractTypeNameFromAST(constant.TypeAnnotation)
+					contextFromExplicitAnnotation = true
+				}
+			}
+		}
+
+		// Always try to get expectedType from TypeMap if available (needed for contextIsContainer)
+		if e.TypeMap != nil && e.CurrentCallNode != nil {
+			if t := e.TypeMap[e.CurrentCallNode]; t != nil {
+				// Priority 1: Explicit Witness from AST (Tree Mode - Explicit Witness Passing)
+				// Resolve generic types using CurrentEnv if available
+				t = e.resolveTypeFromEnv(t, e.CurrentEnv)
+
+				if contextTypeName == "" {
+					contextTypeName = ExtractTypeConstructorName(t)
+				}
+				if expectedType == nil {
+					expectedType = t
+				}
+			}
+		}
+
+		var contextCandidate Object
+		if contextTypeName != "" {
+			if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
+				findCandidate := func(targetType string) Object {
+					for key, methodTableObj := range typesMap {
+						if key == targetType {
+							if methodTable, ok := methodTableObj.(*MethodTable); ok {
+								if method, ok := methodTable.Methods[fn.Name]; ok {
+									// We can't check args match easily here as args might have dicts
+									// But for context candidate, we usually ignore args or check leniently
+									return method
+								}
+							}
+						}
+						parts := strings.Split(key, "_")
+						match := false
+						for _, part := range parts {
+							if part == targetType {
+								match = true
+								break
+							}
+						}
+						if match {
+							if methodTable, ok := methodTableObj.(*MethodTable); ok {
+								if method, ok := methodTable.Methods[fn.Name]; ok {
+									return method
+								}
+							}
+						}
+					}
+					return nil
+				}
+				contextCandidate = findCandidate(contextTypeName)
+				if contextCandidate == nil && e.TypeAliases != nil {
+					if underlying, ok := e.TypeAliases[contextTypeName]; ok {
+						underlyingName := ExtractTypeConstructorName(underlying)
+						if underlyingName != "" && underlyingName != contextTypeName {
+							contextCandidate = findCandidate(underlyingName)
+						}
+					}
+				}
+			}
+		}
+
+		// =========================================================================================
+		// 2. Helper: Identify actual args (strip dicts) for dispatch strategies
+		// =========================================================================================
+		hintCheckArgs := args
+		for len(hintCheckArgs) > 0 {
+			if _, ok := hintCheckArgs[0].(*Dictionary); ok {
+				hintCheckArgs = hintCheckArgs[1:]
+			} else {
+				break
+			}
+		}
+
+		// =========================================================================================
+		// 3. Extract Hint Argument (Needed for Strategy 3)
+		// =========================================================================================
+		if fn.Arity >= 0 && len(hintCheckArgs) == fn.Arity+1 {
+			if typeHint, ok := hintCheckArgs[len(hintCheckArgs)-1].(*TypeObject); ok {
+				// It's a Type object hint
+				// Use the type name
+				dispatchTypeName = ExtractTypeConstructorName(typeHint.TypeVal)
+				// Remove hint from args (need to remove from original args too)
+				// We assume hint is the LAST argument.
+				// NOTE: This modifies 'args' for subsequent strategies!
+				// If we have dictionaries, we need to be careful.
+				// The hint is at the end.
+				args = args[:len(args)-1]
+				hintCheckArgs = hintCheckArgs[:len(hintCheckArgs)-1] // Keep consistent
+			} else if hintList, ok := hintCheckArgs[len(hintCheckArgs)-1].(*List); ok {
+				// String hint (deprecated but supported for simple strings)
+				if str := ListToString(hintList); str != "" || hintList.Len() == 0 {
+					dispatchTypeName = str
+					args = args[:len(args)-1]
+					hintCheckArgs = hintCheckArgs[:len(hintCheckArgs)-1]
+				}
+			}
+		}
+
+		// =========================================================================================
+		// 4. Strategy: DispatchSources (Priority Strategy)
+		// =========================================================================================
+		// Use Dispatch Strategy from ClassMethod if available.
+		if len(fn.DispatchSources) > 0 {
+			// Construct key from sources
+			var keyParts []string
+			validKey := true
+
+			for _, source := range fn.DispatchSources {
+				switch source.Kind {
+				case typesystem.DispatchArg:
+					if source.Index >= 0 && source.Index < len(hintCheckArgs) {
+						keyParts = append(keyParts, e.getDispatchTypeName(hintCheckArgs[source.Index]))
+					} else {
+						validKey = false
+					}
+				case typesystem.DispatchReturn:
+					if contextTypeName != "" {
+						keyParts = append(keyParts, contextTypeName)
+					} else {
+						validKey = false
+					}
+				case typesystem.DispatchHint:
+					if dispatchTypeName != "" && dispatchTypeName != "unknown" {
+						keyParts = append(keyParts, dispatchTypeName)
+					} else {
+						validKey = false
+					}
+				default:
+					validKey = false
+				}
+			}
+
+			if validKey {
+				// Try to find method with constructed key
+				key := strings.Join(keyParts, "_")
+
+				if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
+					if methodTableObj, ok := typesMap[key]; ok {
+						if methodTable, ok := methodTableObj.(*MethodTable); ok {
+							if method, ok := methodTable.Methods[fn.Name]; ok {
+								// Found via strategy!
+								// Push witness if we dispatched via context/TypeMap (crucial for generics)
+								// Check if we used DispatchReturn or if hint matches context
+								usedContext := false
+								if dispatchTypeName == contextTypeName {
+									usedContext = true
+								} else {
+									for _, source := range fn.DispatchSources {
+										if source.Kind == typesystem.DispatchReturn {
+											usedContext = true
+											break
+										}
+									}
+								}
+
+								if expectedType != nil && usedContext {
+									e.PushWitness(map[string][]typesystem.Type{fn.ClassName: {expectedType}})
+									defer e.PopWitness()
+								}
+								// Ensure arguments are correctly passed to the resolved method.
+								// Note that 'args' may still contain dictionary witnesses which will be
+								// handled by the recursive ApplyFunction call.
+								return e.ApplyFunction(method, args)
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// =========================================================================================
+		// 5. Strategy: Explicit Witness Argument
+		// =========================================================================================
+		// Loop to strip leading dictionaries and find the method
+		var remainingArgs = args
+		for len(remainingArgs) > 0 {
+			if dict, ok := remainingArgs[0].(*Dictionary); ok {
+				if method := FindMethodInDictionary(dict, fn.Name); method != nil {
+					// Check if it's actually implemented (not Nil placeholder)
+					if _, isNil := method.(*Nil); !isNil {
+						// Validate the method matches the runtime arguments
+						wantsWitness := false
+						if fnObj, ok := method.(*Function); ok && len(fnObj.WitnessParams) > 0 {
+							wantsWitness = true
+						}
+
+						if wantsWitness {
+							if e.checkArgsMatch(method, remainingArgs) {
+								return e.ApplyFunction(method, remainingArgs)
+							}
+						} else {
+							if e.checkArgsMatch(method, remainingArgs[1:]) {
+								return e.ApplyFunction(method, remainingArgs[1:])
+							}
+						}
+					}
+				}
+				remainingArgs = remainingArgs[1:]
+			} else {
+				break
+			}
+		}
+
+		// Update args to remainingArgs after witness stripping for fallback strategies
+		// NOTE: This changes 'args' to 'hintCheckArgs' effectively
+		args = remainingArgs
+
+		// =========================================================================================
+		// 6. Strategy: Argument-Based Dispatch
+		// =========================================================================================
 		var argCandidate Object
 		var argTypeName string
 		var argCandidateIsExact bool
 
 		if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
 			// Strategy 0a: Exact Key Match (Priority)
-			// If the number of arguments matches the number of type parameters (inferred from keys),
-			// try to construct a key directly from argument types. This solves MPTC ambiguity.
 			var traitArity int = -1
 			for k := range typesMap {
 				traitArity = strings.Count(k, "_") + 1
-				break // Assume all keys have same arity (valid for MPTC)
+				break
 			}
 
 			if traitArity > 0 && len(args) == traitArity {
@@ -536,7 +822,6 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 					exactKeyParts = append(exactKeyParts, e.getDispatchTypeName(arg))
 				}
 
-				// Add context if available (like VM does)
 				contextType := ""
 				if len(e.TypeContextStack) > 0 {
 					contextType = e.TypeContextStack[len(e.TypeContextStack)-1]
@@ -560,76 +845,107 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				}
 			}
 
-			// Strategy 0b: Fuzzy Match (Fallback) - like VM LookupTraitMethodFuzzy
+			// Strategy 0b: Fuzzy Match (Fallback)
 			if argCandidate == nil {
 				var bestCandidate Object
 				bestScore := -1
 				bestKey := ""
 
-				// Get context for scoring
 				contextType := ""
 				if len(e.TypeContextStack) > 0 {
 					contextType = e.TypeContextStack[len(e.TypeContextStack)-1]
 				}
-				// Skip dictionary args for scoring
-				actualArgs := args
-				for len(actualArgs) > 0 {
-					if _, ok := actualArgs[0].(*Dictionary); ok {
-						actualArgs = actualArgs[1:]
-					} else {
-						break
-					}
-				}
-				// Debug: print available context
-				if contextType == "" {
-					// Try to get from CurrentCallNode if it's an assignment
-					if callNode, ok := e.CurrentCallNode.(*ast.CallExpression); ok {
-						if len(callNode.TypeArgs) > 0 {
-							// This is a workaround - in real code this should be set properly
-							// For testing: assume the call result type is in some context
-						}
-					}
-				}
 
 				for key := range typesMap {
 					parts := strings.Split(key, "_")
-
-					// Check prefix match with actual args (like VM)
 					match := true
 					score := 0
-					argCount := len(actualArgs)
+					argIdx := 0
 
-					// We only check args we have. If key is longer, that's fine (partial match on key).
-					// If args are longer than key? Then key is too short, mismatch.
-					if argCount > len(parts) {
-						match = false
-					} else {
-						for i, arg := range actualArgs {
+					for _, part := range parts {
+						isVar := len(part) > 0 && part[0] >= 'a' && part[0] <= 'z'
+
+						// Check if we have an argument for this part
+						if argIdx < len(args) {
+							arg := args[argIdx]
 							argType := e.getDispatchTypeName(arg)
-							if parts[i] != argType {
-								match = false
-								break
+
+							// 1. Exact Type Match
+							if argType == part {
+								argIdx++
+								score += 2
+								continue
 							}
-							score++ // +1 for each arg match
+
+							// 2. Variable Match
+							if isVar {
+								argIdx++
+								score += 1
+								continue
+							}
+
+							// 3. Type Alias Match
+							if e.TypeAliases != nil {
+								if underlying, ok := e.TypeAliases[argType]; ok {
+									if ExtractTypeConstructorName(underlying) == part {
+										argIdx++
+										score += 2
+										continue
+									}
+								}
+							}
+
+							// 4. Constraint/Trait Skip (e.g. "Numeric" in "a_Numeric_b")
+							// If the part is a known trait (and didn't match the arg), assume it's a constraint
+							// and skip it without consuming an argument.
+							if _, isTrait := e.ClassImplementations[part]; isTrait {
+								continue
+							}
+
+							// Mismatch
+							match = false
+							break
+						} else {
+							// No more args.
+
+							// 1. Allow skipping variables (implicit/inferred parameters)
+							// This handles cases like UltraConstrained<a,b,c> with 1 arg.
+							if isVar {
+								continue
+							}
+
+							// 2. Check if part matches context (return type)
+							if contextType != "" && part == contextType {
+								score += 1
+								continue
+							}
+
+							// 3. If part is a trait, we can skip it
+							if _, isTrait := e.ClassImplementations[part]; isTrait {
+								continue
+							}
+
+							// 4. Relaxed Tail Matching:
+							// If we have no more arguments, but we still have key parts,
+							// we allow them to be skipped if they don't directly contradict anything.
+							// This handles MPTC cases like "Int_String" where we match "Int" (Arg 0)
+							// but "String" is a return type/context that we might not have info for.
+							// Since Strategy 2 is a fallback/fuzzy match, we accept this partial match.
+							continue
 						}
 					}
 
-					if match {
-						// Boost score if context matches any remaining part of the key (like VM)
-						if contextType != "" && len(parts) > argCount {
-							for i := argCount; i < len(parts); i++ {
-								if parts[i] == contextType {
-									score++
-									break // Only count once
-								}
-							}
-						}
+					// Ensure we consumed all arguments (unless variadic/permissive)
+					// For MPTC, we should be reasonably strict, but let's allow partial for now if it works.
+					// Actually, if we didn't consume all args, it's a bad match.
+					if match && argIdx < len(args) {
+						match = false
+					}
 
+					if match {
 						if score > bestScore {
-							// Check if we can get the method
 							if method, found := e.lookupTraitMethod(fn.ClassName, fn.Name, parts...); found {
-								// For trait methods, just check arity (MPT C methods have generic params)
-								if fn.Arity < 0 || len(actualArgs) == fn.Arity {
+								if fn.Arity < 0 || len(args) == fn.Arity {
 									bestCandidate = method
 									bestScore = score
 									bestKey = key
@@ -645,61 +961,12 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				}
 			}
 
-			// If we found a method via argument-based dispatch, use it
 			if argCandidate != nil {
 				return e.ApplyFunction(argCandidate, args)
 			}
 		}
 
-		// Continue with context-based dispatch and other strategies
-
-		// 1. Try Explicit Witness Argument
-		// If the first argument is a Dictionary, check if it contains the method.
-		// This handles cases where the compiler/analyzer explicitly passed a witness.
-		// Also strip placeholder dictionaries or other explicit dictionaries that don't match this method.
-		// Builtins must loop to consume all leading dictionaries if needed, but ApplyFunction can help.
-
-		// Loop to strip leading dictionaries and find the method
-		var remainingArgs = args
-		for len(remainingArgs) > 0 {
-			if dict, ok := remainingArgs[0].(*Dictionary); ok {
-				if method := FindMethodInDictionary(dict, fn.Name); method != nil {
-					// Check if it's actually implemented (not Nil placeholder)
-					if _, isNil := method.(*Nil); !isNil {
-						// Validate the method matches the runtime arguments
-						// Handle two cases:
-						// 1. Method has WitnessParams (Tree mode instance): expects dictionary argument
-						// 2. Method has NO WitnessParams (VM mode closure): does not expect dictionary argument
-
-						wantsWitness := false
-						if fnObj, ok := method.(*Function); ok && len(fnObj.WitnessParams) > 0 {
-							wantsWitness = true
-						}
-
-						if wantsWitness {
-							// Method expects witness. Pass full args. checkArgsMatch handles skipping.
-							if e.checkArgsMatch(method, remainingArgs) {
-								return e.ApplyFunction(method, remainingArgs)
-							}
-						} else {
-							// Method does not expect witness. Strip dictionary manually before checking/calling.
-							if e.checkArgsMatch(method, remainingArgs[1:]) {
-								return e.ApplyFunction(method, remainingArgs[1:])
-							}
-						}
-						// Method found but doesn't match args - continue searching
-					}
-				}
-				// Strip dictionary (whether method found as Nil, doesn't match, or not found at all)
-				remainingArgs = remainingArgs[1:]
-			} else {
-				// Not a dictionary, stop checking.
-				break
-			}
-		}
-
-		// Update args to remainingArgs after witness stripping
-		args = remainingArgs
+		// Continue with implicit witness and fallbacks...
 
 		// 0b. Try Implicit Witness from Stack (Legacy/Context)
 		// ONLY for nullary methods (Arity == 0) like pure, mempty.
@@ -759,317 +1026,86 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		}
 
 		// Check for hidden type hint argument (injected by Compiler/VM)
-		// If explicit arguments > Arity, and last arg is String, treat as hint.
-		// pure(val, "List") -> pure(val) with context "List"
-		// mempty("List") -> mempty() with context "List"
-		if fn.Arity >= 0 && len(args) == fn.Arity+1 {
-			if typeHint, ok := args[len(args)-1].(*TypeObject); ok {
-				// It's a Type object hint
-				// Push witness for trait dispatch
-				e.PushWitness(map[string][]typesystem.Type{"Applicative": {typeHint.TypeVal}})
-				defer e.PopWitness()
-				// Use the type name
-				dispatchTypeName = ExtractTypeConstructorName(typeHint.TypeVal)
-				// Remove hint from args
-				args = args[:len(args)-1]
-			} else if hintList, ok := args[len(args)-1].(*List); ok {
-				// String hint (deprecated but supported for simple strings)
-				// Convert List<Char> to string
-				if str := ListToString(hintList); str != "" || hintList.Len() == 0 {
-					dispatchTypeName = str
-					args = args[:len(args)-1]
-				}
-			}
-		}
+		// Removed to avoid duplication (handled in block 3)
 
-		// 1. Try to dispatch by Context (ReturnType or ContainerContext)
-		// This handles cases like pure(x) -> F<x> where F is determined by context, not by x.
+		// Fallback to legacy heuristics if strategy failed or not available
+		if foundMethod == nil {
+			// Legacy heuristics...
+			contextIsContainer := false
+			if expectedType != nil && len(args) > 0 {
+				// Check if context type is a container (TApp) that contains the arg's type
+				if tapp, ok := expectedType.(typesystem.TApp); ok {
+					// Context is a container type like Option<T>, List<T>, State<S, T>
+					// Check if any arg's type matches one of the container's type arguments
+					for _, arg := range args {
+						argRuntimeType := normalizeTypeName(getRuntimeTypeName(arg))
+						for _, typeArg := range tapp.Args {
+							typeArgName := normalizeTypeName(ExtractTypeConstructorName(typeArg))
 
-		var contextTypeName string
-		var expectedType typesystem.Type
-		var contextFromExplicitAnnotation bool // true if context comes from user annotation
-
-		// 1a. Container Context (from >>=)
-		if e.ContainerContext != "" {
-			contextTypeName = e.ContainerContext
-			contextFromExplicitAnnotation = true
-		}
-
-		// 1b. Return Type Context (from annotations or inferred types)
-		if contextTypeName == "" {
-			// Check TypeContextStack first (AnnotatedExpression stack)
-			if len(e.TypeContextStack) > 0 {
-				contextTypeName = e.TypeContextStack[len(e.TypeContextStack)-1]
-				contextFromExplicitAnnotation = true
-			} else if e.CurrentCallNode != nil {
-				// Check AST nodes for explicit annotations first
-				if assign, ok := e.CurrentCallNode.(*ast.AssignExpression); ok && assign.AnnotatedType != nil {
-					contextTypeName = extractTypeNameFromAST(assign.AnnotatedType)
-					contextFromExplicitAnnotation = true
-				} else if annotated, ok := e.CurrentCallNode.(*ast.AnnotatedExpression); ok && annotated.TypeAnnotation != nil {
-					contextTypeName = extractTypeNameFromAST(annotated.TypeAnnotation)
-					contextFromExplicitAnnotation = true
-				} else if constant, ok := e.CurrentCallNode.(*ast.ConstantDeclaration); ok && constant.TypeAnnotation != nil {
-					contextTypeName = extractTypeNameFromAST(constant.TypeAnnotation)
-					contextFromExplicitAnnotation = true
-				}
-
-			}
-		}
-
-		// Always try to get expectedType from TypeMap if available (needed for contextIsContainer)
-		if e.TypeMap != nil && e.CurrentCallNode != nil {
-			if t := e.TypeMap[e.CurrentCallNode]; t != nil {
-				// Priority 1: Explicit Witness from AST (Tree Mode - Explicit Witness Passing)
-				// Resolve generic types using CurrentEnv if available
-				t = e.resolveTypeFromEnv(t, e.CurrentEnv)
-
-				if contextTypeName == "" {
-					contextTypeName = ExtractTypeConstructorName(t)
-				}
-				if expectedType == nil {
-					expectedType = t
-				}
-			}
-		}
-
-		var contextCandidate Object
-		if contextTypeName != "" {
-			if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
-				// Strategy: 2-Level Lookup
-				// 1. Try Nominal Match (e.g. "String")
-				// 2. Try Underlying/Alias Match (e.g. "List")
-
-				// Helper to find candidate
-				findCandidate := func(targetType string) Object {
-					// MPTC Support: Check if targetType matches any part of the instance key
-					for key, methodTableObj := range typesMap {
-						// FIX: Check if we have exact match for the key first
-						if key == targetType {
-							if methodTable, ok := methodTableObj.(*MethodTable); ok {
-								if method, ok := methodTable.Methods[fn.Name]; ok {
-									if e.checkArgsMatch(method, args) {
-										return method
-									}
-								}
-							}
-						}
-
-						parts := strings.Split(key, "_")
-						match := false
-						for _, part := range parts {
-							if part == targetType {
-								match = true
+							// Check direct match
+							if typeArgName == argRuntimeType {
+								contextIsContainer = true
 								break
 							}
-						}
 
-						if match {
-							if methodTable, ok := methodTableObj.(*MethodTable); ok {
-								if method, ok := methodTable.Methods[fn.Name]; ok {
-									// Validate against args to avoid false positives (e.g. MPTC context match but arg mismatch)
-									if e.checkArgsMatch(method, args) {
-										return method
-									}
-								}
-							}
-						}
-					}
-					return nil
-				}
-
-				// Attempt 1: Nominal
-				contextCandidate = findCandidate(contextTypeName)
-
-				// Attempt 2: Underlying/Alias (if not found)
-				if contextCandidate == nil && e.TypeAliases != nil {
-					if underlying, ok := e.TypeAliases[contextTypeName]; ok {
-						underlyingName := ExtractTypeConstructorName(underlying)
-						if underlyingName != "" && underlyingName != contextTypeName {
-							contextCandidate = findCandidate(underlyingName)
-						}
-					}
-				}
-			}
-		}
-
-		// 2. Try to dispatch by Arguments (continued from section 0)
-
-		if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
-			// Strategy 2a: Exact Key Match (Priority)
-			// If the number of arguments matches the number of type parameters (inferred from keys),
-			// try to construct a key directly from argument types. This solves MPTC ambiguity.
-			var traitArity int = -1
-			for k := range typesMap {
-				traitArity = strings.Count(k, "_") + 1
-				break // Assume all keys have same arity (valid for MPTC)
-			}
-
-			if traitArity > 0 && len(args) == traitArity {
-				var exactKeyParts []string
-				for _, arg := range args {
-					exactKeyParts = append(exactKeyParts, e.getDispatchTypeName(arg))
-				}
-				exactKey := strings.Join(exactKeyParts, "_")
-
-				if methodTableObj, ok := typesMap[exactKey]; ok {
-					if methodTable, ok := methodTableObj.(*MethodTable); ok {
-						if method, ok := methodTable.Methods[fn.Name]; ok {
-							if e.checkArgsMatch(method, args) {
-								argCandidate = method
-								argTypeName = exactKey
-								argCandidateIsExact = true
-							}
-						}
-					}
-				}
-			}
-
-			// Strategy 2b: Fuzzy Match (Fallback)
-			// Attempt to use unified lookupTraitMethod by finding the correct key first.
-			// Strict key lookup (e.g. "Int_String") fails for HKT/MPTC when args are partial (e.g. fmap(fn, list)).
-			// We restore the "fuzzy match" loop but delegate the actual retrieval to lookupTraitMethod for consistency.
-			if argCandidate == nil {
-				for key := range typesMap {
-					parts := strings.Split(key, "_")
-					match := false
-
-					// Check if any argument matches any part of the key
-					for _, part := range parts {
-						for _, arg := range args {
-							argType := e.getDispatchTypeName(arg)
-							// Match if types are equal OR if part is a type variable (starts with lowercase)
-							// This enables flexible instances like instance C<a, b> to match concrete types
-							isVar := len(part) > 0 && part[0] >= 'a' && part[0] <= 'z'
-							if argType == part || isVar {
-								match = true
-								break
-							}
-							// General alias fallback
+							// Check alias match (forward: slot is alias)
 							if e.TypeAliases != nil {
-								if underlying, ok := e.TypeAliases[argType]; ok {
-									if ExtractTypeConstructorName(underlying) == part {
-										match = true
+								if underlying, ok := e.TypeAliases[typeArgName]; ok {
+									underlyingName := normalizeTypeName(ExtractTypeConstructorName(underlying))
+									if underlyingName == argRuntimeType {
+										contextIsContainer = true
+										break
+									}
+								}
+
+								// Check alias match (reverse: arg is alias)
+								// e.g. slot is "List", arg is "String" (alias for List<Char>)
+								if underlying, ok := e.TypeAliases[argRuntimeType]; ok {
+									underlyingName := normalizeTypeName(ExtractTypeConstructorName(underlying))
+									if underlyingName == typeArgName {
+										contextIsContainer = true
 										break
 									}
 								}
 							}
 						}
-						if match {
+						if contextIsContainer {
 							break
-						}
-					}
-
-					if match {
-						// Use unified lookup to get the method (handles inheritance etc.)
-						// We pass 'parts' to reconstruct the key inside lookupTraitMethod
-						if method, found := e.lookupTraitMethod(fn.ClassName, fn.Name, parts...); found {
-							// Validate against args to ensure correct overload selection
-							if e.checkArgsMatch(method, args) {
-								argCandidate = method
-								argTypeName = key
-								break
-							}
 						}
 					}
 				}
 			}
-		}
 
-		// 3. Decide which one to use
-		// Two dispatch strategies:
-		// - Arg-based: for traits where type param is in argument (show, eq, stringify)
-		// - Context-based: for traits where type param is container in return (pure, fmap)
-		//
-		// Heuristic: if context type is a CONTAINER that wraps the arg type, use context.
-		// Example: pure("hello") with context Option<String> → String is inside Option<String> → context
-		// Example: stringify(42) with context String → Int is NOT inside String → arg
-		contextIsContainer := false
-		if expectedType != nil && len(args) > 0 {
-			// Check if context type is a container (TApp) that contains the arg's type
-			if tapp, ok := expectedType.(typesystem.TApp); ok {
-				// Context is a container type like Option<T>, List<T>, State<S, T>
-				// Check if any arg's type matches one of the container's type arguments
-				for _, arg := range args {
-					argRuntimeType := normalizeTypeName(getRuntimeTypeName(arg))
-					for _, typeArg := range tapp.Args {
-						typeArgName := normalizeTypeName(ExtractTypeConstructorName(typeArg))
-
-						// Check direct match
-						if typeArgName == argRuntimeType {
-							contextIsContainer = true
-							break
-						}
-
-						// Check alias match (forward: slot is alias)
-						if e.TypeAliases != nil {
-							if underlying, ok := e.TypeAliases[typeArgName]; ok {
-								underlyingName := normalizeTypeName(ExtractTypeConstructorName(underlying))
-								if underlyingName == argRuntimeType {
-									contextIsContainer = true
-									break
-								}
-							}
-
-							// Check alias match (reverse: arg is alias)
-							// e.g. slot is "List", arg is "String" (alias for List<Char>)
-							if underlying, ok := e.TypeAliases[argRuntimeType]; ok {
-								underlyingName := normalizeTypeName(ExtractTypeConstructorName(underlying))
-								if underlyingName == typeArgName {
-									contextIsContainer = true
-									break
-								}
-							}
-						}
-					}
-					if contextIsContainer {
-						break
-					}
-				}
+			if contextCandidate != nil && contextIsContainer {
+				// Context is a container that wraps the arg → use context
+				foundMethod = contextCandidate
+				dispatchTypeName = contextTypeName
+			} else if argCandidate != nil && argCandidateIsExact {
+				// Exact argument match trumps fuzzy context match
+				foundMethod = argCandidate
+				dispatchTypeName = argTypeName
+			} else if fn.Arity == 0 && contextCandidate != nil {
+				// Nullary method: must use context
+				foundMethod = contextCandidate
+				dispatchTypeName = contextTypeName
+			} else if contextCandidate != nil && contextIsContainer {
+				// Context is a container that wraps the arg → use context
+				foundMethod = contextCandidate
+				dispatchTypeName = contextTypeName
+			} else if contextCandidate != nil && contextFromExplicitAnnotation && contextTypeName != argTypeName {
+				// Explicit annotation differs from arg: respect user's intent
+				foundMethod = contextCandidate
+				dispatchTypeName = contextTypeName
+			} else if argCandidate != nil {
+				// Default: use arg-based dispatch
+				foundMethod = argCandidate
+				dispatchTypeName = argTypeName
+			} else if contextCandidate != nil && contextFromExplicitAnnotation {
+				// Only use context if from explicit annotation, not inferred return type
+				// This prevents inferred return type (e.g. Int) from overriding default dispatch
+				foundMethod = contextCandidate
+				dispatchTypeName = contextTypeName
 			}
-		}
-
-		// Special case: pure matches on return type (context), not argument type
-		// pure :: a -> f a. The trait 'f' does not appear in the argument 'a'.
-		// Argument-based dispatch would incorrectly select the instance for 'a' (if any) instead of 'f'.
-		if fn.ClassName == "Applicative" && fn.Name == "pure" {
-			argCandidate = nil
-			argTypeName = ""
-		}
-
-		if fn.ClassName == "Show" && argCandidate != nil {
-			// Show trait: always use arg-based dispatch (return is always String)
-			foundMethod = argCandidate
-			dispatchTypeName = argTypeName
-		} else if contextCandidate != nil && contextIsContainer {
-			// Context is a container that wraps the arg → use context
-			foundMethod = contextCandidate
-			dispatchTypeName = contextTypeName
-		} else if argCandidate != nil && argCandidateIsExact {
-			// Exact argument match trumps fuzzy context match
-			foundMethod = argCandidate
-			dispatchTypeName = argTypeName
-		} else if fn.Arity == 0 && contextCandidate != nil {
-			// Nullary method: must use context
-			foundMethod = contextCandidate
-			dispatchTypeName = contextTypeName
-		} else if contextCandidate != nil && contextIsContainer {
-			// Context is a container that wraps the arg → use context
-			foundMethod = contextCandidate
-			dispatchTypeName = contextTypeName
-		} else if contextCandidate != nil && contextFromExplicitAnnotation && contextTypeName != argTypeName {
-			// Explicit annotation differs from arg: respect user's intent
-			foundMethod = contextCandidate
-			dispatchTypeName = contextTypeName
-		} else if argCandidate != nil {
-			// Default: use arg-based dispatch
-			foundMethod = argCandidate
-			dispatchTypeName = argTypeName
-		} else if contextCandidate != nil && contextFromExplicitAnnotation {
-			// Only use context if from explicit annotation, not inferred return type
-			// This prevents inferred return type (e.g. Int) from overriding default dispatch
-			foundMethod = contextCandidate
-			dispatchTypeName = contextTypeName
 		}
 		// If no candidate found, fall through to trait defaults
 		if foundMethod != nil {
@@ -1205,14 +1241,14 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 
 	case *HostObject:
 		if e.HostCallHandler != nil {
-			 val := reflect.ValueOf(fn.Value)
-			 if val.Kind() == reflect.Func {
-				 res, err := e.HostCallHandler(val, args)
-				 if err != nil {
-					 return newError("host call error: %v", err)
-				 }
-				 return res
-			 }
+			val := reflect.ValueOf(fn.Value)
+			if val.Kind() == reflect.Func {
+				res, err := e.HostCallHandler(val, args)
+				if err != nil {
+					return newError("host call error: %v", err)
+				}
+				return res
+			}
 		}
 		return newError("object %s is not callable", fn.Inspect())
 

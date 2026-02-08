@@ -369,12 +369,12 @@ print(getDefaultFor(false))                            // false
 fun getOrDefaultSem(opt: Option<Int>, dflt: Int) -> Int {
     match opt {
         Some(x) -> x
-        Zero -> getDefaultFor(dflt)
+        None -> getDefaultFor(dflt)
     }
 }
 
 print(getOrDefaultSem(Some(42), 0))                    // 42
-print(getOrDefaultSem(Zero, 0))                        // 0
+print(getOrDefaultSem(None, 0))                        // 0
 
 // =============================================
 // FunctorSemantics<F> — mappable containers (HKT)
@@ -390,7 +390,7 @@ instance FunctorSemantics<Option> {
     fun fmapSem(fn: (a) -> b, fa: Option<a>) -> Option<b> {
         match fa {
             Some(x) -> Some(fn(x))
-            Zero -> Zero
+            None -> None
         }
     }
 }
@@ -423,8 +423,8 @@ print(fmapSem(double, Some(21)))                           // Some(42)
 print(fmap(double, Some(21)))                              // Some(42)
 print(fmapSem(double, Some(21)) == fmap(double, Some(21))) // true
 
-print(fmapSem(double, Zero))                               // Zero
-print(fmap(double, Zero))                                  // Zero
+print(fmapSem(double, None))                               // None
+print(fmap(double, None))                                  // None
 
 // Test List: FunctorSemantics vs built-in Functor
 print(fmapSem(double, [1, 2, 3]))                          // [2, 4, 6]

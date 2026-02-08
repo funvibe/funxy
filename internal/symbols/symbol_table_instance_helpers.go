@@ -36,6 +36,11 @@ func (s *SymbolTable) GetInstanceArgs(traitName string, evidenceName string) ([]
 func (s *SymbolTable) FindInstance(traitName string, args []typesystem.Type) (InstanceDef, typesystem.Subst, bool) {
 	// Check local implementations
 	if impls, ok := s.implementations[traitName]; ok {
+		var matches []struct {
+			def   InstanceDef
+			subst typesystem.Subst
+		}
+
 		for _, implDef := range impls {
 			if len(implDef.TargetTypes) != len(args) {
 				continue
@@ -51,8 +56,18 @@ func (s *SymbolTable) FindInstance(traitName string, args []typesystem.Type) (In
 			}
 
 			if match {
-				return implDef, subst, true
+				matches = append(matches, struct {
+					def   InstanceDef
+					subst typesystem.Subst
+				}{implDef, subst})
 			}
+		}
+
+		if len(matches) == 1 {
+			return matches[0].def, matches[0].subst, true
+		}
+		if len(matches) > 1 {
+			return InstanceDef{}, nil, false
 		}
 	}
 
@@ -69,23 +84,14 @@ func (s *SymbolTable) matchTypeWithSubst(pattern, target typesystem.Type, subst 
 	// Unwrap aliases from target
 	target = typesystem.UnwrapUnderlying(target)
 	if target == nil {
-		// Should not happen if UnwrapUnderlying handles non-alias types gracefully,
-		// but if it returns nil for non-alias, we use original.
-		// Assuming UnwrapUnderlying might return nil for non-alias types in some implementations?
-		// Let's assume standard behavior: returns underlying or nil.
-		// Safe way:
-		// target is already target.
+		// Should not happen if UnwrapUnderlying handles non-alias types gracefully
 	}
-	// Actually, matching logic should handle aliases by expanding if needed.
-	// Reuse matchesTypeOrAlias logic but with capture?
-	// Simplified structural matching:
 
 	switch p := pattern.(type) {
 	case typesystem.TVar:
 		// Capture variable
 		if existing, ok := subst[p.Name]; ok {
 			// Check consistency
-			// e.g. T(a, a) matching T(Int, String) -> Fail
 			_, err := typesystem.Unify(existing, target)
 			return err == nil
 		}
@@ -98,17 +104,16 @@ func (s *SymbolTable) matchTypeWithSubst(pattern, target typesystem.Type, subst 
 			if p.Name == tCon.Name {
 				return true
 			}
-			// Check if target is alias for p?
+			// Check if target is alias for p
 			if underlying, ok := s.GetTypeAlias(tCon.Name); ok {
 				return s.matchTypeWithSubst(p, underlying, subst)
 			}
-			// Check if p is alias for target?
+			// Check if p is alias for target
 			if underlying, ok := s.GetTypeAlias(p.Name); ok {
 				return s.matchTypeWithSubst(underlying, target, subst)
 			}
 			return false
 		}
-		// If target is App, maybe p is alias for App?
 		if underlying, ok := s.GetTypeAlias(p.Name); ok {
 			return s.matchTypeWithSubst(underlying, target, subst)
 		}
@@ -138,14 +143,8 @@ func (s *SymbolTable) matchTypeWithSubst(pattern, target typesystem.Type, subst 
 			}
 		}
 		return false
-
-		// Handle other types (Records, Tuples, Functions) similarly...
-		// For now assume TCon/TApp/TVar covers most MPTC cases
 	}
 
-	// Fallback to strict equality or Unify?
-	// Unify modifies subst, but we want pattern matching (one way).
-	// But Unify is bidirectional.
 	_, err := typesystem.Unify(pattern, target)
 	return err == nil
 }

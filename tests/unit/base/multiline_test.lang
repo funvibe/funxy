@@ -138,7 +138,7 @@ testRun("Multiline match expression", fun() -> {
     value = Some(42)
     result = match value {
         Some(x) -> x * 2
-        Zero -> 0
+        None -> 0
     }
     assertEquals(result, 84)
 })

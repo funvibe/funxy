@@ -183,20 +183,20 @@ func FormatDocPackage(pkg *DocPackage) string {
 // PrintHelp prints general help
 func PrintHelp() string {
 	var sb strings.Builder
-	sb.WriteString("Funxy - A Hybrid Programming Language\n")
+	sb.WriteString("Funxy - general-purpose scripting language with static typing and type inference\n")
 	sb.WriteString("=========================================\n\n")
 	sb.WriteString("Usage:\n")
 	sb.WriteString("  funxy <file>                Run a program\n")
-	sb.WriteString("  funxy -c <file>             Compile to bytecode (.fbc)\n")
-	sb.WriteString("  funxy -r <file>             Run compiled bytecode (.fbc)\n")
 	sb.WriteString("  funxy -help                 Show this help\n")
 	sb.WriteString("  funxy -help packages        Show lib packages\n")
 	sb.WriteString("  funxy -help <package>       Show package documentation\n")
 	sb.WriteString("  funxy -help search <term>   Search documentation\n")
 	sb.WriteString("  funxy -help precedence      Show operator precedence\n")
 	sb.WriteString("\n")
-	sb.WriteString("File extensions: .lang, .funxy, .fx\n")
-	sb.WriteString("\n")
+	// sb.WriteString("File extensions: .lang, .funxy, .fx\n")
+	sb.WriteString("Experimental:\n")
+	sb.WriteString("  funxy -c <file>             Compile to bytecode (.fbc)\n")
+	sb.WriteString("  funxy -r <file>             Run compiled bytecode (.fbc)\n")
 	sb.WriteString("Note: Bytecode compilation (-c) works for single-file programs.\n")
 	sb.WriteString("      Module imports are not yet supported in compiled bytecode.\n")
 	return sb.String()
@@ -304,9 +304,48 @@ func InitDocumentation() {
 	initTaskDocs()
 	initCsvDocs()
 	initFlagDocs()
+	initGrpcDocs()
+	initProtoDocs()
 
 	// Auto-generate docs for any packages that were registered but not documented
 	autoGenerateMissingDocs()
+}
+
+// ============================================================================
+// lib/grpc
+// ============================================================================
+
+func initGrpcDocs() {
+	meta := map[string]*DocMeta{
+		"grpcConnect":    {Description: "Connect to gRPC server (target)", Category: "Client"},
+		"grpcClose":      {Description: "Close gRPC connection", Category: "Client"},
+		"grpcInvoke":     {Description: "Invoke gRPC method (conn, method, request)", Category: "Client"},
+		"grpcLoadProto":  {Description: "Load .proto files (path)", Category: "Configuration"},
+		"grpcServer":     {Description: "Create a new gRPC server", Category: "Server"},
+		"grpcRegister":   {Description: "Register a service implementation (server, serviceName, impl)", Category: "Server"},
+		"grpcServe":      {Description: "Start serving requests (blocking) (server, address)", Category: "Server"},
+		"grpcServeAsync": {Description: "Start serving requests (async) (server, address)", Category: "Server"},
+		"grpcStop":       {Description: "Stop the server (server)", Category: "Server"},
+	}
+	types := []*DocEntry{
+		{Name: "GrpcConn", Signature: "opaque", Description: "gRPC client connection"},
+		{Name: "GrpcServer", Signature: "opaque", Description: "gRPC server instance"},
+	}
+	pkg := generatePackageDocs("lib/grpc", "gRPC client and server support", meta, types)
+	RegisterDocPackage(pkg)
+}
+
+// ============================================================================
+// lib/proto
+// ============================================================================
+
+func initProtoDocs() {
+	meta := map[string]*DocMeta{
+		"protoEncode": {Description: "Encode message to bytes (messageType, data)", Category: "Serialization"},
+		"protoDecode": {Description: "Decode bytes to message (messageType, bytes)", Category: "Serialization"},
+	}
+	pkg := generatePackageDocs("lib/proto", "Protocol Buffers serialization", meta, nil)
+	RegisterDocPackage(pkg)
 }
 
 // autoGenerateMissingDocs creates basic documentation for registered packages
@@ -560,9 +599,11 @@ func initListDocs() {
 		"sort":    {Description: "Sort elements (requires Order)", Category: "Transform"},
 		"sortBy":  {Description: "Sort with custom comparator", Category: "Transform"},
 		// Combining
-		"zip":   {Description: "Pair elements from two lists", Category: "Combining"},
-		"unzip": {Description: "Separate paired list", Category: "Combining"},
-		"range": {Description: "Generate range [start, end)", Category: "Generation"},
+		"zip":    {Description: "Pair elements from two lists", Category: "Combining"},
+		"unzip":  {Description: "Separate paired list", Category: "Combining"},
+		"range":  {Description: "Generate range [start, end)", Category: "Generation"},
+		"insert": {Description: "Insert element at index (returns new list)", Category: "Transform"},
+		"update": {Description: "Update element at index (returns new list)", Category: "Transform"},
 	}
 	pkg := generatePackageDocs("lib/list", "List manipulation functions", meta, nil)
 	RegisterDocPackage(pkg)
@@ -658,7 +699,7 @@ func initBitsDocs() {
 
 		// Access
 		"bitsSlice": {Description: "Extract bit range [start, end)", Category: "Access"},
-		"bitsGet":   {Description: "Get bit at index (Some(0|1) or Zero)", Category: "Access"},
+		"bitsGet":   {Description: "Get bit at index (Some(0|1) or None)", Category: "Access"},
 
 		// Modification
 		"bitsConcat":   {Description: "Concatenate two Bits", Category: "Modification"},
@@ -732,16 +773,18 @@ func initTimeDocs() {
 func initIODocs() {
 	meta := map[string]*DocMeta{
 		// Stdin
-		"readLine": {Description: "Read line from stdin (Zero on EOF)", Category: "Stdin"},
+		"readLine": {Description: "Read line from stdin (None on EOF)", Category: "Stdin"},
 
 		// File operations
-		"fileRead":   {Description: "Read entire file", Category: "File Read"},
-		"fileReadAt": {Description: "Read file slice (offset, length)", Category: "File Read"},
-		"fileWrite":  {Description: "Write/overwrite file", Category: "File Write"},
-		"fileAppend": {Description: "Append to file", Category: "File Write"},
-		"fileExists": {Description: "Check if file exists", Category: "File Info"},
-		"fileSize":   {Description: "Get file size in bytes", Category: "File Info"},
-		"fileDelete": {Description: "Delete file", Category: "File Ops"},
+		"fileRead":        {Description: "Read entire file as String", Category: "File Read"},
+		"fileReadBytes":   {Description: "Read entire file as Bytes", Category: "File Read"},
+		"fileReadBytesAt": {Description: "Read file slice as Bytes (offset, length)", Category: "File Read"},
+		"fileReadAt":      {Description: "Read file slice (offset, length)", Category: "File Read"},
+		"fileWrite":       {Description: "Write/overwrite file (content: String or Bytes)", Category: "File Write"},
+		"fileAppend":      {Description: "Append to file (content: String or Bytes)", Category: "File Write"},
+		"fileExists":      {Description: "Check if file exists", Category: "File Info"},
+		"fileSize":        {Description: "Get file size in bytes", Category: "File Info"},
+		"fileDelete":      {Description: "Delete file", Category: "File Ops"},
 
 		// Directory operations
 		"dirCreate":    {Description: "Create directory", Category: "Directory"},
@@ -848,7 +891,7 @@ func initBignumDocs() {
 		"bigIntNew":      {Description: "Create BigInt from string", Category: "BigInt"},
 		"bigIntFromInt":  {Description: "Create BigInt from Int", Category: "BigInt"},
 		"bigIntToString": {Description: "Convert BigInt to string", Category: "BigInt"},
-		"bigIntToInt":    {Description: "Convert to Int (Zero if overflow)", Category: "BigInt"},
+		"bigIntToInt":    {Description: "Convert to Int (None if overflow)", Category: "BigInt"},
 		"ratNew":         {Description: "Create Rational from BigInts", Category: "Rational"},
 		"ratFromInt":     {Description: "Create Rational from Ints", Category: "Rational"},
 		"ratNumer":       {Description: "Get numerator", Category: "Rational"},
@@ -948,11 +991,11 @@ func initRegexDocs() {
 func initHttpDocs() {
 	meta := map[string]*DocMeta{
 		"httpGet":        {Description: "HTTP GET request", Category: "Client"},
-		"httpPost":       {Description: "HTTP POST with string body", Category: "Client"},
+		"httpPost":       {Description: "HTTP POST with body (String or Bytes)", Category: "Client"},
 		"httpPostJson":   {Description: "HTTP POST with JSON body (auto-encodes)", Category: "Client"},
-		"httpPut":        {Description: "HTTP PUT with string body", Category: "Client"},
+		"httpPut":        {Description: "HTTP PUT with body (String or Bytes)", Category: "Client"},
 		"httpDelete":     {Description: "HTTP DELETE request", Category: "Client"},
-		"httpRequest":    {Description: "Full control HTTP request (body=\"\" and timeout=0 defaults)", Category: "Client"},
+		"httpRequest":    {Description: "Full control HTTP request (body: String or Bytes, defaults: body=\"\", timeout=0)", Category: "Client"},
 		"httpSetTimeout": {Description: "Set request timeout (milliseconds)", Category: "Config"},
 		"httpServe":      {Description: "Start HTTP server (blocking)", Category: "Server"},
 		"httpServeAsync": {Description: "Start HTTP server (non-blocking, returns server ID)", Category: "Server"},
@@ -984,7 +1027,7 @@ func initTestDocs() {
 		"assertOk":     {Description: "Assert Result is Ok", Category: "Assertions"},
 		"assertFail":   {Description: "Assert Result is Fail", Category: "Assertions"},
 		"assertSome":   {Description: "Assert Option is Some", Category: "Assertions"},
-		"assertZero":   {Description: "Assert Option is Zero", Category: "Assertions"},
+		"assertNone":   {Description: "Assert Option is None", Category: "Assertions"},
 		// HTTP mocks
 		"mockHttp":       {Description: "Mock HTTP response for URL pattern", Category: "HTTP Mocks"},
 		"mockHttpError":  {Description: "Mock HTTP error for URL pattern", Category: "HTTP Mocks"},

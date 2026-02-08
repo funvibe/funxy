@@ -2,8 +2,8 @@ package lexer
 
 import (
 	"fmt"
-	"math/big"
 	"github.com/funvibe/funxy/internal/token"
+	"math/big"
 	"strconv"
 	"unicode"
 	"unicode/utf8"
@@ -122,9 +122,10 @@ func (l *Lexer) NextToken() token.Token {
 		}
 	case '%':
 		if l.peekChar() == '"' {
+			startLine, startCol := l.line, l.column
 			l.readChar() // consume %, now at "
-			content := l.readString()
-			tok = token.Token{Type: token.FORMAT_STRING, Lexeme: fmt.Sprintf("%%%q", content), Literal: content, Line: l.line, Column: l.column}
+			content, _ := l.readStringWithInterpolation()
+			tok = token.Token{Type: token.FORMAT_STRING, Lexeme: fmt.Sprintf("%%%q", content), Literal: content, Line: startLine, Column: startCol}
 		} else if l.peekChar() == '{' {
 			l.readChar()
 			tok = token.Token{Type: token.PERCENT_LBRACE, Lexeme: "%{", Literal: "%{", Line: l.line, Column: l.column}
@@ -370,6 +371,7 @@ func (l *Lexer) NextToken() token.Token {
 	case ']':
 		tok = newToken(token.RBRACKET, l.ch, l.line, l.column)
 	case '"':
+		startLine, startCol := l.line, l.column
 		content, hasInterp := l.readStringWithInterpolation()
 		if hasInterp {
 			tok.Type = token.INTERP_STRING
@@ -378,43 +380,62 @@ func (l *Lexer) NextToken() token.Token {
 		}
 		tok.Literal = content
 		tok.Lexeme = fmt.Sprintf("%q", content)
-		tok.Line = l.line
-		tok.Column = l.column
+		tok.Line = startLine
+		tok.Column = startCol
 	case '`':
 		// Check for triple backticks ```
 		if l.peekChar() == '`' {
 			peek2 := l.peekChar2()
 			if peek2 == '`' {
 				// Triple backticks - read until closing triple backticks
+				startLine, startCol := l.line, l.column
 				tok.Type = token.STRING
 				tok.Literal = l.readTripleRawString()
 				tok.Lexeme = fmt.Sprintf("```%s```", tok.Literal)
-				tok.Line = l.line
-				tok.Column = l.column
+				tok.Line = startLine
+				tok.Column = startCol
 				// Don't call readChar() here - readTripleRawString() already consumed everything
 				return tok
 			} else {
 				// Single backtick
+				startLine, startCol := l.line, l.column
 				tok.Type = token.STRING
 				tok.Literal = l.readRawString()
 				tok.Lexeme = fmt.Sprintf("`%s`", tok.Literal)
-				tok.Line = l.line
-				tok.Column = l.column
+				tok.Line = startLine
+				tok.Column = startCol
 			}
 		} else {
 			// Single backtick
+			startLine, startCol := l.line, l.column
 			tok.Type = token.STRING
 			tok.Literal = l.readRawString()
 			tok.Lexeme = fmt.Sprintf("`%s`", tok.Literal)
-			tok.Line = l.line
-			tok.Column = l.column
+			tok.Line = startLine
+			tok.Column = startCol
 		}
 	case '\'':
-		tok.Type = token.CHAR
-		tok.Literal = l.readCharLiteral()
-		tok.Lexeme = fmt.Sprintf("'%c'", tok.Literal)
-		tok.Line = l.line
-		tok.Column = l.column
+		startLine, startCol := l.line, l.column
+		val, err := l.readCharLiteral()
+		if err != nil {
+			tok.Type = token.ILLEGAL
+			tok.Literal = err.Error()
+			end := l.readPosition
+			if end > len(l.input) {
+				end = len(l.input)
+			}
+			if l.position > end {
+				tok.Lexeme = ""
+			} else {
+				tok.Lexeme = l.input[l.position:end] // Approximate
+			}
+		} else {
+			tok.Type = token.CHAR
+			tok.Literal = val
+			tok.Lexeme = fmt.Sprintf("'%c'", val)
+		}
+		tok.Line = startLine
+		tok.Column = startCol
 	case 0:
 		tok.Lexeme = ""
 		tok.Type = token.EOF
@@ -422,12 +443,13 @@ func (l *Lexer) NextToken() token.Token {
 		tok.Column = l.column
 	default:
 		if isLetter(l.ch) {
+			startLine, startCol := l.line, l.column
 			lexeme := l.readIdentifier()
 			tok.Lexeme = lexeme
 			tok.Type = l.determineIdentifierType(lexeme)
 			tok.Literal = lexeme
-			tok.Line = l.line
-			tok.Column = l.column
+			tok.Line = startLine
+			tok.Column = startCol
 			return tok
 		} else if isDigit(l.ch) {
 			return l.readNumber()
@@ -460,7 +482,11 @@ func (l *Lexer) readString() string {
 func (l *Lexer) readStringWithInterpolation() (string, bool) {
 	var result []byte
 	hasInterp := false
-	braceDepth := 0
+	// Stack of expected closing delimiters:
+	// '}' for code blocks
+	// '"', '\'', '`' for strings/chars
+	// -1 for triple backticks
+	var stack []rune
 	buf := make([]byte, 4)
 
 	for {
@@ -468,64 +494,203 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 		if l.ch == 0 {
 			break
 		}
-		if l.ch == '"' && braceDepth == 0 {
+
+		inInterpolation := len(stack) > 0
+
+		// End of Top-Level String
+		if !inInterpolation && l.ch == '"' {
 			break
 		}
 
-		// Inside interpolation ${...} - don't process escapes, keep raw
-		if braceDepth > 0 {
-			// Handle nested strings inside interpolation to avoid confusing braces
-			if l.ch == '"' || l.ch == '\'' || l.ch == '`' {
-				quote := l.ch
-				n := utf8.EncodeRune(buf, l.ch)
-				result = append(result, buf[:n]...)
+		// --- State Machine Logic ---
 
-				for {
-					l.readChar()
+		// 1. Inside a Quote (String, Char, RawString) - deeper than top level
+		// We check the top of the stack.
+		if len(stack) > 0 {
+			top := stack[len(stack)-1]
+
+			if top == '"' || top == '\'' || top == '`' || top == -1 {
+				// Handle Triple Backtick Closing
+				if top == -1 {
+					if l.ch == '`' && l.peekChar() == '`' && l.peekChar2() == '`' {
+						stack = stack[:len(stack)-1]
+						n := utf8.EncodeRune(buf, l.ch)
+						result = append(result, buf[:n]...)
+						l.readChar() // 2nd
+						n = utf8.EncodeRune(buf, l.ch)
+						result = append(result, buf[:n]...)
+						l.readChar() // 3rd
+						n = utf8.EncodeRune(buf, l.ch)
+						result = append(result, buf[:n]...)
+						continue
+					}
+					// Just append char in raw string
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+					continue
+				}
+
+				if l.ch == top {
+					// Found closing quote
+					stack = stack[:len(stack)-1]
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+					continue
+				}
+
+				// Raw strings (backticks) don't process escapes or interpolation
+				if top == '`' {
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+					continue
+				}
+
+				// Handle escapes in " and '
+				if l.ch == '\\' {
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...) // Append backslash
+
+					l.readChar() // Consume escaped char
 					if l.ch == 0 {
 						break
 					}
-
-					// Handle escapes in " and '
-					if l.ch == '\\' && (quote == '"' || quote == '\'') {
-						n := utf8.EncodeRune(buf, l.ch)
-						result = append(result, buf[:n]...)
-						l.readChar() // consume escaped char
-					} else if l.ch == quote {
-						n := utf8.EncodeRune(buf, l.ch)
-						result = append(result, buf[:n]...)
-						break
-					}
-
-					n := utf8.EncodeRune(buf, l.ch)
-					result = append(result, buf[:n]...)
+					n = utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...) // Append escaped char
+					continue
 				}
+
+				// Handle Interpolation inside Double Quotes
+				if top == '"' && l.ch == '$' && l.peekChar() == '{' {
+					stack = append(stack, '}') // Push expectation of closing brace
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...) // $
+					l.readChar()                        // {
+					n = utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...) // {
+					continue
+				}
+
+				// Regular char inside quote
+				n := utf8.EncodeRune(buf, l.ch)
+				result = append(result, buf[:n]...)
+				continue
+			}
+		}
+
+		// 2. Inside Code Block ${ ... } or { ... }
+		// Top of stack is '}'
+		if len(stack) > 0 && stack[len(stack)-1] == '}' {
+			if l.ch == '}' {
+				// Closing brace
+				stack = stack[:len(stack)-1]
+				n := utf8.EncodeRune(buf, l.ch)
+				result = append(result, buf[:n]...)
 				continue
 			}
 
 			if l.ch == '{' {
-				braceDepth++
-			} else if l.ch == '}' {
-				braceDepth--
+				// Nested brace
+				stack = append(stack, '}')
+				n := utf8.EncodeRune(buf, l.ch)
+				result = append(result, buf[:n]...)
+				continue
 			}
+
+			// Start of String/Char/RawString
+			if l.ch == '"' || l.ch == '\'' {
+				stack = append(stack, l.ch)
+				n := utf8.EncodeRune(buf, l.ch)
+				result = append(result, buf[:n]...)
+				continue
+			}
+
+			if l.ch == '`' {
+				isTriple := false
+				if l.peekChar() == '`' && l.peekChar2() == '`' {
+					isTriple = true
+				}
+
+				n := utf8.EncodeRune(buf, l.ch)
+				result = append(result, buf[:n]...)
+
+				if isTriple {
+					l.readChar() // 2nd `
+					n = utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+					l.readChar() // 3rd `
+					n = utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+					stack = append(stack, -1) // Marker for triple backtick
+				} else {
+					stack = append(stack, '`')
+				}
+				continue
+			}
+
+			// Handle Comments (// and /* */) to avoid matching braces inside them
+			if l.ch == '/' {
+				peek := l.peekChar()
+				if peek == '/' {
+					// Line comment
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+					l.readChar() // /
+					n = utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+
+					for l.ch != '\n' && l.ch != 0 {
+						l.readChar()
+						n = utf8.EncodeRune(buf, l.ch)
+						result = append(result, buf[:n]...)
+					}
+					continue
+				} else if peek == '*' {
+					// Block comment
+					n := utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+					l.readChar() // *
+					n = utf8.EncodeRune(buf, l.ch)
+					result = append(result, buf[:n]...)
+
+					for l.ch != 0 {
+						if l.ch == '*' && l.peekChar() == '/' {
+							l.readChar() // *
+							n = utf8.EncodeRune(buf, l.ch)
+							result = append(result, buf[:n]...)
+							l.readChar() // /
+							n = utf8.EncodeRune(buf, l.ch)
+							result = append(result, buf[:n]...)
+							break
+						}
+						l.readChar()
+						n = utf8.EncodeRune(buf, l.ch)
+						result = append(result, buf[:n]...)
+					}
+					continue
+				}
+			}
+
+			// Regular char in code
 			n := utf8.EncodeRune(buf, l.ch)
 			result = append(result, buf[:n]...)
 			continue
 		}
 
-		// Detect ${
+		// 3. Top-Level String Content (Stack Empty)
+		// Process escapes and detect interpolation
 		if l.ch == '$' && l.peekChar() == '{' {
 			hasInterp = true
+			stack = append(stack, '}') // Push code scope
 			result = append(result, '$')
-			l.readChar() // consume {
+			l.readChar() // {
 			result = append(result, '{')
-			braceDepth++
 			continue
 		}
 
-		// Handle escape sequences
 		if l.ch == '\\' {
 			l.readChar() // consume backslash
+			// Process escapes for the resulting string literal
+			// Note: We keep the escape logic from original function for top-level
 			switch l.ch {
 			case 'n':
 				result = append(result, '\n')
@@ -541,8 +706,26 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 				result = append(result, '"')
 			case '$':
 				result = append(result, '$')
+			case 'u':
+				val, ok := l.readHexEscape(4)
+				if ok {
+					n := utf8.EncodeRune(buf, rune(val))
+					result = append(result, buf[:n]...)
+				} else {
+					// Invalid escape - keep raw
+					result = append(result, '\\', 'u')
+				}
+			case 'U':
+				val, ok := l.readHexEscape(8)
+				if ok {
+					n := utf8.EncodeRune(buf, rune(val))
+					result = append(result, buf[:n]...)
+				} else {
+					// Invalid escape - keep raw
+					result = append(result, '\\', 'U')
+				}
 			default:
-				// Unknown escape - keep both backslash and char
+				// Unknown escape - keep both
 				result = append(result, '\\')
 				n := utf8.EncodeRune(buf, l.ch)
 				result = append(result, buf[:n]...)
@@ -553,7 +736,27 @@ func (l *Lexer) readStringWithInterpolation() (string, bool) {
 		n := utf8.EncodeRune(buf, l.ch)
 		result = append(result, buf[:n]...)
 	}
+
 	return string(result), hasInterp
+}
+
+func (l *Lexer) readHexEscape(n int) (int64, bool) {
+	var val int64
+	for i := 0; i < n; i++ {
+		l.readChar()
+		var d int64
+		if l.ch >= '0' && l.ch <= '9' {
+			d = int64(l.ch - '0')
+		} else if l.ch >= 'a' && l.ch <= 'f' {
+			d = int64(l.ch - 'a' + 10)
+		} else if l.ch >= 'A' && l.ch <= 'F' {
+			d = int64(l.ch - 'A' + 10)
+		} else {
+			return 0, false
+		}
+		val = val*16 + d
+	}
+	return val, true
 }
 
 // readRawString reads a backtick-delimited raw string that can span multiple lines.
@@ -601,11 +804,10 @@ func (l *Lexer) readTripleRawString() string {
 	return result
 }
 
-func (l *Lexer) readCharLiteral() int64 {
+func (l *Lexer) readCharLiteral() (int64, error) {
 	l.readChar() // skip opening '
 	if l.ch == '\'' {
-		// Empty char? Not allowed.
-		return 0
+		return 0, fmt.Errorf("empty character literal")
 	}
 
 	var char int64
@@ -625,6 +827,20 @@ func (l *Lexer) readCharLiteral() int64 {
 			char = '\\'
 		case '\'':
 			char = '\''
+		case 'u':
+			val, ok := l.readHexEscape(4)
+			if ok {
+				char = val
+			} else {
+				return 0, fmt.Errorf("invalid unicode escape sequence \\uXXXX")
+			}
+		case 'U':
+			val, ok := l.readHexEscape(8)
+			if ok {
+				char = val
+			} else {
+				return 0, fmt.Errorf("invalid unicode escape sequence \\UXXXXXXXX")
+			}
 		default:
 			// Unknown escape, just use the char after backslash
 			char = int64(l.ch)
@@ -637,11 +853,11 @@ func (l *Lexer) readCharLiteral() int64 {
 	}
 	// Expect closing '
 	if l.ch != '\'' {
-		// Error handling? Lexer logic usually permissive or sets ILLEGAL.
-		// For now assume valid.
+		// Strict check: character literal must be closed with '
+		return 0, fmt.Errorf("unterminated character literal, expected '")
 	}
 	// readChar called by NextToken will consume closing ' if we are there.
-	return char
+	return char, nil
 }
 
 func (l *Lexer) readIdentifier() string {
@@ -667,6 +883,7 @@ func (l *Lexer) determineIdentifierType(ident string) token.TokenType {
 }
 
 func (l *Lexer) readNumber() token.Token {
+	startLine, startCol := l.line, l.column
 	position := l.position
 	base := 10
 	isFloat := false
@@ -730,7 +947,7 @@ func (l *Lexer) readNumber() token.Token {
 	// Validate and Parse
 	if isBigInt {
 		if isFloat {
-			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "BigInt cannot have decimal point", Line: l.line, Column: l.column}
+			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "BigInt cannot have decimal point", Line: startLine, Column: startCol}
 		}
 		if base != 10 && base != 16 && base != 2 && base != 8 { // Should be covered by logic
 		}
@@ -741,14 +958,14 @@ func (l *Lexer) readNumber() token.Token {
 		val := new(big.Int)
 		// SetString(s, 0) auto-detects base 0x, 0b, 0o
 		if _, ok := val.SetString(literalText, 0); !ok {
-			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Invalid BigInt", Line: l.line, Column: l.column}
+			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Invalid BigInt", Line: startLine, Column: startCol}
 		}
-		return token.Token{Type: token.BIG_INT, Lexeme: lexeme, Literal: val, Line: l.line, Column: l.column}
+		return token.Token{Type: token.BIG_INT, Lexeme: lexeme, Literal: val, Line: startLine, Column: startCol}
 	}
 
 	if isRational {
 		if base != 10 {
-			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Rational must be base 10", Line: l.line, Column: l.column}
+			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Rational must be base 10", Line: startLine, Column: startCol}
 		}
 
 		// Remove 'r' suffix
@@ -756,26 +973,26 @@ func (l *Lexer) readNumber() token.Token {
 
 		val := new(big.Rat)
 		if _, ok := val.SetString(literalText); !ok {
-			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Invalid Rational", Line: l.line, Column: l.column}
+			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Invalid Rational", Line: startLine, Column: startCol}
 		}
-		return token.Token{Type: token.RATIONAL, Lexeme: lexeme, Literal: val, Line: l.line, Column: l.column}
+		return token.Token{Type: token.RATIONAL, Lexeme: lexeme, Literal: val, Line: startLine, Column: startCol}
 	}
 
 	// Regular Int or Float
 	if isFloat {
 		val, err := strconv.ParseFloat(literalText, 64)
 		if err != nil {
-			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: err.Error(), Line: l.line, Column: l.column}
+			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: err.Error(), Line: startLine, Column: startCol}
 		}
-		return token.Token{Type: token.FLOAT, Lexeme: lexeme, Literal: val, Line: l.line, Column: l.column}
+		return token.Token{Type: token.FLOAT, Lexeme: lexeme, Literal: val, Line: startLine, Column: startCol}
 	} else {
 		// Regular int (int64)
 		// strconv.ParseInt(s, 0, 64) auto-detects base
 		val, err := strconv.ParseInt(literalText, 0, 64)
 		if err != nil {
-			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Integer overflow (use 'n' suffix for BigInt)", Line: l.line, Column: l.column}
+			return token.Token{Type: token.ILLEGAL, Lexeme: lexeme, Literal: "Integer overflow (use 'n' suffix for BigInt)", Line: startLine, Column: startCol}
 		}
-		return token.Token{Type: token.INT, Lexeme: lexeme, Literal: val, Line: l.line, Column: l.column}
+		return token.Token{Type: token.INT, Lexeme: lexeme, Literal: val, Line: startLine, Column: startCol}
 	}
 }
 
@@ -818,30 +1035,33 @@ func newToken(tokenType token.TokenType, ch rune, line, col int) token.Token {
 }
 
 func (l *Lexer) skipWhitespace() {
-	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
-		l.readChar()
-	}
-	// Handle comments
-	if l.ch == '/' {
-		if l.peekChar() == '/' {
-			l.readChar() // consume first /
-			l.readChar() // consume second /
-			for l.ch != '\n' && l.ch != 0 {
-				l.readChar()
-			}
-			l.skipWhitespace()
-		} else if l.peekChar() == '*' {
-			l.readChar() // consume /
-			l.readChar() // consume *
-			for l.ch != 0 {
-				if l.ch == '*' && l.peekChar() == '/' {
-					l.readChar() // consume *
-					l.readChar() // consume /
-					break
-				}
-				l.readChar()
-			}
-			l.skipWhitespace()
+	for {
+		for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+			l.readChar()
 		}
+		// Handle comments
+		if l.ch == '/' {
+			if l.peekChar() == '/' {
+				l.readChar() // consume first /
+				l.readChar() // consume second /
+				for l.ch != '\n' && l.ch != 0 {
+					l.readChar()
+				}
+				continue
+			} else if l.peekChar() == '*' {
+				l.readChar() // consume /
+				l.readChar() // consume *
+				for l.ch != 0 {
+					if l.ch == '*' && l.peekChar() == '/' {
+						l.readChar() // consume *
+						l.readChar() // consume /
+						break
+					}
+					l.readChar()
+				}
+				continue
+			}
+		}
+		break
 	}
 }

@@ -33,7 +33,7 @@ fun headerMiddleware(next) {
 fun containsStr(haystack, needle) {
     match stringIndexOf(haystack, needle) {
         Some(_) -> true
-        Zero -> false
+        None -> false
     }
 }
 
@@ -104,8 +104,6 @@ testRun("web framework core", fun() {
 
     // Test Response Factory (Response type)
     respText: Response = resText("Hello")
-    print("Debug respText: " ++ show(respText))
-    print("Debug respText Type: " ++ show(getType(respText)))
     assertEquals(respText.status, 200, "Text response status 200")
 
     // Explicit type check
@@ -153,7 +151,7 @@ testRun("web framework core", fun() {
     foundHeader = resMw.headers |> find(fun(p) { fst(p) == "X-Middleware" })
     match foundHeader {
         Some(p) -> assertEquals(snd(p), "True", "Middleware header present")
-        Zero -> assertEquals(1, 0, "Middleware header missing")
+        None -> assertEquals(1, 0, "Middleware header missing")
     }
 
     // Test Logger Middleware
@@ -179,25 +177,25 @@ testRun("web framework core", fun() {
     paramFoo = queryParam("foo", ctxQuery)
     match paramFoo {
         Some(val) -> assertEquals(val, "bar", "Query param foo found")
-        Zero -> assertEquals(1, 0, "Query param foo missing")
+        None -> assertEquals(1, 0, "Query param foo missing")
     }
 
     paramBaz = queryParam("baz", ctxQuery)
     match paramBaz {
         Some(val) -> assertEquals(val, "qux", "Query param baz found")
-        Zero -> assertEquals(1, 0, "Query param baz missing")
+        None -> assertEquals(1, 0, "Query param baz missing")
     }
 
     // Test Cookies (Helper functions)
     cookieCtx = context(req)
     match cookie("session", cookieCtx) {
         Some(val) -> assertEquals(val, "123", "Cookie session found")
-        Zero -> assertEquals(1, 0, "Cookie session missing")
+        None -> assertEquals(1, 0, "Cookie session missing")
     }
 
     match cookie("missing", cookieCtx) {
         Some(val) -> assertEquals(1, 0, "Cookie missing found")
-        Zero -> assertEquals(1, 1, "Cookie missing not found")
+        None -> assertEquals(1, 1, "Cookie missing not found")
     }
 
     // Test queryParams (all query parameters)
@@ -221,7 +219,7 @@ testRun("web framework core", fun() {
     foundLoc = redirResp.headers |> find(fun(p) { fst(p) == "Location" })
     match foundLoc {
         Some(locPair) -> assertEquals(snd(locPair), "/new-location", "Location header correct")
-        Zero -> assertEquals(1, 0, "Location header missing")
+        None -> assertEquals(1, 0, "Location header missing")
     }
 
 
@@ -353,7 +351,7 @@ testRun("Web Response Helpers Coverage", fun() {
     locationHeader = resRedirect.headers |> find(fun(p) { fst(p) == "Location" })
     match locationHeader {
         Some((_, loc)) -> assertEquals(loc, "/new-location", "Redirect location correct")
-        Zero -> assertEquals(1, 0, "Location header missing")
+        None -> assertEquals(1, 0, "Location header missing")
     }
 
     // Test custom status
@@ -385,14 +383,14 @@ testRun("Web Response Helpers Coverage", fun() {
     customHeader = resHeaders.headers |> find(fun(p) { fst(p) == "X-Custom" })
     match customHeader {
         Some((_, val)) -> assertEquals(val, "Value", "Custom header set")
-        Zero -> assertEquals(1, 0, "Custom header missing")
+        None -> assertEquals(1, 0, "Custom header missing")
     }
 
     // Check cookie header
     cookieHeader = resHeaders.headers |> find(fun(p) { fst(p) == "Set-Cookie" })
     match cookieHeader {
         Some((_, val)) -> assert(containsStr(val, "session=abc123"), "Cookie header set")
-        Zero -> assertEquals(1, 0, "Cookie header missing")
+        None -> assertEquals(1, 0, "Cookie header missing")
     }
 })
 
@@ -436,7 +434,7 @@ testRun("Web Middleware Coverage", fun() {
         found = resOptions.headers |> find(fun(p) { fst(p) == headerName })
         match found {
             Some(_) -> acc
-            Zero -> acc ++ [headerName]
+            None -> acc ++ [headerName]
         }
     }, []) |> fun(missing) {
         // Check that all expected headers are present

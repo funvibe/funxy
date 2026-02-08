@@ -173,7 +173,7 @@ c: Counter = default(Counter)
 print(getCounter(c))  // 0
 
 // 6b. Record type (auto-defaults fields)
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 instance Default Point {}
 
@@ -182,7 +182,7 @@ print(pt.x)  // 0
 print(pt.y)  // 0
 
 // 6c. Record with nested types
-type Config = { name: String, value: Int, enabled: Bool }
+type alias Config = { name: String, value: Int, enabled: Bool }
 
 instance Default Config {}
 

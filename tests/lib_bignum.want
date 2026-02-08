@@ -5,7 +5,7 @@
 === BigInt Conversion ===
 123456789012345678901234567890
 Some(42)
-Zero
+None
 Some(-50)
 === BigInt Operators ===
 3000000000000000000

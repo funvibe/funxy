@@ -1,0 +1,6 @@
+import "lib/list" (update)
+
+l = [1, 2, 3]
+// Try to update with a String, should fail type checking
+// List<Int> vs String
+l2 = update(l, 0, "string")

@@ -1,0 +1,21 @@
+import "lib/test" (*)
+
+trait Container<c> {
+    fun wrap(x: a) -> c<a>
+    fun unwrap(cx: c<a>) -> a
+}
+
+instance Container<Option> {
+    fun wrap(x: a) -> Option<a> { Some(x) }
+    fun unwrap(cx: Option<a>) -> a {
+        match cx {
+            Some(v) -> v
+            None -> panic("empty")
+        }
+    }
+}
+
+testRun("HKT trait instance resolution should not fail at runtime", \ -> {
+    opt = wrap(42)
+    assert(opt == Some(42))
+})

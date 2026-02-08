@@ -1,0 +1,181 @@
+// Complex Functional Dependencies Test
+// Covers transitive dependencies, multiple dependencies, and recursion.
+
+import "lib/test" (*)
+
+// 1. Transitive Dependencies: a -> b, b -> c
+trait Transitive<a, b, c> | a -> b, b -> c {
+    fun getB(a: a) -> b
+    fun getC(b: b) -> c
+}
+
+instance Transitive<Int, String, Bool> {
+    fun getB(a: Int) -> String { "int" }
+    fun getC(b: String) -> Bool { true }
+}
+
+// 2. Multiple Dependencies: a -> b, a -> c
+trait MultiDep<a, b, c> | a -> b, a -> c {
+    fun split(a: a) -> (b, c)
+}
+
+instance MultiDep<Int, Bool, String> {
+    fun split(a: Int) -> (Bool, String) { (true, "ok") }
+}
+
+// 3. Recursive Types with FunDeps
+// Allows inferring the element type of a recursive structure
+trait Container<c, e> | c -> e {
+    fun element(c: c) -> e
+}
+
+// Box<a> -> a
+instance Container<List<a>, a> {
+    fun element(c: List<a>) -> a {
+        match c {
+            [x, ..._] -> x
+            [] -> element(c)
+        }
+    }
+}
+
+// 4. Collection Inference (Complex Generics)
+// Demonstrates inferring element types for different containers
+trait Collection<c, e> | c -> e {
+    fun item(c: c) -> e
+}
+
+// List<a> -> a
+instance Collection<List<a>, a> {
+    fun item(c: List<a>) -> a {
+        match c {
+            [x, ..._] -> x
+            [] -> item(c)
+        }
+    }
+}
+
+// Set<a> -> a (Mock Set)
+type Set<a> = Set(List<a>)
+instance Collection<Set<a>, a> {
+    fun item(c: Set<a>) -> a {
+        match c {
+            Set([x, ..._]) -> x
+            _ -> item(c)
+        }
+    }
+}
+
+// Dict<k, v> -> (k, v) (Mock Map)
+type Dict<k, v> = Dict(List<(k, v)>)
+instance Collection<Dict<k, v>, (k, v)> {
+    fun item(c: Dict<k, v>) -> (k, v) {
+        match c {
+            Dict([x, ..._]) -> x
+            _ -> item(c)
+        }
+    }
+}
+
+testRun("Complex Functional Dependencies", fun() {
+    // 1. Test Transitive
+    val1 = getB(10)
+    check1: String = val1
+    assertEquals(check1, "int", "Transitive step 1 inferred")
+
+    val2 = getC(val1)
+    check2: Bool = val2
+    assertEquals(check2, true, "Transitive step 2 inferred")
+
+    // 2. Test MultiDep
+    tuple = split(42)
+    match tuple {
+        (b, c) -> {
+            checkB: Bool = b
+            checkC: String = c
+            assertEquals(checkB, true, "MultiDep inferred B")
+            assertEquals(checkC, "ok", "MultiDep inferred C")
+        }
+    }
+
+    // 3. Test Recursive/Generic
+    list = ["recursive"]
+    elem = element(list)
+    checkElem: String = elem
+    assertEquals(checkElem, "recursive", "Recursive generic inference")
+
+    // 4. Test Collections
+    l = [1]
+    i = item(l)
+    checkI: Int = i
+    assertEquals(checkI, 1, "List item inferred")
+
+    s = Set(["s"])
+    i2 = item(s)
+    checkI2: String = i2
+    assertEquals(checkI2, "s", "Set item inferred")
+
+    d = Dict([(true, 10)])
+    i3 = item(d)
+    match i3 {
+        (k, v) -> {
+            checkK: Bool = k
+            checkV: Int = v
+            assertEquals(checkK, true, "Dict key inferred")
+            assertEquals(checkV, 10, "Dict value inferred")
+        }
+    }
+})
+
+// 5. Partial Resolution (Delayed Inference)
+// Checks that type inference works even if the dependency doesn't trigger immediately.
+trait Delayed<a, b> | a -> b {
+    fun convertDelayed(x: a) -> b
+}
+instance Delayed<Int, String> {
+    fun convertDelayed(x: Int) -> String { "done" }
+}
+
+testRun("Partial Resolution", fun() {
+    // At this point, the type of 'res' is unknown
+    // fun wrapper(x) { convertDelayed(x) }
+
+    // But when we apply this to Int, 'a' becomes Int -> 'b' is inferred as String
+    res = convertDelayed(42)
+    check: String = res
+    assertEquals(check, "done", "Delayed inference worked")
+})
+
+// 6. Generic "To" Variable
+// Checks the case when the dependency points to a generic, not a concrete type.
+trait Wrap<a, b> | a -> b {
+    fun wrap(x: a) -> b
+}
+instance Wrap<Int, List<Int>> { // b here is a complex type List<Int>
+    fun wrap(x: Int) -> List<Int> { [x] }
+}
+
+testRun("Generic Output", fun() {
+    l = wrap(10)
+    // The solver should understand that b = List<Int>, not just List<a>
+    match l {
+        [x, ..._] -> assertEquals(x, 10, "Inferred List<Int> from Int")
+        [] -> assert(false, "Should not be empty")
+    }
+})
+
+// 7. Reverse Dependency
+// Checks the right-to-left dependency (b -> a)
+trait Rev<a, b> | b -> a {
+    fun unwrapRev(x: b) -> a
+}
+instance Rev<Int, String> { // String -> Int
+    fun unwrapRev(x: String) -> Int { 0 }
+}
+
+testRun("Reverse Dependency", fun() {
+    // We call with "hello" (b=String). Should infer a=Int.
+    val = unwrapRev("hello")
+    checkRev: Int = val
+    assertEquals(checkRev, 0, "Reverse dependency inferred Int from String")
+})

@@ -1,0 +1,158 @@
+import "lib/list" (map, foldl)
+import "lib/test" (testRun, assertEquals)
+import "lib/tuple" (fst, snd)
+
+// =============================================================================
+// 1. High-Order Fixpoint (Data Types a la Carte pattern)
+// =============================================================================
+
+// HFix takes a higher-order functor 'f' (kind: (* -> *) -> * -> *) and ties the knot.
+// f must be HFunctor to map over the recursive structure.
+// Added 'a' parameter to return a concrete type '*'
+type HFix<f: ((* -> *) -> * -> *), a> = HIn(f<HFix<f>, a>)
+
+// Helper type to hold the result of folding
+type Const<a, b> = MkConst(a)
+
+// Higher-Order Functor Trait
+// Maps a transformation (nat: g -> h) over the structure f<g>
+// Adapted for rank-2 f: (* -> *) -> * -> *
+trait HFunctor<f: ((* -> *) -> * -> *)> {
+    fun hmap<g: (* -> *), h: (* -> *), a>(nat: (g<a>) -> h<a>, x: f<g, a>) -> f<h, a>
+}
+
+// =============================================================================
+// 2. Expression Algebra (The recursive structure)
+// =============================================================================
+
+// ExprF is our base functor. Kind: (* -> *) -> * -> *
+// r: recursive parameter (* -> *)
+// a: value type (*)
+type ExprF<r, a> =
+    | Val(a)
+    | Add(r<a>, r<a>)
+
+// Implement HFunctor for ExprF
+instance HFunctor ExprF {
+    fun hmap<g: (* -> *), h: (* -> *), a>(nat: (g<a>) -> h<a>, x: ExprF<g, a>) -> ExprF<h, a> {
+        match x {
+            Val(v) -> Val(v)
+            Add(l, r) -> Add(nat(l), nat(r))
+        }
+    }
+}
+
+// Define the concrete recursive type using HFix
+// MyExpr :: * -> *
+type alias MyExpr = HFix<ExprF>
+
+// Helper constructors
+fun val(x: Int) -> MyExpr<Int> {
+    v : ExprF<MyExpr, Int> = Val(x)
+    HIn(v)
+}
+fun add(l: MyExpr<Int>, r: MyExpr<Int>) -> MyExpr<Int> {
+    v : ExprF<MyExpr, Int> = Add(l, r)
+    HIn(v)
+}
+
+// =============================================================================
+// 3. Evaluation (Catamorphism)
+// =============================================================================
+
+// Algebra for evaluation: f<Const<a>> -> a
+// Eval depends on result type 'a'
+trait Eval<f: ((* -> *) -> * -> *), a> {
+    fun evalAlg(x: f<Const<a>, a>) -> a
+}
+
+instance Eval<ExprF, Int> {
+    fun evalAlg(x: ExprF<Const<Int>, Int>) -> Int {
+        match x {
+            Val(v) -> v
+            Add(l, r) -> {
+                match l { MkConst(lv) -> {
+                    match r { MkConst(rv) -> lv + rv }
+                }}
+            }
+        }
+    }
+}
+
+// Fold (Catamorphism) for HFix
+// Syntax: f: Kind + Trait, Trait<Arg>
+fun foldH<f: ((* -> *) -> * -> *) + HFunctor, Eval<a>, a>(term: HFix<f, a>) -> a {
+    match term {
+        HIn(unwrapped) -> {
+            // 1. Map foldH recursively over children
+            // Use a helper lambda to guide inference
+            // child: HFix<f, a>
+            // returns: Const<a, a>
+            // We use explicit variable type on 'res' to force return type
+            trans = \child: HFix<f, a> -> {
+                res : Const<a, a> = MkConst(foldH(child))
+                res
+            }
+
+            // hmap expects: nat: (g<a>) -> h<a>, x: f<g, a>
+            // inferred: g=HFix<f>, h=Const<a>
+            mapped = hmap(trans, unwrapped)
+
+            // 2. Reduce using algebra
+            evalAlg(mapped)
+        }
+    }
+}
+
+// =============================================================================
+// 4. Monad Transformers & Complex Constraints
+// =============================================================================
+
+trait UserMonad<m> {
+    fun userPure<a>(x: a) -> m<a>
+    fun userBind<a, b>(x: m<a>, f: (a) -> m<b>) -> m<b>
+}
+
+// UserStateT Transformer
+// m: (* -> *)
+type UserStateT<s, m: (* -> *), a> = UserStateT((s) -> m<(a, s)>)
+
+// Generic run function
+fun userRunState<s, m: (* -> *) + UserMonad, a>(st: UserStateT<s, m, a>, init: s) -> m<(a, s)> {
+    match st { UserStateT(f) -> f(init) }
+}
+
+// Mock Monad for List
+instance UserMonad List {
+    fun userPure<a>(x: a) -> List<a> { [x] }
+    fun userBind<a, b>(x: List<a>, f: (a) -> List<b>) -> List<b> {
+        foldl(\acc, item -> acc ++ f(item), [], x)
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+testRun("Complex: HFix + HFunctor + Eval (Expression Tree)", \ -> {
+    // Construct: (10 + 20) + 5
+    expr = add(add(val(10), val(20)), val(5))
+
+    // Evaluate using generic catamorphism
+    res = foldH(expr)
+
+    assertEquals(35, res, "HFix evaluation correct")
+})
+
+testRun("Complex: UserStateT on List Monad (Kind + Trait)", \ -> {
+    op : UserStateT<Int, List, String> = UserStateT(\s ->
+        [(show(s), s + 1), (show(s), s + 2)]
+    )
+
+    res = userRunState(op, 0)
+
+    assertEquals("0", fst(res[0]), "UserStateT value 1")
+    assertEquals(1,   snd(res[0]), "UserStateT state 1")
+    assertEquals("0", fst(res[1]), "UserStateT value 2")
+    assertEquals(2,   snd(res[1]), "UserStateT state 2")
+})

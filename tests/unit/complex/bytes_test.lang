@@ -22,15 +22,15 @@ testRun("Bytes indexing and slicing", \ -> {
     // Indexing returns Option<Int> (byte value)
     match b[0] {
         Some(v) -> assertEquals(72, v, "First byte 'H'")
-        Zero -> assertEquals(0, 1, "Index 0 failed")
+        None -> assertEquals(0, 1, "Index 0 failed")
     }
 
     match b[10] {
         Some(_) -> assertEquals(0, 1, "Out of bounds should fail")
-        Zero -> assertEquals(0, 0, "Out of bounds handled")
+        None -> assertEquals(0, 0, "Out of bounds handled")
     }
 
-    slice = bytesSlice(b, 0, 2) // "He"
+    slice = unwrapResult(bytesSlice(b, 0, 2)) // "He"
     assertEquals(@"He", slice, "Slice 0-2")
 })
 

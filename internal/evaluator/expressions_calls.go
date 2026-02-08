@@ -22,14 +22,9 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		return e.GetDefaultForType(typeObj.TypeVal)
 	}
 
-	// Push Witness if present in AST
-	var pushedWitness bool
-	if node.Witness != nil {
-		if witnesses, ok := node.Witness.(map[string][]typesystem.Type); ok {
-			e.PushWitness(witnesses)
-			pushedWitness = true
-		}
-	}
+	// Push Witness if present in AST - DEPRECATED/REMOVED
+	// var pushedWitness bool
+	// if node.Witness != nil { ... }
 
 	// Fix: Hide TypeContextStack for argument evaluation
 	// Arguments should not inherit the expected type of the function call result
@@ -47,9 +42,6 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		wVal := e.Eval(witnessExpr, env)
 		if isError(wVal) {
 			restoreContext()
-			if pushedWitness {
-				e.PopWitness()
-			}
 			return wVal
 		}
 		// Skip $placeholder dictionaries - they are markers for dynamic dispatch in tree mode
@@ -77,25 +69,21 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		if isError(function) {
 			restoreContext()
 			e.CurrentCallNode = oldCallNode
-			if pushedWitness {
-				e.PopWitness()
-			}
 			return function
 		}
 		args := e.evalExpressions(node.Arguments, env)
 		if len(args) == 1 && isError(args[0]) {
 			restoreContext()
 			e.CurrentCallNode = oldCallNode
-			if pushedWitness {
-				e.PopWitness()
-			}
 			return args[0]
 		}
 
-		// Prepend witnesses to args, but not for ClassMethod (it handles witnesses itself)
+		// Prepend witnesses to args, but not for ClassMethod or Builtin (they handle their own arity)
 		if len(witnessArgs) > 0 {
 			if _, ok := function.(*ClassMethod); !ok {
-				args = append(witnessArgs, args...)
+				if _, ok := function.(*Builtin); !ok {
+					args = append(witnessArgs, args...)
+				}
 			}
 		}
 
@@ -107,22 +95,8 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		// But where is the witness stored? In the TailCall object.
 
 		tc := &TailCall{Func: function, Args: args, CallNode: node}
-		if pushedWitness {
-			// Copy witnesses to TailCall object
-			if witnesses, ok := node.Witness.(map[string][]typesystem.Type); ok {
-				tc.Witness = witnesses
-			}
-			// We can pop from stack now because the loop will re-push (or should handle it)
-			// Wait, the main Eval loop doesn't handle TailCall witness pushing.
-			// It just calls ApplyFunction.
-			// ApplyFunction handles TailCall execution? No, Eval loop does.
-			// Let's check Eval loop/trampoline.
-			// Usually Eval returns TailCall, and the caller (if it supports TCO) handles it.
-			// The caller is often inside a loop in ApplyFunction for user functions.
-
-			// We pop here because we are returning from this frame.
-			e.PopWitness()
-		}
+		// DEPRECATED: Legacy witness handling removed
+		// if pushedWitness { ... }
 
 		if tok := node.GetToken(); tok.Type != "" {
 			tc.Line = tok.Line
@@ -139,23 +113,18 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 	function := e.Eval(node.Function, env)
 	if isError(function) {
 		restoreContext()
-		if pushedWitness {
-			e.PopWitness()
-		}
 		return function
 	}
 	args := e.evalExpressions(node.Arguments, env)
 	if len(args) == 1 && isError(args[0]) {
 		restoreContext()
-		if pushedWitness {
-			e.PopWitness()
-		}
 		return args[0]
 	}
 
-	// Prepend witnesses to args, but not for ClassMethod (it handles witnesses itself)
+	// Prepend witnesses to args unless the target is a Builtin (builtins expect strict arity).
+	// We still pass witnesses to ClassMethods for explicit witness dispatch.
 	if len(witnessArgs) > 0 {
-		if _, ok := function.(*ClassMethod); !ok {
+		if _, ok := function.(*Builtin); !ok {
 			args = append(witnessArgs, args...)
 		}
 	}
@@ -185,6 +154,41 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		args = append(typeArgObjects, args...)
 	}
 
+	// Handle explicit TypeApplication (e.g. getName<Int>()) as dispatch hint
+	if typeApp, ok := node.Function.(*ast.TypeApplicationExpression); ok && len(typeApp.TypeArguments) > 0 {
+		// Check if target is a ClassMethod that supports hints
+
+		// Unwrap PartialApplication to find target
+		target := function
+		if pa, ok := function.(*PartialApplication); ok {
+			if pa.ClassMethod != nil {
+				target = pa.ClassMethod
+			}
+		}
+
+		if cm, ok := target.(*ClassMethod); ok {
+			// Check if it uses DispatchHint or fallback
+			shouldPassHint := true // Default to true for ClassMethod as fallback uses it
+
+			if len(cm.DispatchSources) > 0 {
+				shouldPassHint = false
+				for _, source := range cm.DispatchSources {
+					if source.Kind == typesystem.DispatchHint {
+						shouldPassHint = true
+						break
+					}
+				}
+			}
+
+			if shouldPassHint {
+				// Resolve type arg
+				sysType := astTypeToTypesystem(typeApp.TypeArguments[0])
+				resolvedType := e.resolveTypeFromEnv(sysType, env)
+				args = append(args, &TypeObject{TypeVal: resolvedType})
+			}
+		}
+	}
+
 	restoreContext() // Restore context for the actual function application (dispatch)
 	result := e.ApplyFunction(function, args)
 	e.CurrentCallNode = oldCallNode
@@ -205,9 +209,6 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 	}
 
 	e.PopCall()
-	if pushedWitness {
-		e.PopWitness()
-	}
 	return result
 }
 

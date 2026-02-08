@@ -1,0 +1,12 @@
+import "lib/test" (*)
+
+testRun("For loop should be able to access variables from enclosing function scope", \ -> {
+    myRange = 1..5
+    items: List<Int> = []
+
+    for x in myRange {
+        items = items ++ [x]
+    }
+
+    assert(items == [1, 2, 3, 4, 5])
+})

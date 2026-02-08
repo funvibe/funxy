@@ -32,7 +32,7 @@ print(len(arguments))  // number of arguments
 sysEnv(name: String) -> Option<String>
 ```
 
-Returns the value of an environment variable or `Zero` if not set.
+Returns the value of an environment variable or `None` if not set.
 
 ```rust
 import "lib/sys" (sysEnv)
@@ -41,7 +41,7 @@ import "lib/sys" (sysEnv)
 pathOpt = sysEnv("PATH")
 hasPath = match pathOpt {
     Some(_) -> true
-    Zero -> false
+    None -> false
 }
 print(hasPath)  // true
 
@@ -49,7 +49,7 @@ print(hasPath)  // true
 noVar = sysEnv("NONEXISTENT_VAR")
 match noVar {
     Some(val) -> print("Value: " ++ val)
-    Zero -> print("Not set")
+    None -> print("Not set")
 }
 // Not set
 ```
@@ -142,14 +142,14 @@ import "lib/sys" (sysEnv)
 // Get port from environment or use 8080
 port = match sysEnv("PORT") {
     Some(p) -> p
-    Zero -> "8080"
+    None -> "8080"
 }
 print("Port: " ++ port)
 
 // Check debug mode
 isDebug = match sysEnv("DEBUG") {
     Some(_) -> true
-    Zero -> false
+    None -> false
 }
 print(isDebug)
 ```

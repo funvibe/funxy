@@ -63,7 +63,7 @@ testRun("OptionT: Pure with annotation", fun() -> {
   val = runIdentity(runOptionT(x))
   match val {
     Some(v) -> assertEquals(50, v, "pure worked with witness passing"),
-    Zero -> assert(false, "pure failed - witness not passed correctly")
+    None -> assert(false, "pure failed - witness not passed correctly")
   }
 })
 
@@ -80,7 +80,7 @@ testRun("Pure inside lambda: Witness preserved", fun() -> {
   val = runIdentity(runOptionT(f()))
   match val {
     Some(v) -> assertEquals(200, v, "Witness passed through lambda"),
-    Zero -> assert(false, "Witness lost in lambda")
+    None -> assert(false, "Witness lost in lambda")
   }
 })
 

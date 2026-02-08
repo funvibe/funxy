@@ -1,11 +1,12 @@
 package evaluator
 
 import (
-	"io"
-	"os"
+	"context"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"io"
+	"os"
 	"reflect"
 	"strings"
 )
@@ -25,6 +26,9 @@ type VMCallHandler func(closure Object, args []Object) Object
 type AsyncHandler func(fn Object, args []Object) Object
 
 type Evaluator struct {
+	// Context for cancellation
+	Context context.Context
+
 	Out io.Writer
 	// Registry for class implementations.
 	// Map: ClassName -> TypeName -> FunctionObject
@@ -199,6 +203,7 @@ func (e *Evaluator) SetLoader(l ModuleLoader) {
 // Shares immutable state but creates new mutable state
 func (e *Evaluator) Clone() *Evaluator {
 	return &Evaluator{
+		Context:              e.Context,
 		Out:                  e.Out,
 		ClassImplementations: e.ClassImplementations, // shared, read-only in tasks
 		ExtensionMethods:     e.ExtensionMethods,     // shared, read-only in tasks
@@ -224,6 +229,15 @@ func (e *Evaluator) Clone() *Evaluator {
 }
 
 func (e *Evaluator) Eval(node ast.Node, env *Environment) Object {
+	// Check for cancellation
+	if e.Context != nil {
+		select {
+		case <-e.Context.Done():
+			return newError("execution cancelled: %v", e.Context.Err())
+		default:
+		}
+	}
+
 	// Update CurrentEnv for access in ApplyFunction (Witness Passing)
 	oldEnv := e.CurrentEnv
 	e.CurrentEnv = env
@@ -341,13 +355,13 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 				return left
 			}
 			if !e.isTruthy(left) {
-				return FALSE // Short-circuit: false && _ = false
+				return left
 			}
 			right := e.Eval(node.Right, env)
 			if isError(right) {
 				return right
 			}
-			return e.nativeBoolToBooleanObject(e.isTruthy(right))
+			return right
 		}
 		if node.Operator == "||" {
 			left := e.Eval(node.Left, env)
@@ -355,22 +369,27 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 				return left
 			}
 			if e.isTruthy(left) {
-				return TRUE // Short-circuit: true || _ = true
+				return left
 			}
 			right := e.Eval(node.Right, env)
 			if isError(right) {
 				return right
 			}
-			return e.nativeBoolToBooleanObject(e.isTruthy(right))
+			return right
 		}
 
 		// Null coalescing: x ?? default (via Optional trait)
-		// Some(x) ?? y = x, Zero ?? y = y
+		// Some(x) ?? y = x, None ?? y = y
 		// Ok(x) ?? y = x, Fail(_) ?? y = y
 		if node.Operator == "??" {
 			left := e.Eval(node.Left, env)
 			if isError(left) {
 				return left
+			}
+
+			// Nullable coalescing: if left is Nil, return right.
+			if _, ok := left.(*Nil); ok {
+				return e.Eval(node.Right, env)
 			}
 
 			// Use Optional trait for dispatch (includes super traits like Empty)
@@ -501,7 +520,26 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		if isError(right) {
 			return right
 		}
-		return e.EvalInfixExpression(node.Operator, left, right)
+		res := e.EvalInfixExpression(node.Operator, left, right)
+
+		// Improve error location for runtime errors (like division by zero)
+		// If the error originated here (not deeper in the stack), update line/col
+		if err, ok := res.(*Error); ok {
+			// If stack trace length matches current stack length, it means no new frames were pushed
+			// (or they were popped), implying the error occurred in this context (e.g. primitive op).
+			// We compare <= because deeper calls would have LARGER stack trace.
+			if len(err.StackTrace) <= len(e.CallStack) {
+				err.Line = node.Token.Line
+				// VM runtime errors often report column 0. Match this behavior for compatibility.
+				err.Column = 0
+				// Also update the top frame of the stack trace to reflect the instruction location
+				if len(err.StackTrace) > 0 {
+					err.StackTrace[len(err.StackTrace)-1].Line = node.Token.Line
+					err.StackTrace[len(err.StackTrace)-1].Column = 0
+				}
+			}
+		}
+		return res
 	case *ast.PostfixExpression:
 		left := e.Eval(node.Left, env)
 		if isError(left) {
@@ -521,9 +559,44 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 	case *ast.CallExpression:
 		return e.evalCallExpression(node, env)
 	case *ast.TypeApplicationExpression:
-		// Evaluator treats generics as erased or pass-through
-		// Just evaluate the inner expression.
-		return e.Eval(node.Expression, env)
+		fnObj := e.Eval(node.Expression, env)
+		if isError(fnObj) {
+			return fnObj
+		}
+
+		// Evaluate witnesses if present (resolved by Analyzer)
+		if len(node.Witnesses) > 0 {
+			var witnesses []Object
+			for _, w := range node.Witnesses {
+				wObj := e.Eval(w, env)
+				if isError(wObj) {
+					return wObj
+				}
+				witnesses = append(witnesses, wObj)
+			}
+
+			// Return PartialApplication binding the witnesses
+			pa := &PartialApplication{
+				AppliedArgs: witnesses,
+			}
+
+			switch f := fnObj.(type) {
+			case *Function:
+				pa.Function = f
+			case *Builtin:
+				pa.Builtin = f
+			case *ClassMethod:
+				pa.ClassMethod = f
+			case *Constructor:
+				pa.Constructor = f
+			default:
+				return newError("cannot apply types (witnesses) to %s", fnObj.Type())
+			}
+			return pa
+		}
+
+		// If no witnesses, just return the function (generics erased)
+		return fnObj
 	case *ast.AnnotatedExpression:
 		// AnnotatedExpression is a wrapper for type checking
 		// Set type context BEFORE evaluating, so ClassMethod calls can dispatch by annotation type
@@ -669,6 +742,8 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		return e.evalBreakStatement(node, env)
 	case *ast.ContinueStatement:
 		return e.evalContinueStatement(node, env)
+	case *ast.ReturnStatement:
+		return e.evalReturnStatement(node, env)
 	}
 
 	return nil

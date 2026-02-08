@@ -1,0 +1,6 @@
+
+trait UserFunctor<f> {
+    fun userMap<a, b>(fn: (a) -> b, x: f<a>) -> f<b>
+}
+
+fun check<f: UserFunctor>(x: f) { }

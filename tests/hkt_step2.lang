@@ -5,7 +5,7 @@
 opt1 = fmap(fun(x) -> x * 2, Some(21))
 print(opt1)
 
-opt2 = fmap(fun(x) -> x + 1, Zero)
+opt2 = fmap(fun(x) -> x + 1, None)
 print(opt2)
 
 opt3 = fmap(fun(s) -> s ++ "!", Some("hello"))
@@ -33,6 +33,6 @@ print(res3)
 
 // Test empty cases
 print(fmap(fun(x) -> x, []))
-print(fmap(fun(x) -> x, Zero))
+print(fmap(fun(x) -> x, None))
 
 print("Step 2 passed!")

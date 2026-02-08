@@ -35,7 +35,7 @@ Anonymous functions (lambdas) also support variadic parameters.
 
 ```rust
 // Variadic lambda
-variadicSum = fun (args: ...Int) Int {
+variadicSum = fun(args: ...Int) -> Int {
     total = 0
     for x in args {
         total = total + x
@@ -46,9 +46,9 @@ variadicSum = fun (args: ...Int) Int {
 result = variadicSum(1, 2, 3, 4)  // 10
 
 // Using spread inside lambda
-appendAll = fun (items: Int...) List<Int> {
+appendAll = fun(items: ...Int) -> List<Int> {
     base = [0]
-    [base..., items...]
+    [...base, ...items]
 }
 
 appendAll(1, 2, 3)  // [0, 1, 2, 3]

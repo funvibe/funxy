@@ -1,4 +1,4 @@
-import "lib/test" (testRun, assertEquals, assertSome, assertZero)
+import "lib/test" (testRun, assertEquals, assertSome, assertNone)
 
 testRun("HKT: List Functor", fun() {
     list = [1, 2, 3]
@@ -15,9 +15,9 @@ testRun("HKT: Option Functor", fun() {
     // We can't easily check value inside Some without unwrap or pattern match in test lib
     // Assuming assertSome checks variants.
 
-    none = Zero
+    none = None
     mappedNone = fmap(fun(x) { x + 5 }, none)
-    assertZero(mappedNone)
+    assertNone(mappedNone)
 })
 
 fun takeList(l) {
@@ -62,11 +62,11 @@ testRun("HKT: Generic Function using Witness", fun() {
 })
 
 testRun("HKT: HOU Partial Application (State Monad-like)", fun() {
-    nested = [Some(1), Zero, Some(2)]
+    nested = [Some(1), None, Some(2)]
 
     res = fmap(fun(opt) {
         fmap(fun(x) { x + 1 }, opt)
     }, nested)
 
-    assertEquals(res, [Some(2), Zero, Some(3)])
+    assertEquals(res, [Some(2), None, Some(3)])
 })

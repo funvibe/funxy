@@ -124,7 +124,7 @@ func unwrapReturnValue(obj Object) Object {
 }
 
 // ExtractTypeConstructorName extracts the type constructor name from a type.
-// e.g., Option<Int> → "Option", List<String> → "List", Result<Int, String> → "Result"
+// e.g., Option<Int> → "Option", List<String> → "List", Result<String, Int> → "Result"
 func ExtractTypeConstructorName(t typesystem.Type) string {
 	switch typ := t.(type) {
 	case typesystem.TCon:
@@ -262,6 +262,16 @@ func (e *Evaluator) areObjectsEqual(a, b Object) bool {
 		return a.Value == b.(*Uuid).Value
 	}
 	return false
+}
+
+// GetContentBytes converts String (*List) or Bytes (*Bytes) object to []byte
+func GetContentBytes(obj Object) ([]byte, error) {
+	if list, ok := obj.(*List); ok {
+		return []byte(ListToString(list)), nil
+	} else if b, ok := obj.(*Bytes); ok {
+		return b.data, nil
+	}
+	return nil, fmt.Errorf("expected String or Bytes, got %s", obj.Type())
 }
 
 func (e *Evaluator) isTruthy(obj Object) bool {
@@ -545,6 +555,10 @@ func normalizeTypeName(name string) string {
 	return name
 }
 
+// ModuleMemberFallbackName maps a short member name to a verbose stdlib name.
+// Example: moduleName="string", member="toUpper" -> "stringToUpper".
+// ModuleMemberFallbackName moved to utils to avoid duplication.
+
 // Helper to extract return type name from Function/Builtin
 func (e *Evaluator) getReturnTypeName(obj Object) string {
 	switch fn := obj.(type) {
@@ -608,7 +622,8 @@ func extractWitnessMethod(args []Object, methodName string) (Object, []Object, b
 
 	// If it's a placeholder dictionary (from Analyzer), strip it even if method not found
 	// This ensures fall-back to dynamic lookup in Tree mode
-	if dict.TraitName == "$placeholder" {
+	// Also strip empty trait name which might happen in some testing scenarios
+	if dict.TraitName == "$placeholder" || dict.TraitName == "" {
 		return nil, args[1:], true
 	}
 
@@ -617,6 +632,9 @@ func extractWitnessMethod(args []Object, methodName string) (Object, []Object, b
 		return method, args[1:], true
 	}
 
+	// Method not found in this dictionary.
+	// We do NOT consume the dictionary here, leaving it for subsequent lookups or strategies.
+	// Note: Callers might iterate through multiple dictionaries if they expect a specific witness.
 	return nil, args, false
 }
 
@@ -630,18 +648,24 @@ func (e *Evaluator) resolveTypeFromEnv(t typesystem.Type, env *Environment) type
 	switch typ := t.(type) {
 	case typesystem.TVar:
 		// Look for type variable in env
-		// We expect type variables to be stored in Env if they are in scope.
-		// The key might be the name itself.
-		if val, ok := env.Get(typ.Name); ok {
-			// If it's a TypeObject, unwrap it
+		// First check prefixed name (from generic instantiation via $typevar_ prefix).
+		// This is set in ApplyFunction when a generic function is called.
+		if val, ok := env.Get("$typevar_" + typ.Name); ok {
 			if typeObj, ok := val.(*TypeObject); ok {
-				// Use Alias if available to preserve nominal typing
 				if typeObj.Alias != "" {
 					return typesystem.TCon{Name: typeObj.Alias}
 				}
 				return typeObj.TypeVal
 			}
-			// If it's a RecordInstance/DataInstance (e.g. Dictionary?), maybe not a type.
+		}
+		// Fallback: check regular name (for type declarations like Int, String, etc.)
+		if val, ok := env.Get(typ.Name); ok {
+			if typeObj, ok := val.(*TypeObject); ok {
+				if typeObj.Alias != "" {
+					return typesystem.TCon{Name: typeObj.Alias}
+				}
+				return typeObj.TypeVal
+			}
 		}
 		return typ
 	case typesystem.TApp:

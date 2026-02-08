@@ -10,7 +10,7 @@ testRun("Regex match", \ -> {
 testRun("Regex find", \ -> {
     match regexFind("\\d+", "abc123def456") {
         Some(s) -> assertEquals("123", s, "Find first")
-        Zero -> assertEquals(0, 1, "Find failed")
+        None -> assertEquals(0, 1, "Find failed")
     }
 
     matches = regexFindAll("\\d+", "a1b22c333")
@@ -27,7 +27,7 @@ testRun("Regex capture", \ -> {
             assertEquals("03", groups[2], "Month")
             assertEquals("15", groups[3], "Day")
         }
-        Zero -> assertEquals(0, 1, "Capture failed")
+        None -> assertEquals(0, 1, "Capture failed")
     }
 })
 

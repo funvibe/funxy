@@ -34,8 +34,8 @@ var BuiltinTypes = []TypeInfo{
 	{Name: "Bits", Kind: "*", Description: "Immutable bit sequence for binary protocols"},
 	{Name: "Range", Kind: "* -> *", Description: "Range of values: start..end (inclusive) or (start, next)..end",
 		Example: "1..10, (1, 3)..10, 'a'..'z'", Constructors: []string{"start..end"}},
-	{Name: "Option", Kind: "* -> *", Description: "Optional value: Some(x) or Zero",
-		Example: "Some(42), Zero", Constructors: []string{"Some(T)", "Zero"}},
+	{Name: "Option", Kind: "* -> *", Description: "Optional value: Some(x) or None",
+		Example: "Some(42), None", Constructors: []string{"Some(T)", "None"}},
 	{Name: "Result", Kind: "* -> * -> *", Description: "Success or failure: Ok(x) or Fail(e)",
 		Example: "Ok(42), Fail(\"error\")", Constructors: []string{"Ok(T)", "Fail(E)"}},
 	{Name: "Reader", Kind: "* -> * -> *", Description: "Reader Monad: computation with environment",
@@ -162,7 +162,7 @@ var BuiltinFunctions = []FunctionInfo{
 		Example: "read(\"42\", Int)", Category: "Conversion"},
 	{Name: "intToFloat", Signature: "(Int) -> Float", Description: "Convert Int to Float", Category: "Conversion"},
 	{Name: "floatToInt", Signature: "(Float) -> Int", Description: "Convert Float to Int (truncate)", Category: "Conversion"},
-	{Name: "sprintf", Signature: "(String, ...T) -> String", Description: "Format string (printf style)", Category: "String"},
+	{Name: "format", Signature: "(String, ...T) -> String", Description: "Format string (printf style)", Category: "String"},
 
 	// Reflection
 	{Name: "getType", Signature: "(T) -> String", Description: "Get type name of value", Category: "Reflection"},
@@ -170,7 +170,7 @@ var BuiltinFunctions = []FunctionInfo{
 
 	// Function combinators
 	{Name: "id", Signature: "(T) -> T", Description: "Identity function", Category: "Function"},
-	{Name: "const", Signature: "(A, B) -> A", Description: "Return first argument, ignore second", Category: "Function"},
+	{Name: "constant", Signature: "(A, B) -> A", Description: "Return first argument, ignore second", Category: "Function"},
 
 	// Reader
 	{Name: "reader", Signature: "(E -> A) -> Reader<E, A>", Description: "Create a Reader from a function", Category: "Reader"},
@@ -216,8 +216,8 @@ var BuiltinFunctions = []FunctionInfo{
 
 	// Option
 	{Name: "isSome", Signature: "(Option<T>) -> Bool", Description: "Check if Option is Some", Category: "Option"},
-	{Name: "isZero", Signature: "(Option<T>) -> Bool", Description: "Check if Option is Zero", Category: "Option"},
-	{Name: "unwrap", Signature: "(Option<T>) -> T", Description: "Extract value from Some (panics on Zero)", Category: "Option"},
+	{Name: "isNone", Signature: "(Option<T>) -> Bool", Description: "Check if Option is None", Category: "Option"},
+	{Name: "unwrap", Signature: "(Option<T>) -> T", Description: "Extract value from Some (panics on None)", Category: "Option"},
 	{Name: "unwrapOr", Signature: "(Option<T>, T) -> T", Description: "Extract value or return default", Category: "Option"},
 	{Name: "unwrapOrElse", Signature: "(Option<T>, () -> T) -> T", Description: "Extract value or compute default", Category: "Option"},
 

@@ -42,8 +42,8 @@ print(b[-1])
 // Test slicing
 print("=== Slicing ===")
 full = @"Hello World"
-print(bytesSlice(full, 0, 5))
-print(bytesSlice(full, 6, 11))
+print(unwrapResult(bytesSlice(full, 0, 5)))
+print(unwrapResult(bytesSlice(full, 6, 11)))
 
 // Test concatenation
 print("=== Concatenation ===")

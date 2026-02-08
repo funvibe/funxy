@@ -1,0 +1,90 @@
+package main
+
+// Top level declarations
+type MyList<t> = Cons t (MyList t) | MyNil
+//   Expect: MyList
+
+type alias UserId = Int
+//         Expect: UserId
+
+type alias User = { id: UserId, name: String }
+//         Expect: User
+
+trait MyShow<t> {
+//    Expect: trait MyShow
+    fun show(val: t) -> String
+//      Expect: show
+}
+
+instance MyShow User {
+//                 ^ Expect: User
+    fun show(u: User) -> String {
+        u.name
+//      ^ Expect: User
+//        Expect: String
+    }
+}
+
+fun myIdentity<t>(x: t) -> t {
+//  ^ Expect: myIdentity
+//                Expect: t?
+    x
+}
+
+fun myFold<a, b>(f: (a, b) -> b, acc: b, list: MyList<a>) -> b {
+//  ^ Expect: myFold
+//                                               Expect: MyList
+    acc
+}
+
+fun main() {
+    // 1. Basic Literals
+    val_int = 123
+    //        ^ Expect: Int
+
+    val_str = "hello"
+    //        ^ Expect: String
+
+    val_bool = true
+    //         ^ Expect: Bool
+
+    val_tuple = (1, "a")
+    //          ^ Expect: (Int, String)
+
+    val_list = [1, 2, 3]
+    //         Expect: List
+    //          Expect: Int
+
+    // 2. User Types
+    u = { id: 1, name: "Alice" }
+    //    Expect: id
+    //           Expect: name
+
+    u2: User = { id: 1, name: "Alice" }
+    //    Expect: User
+
+    getUser(u2.id)
+    //      ^ Expect: User
+    //         Expect: UserId
+
+    // 3. Generics
+    myIdentity(123)
+    //         ^ Expect: Int
+
+    // 4. Pattern Matching
+    match u2 {
+        { id: i, name: n } -> n
+//            Expect: UserId
+//                     Expect: String
+        _ -> "Unknown"
+    }
+
+    // 5. Fold
+    // Fix lambda syntax: fun(args) -> body
+    myFold(fun(x, acc) -> x, 0, MyNil)
+//  ^ Expect: myFold
+}
+
+fun getUser(id: UserId) -> User {
+    { id: id, name: "Alice" }
+}

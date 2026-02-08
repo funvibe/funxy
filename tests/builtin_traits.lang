@@ -38,7 +38,7 @@ print(-7 % 3)   // -1
 
 // Test custom type implementing built-in Default trait
 // Records automatically get default from field defaults
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 instance Default Point {}
 p: Point = default(Point)
 print(p.x)  // 0

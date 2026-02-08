@@ -1,7 +1,7 @@
 Some("Alice")
 Some(30)
-Zero
-Zero
+None
+None
 Alice
 Unknown
 Ok("alice@example.com")
@@ -9,7 +9,7 @@ Fail("User not found")
 alice@example.com
 no-email
 Some("Moscow")
-Zero
+None
 Moscow
 Unknown
 Optional chaining test passed!

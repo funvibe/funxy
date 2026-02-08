@@ -1,12 +1,12 @@
 trait Printable<t> {
-    fun format(x: t) -> String
+    fun pretty(x: t) -> String
 }
 
 instance Printable Int {
-    fun format(x: Int) -> String { "Int" }
+    fun pretty(x: Int) -> String { "Int" }
 }
 
 instance Printable Int {
-    fun format(x: Int) -> String { "Int2" }
+    fun pretty(x: Int) -> String { "Int2" }
 }
 

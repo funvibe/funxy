@@ -80,25 +80,25 @@ contexts:
       scope: constant.numeric.integer.funxy
 
   keywords:
-    - match: \b(fun|type|alias|match|if|else|for|while|in|break|continue|package|import|as|directive)\b
+    - match: \b(fun|type|alias|match|if|else|for|while|in|break|continue|return|const|package|import|as|directive)\b
       scope: keyword.control.funxy
     - match: \b(export|trait|instance|operator|async|await)\b
       scope: keyword.other.funxy
-    - match: \b(true|false|Nil|Zero)\b
+    - match: \b(true|false|Nil|None)\b
       scope: constant.language.funxy
 
   types:
-    - match: \b(Int|Float|String|Bool|Nil|List|Map|Option|Result|Some|Zero|Ok|Fail|Bytes|BigInt|Rational|Char|Unit|Tuple)\b
+    - match: \b(Int|Float|String|Bool|Nil|List|Map|Option|Result|Some|None|Ok|Fail|Bytes|BigInt|Rational|Char|Unit|Tuple)\b
       scope: support.type.builtin.funxy
     - match: \b[A-Z][a-zA-Z0-9_]*\b
       scope: entity.name.type.funxy
 
   builtins:
-    - match: \b(print|write|panic|debug|trace|len|lenBytes|show|read|intToFloat|floatToInt|sprintf|getType|typeOf|id|kindOf|debugType|debugRepr|const|default|fmap|pure|mempty|append|fst|snd|map|filter|foldl|foldr|head|tail|range|charToCode|charFromCode)\b
+    - match: \b(print|write|panic|debug|trace|len|lenBytes|show|read|intToFloat|floatToInt|format|getType|typeOf|id|kindOf|debugType|debugRepr|constant|default|fmap|pure|mempty|append|fst|snd|map|filter|foldl|foldr|head|tail|range|charToCode|charFromCode)\b
       scope: support.function.builtin.funxy
 
   operators:
-    - match: '->|=>|>>=|<\*>|<>|\|>|<\||\+\+|::|==|!=|<=|>=|&&|\|\||:=|:-|,,|\$|\\'
+    - match: '->|=>|>>=|<\*>|<>|\|>|<\||\+\+|::|==|!=|<=|>=|<<|>>|\*\*|&&|\|\||:=|:-|,,|\$|\\|\+|-|\*|/|%|&|\||\^|~|!|\?'
       scope: keyword.operator.funxy
 
   functions:

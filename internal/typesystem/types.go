@@ -24,12 +24,25 @@ type TVar struct {
 
 func (t TVar) String() string {
 	// Normalize auto-generated type variables (t1, t2, t14, etc.) to t?
-	// This normalization only happens during test runs
-	if config.IsTestMode && strings.HasPrefix(t.Name, "t") {
-		// Check if rest is numeric
-		rest := t.Name[1:]
-		if _, err := strconv.Atoi(rest); err == nil {
-			return "t?"
+	// This normalization happens in tests (for determinism) and LSP (for clean UI)
+	if config.IsTestMode || config.IsLSPMode {
+		// Handle "t" prefix (standard inference vars)
+		if strings.HasPrefix(t.Name, "t") {
+			rest := t.Name[1:]
+			if _, err := strconv.Atoi(rest); err == nil {
+				return "t?"
+			}
+		}
+		// Handle "gen_t" prefix (generalized type vars)
+		if strings.HasPrefix(t.Name, "gen_t") {
+			rest := t.Name[5:] // len("gen_t") == 5
+			if _, err := strconv.Atoi(rest); err == nil {
+				return "t" + rest
+			}
+		}
+		// Handle "_pending_" prefix
+		if strings.HasPrefix(t.Name, "_pending_") {
+			return "pending?"
 		}
 	}
 	return t.Name
@@ -206,6 +219,9 @@ func ApplyWithCycleCheck(t Type, s Subst, visited map[string]bool) Type {
 			Type:        ApplyWithCycleCheck(typ.Type, newSubst, visited),
 		}
 
+	case TType:
+		return TType{Type: ApplyWithCycleCheck(typ.Type, s, visited)}
+
 	default:
 		// Fallback for any other types
 		return t.Apply(s)
@@ -282,9 +298,9 @@ func (t TCon) Kind() Kind {
 
 func (t TCon) String() string {
 	name := t.Name
-	if config.IsTestMode && strings.HasPrefix(name, "$skolem_") {
+	if (config.IsTestMode || config.IsLSPMode) && strings.HasPrefix(name, "$skolem_") {
 		// Normalize skolem constants (e.g. $skolem_x_8 -> $skolem_x_?)
-		// This ensures deterministic output in tests
+		// This ensures deterministic output in tests and clean UI
 		lastIdx := strings.LastIndex(name, "_")
 		if lastIdx > 0 {
 			suffix := name[lastIdx+1:]
@@ -321,7 +337,8 @@ func UnwrapUnderlying(t Type) Type {
 }
 
 // ExpandTypeAlias expands a type alias TApp by substituting type arguments into the underlying type.
-// For example: StringResult<Int> where StringResult<e> = Result<e, String> becomes Result<Int, String>.
+// For example: StringResult<Int> where StringResult<t> = Result<String, t> becomes Result<String, Int>.
+// It also handles higher-kinded aliases and partial applications correctly.
 // Returns the original type if it's not an alias or cannot be expanded.
 func ExpandTypeAlias(t Type) Type {
 	tApp, ok := t.(TApp)
@@ -330,22 +347,49 @@ func ExpandTypeAlias(t Type) Type {
 	}
 
 	tCon, ok := tApp.Constructor.(TCon)
-	if !ok || tCon.UnderlyingType == nil || tCon.TypeParams == nil {
+	if !ok || tCon.UnderlyingType == nil {
 		return t
 	}
 
-	// Build substitution from type parameters to actual arguments
-	if len(*tCon.TypeParams) != len(tApp.Args) {
-		return t // Arity mismatch, cannot expand
+	numParams := 0
+	if tCon.TypeParams != nil {
+		numParams = len(*tCon.TypeParams)
 	}
 
-	subst := make(Subst)
-	for i, paramName := range *tCon.TypeParams {
-		subst[paramName] = tApp.Args[i]
+	// If we don't have enough arguments to satisfy the alias parameters,
+	// we cannot fully expand it (Partial Alias Application).
+	if len(tApp.Args) < numParams {
+		return t
 	}
 
-	// Apply substitution to the underlying type
-	return tCon.UnderlyingType.Apply(subst)
+	// 1. Expand the alias using the required number of arguments
+	var expanded Type
+	if numParams > 0 {
+		subst := make(Subst)
+		for i, paramName := range *tCon.TypeParams {
+			subst[paramName] = tApp.Args[i]
+		}
+		expanded = tCon.UnderlyingType.Apply(subst)
+	} else {
+		// No parameters (e.g. type MyExpr = HFix<ExprF>)
+		expanded = tCon.UnderlyingType
+	}
+
+	// 2. Apply any remaining arguments to the expanded type
+	// e.g. MyExpr<Int> -> (HFix<ExprF>)<Int> -> HFix<ExprF, Int>
+	remainingArgs := tApp.Args[numParams:]
+	if len(remainingArgs) > 0 {
+		// If expanded type is TApp, flatten it
+		if expandedApp, ok := expanded.(TApp); ok {
+			mergedArgs := append([]Type{}, expandedApp.Args...)
+			mergedArgs = append(mergedArgs, remainingArgs...)
+			expanded = TApp{Constructor: expandedApp.Constructor, Args: mergedArgs}
+		} else {
+			expanded = TApp{Constructor: expanded, Args: remainingArgs}
+		}
+	}
+
+	return expanded
 }
 
 // TApp represents a type application (e.g. List Int).
@@ -588,7 +632,7 @@ func (t TFunc) String() string {
 	}
 	if t.IsVariadic {
 		if len(params) > 0 {
-			params[len(params)-1] += "..."
+			params[len(params)-1] = "..." + params[len(params)-1]
 		} else {
 			params = append(params, "...")
 		}
@@ -606,6 +650,15 @@ func (t TFunc) FreeTypeVariables() []TVar {
 		vars = append(vars, p.FreeTypeVariables()...)
 	}
 	vars = append(vars, t.ReturnType.FreeTypeVariables()...)
+
+	// Include variables from constraints (they are implicit parameters)
+	for _, c := range t.Constraints {
+		vars = append(vars, TVar{Name: c.TypeVar})
+		for _, arg := range c.Args {
+			vars = append(vars, arg.FreeTypeVariables()...)
+		}
+	}
+
 	return uniqueTVars(vars)
 }
 
@@ -620,6 +673,12 @@ type TForall struct {
 func (t TForall) Kind() Kind { return Star }
 
 func (t TForall) String() string {
+	// In LSP mode, hide the explicit quantifier if it's just implicit polymorphism
+	// to avoid cluttering the view with "forall t? t? ...".
+	if config.IsLSPMode {
+		return t.Type.String()
+	}
+
 	vars := []string{}
 	for _, v := range t.Vars {
 		varStr := v.String()

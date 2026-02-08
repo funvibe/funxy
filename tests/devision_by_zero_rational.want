@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error [R001]: runtime error: ERROR at 2:0: division by zero
+Stack trace:
+  at tests/devision_by_zero_rational:2 (called tests/devision_by_zero_rational)

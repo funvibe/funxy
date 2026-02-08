@@ -1,3 +1,2 @@
 Processing failed with errors:
 - error at 38:23 [A003]: type error: types [Int Bool] do not implement trait Convert
-- error at 49:12 [A003]: type error: ambiguous types for trait Combinable (unresolved inference variables)

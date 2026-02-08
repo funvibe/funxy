@@ -235,8 +235,8 @@
                     let j = i;
                     while (j < text.length && /[a-zA-Z0-9_]/.test(text[j])) j++;
                     const word = text.slice(i, j);
-                    const keywords = ['fun','type','alias','match','if','else','for','in','import','trait','instance','operator','async','await','break','continue','package','directive','do'];
-                    const types = ['Int','Float','String','Bool','Nil','List','Map','Option','Result','Some','Zero','Ok','Fail','Bytes','BigInt','Rational','Char','Unit'];
+                    const keywords = ['fun','type','alias','match','if','else','for','in','import','trait','instance','operator','async','await','break','continue','return','const','package','directive','do'];
+                    const types = ['Int','Float','String','Bool','Nil','List','Map','Option','Result','Some','None','Ok','Fail','Bytes','BigInt','Rational','Char','Unit'];
                     const builtins = ['print','show','len','read','getType','default','panic','id','const','fst','snd','map','filter','foldl','head','tail','range','true','false'];
 
                     if (keywords.includes(word)) tokens.push({type: 'kw', text: word});

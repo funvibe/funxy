@@ -124,7 +124,7 @@ instance MyFunctor Option {
     fun myMap<a, b>(fn: (a) -> b, x: Option<a>) -> Option<b> {
         match x {
             Some(v) -> Some(fn(v))
-            Zero -> Zero
+            None -> None
         }
     }
 }
@@ -138,7 +138,7 @@ testRun("Traits: HKT", \ -> {
     // Assuming standard library has it.
     // assertEquals(Some(11), o, "HKT Option")
     // If not, check inner
-    val = match o { Some(v) -> v, Zero -> -1 }
+    val = match o { Some(v) -> v, None -> -1 }
     assertEquals(11, val, "HKT Option value")
 })
 

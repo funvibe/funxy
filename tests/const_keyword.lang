@@ -1,0 +1,17 @@
+// Test const keyword declaration
+
+const pi = 3.14159
+const (x, y) = (1, 2)
+
+fun test() {
+    const local = 10
+    print(local)
+    print(pi)
+    print(x)
+    print(y)
+
+    // Test constant function (renamed from const)
+    print(constant(100, 200))
+}
+
+test()

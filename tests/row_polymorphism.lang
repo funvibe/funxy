@@ -1,4 +1,4 @@
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 // Function expecting a Point
 fun printX(p: Point) {

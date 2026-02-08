@@ -112,9 +112,11 @@ const (
 	IN        TokenType = "IN"
 	BREAK     TokenType = "BREAK"
 	CONTINUE  TokenType = "CONTINUE"
+	RETURN    TokenType = "RETURN"
 	PACKAGE   TokenType = "PACKAGE"
 	IMPORT    TokenType = "IMPORT"
 	DO        TokenType = "DO"     // do notation
+	CONST     TokenType = "CONST"  // const keyword
 	FORALL    TokenType = "FORALL" // forall a. T
 	DIRECTIVE TokenType = "DIRECTIVE"
 
@@ -147,7 +149,7 @@ const (
 	BITS_OCT TokenType = "BITS_OCT" // #o"377" - octal bits
 )
 
-var keywords = map[string]TokenType{
+var Keywords = map[string]TokenType{
 	"type":      TYPE,
 	"alias":     ALIAS,
 	"if":        IF,
@@ -164,11 +166,13 @@ var keywords = map[string]TokenType{
 	"in":        IN,
 	"break":     BREAK,
 	"continue":  CONTINUE,
+	"return":    RETURN,
 	"package":   PACKAGE,
 	"import":    IMPORT,
 	"_":         UNDERSCORE,
 	"while":     FOR,
 	"do":        DO,
+	"const":     CONST,
 	"forall":    FORALL,
 	"directive": DIRECTIVE,
 }
@@ -176,7 +180,7 @@ var keywords = map[string]TokenType{
 // LookupIdent checks the keywords table to see whether the given identifier
 // is in fact a keyword.
 func LookupIdent(ident string) TokenType {
-	if tok, ok := keywords[ident]; ok {
+	if tok, ok := Keywords[ident]; ok {
 		return tok
 	}
 	return IDENT_LOWER // By default, lowercase identifiers are just identifiers

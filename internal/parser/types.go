@@ -8,6 +8,17 @@ import (
 )
 
 func (p *Parser) parseType() ast.Type {
+	p.depth++
+	if p.depth > MaxRecursionDepth {
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006, p.curToken,
+			"Maximum recursion depth exceeded during type parsing",
+		))
+		p.depth--
+		return nil
+	}
+	defer func() { p.depth-- }()
+
 	// Check for 'forall' type
 	if p.curTokenIs(token.FORALL) {
 		return p.parseForallType()
@@ -77,25 +88,7 @@ func (p *Parser) parseForallType() ast.Type {
 
 		// Check for constraints: t: Numeric, Show
 		if p.curTokenIs(token.COLON) {
-			p.nextToken() // consume ':'
-			// Parse constraint list: Trait1, Trait2, ...
-			for p.curTokenIs(token.IDENT_UPPER) {
-				constraint := &ast.TypeConstraint{
-					TypeVar: ident.Value,
-					Trait:   p.curToken.Literal.(string),
-				}
-				ident.Constraints = append(ident.Constraints, constraint)
-				p.nextToken()
-
-				// Check for comma (more constraints for this param)
-				if p.curTokenIs(token.COMMA) {
-					p.nextToken() // consume comma
-					// Continue to parse next constraint for this param
-				} else {
-					// No comma, end of constraints for this param
-					break
-				}
-			}
+			p.parseTypeAnnotations(ident)
 		}
 
 		// Check for comma (more variables) or dot (end of variables)
@@ -127,6 +120,53 @@ func (p *Parser) parseForallType() ast.Type {
 		Token: tok,
 		Vars:  typeParams,
 		Type:  body,
+	}
+}
+
+// parseTypeAnnotations parses optional kind annotation and trait constraints.
+// It assumes curToken is COLON (:).
+// Syntax: : Kind + Trait1 + Trait2 ...
+// Or (legacy/ambiguous): : Kind, Trait1, Trait2 ...
+func (p *Parser) parseTypeAnnotations(ident *ast.Identifier) {
+	p.nextToken() // consume ':'
+
+	// 1. Parse Kind
+	if p.curTokenIs(token.ASTERISK) || p.curTokenIs(token.LPAREN) {
+		ident.Kind = p.parseKind()
+		p.nextToken() // consume last token of kind
+	}
+
+	// 2. Parse Constraints
+	for {
+		isCommaConstraint := p.curTokenIs(token.COMMA)
+		isPlusConstraint := p.curTokenIs(token.PLUS)
+
+		if ident.Kind != nil || len(ident.Constraints) > 0 {
+			if isPlusConstraint {
+				p.nextToken() // consume +
+			} else if isCommaConstraint {
+				// Heuristic: If comma followed by UPPER identifier, it's another constraint.
+				// Otherwise, it's the start of the next type argument/variable.
+				if p.peekTokenIs(token.IDENT_UPPER) {
+					p.nextToken() // consume comma
+				} else {
+					break
+				}
+			} else {
+				break
+			}
+		}
+
+		if p.curTokenIs(token.IDENT_UPPER) {
+			constraint := &ast.TypeConstraint{
+				TypeVar: ident.Value,
+				Trait:   p.curToken.Literal.(string),
+			}
+			ident.Constraints = append(ident.Constraints, constraint)
+			p.nextToken()
+		} else {
+			break
+		}
 	}
 }
 
@@ -231,10 +271,7 @@ func (p *Parser) parseTypeApplication() ast.Type {
 					// In nested generics (e.g. List<List<T>>), this is ambiguous.
 					// We must manually split the RSHIFT token into two GT tokens to correctly parse the closing brackets.
 					p.nextToken() // move curToken to >>
-					// Set flag so next nextToken returns synthetic >
-					p.splitRshift = true
-					// Now call nextToken to get the synthetic >
-					p.nextToken() // curToken becomes synthetic >
+					p.splitRshiftToken()
 					break
 				} else if p.peekTokenIs(token.COMMA) {
 					// This > closed an inner generic, more args coming
@@ -261,35 +298,7 @@ func (p *Parser) parseTypeApplication() ast.Type {
 				p.nextToken() // move to COLON
 				// Ensure arg is a NamedType (type variable)
 				if nt, ok := arg.(*ast.NamedType); ok {
-					for {
-						p.nextToken() // move to Trait Name
-						if !p.curTokenIs(token.IDENT_UPPER) {
-							p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-								diagnostics.ErrP005, p.curToken,
-								"expected trait name (uppercase identifier)", p.curToken.Literal,
-							))
-							break
-						}
-						constraint := &ast.TypeConstraint{
-							TypeVar: nt.Name.Value,
-							Trait:   p.curToken.Literal.(string),
-						}
-						nt.Name.Constraints = append(nt.Name.Constraints, constraint)
-
-						// Check for more constraints (comma separated)
-						// Heuristic: If comma followed by UPPER identifier, it's another constraint.
-						// Otherwise, it's the start of the next type argument.
-						if p.peekTokenIs(token.COMMA) {
-							p.nextToken() // Consume comma
-							if p.peekTokenIs(token.IDENT_UPPER) {
-								continue
-							}
-							// Not a constraint (next arg is likely lower case type var or concrete type)
-							// We consumed the comma, so we break and let outer loop handle curToken==COMMA
-							break
-						}
-						break
-					}
+					p.parseTypeAnnotations(nt.Name)
 				} else {
 					// Error: constraint on non-variable type
 					p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
@@ -307,20 +316,30 @@ func (p *Parser) parseTypeApplication() ast.Type {
 				continue
 			}
 
+			// If constraint parsing left us at >>, we need to handle it as a closing >
+			if p.curTokenIs(token.RSHIFT) {
+				p.splitRshiftToken()
+				break
+			}
+
 			// If parseType() parsed a nested generic type, curToken might be at the >
 			// that closed the inner generic. Check peekToken to see what's next.
 			if p.curTokenIs(token.GT) {
+				// Check if this GT closes the current generic (no more nested closings or args following)
+				if !p.peekTokenIs(token.GT) && !p.peekTokenIs(token.COMMA) && !p.peekTokenIs(token.RSHIFT) {
+					break
+				}
+
 				// parseType() left us at a > that closed an inner generic
 				// Check peekToken to see if we're done or need to continue
-				if p.peekTokenIs(token.GT) || p.splitRshift {
+				if p.peekTokenIs(token.GT) {
 					// Another > closes the outer generic
 					p.nextToken()
 					break
 				} else if p.peekTokenIs(token.RSHIFT) {
 					// We see >> where we expect >
 					p.nextToken() // move curToken to >>
-					p.splitRshift = true
-					p.nextToken() // curToken becomes synthetic >
+					p.splitRshiftToken()
 					break
 				} else if p.peekTokenIs(token.COMMA) {
 					// More args coming
@@ -344,20 +363,23 @@ func (p *Parser) parseTypeApplication() ast.Type {
 				// We see >> where we expect >
 				// Consume it and split: first > closes this generic
 				p.nextToken() // move curToken to >>
-				// Set flag so next nextToken returns synthetic >
-				p.splitRshift = true
-				// Manually convert current token to > to close this generic
-				p.curToken.Type = token.GT
-				p.curToken.Literal = ">"
-				p.curToken.Lexeme = ">"
+				p.splitRshiftToken()
 				break
 			} else {
 				// Unexpected token
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP005, p.peekToken,
+					"expected ',' or '>' in type argument list", p.peekToken.Literal,
+				))
 				return nil
 			}
 		}
 
 		if !p.curTokenIs(token.GT) {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP005, p.curToken,
+				"expected '>' to close type argument list", p.curToken.Literal,
+			))
 			return nil
 		}
 	}
@@ -429,6 +451,7 @@ func (p *Parser) parseAtomicType() ast.Type {
 
 		return &ast.NamedType{Token: startToken, Name: &ast.Identifier{Token: startToken, Value: nameVal}}
 	}
+
 	return nil
 }
 

@@ -54,7 +54,7 @@ result = regexFind("\d+", "abc123def456")
 print(result)  // Some("123")
 
 noMatch = regexFind("\d+", "abc")
-print(noMatch)  // Zero
+print(noMatch)  // None
 ```
 
 ### findAllRe
@@ -99,7 +99,7 @@ match result {
         print(groups[2])  // "03" (month)
         print(groups[3])  // "15" (day)
     }
-    Zero -> print("No match")
+    None -> print("No match")
 }
 ```
 
@@ -161,7 +161,7 @@ print(words)  // ["hello", "world", "foo"]
 ### validateRe
 
 ```rust
-regexValidate(pattern: String) -> Result<Nil, String>
+regexValidate(pattern: String) -> Result<String, Nil>
 ```
 
 Validates regular expression syntax.
@@ -239,7 +239,7 @@ match result {
         print(parts[2])  // "example.com" (host)
         print(parts[3])  // "/path" (path)
     }
-    Zero -> ()
+    None -> ()
 }
 ```
 
@@ -272,7 +272,7 @@ print(values)  // ["a", "b", "c", "d"]
 | `replaceRe` | `(String, String, String) -> String` | Replace first |
 | `replaceAllRe` | `(String, String, String) -> String` | Replace all |
 | `splitRe` | `(String, String) -> List<String>` | Split |
-| `validateRe` | `(String) -> Result<Nil, String>` | Validate pattern |
+| `validateRe` | `(String) -> Result<String, Nil>` | Validate pattern |
 
 ## Limitations
 

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("paZkagtils\n\nfun visible_func() {\n  print(\"visibel\")\n}\n\nfun another_func() {\n  print(\x0fanother\")\n}\n")

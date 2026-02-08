@@ -2,18 +2,20 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/backend"
 	"github.com/funvibe/funxy/internal/config"
+	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/lexer"
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
+	"github.com/funvibe/funxy/internal/utils"
 	"github.com/funvibe/funxy/internal/vm"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -45,14 +47,6 @@ func getImportName(imp *ast.ImportStatement) string {
 	return file
 }
 
-func resolvePath(baseDir, importPath string) string {
-	if strings.HasPrefix(importPath, ".") {
-		return filepath.Join(baseDir, importPath)
-	}
-	abs, _ := filepath.Abs(importPath)
-	return abs
-}
-
 func evaluateModule(mod *modules.Module, loader *modules.Loader) (evaluator.Object, error) {
 	if cached, ok := moduleCache[mod.Dir]; ok {
 		return cached, nil
@@ -78,24 +72,57 @@ func evaluateModule(mod *modules.Module, loader *modules.Loader) (evaluator.Obje
 	// Process imports for this module
 	for _, file := range mod.Files {
 		for _, imp := range file.Imports {
-			absPath := resolvePath(mod.Dir, imp.Path.Value)
-			depMod, err := loader.Load(absPath)
+			pathToCheck := utils.ResolveImportPath(mod.Dir, imp.Path.Value)
+			modInterface, err := loader.GetModule(pathToCheck)
 			if err != nil {
 				return nil, err
 			}
 
-			depObj, err := evaluateModule(depMod, loader)
-			if err != nil {
-				return nil, err
+			depMod, ok := modInterface.(*modules.Module)
+			if !ok {
+				return nil, fmt.Errorf("invalid module type for %s", imp.Path.Value)
 			}
 
+			var depObj evaluator.Object
+			if depMod.IsVirtual {
+				builtins := evaluator.GetVirtualModuleBuiltins(depMod.Name)
+				if builtins == nil {
+					return nil, fmt.Errorf("unknown virtual module: %s", depMod.Name)
+				}
+				fields := make(map[string]evaluator.Object)
+				for name, fn := range builtins {
+					fields[name] = fn
+				}
+				rec := evaluator.NewRecord(fields)
+				rec.ModuleName = depMod.Name
+				depObj = rec
+			} else if depMod.IsPackageGroup {
+				exports := make(map[string]evaluator.Object)
+				for _, subMod := range depMod.Imports {
+					subObj, err := evaluateModule(subMod, loader)
+					if err != nil {
+						return nil, err
+					}
+					if rec, ok := subObj.(*evaluator.RecordInstance); ok {
+						for _, field := range rec.Fields {
+							exports[field.Key] = field.Value
+						}
+					}
+				}
+				depObj = evaluator.NewRecord(exports)
+			} else {
+				depObj, err = evaluateModule(depMod, loader)
+				if err != nil {
+					return nil, err
+				}
+			}
 			alias := getImportName(imp)
 			env.Set(alias, depObj)
 		}
 	}
 
-	// Evaluate files
-	for _, file := range mod.Files {
+	// Evaluate files in dependency-aware order
+	for _, file := range mod.OrderedFiles() {
 		res := eval.Eval(file, env)
 		if res != nil && res.Type() == evaluator.ERROR_OBJ {
 			return nil, fmt.Errorf("runtime error in %s: %s", mod.Name, res.Inspect())
@@ -129,13 +156,24 @@ func runModule(path string) {
 	analyzer.RegisterBuiltins()
 
 	hasErrors := false
-	for _, fileAST := range mod.Files {
-		errors := analyzer.Analyze(fileAST)
-		if len(errors) > 0 {
-			hasErrors = true
-			for _, err := range errors {
-				fmt.Fprintf(os.Stderr, "- %s\n", err.Error())
-			}
+	var errors []*diagnostics.DiagnosticError
+	for _, fileAST := range mod.OrderedFiles() {
+		errors = append(errors, analyzer.AnalyzeNaming(fileAST)...)
+	}
+	for _, fileAST := range mod.OrderedFiles() {
+		errors = append(errors, analyzer.AnalyzeHeaders(fileAST)...)
+	}
+	for _, fileAST := range mod.OrderedFiles() {
+		errors = append(errors, analyzer.AnalyzeInstances(fileAST)...)
+	}
+	for _, fileAST := range mod.OrderedFiles() {
+		errors = append(errors, analyzer.AnalyzeBodies(fileAST)...)
+	}
+
+	if len(errors) > 0 {
+		hasErrors = true
+		for _, err := range errors {
+			fmt.Fprintf(os.Stderr, "- %s\n", err.Error())
 		}
 	}
 
@@ -556,12 +594,10 @@ func main() {
 	// Check for debug flag
 	debugMode := false
 	args := os.Args[1:]
-	var fileArgs []string
 	for _, arg := range args {
 		if arg == "-debug" || arg == "--debug" {
 			debugMode = true
-		} else if !strings.HasPrefix(arg, "-") {
-			fileArgs = append(fileArgs, arg)
+			break
 		}
 	}
 
@@ -587,24 +623,59 @@ func main() {
 
 	useTreeWalk := isTreeWalkMode()
 
-	// Restore args with file arguments
-	if len(fileArgs) > 0 {
-		os.Args = append([]string{os.Args[0]}, fileArgs...)
+	// Restore args for the script:
+	// - keep all script flags/args
+	// - remove host-only flags (debug)
+	// - ensure the file path is at argv[1]
+	var fileArg string
+	var restArgs []string
+	for _, arg := range os.Args[1:] {
+		if arg == "-debug" || arg == "--debug" {
+			continue
+		}
+		if fileArg == "" && !strings.HasPrefix(arg, "-") {
+			fileArg = arg
+			continue
+		}
+		restArgs = append(restArgs, arg)
+	}
+	if fileArg != "" {
+		os.Args = append([]string{os.Args[0], fileArg}, restArgs...)
 	} else {
 		os.Args = []string{os.Args[0]}
 	}
 	args = getArgs()
 
-	if len(args) == 2 {
+	if len(args) >= 2 {
 		path := args[1]
 		fileInfo, err := os.Stat(path)
 		if err == nil && fileInfo.IsDir() {
 			if !useTreeWalk {
-				fmt.Fprintln(os.Stderr, "VM mode not supported for modules yet, please rebuild with -ldflags \"-X main.BackendType=tree\"")
-				os.Exit(1)
+				// In VM mode, resolve directory to its entry file and run via pipeline.
+				dirBase := filepath.Base(path)
+				entryFile := ""
+				for _, ext := range config.SourceFileExtensions {
+					candidate := filepath.Join(path, dirBase+ext)
+					if _, err := os.Stat(candidate); err == nil {
+						entryFile = candidate
+						break
+					}
+				}
+				if entryFile == "" {
+					fmt.Fprintf(os.Stderr, "Entry file not found for package directory: %s\n", path)
+					os.Exit(1)
+				}
+				// Rewrite args to point at the entry file.
+				args[1] = entryFile
+				os.Args = append([]string{os.Args[0], entryFile}, os.Args[2:]...)
+				args = getArgs()
+				fileInfo, err = os.Stat(entryFile)
+				_ = fileInfo
+				_ = err
+			} else {
+				runModule(path)
+				return
 			}
-			runModule(path)
-			return
 		}
 	}
 
@@ -618,7 +689,7 @@ func main() {
 	}
 
 	filePath := ""
-	if len(args) == 2 {
+	if len(args) >= 2 {
 		filePath, _ = filepath.Abs(args[1])
 	}
 

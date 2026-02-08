@@ -44,6 +44,7 @@ func (vm *VM) callValue(callee Value, argCount int) error {
 
 // callHostObject calls a host object (wrapped Go function)
 func (vm *VM) callHostObject(hostObj *evaluator.HostObject, argCount int) error {
+	vm.checkStack(argCount + 1)
 	// Pop arguments
 	args := make([]evaluator.Object, argCount)
 	for i := argCount - 1; i >= 0; i-- {
@@ -73,6 +74,8 @@ func (vm *VM) callBuiltinClosure(bc *BuiltinClosure, argCount int) error {
 	if vm.nextImplicitContext != "" {
 		vm.nextImplicitContext = ""
 	}
+
+	vm.checkStack(argCount + 1)
 
 	args := make([]evaluator.Object, argCount)
 	for i := argCount - 1; i >= 0; i-- {
@@ -163,11 +166,15 @@ func (vm *VM) executeDefaultChunk(chunk *Chunk, parentClosure *ObjClosure) (Valu
 func (vm *VM) callClosure(closure *ObjClosure, argCount int) error {
 	fn := closure.Function
 
+	// Ensure stack has [fn, args...]
+	vm.checkStack(argCount + 1)
+
 	if fn.IsVariadic {
 		if argCount < fn.Arity {
 			return vm.runtimeError("expected at least %d arguments but got %d", fn.Arity, argCount)
 		}
 		variadicCount := argCount - fn.Arity
+		// vm.checkStack(variadicCount) // Covered by checkStack(argCount + 1)
 		variadicArgs := make([]evaluator.Object, variadicCount)
 		for i := 0; i < variadicCount; i++ {
 			variadicArgs[i] = vm.stack[vm.sp-variadicCount+i].AsObject()
@@ -221,6 +228,11 @@ func (vm *VM) callClosure(closure *ObjClosure, argCount int) error {
 		if argCount > fn.Arity && !fn.IsVariadic {
 			return vm.runtimeError("expected %d arguments but got %d", fn.Arity, argCount)
 		}
+	}
+
+	// Check recursion limit
+	if vm.frameCount >= MaxFrameCount {
+		return vm.runtimeError("stack overflow: recursion depth limit exceeded")
 	}
 
 	// Grow frames array if needed
@@ -351,6 +363,8 @@ func (vm *VM) callBuiltin(builtin *evaluator.Builtin, argCount int) error {
 		vm.nextImplicitContext = ""
 	}()
 
+	vm.checkStack(argCount + 1)
+
 	args := make([]evaluator.Object, argCount)
 	for i := 0; i < argCount; i++ {
 		args[i] = vm.stack[vm.sp-argCount+i].AsObject()
@@ -417,7 +431,9 @@ func (vm *VM) callBuiltin(builtin *evaluator.Builtin, argCount int) error {
 	result := builtin.Fn(eval, args...)
 
 	if result != nil && result.Type() == evaluator.ERROR_OBJ {
-		return vm.runtimeError("%s", result.Inspect())
+		// Use runtimeErrorWithCallee to ensure stack trace attributes error to the builtin function
+		// (e.g. "called slice" instead of "called panic" or "called <caller>")
+		return vm.runtimeErrorWithCallee(builtin.Name, "%s", result.(*evaluator.Error).Message)
 	}
 
 	vm.sp -= argCount + 1
@@ -432,6 +448,8 @@ func (vm *VM) callBuiltin(builtin *evaluator.Builtin, argCount int) error {
 
 // callConstructor handles ADT constructor calls
 func (vm *VM) callConstructor(ctor *evaluator.Constructor, argCount int) error {
+	vm.checkStack(argCount + 1)
+
 	// Extract TypeArgs from leading TypeObject arguments (Reified Generics)
 	var typeArgs []typesystem.Type
 	var valueArgs []evaluator.Object
@@ -479,6 +497,8 @@ func (vm *VM) callConstructor(ctor *evaluator.Constructor, argCount int) error {
 
 // callTypeObject handles type application like List(Int) or value construction like Sum({x:1})
 func (vm *VM) callTypeObject(typeObj *evaluator.TypeObject, argCount int) error {
+	vm.checkStack(argCount + 1)
+
 	// Check for value construction/casting
 	isConstruction := false
 	if argCount > 0 {
@@ -667,6 +687,8 @@ func (vm *VM) callPartialApplication(pa *evaluator.PartialApplication, argCount 
 		fn = pa.Builtin
 	} else if pa.Constructor != nil {
 		fn = pa.Constructor
+	} else if pa.ClassMethod != nil {
+		fn = pa.ClassMethod
 	} else {
 		return vm.runtimeError("invalid partial application")
 	}
@@ -699,11 +721,15 @@ func (vm *VM) callBoundMethod(bm *evaluator.BoundMethod, argCount int) error {
 
 // callClassMethod calls a trait method natively
 func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
+	// Ensure stack has [ClassMethod, args...]
+	// We need argCount + 1 because we might access the ClassMethod slot later
+	vm.checkStack(argCount + 1)
+
 	// Check for hidden type hint argument (injected by Compiler/VM)
 	// pure(val, TypeHint) -> pure(val) with context TypeHint
 	var explicitTypeHint typesystem.Type
 
-	if cm.Arity >= 0 && argCount == cm.Arity+1 {
+	if cm.Arity >= 0 && argCount > cm.Arity {
 		lastArg := vm.peek(0)
 		if typeObj, ok := lastArg.AsObject().(*evaluator.TypeObject); ok {
 			explicitTypeHint = typeObj.TypeVal
@@ -729,8 +755,76 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 	var method evaluator.Object
 	var resolvedType string
 
+	// 0. Explicit Witness Dispatch (Dictionary)
+	// Check if leading arguments are dictionaries and contain the method.
+	// This supports explicit witness passing (e.g. from _bindWitness or compiler).
+	if argCount > 0 {
+		// Only check first few arguments that are dictionaries
+		strippedCount := 0
+		base := vm.sp - argCount
+		var foundInDict evaluator.Object
+
+		for i := 0; i < argCount; i++ {
+			arg := vm.stack[base+i].AsObject()
+			if dict, ok := arg.(*evaluator.Dictionary); ok {
+				// Try to find method
+				if m := evaluator.FindMethodInDictionary(dict, cm.Name); m != nil {
+					// Check if implemented (not Nil placeholder)
+					if _, isNil := m.(*evaluator.Nil); !isNil {
+						foundInDict = m
+						strippedCount = i + 1 // Consume this and prior dictionaries
+						break
+					}
+				}
+			} else {
+				// Stop at first non-dictionary
+				break
+			}
+		}
+
+		if foundInDict != nil {
+			method = foundInDict
+
+			// Check arity to be safe
+			wantsWitness := false
+			targetArity := -1
+			switch m := method.(type) {
+			case *ObjClosure:
+				targetArity = m.Function.Arity
+			case *CompiledFunction:
+				targetArity = m.Arity
+			case *evaluator.Function:
+				// Tree mode function (e.g. from default impl)
+				if len(m.WitnessParams) > 0 {
+					wantsWitness = true
+				}
+				targetArity = len(m.Parameters)
+			}
+
+			if targetArity >= 0 {
+				if targetArity < argCount {
+					// Strip dictionaries
+					remaining := argCount - strippedCount
+					for i := 0; i < remaining; i++ {
+						vm.stack[base+i] = vm.stack[base+strippedCount+i]
+					}
+					vm.sp -= strippedCount
+					argCount -= strippedCount
+				}
+			} else if !wantsWitness {
+				// Default strip if we can't determine arity or it's not a Function that explicitly wants it
+				remaining := argCount - strippedCount
+				for i := 0; i < remaining; i++ {
+					vm.stack[base+i] = vm.stack[base+strippedCount+i]
+				}
+				vm.sp -= strippedCount
+				argCount -= strippedCount
+			}
+		}
+	}
+
 	// For nullary methods, we rely on type context or defaults
-	if argCount == 0 {
+	if method == nil && argCount == 0 {
 		ctx := vm.getTypeContext()
 
 		// Prioritize explicit hint if available
@@ -934,6 +1028,50 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 	}
 
 	vm.stack[vm.sp-argCount-1] = ObjectToValue(method)
+
+	// Check if we need to strip witness arguments
+	// Only strip if method doesn't expect them (Arity < argCount)
+	// And if the arguments ARE dictionaries.
+	targetArity := -1
+	switch m := method.(type) {
+	case *ObjClosure:
+		targetArity = m.Function.Arity
+	case *CompiledFunction:
+		targetArity = m.Arity
+	case *evaluator.Builtin:
+		if t, ok := m.TypeInfo.(typesystem.TFunc); ok {
+			targetArity = len(t.Params)
+		}
+	}
+
+	if targetArity >= 0 && argCount > targetArity {
+		// Try to strip leading dictionaries
+		stripped := 0
+		// args start at vm.sp - argCount
+		base := vm.sp - argCount
+
+		for i := 0; i < argCount-targetArity; i++ {
+			arg := vm.stack[base+i].AsObject()
+			if _, ok := arg.(*evaluator.Dictionary); ok {
+				stripped++
+			} else {
+				break
+			}
+		}
+
+		if stripped > 0 {
+			// Shift arguments down
+			// We want to keep args from [stripped ... argCount-1]
+			// Move them to [0 ...]
+			remaining := argCount - stripped
+			for i := 0; i < remaining; i++ {
+				vm.stack[base+i] = vm.stack[base+stripped+i]
+			}
+
+			vm.sp -= stripped
+			argCount -= stripped
+		}
+	}
 
 	// Push witness on evaluator
 	if explicitTypeHint != nil {

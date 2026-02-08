@@ -1,0 +1,4 @@
+fun main() {
+    const localVal = 10
+    localVal = 20
+}

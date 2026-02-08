@@ -44,7 +44,7 @@ true
 false
 Some(2)
 Some(4)
-Zero
+None
 Some(0)
 === Other ===
 ababab

@@ -1,10 +1,10 @@
 package parser
 
 import (
-	"math/big"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/lexer"
 	"github.com/funvibe/funxy/internal/token"
+	"math/big"
 )
 
 func (p *Parser) parseIntegerLiteral() ast.Expression {
@@ -32,13 +32,14 @@ func (p *Parser) parseNil() ast.Expression {
 }
 
 func (p *Parser) parseStringLiteral() ast.Expression {
-	return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal.(string)}
+	return p.parseInterpolatedString()
 }
 
 func (p *Parser) parseFormatStringLiteral() ast.Expression {
 	return &ast.FormatStringLiteral{Token: p.curToken, Value: p.curToken.Literal.(string)}
 }
 
+// parseInterpolatedString parses strings with ${} interpolation
 func (p *Parser) parseInterpolatedString() ast.Expression {
 	tok := p.curToken
 	raw := p.curToken.Literal.(string)
@@ -54,16 +55,18 @@ func (p *Parser) parseInterpolatedString() ast.Expression {
 	return &ast.InterpolatedString{Token: tok, Parts: parts}
 }
 
-// parseInterpolationParts splits "Hello, ${name}!" into [StringLiteral("Hello, "), Identifier(name), StringLiteral("!")]
+// parseInterpolationParts splits a string literal with interpolations (e.g. "Hello, ${name}!")
+// into a sequence of AST expressions: [StringLiteral("Hello, "), Identifier(name), StringLiteral("!")].
+// It handles nested expressions, strings, and comments correctly.
 func (p *Parser) parseInterpolationParts(raw string) []ast.Expression {
 	var parts []ast.Expression
 	i := 0
 	start := 0
 
 	for i < len(raw) {
-		// Look for ${
+		// Look for start of interpolation: ${
 		if i+1 < len(raw) && raw[i] == '$' && raw[i+1] == '{' {
-			// Add text before ${
+			// Add text preceding the interpolation as a StringLiteral
 			if i > start {
 				parts = append(parts, &ast.StringLiteral{
 					Token: p.curToken,
@@ -71,45 +74,121 @@ func (p *Parser) parseInterpolationParts(raw string) []ast.Expression {
 				})
 			}
 
-			// Find matching }
+			// Find the matching closing brace '}' for this interpolation block.
+			// We maintain a stack of contexts to correctly handle nested braces inside
+			// strings, characters, raw strings, and comments.
+			// Stack values:
+			// 0: Code mode (expecting expressions)
+			// '"': String mode
+			// '\'': Char mode
+			// '`': Raw string mode
+			// -1: Triple raw string mode
+			stack := []int{0} // Start in Code mode (inside ${...})
 			j := i + 2
-			braceDepth := 1
-			for j < len(raw) && braceDepth > 0 {
-				// Handle nested strings to avoid confusing braces
-				if raw[j] == '"' || raw[j] == '\'' || raw[j] == '`' {
-					quote := raw[j]
-					j++
-					for j < len(raw) {
-						if raw[j] == '\\' {
-							j += 2 // skip escape and char
-							continue
+
+			for j < len(raw) {
+				if len(stack) == 0 {
+					break
+				}
+				mode := stack[len(stack)-1]
+				char := raw[j]
+
+				if mode == 0 { // Code Mode
+					if char == '/' {
+						// Handle comments to avoid parsing braces inside them
+						if j+1 < len(raw) {
+							if raw[j+1] == '/' { // Line comment //
+								j += 2
+								for j < len(raw) && raw[j] != '\n' {
+									j++
+								}
+								continue
+							} else if raw[j+1] == '*' { // Block comment /* */
+								j += 2
+								for j+1 < len(raw) && !(raw[j] == '*' && raw[j+1] == '/') {
+									j++
+								}
+								j += 2 // Skip */
+								continue
+							}
 						}
-						if raw[j] == quote {
-							j++
+					} else if char == '"' {
+						stack = append(stack, '"')
+					} else if char == '\'' {
+						stack = append(stack, '\'')
+					} else if char == '`' {
+						// Check for triple backtick
+						if j+2 < len(raw) && raw[j+1] == '`' && raw[j+2] == '`' {
+							stack = append(stack, -1) // Triple raw string
+							j += 2
+						} else {
+							stack = append(stack, '`') // Single raw string
+						}
+					} else if char == '{' {
+						stack = append(stack, 0) // Nested block
+					} else if char == '}' {
+						stack = stack[:len(stack)-1] // Close block
+						if len(stack) == 0 {
+							// Found the closing brace for the interpolation
 							break
 						}
-						j++
 					}
-					continue
-				}
-
-				if raw[j] == '{' {
-					braceDepth++
-				} else if raw[j] == '}' {
-					braceDepth--
+				} else if mode == '"' { // String Mode
+					if char == '\\' {
+						j++ // Skip escaped char
+					} else if char == '"' {
+						stack = stack[:len(stack)-1] // End string
+					} else if char == '$' && j+1 < len(raw) && raw[j+1] == '{' {
+						stack = append(stack, 0) // Interpolation inside string
+						j++                      // Skip {
+					}
+				} else if mode == '\'' { // Char Mode
+					if char == '\\' {
+						j++
+					} else if char == '\'' {
+						stack = stack[:len(stack)-1]
+					}
+				} else if mode == '`' { // Raw String Mode
+					if char == '`' {
+						stack = stack[:len(stack)-1]
+					}
+				} else if mode == -1 { // Triple Raw String Mode
+					if char == '`' && j+2 < len(raw) && raw[j+1] == '`' && raw[j+2] == '`' {
+						stack = stack[:len(stack)-1]
+						j += 2
+					}
 				}
 				j++
 			}
 
-			// Parse expression inside ${...}
-			exprStr := raw[i+2 : j-1]
-			expr := p.parseEmbeddedExpression(exprStr)
-			if expr != nil {
-				parts = append(parts, expr)
+			// If stack is not empty, the interpolation was not closed properly.
+			// This shouldn't happen for valid tokens from the lexer, but we handle it safely.
+			if len(stack) > 0 {
+				break
 			}
 
-			i = j
-			start = j
+			// Parse expression inside ${...}
+			// content is raw[i+2 : j] (j points to '}')
+			exprStr := raw[i+2 : j]
+			expr := p.parseEmbeddedExpression(exprStr)
+			if expr != nil {
+				// Optimization: Merge consecutive string literals
+				merged := false
+				if sl, ok := expr.(*ast.StringLiteral); ok {
+					if len(parts) > 0 {
+						if prevSl, ok := parts[len(parts)-1].(*ast.StringLiteral); ok {
+							prevSl.Value += sl.Value
+							merged = true
+						}
+					}
+				}
+				if !merged {
+					parts = append(parts, expr)
+				}
+			}
+
+			i = j + 1 // Move past '}'
+			start = i
 		} else {
 			i++
 		}
@@ -117,10 +196,21 @@ func (p *Parser) parseInterpolationParts(raw string) []ast.Expression {
 
 	// Add remaining text
 	if start < len(raw) {
-		parts = append(parts, &ast.StringLiteral{
-			Token: p.curToken,
-			Value: raw[start:],
-		})
+		val := raw[start:]
+		// Check if we can merge with previous string literal
+		merged := false
+		if len(parts) > 0 {
+			if prevSl, ok := parts[len(parts)-1].(*ast.StringLiteral); ok {
+				prevSl.Value += val
+				merged = true
+			}
+		}
+		if !merged {
+			parts = append(parts, &ast.StringLiteral{
+				Token: p.curToken,
+				Value: val,
+			})
+		}
 	}
 
 	return parts
@@ -193,6 +283,13 @@ func (p *Parser) parseListLiteral() ast.Expression {
 	p.nextToken()
 	firstExpr := p.parseExpression(BITWISE_OR) // Stop before | operator
 	if firstExpr == nil {
+		// Recover by consuming the rest of the list literal.
+		for !p.curTokenIs(token.RBRACKET) && !p.curTokenIs(token.EOF) {
+			p.nextToken()
+		}
+		if p.curTokenIs(token.RBRACKET) {
+			p.nextToken()
+		}
 		return nil
 	}
 

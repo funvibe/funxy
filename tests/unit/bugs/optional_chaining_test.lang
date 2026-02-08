@@ -1,0 +1,15 @@
+import "lib/test" (*)
+
+type alias Address = { city: String, zip: String }
+type alias Person = { name: String, address: Address? }
+
+testRun("Optional chaining should be able to chain nullable types", \ -> {
+    p1: Person = { name: "Alice", address: { city: "NYC", zip: "10001" } }
+    p2: Person = { name: "Bob", address: nil }
+
+    city1 = p1.address?.city
+    city2 = p2.address?.city
+
+    assert(city1 == "NYC")
+    assert(city2 == nil)
+})

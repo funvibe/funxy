@@ -14,7 +14,7 @@ fun add(a: Int, b: Int) -> Int {
 
 *   **Parameters**: Must have explicit types (`a: Int`).
 *   **Return Type**: Specified after `->`. **Optional**. If omitted, it is inferred from the last expression in the body.
-*   **Body**: A block of statements. The last expression in the block is implicitly returned.
+*   **Body**: A block of statements. The last expression in the block is implicitly returned unless you use `return`.
 
 ### Implicit Return & Type Inference
 
@@ -38,6 +38,24 @@ result = log("hello")
 print(result) // "hello"
 ```
 
+### Explicit Return
+
+You can use an explicit return to exit early:
+
+```rust
+fun classify(n: Int) -> Int {
+    if n < 0 {
+        return -1
+    }
+    if n == 0 {
+        return 0
+    }
+    1 // implicit return still works
+}
+```
+
+`return` without a value returns `nil`.
+
 ## Default Parameters
 
 Parameters can have default values:
@@ -51,13 +69,13 @@ greet()         // Hello, World!
 greet("Alice")  // Hello, Alice!
 
 // Multiple defaults
-fun format(value, prefix = "[", suffix = "]") {
+fun wrap(value, prefix = "[", suffix = "]") {
     prefix ++ value ++ suffix
 }
 
-print(format("test"))           // [test]
-print(format("test", "<"))      // <test]
-print(format("test", "<", ">")) // <test>
+print(wrap("test"))           // [test]
+print(wrap("test", "<"))      // <test]
+print(wrap("test", "<", ">")) // <test>
 
 // With type annotations
 fun multiply(x: Int, y: Int = 2) -> Int {

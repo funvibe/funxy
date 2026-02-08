@@ -43,9 +43,9 @@ x = bigIntNew("999999999999999999999999")
 s = bigIntToString(x)  // "999999999999999999999999"
 
 // bigIntToInt: (BigInt) -> Option<Int>
-// Returns Some if value fits in Int, otherwise Zero
+// Returns Some if value fits in Int, otherwise None
 bigIntToInt(bigIntFromInt(100))  // Some(100)
-bigIntToInt(bigIntNew("99999999999999999999"))  // Zero (too large)
+bigIntToInt(bigIntNew("99999999999999999999"))  // None (too large)
 ```
 
 ### Operators
@@ -119,7 +119,7 @@ bigIntToString(ratDenom(frac))  // "4"
 
 ```rust
 // ratToFloat: (Rational) -> Option<Float>
-// Returns Zero if result doesn't fit in Float (infinity/NaN)
+// Returns None if result doesn't fit in Float (infinity/NaN)
 ratToFloat(ratFromInt(1, 4))  // Some(0.25)
 ratToFloat(ratFromInt(1, 3))  // Some(0.333...)
 

@@ -1,0 +1,15 @@
+fun test_int() {
+    x = 10
+    x = "string"
+}
+
+fun test_list() {
+    y = []
+    y = [1, 2]
+    y = ["s"]
+}
+
+fun test_record() {
+    z = { a: 1 }
+    z = { a: true }
+}

@@ -1,4 +1,4 @@
 Processing failed with errors:
-- error at 1:24 [P006]: cannot use 'as' alias with selective import; use either 'import "path" as alias' or 'import "path" (symbols)'
-- error at 1:30 [A006]: undefined symbol: 'head'
-- error at 3:9 [A006]: undefined symbol: 'll'
+- error at 1:22 [P006]: cannot use 'as' alias with selective import; use either 'import "path" as alias' or 'import "path" (symbols)'
+- error at 1:26 [A006]: undefined symbol: 'head'
+- error at 3:7 [A006]: undefined symbol: 'll'

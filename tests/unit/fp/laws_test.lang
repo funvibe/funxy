@@ -21,8 +21,8 @@ testRun("Functor Identity - Option Some", fun() -> {
     assert(result == x)
 })
 
-testRun("Functor Identity - Option Zero", fun() -> {
-    x: Option<Int> = Zero
+testRun("Functor Identity - Option None", fun() -> {
+    x: Option<Int> = None
     result = fmap(id, x)
     assert(result == x)
 })
@@ -41,8 +41,8 @@ testRun("Functor Composition - Option Some", fun() -> {
     assert(left == right)
 })
 
-testRun("Functor Composition - Option Zero", fun() -> {
-    x: Option<Int> = Zero
+testRun("Functor Composition - Option None", fun() -> {
+    x: Option<Int> = None
     left = fmap(double ,, addTen, x)
     right = fmap(double, fmap(addTen, x))
     assert(left == right)
@@ -50,6 +50,32 @@ testRun("Functor Composition - Option Zero", fun() -> {
 
 testRun("Functor Composition - List", fun() -> {
     x = [1, 2, 3]
+    left = fmap(double ,, addTen, x)
+    right = fmap(double, fmap(addTen, x))
+    assert(left == right)
+})
+
+testRun("Functor Identity - Result Ok", fun() -> {
+    x: Result<String, Int> = Ok(42)
+    result = fmap(id, x)
+    assert(result == x)
+})
+
+testRun("Functor Identity - Result Fail", fun() -> {
+    x: Result<String, Int> = Fail("error")
+    result = fmap(id, x)
+    assert(result == x)
+})
+
+testRun("Functor Composition - Result Ok", fun() -> {
+    x: Result<String, Int> = Ok(5)
+    left = fmap(double ,, addTen, x)
+    right = fmap(double, fmap(addTen, x))
+    assert(left == right)
+})
+
+testRun("Functor Composition - Result Fail", fun() -> {
+    x: Result<String, Int> = Fail("error")
     left = fmap(double ,, addTen, x)
     right = fmap(double, fmap(addTen, x))
     assert(left == right)
@@ -91,6 +117,28 @@ testRun("Applicative Homomorphism - List", fun() -> {
     assert(left == right)
 })
 
+testRun("Applicative Identity - Result Ok", fun() -> {
+    v: Result<String, Int> = Ok(42)
+    idFn: Result<String, (Int) -> Int> = pure(id)
+    result = idFn <*> v
+    assert(result == v)
+})
+
+testRun("Applicative Identity - Result Fail", fun() -> {
+    v: Result<String, Int> = Fail("error")
+    idFn: Result<String, (Int) -> Int> = pure(id)
+    result = idFn <*> v
+    assert(result == v)
+})
+
+testRun("Applicative Homomorphism - Result", fun() -> {
+    f = double
+    x = 21
+    left: Result<String, Int> = (pure(f) : Result<String, (Int) -> Int>) <*> pure(x)
+    right: Result<String, Int> = pure(f(x))
+    assert(left == right)
+})
+
 // =============================================
 // Monad Laws
 // =============================================
@@ -121,6 +169,14 @@ testRun("Monad Left Identity - List", fun() -> {
     assert(left == right)
 })
 
+testRun("Monad Left Identity - Result", fun() -> {
+    a = 21
+    f = resDouble
+    left = (pure(a) : Result<String, Int>) >>= f
+    right = f(a)
+    assert(left == right)
+})
+
 testRun("Monad Right Identity - Option Some", fun() -> {
     m = Some(42)
     // m >>= pure now works! >>= sets MonadContainer so pure knows to return Option
@@ -128,8 +184,8 @@ testRun("Monad Right Identity - Option Some", fun() -> {
     assert(result == m)
 })
 
-testRun("Monad Right Identity - Option Zero", fun() -> {
-    m: Option<Int> = Zero
+testRun("Monad Right Identity - Option None", fun() -> {
+    m: Option<Int> = None
     result = m >>= pure
     assert(result == m)
 })
@@ -162,8 +218,8 @@ testRun("Monad Associativity - Option Some", fun() -> {
     assert(left == right)
 })
 
-testRun("Monad Associativity - Option Zero", fun() -> {
-    m: Option<Int> = Zero
+testRun("Monad Associativity - Option None", fun() -> {
+    m: Option<Int> = None
     f = optDouble
     g = optAddTen
     left = (m >>= f) >>= g
@@ -266,14 +322,14 @@ testRun("Monoid Right Identity - String", fun() -> {
 
 testRun("Monoid Left Identity - Option", fun() -> {
     x = Some(42)
-    empty: Option<Int> = Zero
+    empty: Option<Int> = None
     result = empty <> x
     assert(result == x)
 })
 
 testRun("Monoid Right Identity - Option", fun() -> {
     x = Some(42)
-    empty: Option<Int> = Zero
+    empty: Option<Int> = None
     result = x <> empty
     assert(result == x)
 })

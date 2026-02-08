@@ -58,18 +58,18 @@ testRun("Multiple operations on match variable", fun() {
     assertEquals("xy", result, "Multiple match variables should concatenate correctly")
 })
 
-testRun("Match variable in sprintf", fun() {
+testRun("Match variable in format", fun() {
     // Assign variable from match expression
     val = match "test" {
         s: String -> s
         _ -> "Unknown"
     }
 
-    // Use match variable in sprintf
-    result = sprintf("<p>%s</p>", val)
+    // Use match variable in format
+    result = format("<p>%s</p>", val)
 
     // Should be "<p>test</p>"
-    assertEquals("<p>test</p>", result, "Match variable should work in sprintf")
+    assertEquals("<p>test</p>", result, "Match variable should work in format")
 })
 
 // This test shows the bug persists even with reassignment

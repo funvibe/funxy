@@ -18,6 +18,18 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 	case *ast.IdentifierPattern:
 		// Bind variable
 		table.Define(p.Value, expectedType, "")
+
+		// Map AST node to Symbol for LSP
+		if ctx.ResolutionMap != nil {
+			if sym, found := table.Find(p.Value); found {
+				ctx.ResolutionMap[p] = sym
+			}
+		}
+
+		// Also register in TypeMap
+		if ctx.TypeMap != nil {
+			ctx.TypeMap[p] = expectedType
+		}
 		return typesystem.Subst{}, nil
 
 	case *ast.PinPattern:
@@ -63,6 +75,12 @@ func inferPattern(ctx *InferenceContext, pat ast.Pattern, expectedType typesyste
 		// Bind the variable with the narrowed type
 		if p.Name != "_" {
 			table.Define(p.Name, patternType, "")
+			// Important: Map AST node to Symbol for LSP hover/goto definition
+			if ctx.ResolutionMap != nil {
+				if sym, found := table.Find(p.Name); found {
+					ctx.ResolutionMap[p] = sym
+				}
+			}
 		}
 		return typesystem.Subst{}, nil
 

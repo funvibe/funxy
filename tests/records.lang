@@ -1,6 +1,6 @@
 // Test Records (Structs)
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 p = { x: 10, y: 20 }
 print(p.x)
@@ -14,7 +14,7 @@ print(p.x)
 // p.x = true // Should be error in Analyzer
 
 // Nested records
-type Rect = { tl: Point, br: Point }
+type alias Rect = { tl: Point, br: Point }
 r = { tl: p, br: { x: 50, y: 60 } }
 print(r.br.y)
 

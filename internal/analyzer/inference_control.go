@@ -11,6 +11,7 @@ import (
 
 func inferIfExpression(ctx *InferenceContext, n *ast.IfExpression, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
 	// Propagate expected return type to branches
+	expectedType, hasExpectedType := ctx.ExpectedReturnTypes[n]
 	if expectedType, ok := ctx.ExpectedReturnTypes[n]; ok {
 		if ctx.ExpectedReturnTypes == nil {
 			ctx.ExpectedReturnTypes = make(map[ast.Node]typesystem.Type)
@@ -149,6 +150,16 @@ func inferIfExpression(ctx *InferenceContext, n *ast.IfExpression, table *symbol
 		// Try to unify the branch types
 		subst, err := typesystem.Unify(conseqType, altType)
 		if err != nil {
+			if hasExpectedType {
+				// If expected type is a union, allow each branch to match a member.
+				if union, ok := expectedType.(typesystem.TUnion); ok {
+					if err := ensureBranchesMatchUnion(union, conseqType, altType, table); err != nil {
+						return nil, nil, inferErrorf(n, "if branches must match expected type %s, got %s and %s", expectedType, conseqType, altType)
+					}
+					return expectedType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
+				}
+				return nil, nil, inferErrorf(n, "if branches must match expected type %s, got %s and %s", expectedType, conseqType, altType)
+			}
 			// If unification fails, create a union type
 			// This allows: if b { 42 } else { Nil } -> Int | Nil
 			unionType := typesystem.NormalizeUnion([]typesystem.Type{conseqType, altType})
@@ -167,6 +178,25 @@ func inferIfExpression(ctx *InferenceContext, n *ast.IfExpression, table *symbol
 		}
 		return typesystem.Nil, totalSubst, nil
 	}
+}
+
+func ensureBranchesMatchUnion(union typesystem.TUnion, conseqType, altType typesystem.Type, table *symbols.SymbolTable) error {
+	if !typeMatchesUnionMember(union, conseqType, table) {
+		return fmt.Errorf("consequence branch does not match union")
+	}
+	if !typeMatchesUnionMember(union, altType, table) {
+		return fmt.Errorf("alternative branch does not match union")
+	}
+	return nil
+}
+
+func typeMatchesUnionMember(union typesystem.TUnion, t typesystem.Type, table *symbols.SymbolTable) bool {
+	for _, member := range union.Types {
+		if _, err := typesystem.UnifyAllowExtraWithResolver(member, t, table); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func cloneSubst(s typesystem.Subst) typesystem.Subst {
@@ -304,6 +334,100 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 
 	enclosedTable := symbols.NewEnclosedSymbolTable(table, symbols.ScopeBlock)
 
+	// Predeclare local functions so mutually recursive calls can resolve.
+	for _, stmt := range n.Statements {
+		fs, ok := stmt.(*ast.FunctionStatement)
+		if !ok || fs == nil {
+			continue
+		}
+		if enclosedTable.IsDefinedLocally(fs.Name.Value) {
+			continue
+		}
+
+		// Analyze Type Parameters and Kinds (using TVars)
+		typeParamVars := make([]typesystem.TVar, len(fs.TypeParams))
+
+		// Temporary scope for building the generic signature (uses TVars)
+		sigScope := symbols.NewEnclosedSymbolTable(enclosedTable, symbols.ScopeFunction)
+		for i, tp := range fs.TypeParams {
+			kind := inferKindFromFunction(fs, tp.Value, enclosedTable)
+			tv := typesystem.TVar{Name: tp.Value, KindVal: kind}
+			typeParamVars[i] = tv
+			sigScope.DefineType(tp.Value, tv, "")
+		}
+
+		// Build params (using TVars)
+		var params []typesystem.Type
+		for _, p := range fs.Parameters {
+			var pt typesystem.Type
+			if p.Type != nil {
+				var errs []*diagnostics.DiagnosticError
+				pt = BuildType(p.Type, sigScope, &errs)
+				if err := wrapBuildTypeError(errs); err != nil {
+					return nil, nil, err
+				}
+				pt = OpenRecords(pt, ctx.FreshVar)
+			} else {
+				pt = ctx.FreshVar()
+			}
+			params = append(params, pt)
+		}
+
+		// Return type (using TVars)
+		var retType typesystem.Type
+		if fs.ReturnType != nil {
+			var errs []*diagnostics.DiagnosticError
+			retType = BuildType(fs.ReturnType, sigScope, &errs)
+			if err := wrapBuildTypeError(errs); err != nil {
+				return nil, nil, err
+			}
+			retType = OpenRecords(retType, ctx.FreshVar)
+		} else {
+			retType = ctx.FreshVar()
+		}
+
+		// Constraints (using TVars)
+		var fnConstraints []typesystem.Constraint
+		for _, c := range fs.Constraints {
+			var cArgs []typesystem.Type
+			for _, argAst := range c.Args {
+				var errs []*diagnostics.DiagnosticError
+				argType := BuildType(argAst, sigScope, &errs)
+				if err := wrapBuildTypeError(errs); err != nil {
+					return nil, nil, err
+				}
+				cArgs = append(cArgs, argType)
+			}
+
+			fnConstraints = append(fnConstraints, typesystem.Constraint{
+				TypeVar: c.TypeVar,
+				Trait:   c.Trait,
+				Args:    cArgs,
+			})
+		}
+
+		fnType := typesystem.TFunc{
+			Params:      params,
+			ReturnType:  retType,
+			Constraints: fnConstraints,
+		}
+
+		// Define Generic Function (TForall) in outer scope
+		var definedType typesystem.Type = fnType
+		if len(typeParamVars) > 0 {
+			definedType = typesystem.TForall{
+				Vars:        typeParamVars,
+				Constraints: fnConstraints,
+				Type:        fnType,
+			}
+		}
+		enclosedTable.DefineConstant(fs.Name.Value, definedType, "")
+	}
+
+	// Save/Restore pending witnesses to handle local resolution in this block
+	oldPending := ctx.PendingWitnesses
+	ctx.PendingWitnesses = make([]PendingWitness, 0)
+
 	// Check for expected return type for the block (propagated from function literal or control flow)
 	var expectedReturnType typesystem.Type
 	if t, ok := ctx.ExpectedReturnTypes[n]; ok {
@@ -344,6 +468,25 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 		} else if tds, ok := stmt.(*ast.TypeDeclarationStatement); ok {
 			RegisterTypeDeclaration(tds, enclosedTable, "")
 			lastType = typesystem.Nil
+		} else if rs, ok := stmt.(*ast.ReturnStatement); ok {
+			var retType typesystem.Type = typesystem.Nil
+			if rs.Value != nil {
+				// Propagate expected return type to return expression
+				if expectedReturnType != nil {
+					if ctx.ExpectedReturnTypes == nil {
+						ctx.ExpectedReturnTypes = make(map[ast.Node]typesystem.Type)
+					}
+					ctx.ExpectedReturnTypes[rs.Value] = expectedReturnType
+				}
+				t, s, err := inferFn(rs.Value, enclosedTable)
+				if err != nil {
+					return nil, nil, err
+				}
+				totalSubst = s.Compose(totalSubst)
+				ctx.GlobalSubst = s.Compose(ctx.GlobalSubst)
+				retType = t
+			}
+			return retType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
 		} else if id, ok := stmt.(*ast.InstanceDeclaration); ok {
 			// Register local instance
 			traitName := id.TraitName.Value
@@ -426,88 +569,132 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 		} else if fs, ok := stmt.(*ast.FunctionStatement); ok {
 			// Register function in the block scope for type inference
 			// We build a simplified signature here for inference purposes
+			var (
+				typeParamVars  []typesystem.TVar
+				typeParamNames []string
+				params         []typesystem.Type
+				retType        typesystem.Type
+				fnConstraints  []typesystem.Constraint
+			)
 
-			// Analyze Type Parameters and Kinds
-			typeParamVars := make([]typesystem.TVar, len(fs.TypeParams))
-			typeParamNames := make([]string, len(fs.TypeParams))
-
-			// Temporary scope for building the generic signature (uses TVars)
-			sigScope := symbols.NewEnclosedSymbolTable(enclosedTable, symbols.ScopeFunction)
-
-			for i, tp := range fs.TypeParams {
-				kind := inferKindFromFunction(fs, tp.Value, enclosedTable)
-				tv := typesystem.TVar{Name: tp.Value, KindVal: kind}
-				typeParamVars[i] = tv
-				typeParamNames[i] = tp.Value
-				sigScope.DefineType(tp.Value, tv, "")
+			if sym, ok := enclosedTable.Find(fs.Name.Value); ok && sym.Type != nil {
+				switch t := sym.Type.(type) {
+				case typesystem.TForall:
+					typeParamVars = t.Vars
+					typeParamNames = make([]string, len(t.Vars))
+					for i, v := range t.Vars {
+						typeParamNames[i] = v.Name
+					}
+					if tf, ok := t.Type.(typesystem.TFunc); ok {
+						params = tf.Params
+						retType = tf.ReturnType
+						fnConstraints = tf.Constraints
+					}
+					if len(t.Constraints) > 0 {
+						fnConstraints = t.Constraints
+					}
+				case typesystem.TFunc:
+					params = t.Params
+					retType = t.ReturnType
+					fnConstraints = t.Constraints
+				}
 			}
 
-			// Build params (using TVars)
-			var params []typesystem.Type
-			for _, p := range fs.Parameters {
-				var pt typesystem.Type
-				if p.Type != nil {
+			// Validate that the resolved symbol matches the current AST node (arity check)
+			// This handles cases of shadowing/redefinition within the same block where the
+			// symbol table reflects the *last* definition, but we might be visiting an earlier one.
+			if retType != nil {
+				if len(params) != len(fs.Parameters) || len(typeParamVars) != len(fs.TypeParams) {
+					retType = nil
+					params = nil
+					fnConstraints = nil
+					typeParamVars = nil
+					typeParamNames = nil
+				}
+			}
+
+			if retType == nil {
+				// Analyze Type Parameters and Kinds
+				typeParamVars = make([]typesystem.TVar, len(fs.TypeParams))
+				typeParamNames = make([]string, len(fs.TypeParams))
+
+				// Temporary scope for building the generic signature (uses TVars)
+				sigScope := symbols.NewEnclosedSymbolTable(enclosedTable, symbols.ScopeFunction)
+
+				for i, tp := range fs.TypeParams {
+					kind := inferKindFromFunction(fs, tp.Value, enclosedTable)
+					tv := typesystem.TVar{Name: tp.Value, KindVal: kind}
+					typeParamVars[i] = tv
+					typeParamNames[i] = tp.Value
+					sigScope.DefineType(tp.Value, tv, "")
+				}
+
+				// Build params (using TVars)
+				for _, p := range fs.Parameters {
+					var pt typesystem.Type
+					if p.Type != nil {
+						var errs []*diagnostics.DiagnosticError
+						pt = BuildType(p.Type, sigScope, &errs)
+						if err := wrapBuildTypeError(errs); err != nil {
+							return nil, nil, err
+						}
+						pt = OpenRecords(pt, ctx.FreshVar)
+					} else {
+						pt = ctx.FreshVar()
+					}
+					params = append(params, pt)
+				}
+
+				// Return type (using TVars)
+				if fs.ReturnType != nil {
 					var errs []*diagnostics.DiagnosticError
-					pt = BuildType(p.Type, sigScope, &errs)
+					retType = BuildType(fs.ReturnType, sigScope, &errs)
 					if err := wrapBuildTypeError(errs); err != nil {
 						return nil, nil, err
 					}
-					pt = OpenRecords(pt, ctx.FreshVar)
+					retType = OpenRecords(retType, ctx.FreshVar)
 				} else {
-					pt = ctx.FreshVar()
+					retType = ctx.FreshVar()
 				}
-				params = append(params, pt)
-			}
 
-			// Return type (using TVars)
-			var retType typesystem.Type
-			if fs.ReturnType != nil {
-				var errs []*diagnostics.DiagnosticError
-				retType = BuildType(fs.ReturnType, sigScope, &errs)
-				if err := wrapBuildTypeError(errs); err != nil {
-					return nil, nil, err
-				}
-				retType = OpenRecords(retType, ctx.FreshVar)
-			} else {
-				retType = ctx.FreshVar()
-			}
-
-			// Constraints (using TVars)
-			var fnConstraints []typesystem.Constraint
-			for _, c := range fs.Constraints {
-				var cArgs []typesystem.Type
-				for _, argAst := range c.Args {
-					var errs []*diagnostics.DiagnosticError
-					argType := BuildType(argAst, sigScope, &errs)
-					if err := wrapBuildTypeError(errs); err != nil {
-						return nil, nil, err
+				// Constraints (using TVars)
+				for _, c := range fs.Constraints {
+					var cArgs []typesystem.Type
+					for _, argAst := range c.Args {
+						var errs []*diagnostics.DiagnosticError
+						argType := BuildType(argAst, sigScope, &errs)
+						if err := wrapBuildTypeError(errs); err != nil {
+							return nil, nil, err
+						}
+						cArgs = append(cArgs, argType)
 					}
-					cArgs = append(cArgs, argType)
+
+					fnConstraints = append(fnConstraints, typesystem.Constraint{
+						TypeVar: c.TypeVar,
+						Trait:   c.Trait,
+						Args:    cArgs,
+					})
 				}
 
-				fnConstraints = append(fnConstraints, typesystem.Constraint{
-					TypeVar: c.TypeVar,
-					Trait:   c.Trait,
-					Args:    cArgs,
-				})
-			}
-
-			fnType := typesystem.TFunc{
-				Params:      params,
-				ReturnType:  retType,
-				Constraints: fnConstraints,
-			}
-
-			// Define Generic Function (TForall) in outer scope
-			var definedType typesystem.Type = fnType
-			if len(typeParamVars) > 0 {
-				definedType = typesystem.TForall{
-					Vars:        typeParamVars,
+				fnType := typesystem.TFunc{
+					Params:      params,
+					ReturnType:  retType,
 					Constraints: fnConstraints,
-					Type:        fnType,
+				}
+
+				// Define Generic Function (TForall) in outer scope
+				var definedType typesystem.Type = fnType
+				if len(typeParamVars) > 0 {
+					definedType = typesystem.TForall{
+						Vars:        typeParamVars,
+						Constraints: fnConstraints,
+						Type:        fnType,
+					}
+				}
+				if !enclosedTable.IsDefinedLocally(fs.Name.Value) {
+					enclosedTable.DefineConstant(fs.Name.Value, definedType, "")
 				}
 			}
-			enclosedTable.DefineConstant(fs.Name.Value, definedType, "")
 
 			// Analyze Body (Recursively)
 			// Create scope for body
@@ -693,59 +880,9 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				ctx.GlobalSubst = subst.Compose(ctx.GlobalSubst) // CRITICAL: Update global context
 				t = t.Apply(ctx.GlobalSubst).Apply(totalSubst)
 
-				// Witness Resolution for Call Expressions: If value is a CallExpression (e.g., pure(10)),
-				// set witness based on annotated type to enable runtime dispatch
-				if callExpr, ok := cd.Value.(*ast.CallExpression); ok {
-					declaredType := explicitType.Apply(ctx.GlobalSubst).Apply(totalSubst)
-					shouldSetWitness := false
-
-					// Check implementation by walking up TApp chain (e.g. OptionT<Id, Int> -> OptionT<Id>)
-					checkType := declaredType
-
-					// Get expected kind for Applicative (which is * -> *)
-					// We use TCon to look it up from builtins, as we don't have trait kind lookup yet
-					expectedKind := typesystem.TCon{Name: "Applicative"}.Kind()
-
-					for {
-						// Kind-directed check
-						currentKind, err := typesystem.KindCheck(checkType)
-						if err == nil && currentKind.Equal(expectedKind) {
-							if enclosedTable.IsImplementationExists("Applicative", []typesystem.Type{checkType}) {
-								shouldSetWitness = true
-								break
-							}
-						}
-
-						// Try unwrapping alias
-						if tCon, ok := checkType.(typesystem.TCon); ok && tCon.UnderlyingType != nil {
-							checkType = typesystem.UnwrapUnderlying(checkType)
-							continue
-						}
-
-						// Try stripping last argument (HKT)
-						// We only strip if we haven't found a match yet
-						if tApp, ok := checkType.(typesystem.TApp); ok && len(tApp.Args) > 0 {
-							if len(tApp.Args) == 1 {
-								checkType = tApp.Constructor
-							} else {
-								checkType = typesystem.TApp{
-									Constructor: tApp.Constructor,
-									Args:        tApp.Args[:len(tApp.Args)-1],
-								}
-							}
-							continue
-						}
-						break
-					}
-					if shouldSetWitness {
-						if callExpr.Witness == nil {
-							callExpr.Witness = make(map[string][]typesystem.Type)
-						}
-						if witnesses, ok := callExpr.Witness.(map[string][]typesystem.Type); ok {
-							witnesses["Applicative"] = []typesystem.Type{declaredType}
-						}
-					}
-				}
+				// Witness Resolution for Call Expressions: Legacy manual setting removed
+				// inferCallExpression handles this via ExpectedReturnTypes and PendingWitnesses.
+				// The explicit unification above already established the type context.
 			}
 
 			// Handle pattern destructuring or simple name binding
@@ -757,14 +894,20 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				}
 				totalSubst = patSubst.Compose(totalSubst)
 			} else if cd.Name != nil {
-				// We should also check type annotation if present, but for now we prioritize
-				// capturing the substitution and defining the symbol for subsequent statements.
-				enclosedTable.Define(cd.Name.Value, t.Apply(ctx.GlobalSubst).Apply(totalSubst), "")
+				enclosedTable.DefineConstant(cd.Name.Value, t.Apply(ctx.GlobalSubst).Apply(totalSubst), "")
 			}
 
 			lastType = typesystem.Nil
 		}
 	}
+
+	// Resolve pending witnesses generated in the block using local instances
+	// This ensures that instances defined in the block can satisfy constraints
+	unresolvedWitnesses := resolveLocalWitnesses(ctx, enclosedTable)
+
+	// Append unresolved witnesses back to oldPending (to be handled by outer scope)
+	ctx.PendingWitnesses = append(oldPending, unresolvedWitnesses...)
+
 	return lastType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
 }
 

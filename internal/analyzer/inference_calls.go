@@ -3,8 +3,10 @@ package analyzer
 import (
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
+	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"sort"
 )
 
 // inferCallExpression infers the type of a call expression
@@ -129,22 +131,10 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 		// Handle call to ForallType (Rank-N instantiation at call site)
 		// Instantiate the forall to get a fresh monomorphic type (likely TFunc)
 		instantiated := InstantiateForall(ctx, tForall)
-		// Now check if it's a function type and recurse (or handle inline)
-		// We can't easily recurse inferCallExpression because 'n' is already processed partially.
-		// Instead, we call inferCallExpression again but with the instantiated type as 'fnType' context?
-		// No, `inferCallExpression` derives fnType from n.Function.
-		// We can just proceed with the instantiated type logic by falling through?
-		// Or better: Unify the instantiated type with a new function type variable, similar to TVar case?
-		// Actually, if we instantiate it, we get a Type (e.g. TFunc). We can just process it as TFunc.
 
 		if tFunc, ok := instantiated.(typesystem.TFunc); ok {
-			// Duplicate TFunc logic... refactor?
-			// For now, let's recursively call inferCallExpression by mocking the function type?
-			// No, that's messy.
-			// Let's just swap fnType and loop? No, Go doesn't have goto like that easily here.
-			// Let's copy the TFunc block logic or refactor.
-
-			// Refactoring: extract TFunc handling
+			// Apply global subst to ensure we see constraints from previous statements
+			tFunc = tFunc.Apply(ctx.GlobalSubst).(typesystem.TFunc)
 			return inferCallWithFuncType(ctx, n, tFunc, totalSubst, table, inferFn)
 		} else {
 			return nil, nil, inferErrorf(n, "instantiated forall type is not a function: %s", instantiated)
@@ -235,7 +225,19 @@ func inferCallWithFuncType(
 
 							// Special case: isolated type variable logic (same as above)
 							isIsolated := false
-							if tvar, ok := varType.(typesystem.TVar); ok {
+							if tvar, ok := tFunc.Params[len(tFunc.Params)-1].(typesystem.TVar); ok {
+								isUsed := false
+								retVars := tFunc.ReturnType.FreeTypeVariables()
+								for _, v := range retVars {
+									if v.Name == tvar.Name {
+										isUsed = true
+										break
+									}
+								}
+								if !isUsed {
+									isIsolated = true
+								}
+							} else if tvar, ok := varType.(typesystem.TVar); ok {
 								isUsed := false
 								retVars := tFunc.ReturnType.Apply(totalSubst).FreeTypeVariables()
 								for _, v := range retVars {
@@ -314,10 +316,24 @@ func inferCallWithFuncType(
 					// Special case: if the variadic parameter type is a Type Variable
 					// that does NOT appear in the return type (and wasn't unified earlier),
 					// we can treat it as heterogeneous (instantiate fresh for each arg).
-					// This supports builtins like print(...) and sprintf(fmt, ...).
+					// This supports builtins like print(...) and format(fmt, ...).
 					isIsolated := false
-					if tvar, ok := varType.(typesystem.TVar); ok {
-						// Check if this TVar is used in return type
+					// Prefer checking the base parameter type to avoid accidental unification
+					// from earlier arguments in the same call.
+					if tvar, ok := tFunc.Params[len(tFunc.Params)-1].(typesystem.TVar); ok {
+						isUsed := false
+						retVars := tFunc.ReturnType.FreeTypeVariables()
+						for _, v := range retVars {
+							if v.Name == tvar.Name {
+								isUsed = true
+								break
+							}
+						}
+						if !isUsed {
+							isIsolated = true
+						}
+					} else if tvar, ok := varType.(typesystem.TVar); ok {
+						// Fallback: check after substitution
 						isUsed := false
 						retVars := tFunc.ReturnType.Apply(totalSubst).FreeTypeVariables()
 						for _, v := range retVars {
@@ -393,9 +409,38 @@ func inferCallWithFuncType(
 
 	resultType := tFunc.ReturnType.Apply(totalSubst)
 
+	// Determine expected return type (from return context or argument context).
+	expectedReturnType, hasExpectedReturn := ctx.ExpectedReturnTypes[n]
+	if !hasExpectedReturn {
+		if exp, ok := ctx.ExpectedTypes[n]; ok {
+			expectedReturnType = exp
+			hasExpectedReturn = true
+		}
+	}
+
+	// If this is a trait method that dispatches only on return type, ensure we have context.
+	if ident, ok := n.Function.(*ast.Identifier); ok {
+		if traitName, isTraitMethod := table.GetTraitForMethod(ident.Value); isTraitMethod {
+			if sources, ok := table.GetTraitMethodDispatch(traitName, ident.Value); ok {
+				requiresReturn := true
+				for _, src := range sources {
+					if src.Kind != typesystem.DispatchReturn {
+						requiresReturn = false
+						break
+					}
+				}
+				if requiresReturn {
+					if !hasExpectedReturn {
+						ctx.RegisterPendingReturnContext(n, ident.Value)
+					}
+				}
+			}
+		}
+	}
+
 	// If we have an expected return type from look-ahead pass, unify with it
 	// This helps with trait methods like pure() where the return type depends on context
-	if expectedReturnType, hasExpected := ctx.ExpectedReturnTypes[n]; hasExpected {
+	if hasExpectedReturn {
 		subst, err := typesystem.UnifyAllowExtraWithResolver(expectedReturnType, resultType, table)
 		if err == nil {
 			// Successfully unified - use expected type
@@ -405,116 +450,33 @@ func inferCallWithFuncType(
 		// If unification fails, fall back to inferred type
 	}
 
-	// Check trait constraints from TFunc
+	// Check trait constraints from TFunc and register PendingWitness for each
 	// Moved AFTER unification with expected return type to capture context-dependent constraints
 	for _, c := range tFunc.Constraints {
-		// Apply substitution to get the concrete type for the type variable
+		// Calculate deferred arguments using current substitution.
+		// These might still contain variables, which is fine for PendingWitness.
+		// Solver will re-apply GlobalSubst later.
+
 		tvar := typesystem.TVar{Name: c.TypeVar}
 		concreteType := tvar.Apply(totalSubst)
 
-		// Check if any MPTC arg is unresolved
-		hasUnresolvedArg := false
+		// Reconstruct args with current substitution
+		// For Solver, Args must contain ALL MPTC arguments: [Left, ...Rest]
+		deferredArgs := make([]typesystem.Type, 0, 1+len(c.Args))
+		deferredArgs = append(deferredArgs, concreteType)
 		for _, arg := range c.Args {
-			resolvedArg := arg.Apply(totalSubst)
-			if _, ok := resolvedArg.(typesystem.TVar); ok {
-				hasUnresolvedArg = true
-				break
-			}
+			deferredArgs = append(deferredArgs, arg.Apply(totalSubst))
 		}
 
-		// Skip if type variable or any MPTC arg is not yet resolved
-		isRigid := false
-		if tCon, ok := concreteType.(typesystem.TCon); ok && len(tCon.Name) > 0 && tCon.Name[0] >= 'a' && tCon.Name[0] <= 'z' {
-			isRigid = true
-		}
-		if _, stillVar := concreteType.(typesystem.TVar); stillVar || isRigid || hasUnresolvedArg {
-			// If type is still a variable, defer constraint check
-			// We need to pass the *original* arguments (with potentially unresolved vars) to AddDeferredConstraint,
-			// but wrapped in appropriate structure. AddDeferredConstraint takes Constraint struct.
-			// We should use the constraints from TFunc but with substituted vars where possible.
+		// Append placeholder to Witnesses to maintain index alignment
+		// We use a dummy Identifier for now, which will be replaced when resolved
+		n.Witnesses = append(n.Witnesses, &ast.Identifier{Value: "$placeholder"})
+		witnessIndex := len(n.Witnesses) - 1
 
-			// Reconstruct args with current substitution
-			// For Solver, Args must contain ALL MPTC arguments: [Left, ...Rest]
-			deferredArgs := make([]typesystem.Type, 0, 1+len(c.Args))
-			deferredArgs = append(deferredArgs, concreteType)
-			for _, arg := range c.Args {
-				deferredArgs = append(deferredArgs, arg.Apply(totalSubst))
-			}
-
-			ctx.AddDeferredConstraint(Constraint{
-				Kind:  ConstraintImplements,
-				Left:  concreteType,
-				Trait: c.Trait,
-				Args:  deferredArgs,
-				Node:  n,
-			})
-
-			// Also register as PendingWitness to ensure dictionary passing at runtime
-			// Even though we defer the check, we need to record that this call site
-			// requires a witness for this trait and type variable.
-			if n.Witness == nil {
-				n.Witness = make(map[string][]typesystem.Type)
-			}
-
-			// Append placeholder to Witnesses to maintain index alignment
-			// We use a dummy Identifier for now, which will be replaced when resolved
-			n.Witnesses = append(n.Witnesses, &ast.Identifier{Value: "$placeholder"})
-			witnessIndex := len(n.Witnesses) - 1
-
-			ctx.RegisterPendingWitness(n, c.Trait, tvar.Name, deferredArgs, witnessIndex)
-
-			continue
-		}
-
-		// Check if the concrete type implements the required trait
-		// Also check if it's a constrained type param (TCon like "T" in recursive calls)
-		// Unwrap type aliases before checking to handle cases like Writer<IntList, Int>
-		checkType := typesystem.UnwrapUnderlying(concreteType)
-		if checkType == nil {
-			checkType = concreteType
-		}
-
-		// Build full args list for MPTC: [checkType, c.Args...]
-		// We need to apply substitutions to c.Args first
-		fullArgs := []typesystem.Type{checkType}
-		for _, arg := range c.Args {
-			fullArgs = append(fullArgs, arg.Apply(totalSubst))
-		}
-
-		if !table.IsImplementationExists(c.Trait, fullArgs) && !typeHasConstraint(ctx, concreteType, c.Trait, table) {
-			// Format error message based on arity
-			if len(fullArgs) == 1 {
-				return nil, nil, inferErrorf(n, "type %s does not implement trait %s", fullArgs[0], c.Trait)
-			}
-			return nil, nil, inferErrorf(n, "types %v do not implement trait %s", fullArgs, c.Trait)
-		}
-
-		// 2.4 Call Site Solving & Rewriting
-		// Solve witness for the constraint
-		witnessExpr, err := ctx.SolveWitness(n, c.Trait, fullArgs, table)
-		if err != nil {
-			// If solve fails, check if we can defer it (if deferredArgs available)
-			// But we already checked unresolved args above.
-			// If we are here, args are resolved or we failed to solve concrete witness.
-
-			// If we added a DeferredConstraint earlier (unresolved vars), we continued loop.
-			// So we are here only if args are concrete-ish or resolved.
-
-			// Report error
-			return nil, nil, err
-		}
-
-		// Append to Witnesses list
-		n.Witnesses = append(n.Witnesses, witnessExpr)
-
-		// Legacy support: Store witness for runtime (optional, can be removed once Evaluator uses Witnesses)
-		if n.Witness == nil {
-			n.Witness = make(map[string][]typesystem.Type)
-		}
-		if witnesses, ok := n.Witness.(map[string][]typesystem.Type); ok {
-			witnesses[c.Trait] = fullArgs
-			witnesses[c.TypeVar] = fullArgs // For compatibility
-		}
+		// Register Pending Witness
+		// The solver will attempt to resolve this witness at the end of the function body
+		// when all types are fully inferred.
+		ctx.RegisterPendingWitness(n, c.Trait, c.TypeVar, deferredArgs, witnessIndex)
 	}
 
 	// Calculate Instantiation for Monomorphization
@@ -579,4 +541,152 @@ func getListElementType(t typesystem.Type) typesystem.Type {
 		}
 	}
 	return typesystem.TVar{Name: "unknown"}
+}
+
+// inferTypeApplicationExpression infers the type of a type application (e.g. f<Int>)
+func inferTypeApplicationExpression(ctx *InferenceContext, n *ast.TypeApplicationExpression, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
+	var baseType typesystem.Type
+	var s1 typesystem.Subst = make(typesystem.Subst)
+	var err error
+
+	// Special handling for Identifiers to avoid implicit instantiation
+	// We want the polymorphic type (TForall) so we can instantiate it with user-provided types
+	if ident, ok := n.Expression.(*ast.Identifier); ok {
+		sym, found := table.Find(ident.Value)
+		if !found {
+			return nil, nil, inferErrorf(ident, "undefined symbol: %s", ident.Value)
+		}
+		baseType = sym.Type
+		if ctx.ResolutionMap != nil {
+			ctx.ResolutionMap[ident] = sym
+		}
+	} else {
+		// For other expressions, infer normally
+		baseType, s1, err = inferFn(n.Expression, table)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	// 2. Resolve provided type arguments
+	var typeArgs []typesystem.Type
+	for _, tArg := range n.TypeArguments {
+		var errors []*diagnostics.DiagnosticError
+		t := BuildType(tArg, table, &errors)
+		if len(errors) > 0 {
+			return nil, nil, errors[0]
+		}
+		typeArgs = append(typeArgs, t)
+	}
+
+	// 3. Apply type arguments to base type
+	if forall, ok := baseType.(typesystem.TForall); ok {
+		if len(typeArgs) != len(forall.Vars) {
+			return nil, nil, inferErrorf(n, "type argument count mismatch: expected %d, got %d", len(forall.Vars), len(typeArgs))
+		}
+
+		subst := make(typesystem.Subst)
+		for i, v := range forall.Vars {
+			subst[v.Name] = typeArgs[i]
+		}
+
+		// Instantiate body with provided types
+		instantiated := forall.Type.Apply(subst)
+
+		// 4. Resolve Witnesses for Constraints
+		// Clear previous witnesses if re-analyzing
+		n.Witnesses = nil
+
+		for _, c := range forall.Constraints {
+			// Apply subst to constraint args
+			traitArgs := make([]typesystem.Type, len(c.Args))
+			for i, arg := range c.Args {
+				traitArgs[i] = arg.Apply(subst)
+			}
+
+			// Solve witness
+			// Constraint.Args includes all types (e.g. [Int] for Show<Int>)
+			witnessExpr, err := ctx.SolveWitness(n, c.Trait, traitArgs, table)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			n.Witnesses = append(n.Witnesses, witnessExpr)
+		}
+
+		// If instantiated type is TFunc, we strip constraints because we handled them via witnesses
+		if tFunc, ok := instantiated.(typesystem.TFunc); ok {
+			tFunc.Constraints = nil
+			instantiated = tFunc
+		}
+
+		return instantiated, s1.Compose(subst), nil
+	} else {
+		// Implicit generics: use free type variables sorted by name
+		vars := baseType.FreeTypeVariables()
+		// Sort to establish deterministic order (convention: alphabetical)
+		sort.Slice(vars, func(i, j int) bool {
+			return vars[i].Name < vars[j].Name
+		})
+
+		if len(vars) > 0 {
+			if len(typeArgs) != len(vars) {
+				return nil, nil, inferErrorf(n, "type argument count mismatch: expected %d, got %d (implicit generics)", len(vars), len(typeArgs))
+			}
+
+			subst := make(typesystem.Subst)
+			for i, v := range vars {
+				subst[v.Name] = typeArgs[i]
+			}
+
+			instantiated := baseType.Apply(subst)
+
+			// Handle TFunc constraints if present (common for implicit generics)
+			if tFunc, ok := instantiated.(typesystem.TFunc); ok {
+				n.Witnesses = nil
+				// Just checking syntax here, loop is below
+				_ = tFunc
+			}
+
+			// Re-logic for implicit constraints:
+			// We should use baseType's constraints and apply substitution manually.
+			if tFuncBase, ok := baseType.(typesystem.TFunc); ok {
+				n.Witnesses = nil
+				for _, c := range tFuncBase.Constraints {
+					// Resolve the TypeVar
+					var concreteType typesystem.Type
+					if t, ok := subst[c.TypeVar]; ok {
+						concreteType = t
+					} else {
+						concreteType = typesystem.TVar{Name: c.TypeVar}
+					}
+
+					// Resolve Args
+					concreteArgs := make([]typesystem.Type, len(c.Args))
+					for i, arg := range c.Args {
+						concreteArgs[i] = arg.Apply(subst)
+					}
+
+					// Full Args for Witness Lookup: [Type, Args...]
+					fullArgs := append([]typesystem.Type{concreteType}, concreteArgs...)
+
+					witnessExpr, err := ctx.SolveWitness(n, c.Trait, fullArgs, table)
+					if err != nil {
+						return nil, nil, err
+					}
+					n.Witnesses = append(n.Witnesses, witnessExpr)
+				}
+
+				// Strip constraints from instantiated type
+				if tFuncInst, ok := instantiated.(typesystem.TFunc); ok {
+					tFuncInst.Constraints = nil
+					instantiated = tFuncInst
+				}
+			}
+
+			return instantiated, s1.Compose(subst), nil
+		}
+	}
+
+	return nil, nil, inferErrorf(n, "cannot apply types to non-generic type: %s", baseType)
 }

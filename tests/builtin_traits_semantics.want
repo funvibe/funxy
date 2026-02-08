@@ -71,8 +71,8 @@ false
 Some(42)
 Some(42)
 true
-Zero
-Zero
+None
+None
 [2, 4, 6]
 [2, 4, 6]
 true

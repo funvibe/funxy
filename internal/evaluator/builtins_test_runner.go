@@ -277,7 +277,7 @@ func TestBuiltins() map[string]*Builtin {
 		"assertOk":     {Fn: builtinAssertOk, Name: "assertOk"},
 		"assertFail":   {Fn: builtinAssertFail, Name: "assertFail"},
 		"assertSome":   {Fn: builtinAssertSome, Name: "assertSome"},
-		"assertZero":   {Fn: builtinAssertZero, Name: "assertZero"},
+		"assertNone":   {Fn: builtinAssertNone, Name: "assertNone"},
 
 		// HTTP mocks
 		"mockHttp":       {Fn: builtinMockHttp, Name: "mockHttp"},
@@ -516,7 +516,7 @@ func builtinAssertEquals(e *Evaluator, args ...Object) Object {
 	return &Nil{}
 }
 
-// assertOk(result: Result<T, E>, msg?: String) -> Nil
+// assertOk(result: Result<E, T>, msg?: String) -> Nil
 func builtinAssertOk(e *Evaluator, args ...Object) Object {
 	if len(args) < 1 || len(args) > 2 {
 		return newError("assertOk expects 1-2 arguments, got %d", len(args))
@@ -542,7 +542,7 @@ func builtinAssertOk(e *Evaluator, args ...Object) Object {
 	return &Nil{}
 }
 
-// assertFail(result: Result<T, E>, msg?: String) -> Nil
+// assertFail(result: Result<E, T>, msg?: String) -> Nil
 func builtinAssertFail(e *Evaluator, args ...Object) Object {
 	if len(args) < 1 || len(args) > 2 {
 		return newError("assertFail expects 1-2 arguments, got %d", len(args))
@@ -582,35 +582,35 @@ func builtinAssertSome(e *Evaluator, args ...Object) Object {
 	if di.Name != "Some" {
 		msg := extractMessage(args, 1)
 		if msg != "" {
-			return newError("assertion failed: %s (expected Some, got Zero)", msg)
+			return newError("assertion failed: %s (expected Some, got None)", msg)
 		}
-		return newError("assertion failed: expected Some, got Zero")
+		return newError("assertion failed: expected Some, got None")
 	}
 
 	return &Nil{}
 }
 
-// assertZero(option: Option<T>, msg?: String) -> Nil
-func builtinAssertZero(e *Evaluator, args ...Object) Object {
+// assertNone(option: Option<T>, msg?: String) -> Nil
+func builtinAssertNone(e *Evaluator, args ...Object) Object {
 	if len(args) < 1 || len(args) > 2 {
-		return newError("assertZero expects 1-2 arguments, got %d", len(args))
+		return newError("assertNone expects 1-2 arguments, got %d", len(args))
 	}
 
 	di, ok := args[0].(*DataInstance)
 	if !ok {
-		return newError("assertZero expects an Option, got %s", args[0].Type())
+		return newError("assertNone expects an Option, got %s", args[0].Type())
 	}
 
-	if di.Name != "Zero" {
+	if di.Name != "None" {
 		val := ""
 		if len(di.Fields) > 0 {
 			val = di.Fields[0].Inspect()
 		}
 		msg := extractMessage(args, 1)
 		if msg != "" {
-			return newError("assertion failed: %s (expected Zero, got Some(%s))", msg, val)
+			return newError("assertion failed: %s (expected None, got Some(%s))", msg, val)
 		}
-		return newError("assertion failed: expected Zero, got Some(%s)", val)
+		return newError("assertion failed: expected None, got Some(%s)", val)
 	}
 
 	return &Nil{}
@@ -880,7 +880,7 @@ func SetTestBuiltinTypes(builtins map[string]*Builtin) {
 		"assertOk":       typesystem.TFunc{Params: []typesystem.Type{resultTE, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
 		"assertFail":     typesystem.TFunc{Params: []typesystem.Type{resultTE, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
 		"assertSome":     typesystem.TFunc{Params: []typesystem.Type{optionT, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertZero":     typesystem.TFunc{Params: []typesystem.Type{optionT, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
+		"assertNone":     typesystem.TFunc{Params: []typesystem.Type{optionT, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
 		"mockHttp":       typesystem.TFunc{Params: []typesystem.Type{stringType, responseType}, ReturnType: typesystem.Nil},
 		"mockHttpError":  typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Nil},
 		"mockHttpOff":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},

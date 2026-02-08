@@ -1,0 +1,11 @@
+fun test_int() -> Int {
+    "not int"
+}
+
+fun test_void() -> Nil {
+    1
+}
+
+fun test_record() -> { x: Int } {
+    { x: "string" }
+}

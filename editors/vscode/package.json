@@ -1,13 +1,17 @@
 {
   "name": "funxy-language",
   "displayName": "Funxy Language",
-  "description": "Syntax highlighting for Funxy programming language",
-  "version": "0.5.0",
+  "description": "Language support for Funxy (Syntax Highlighting + LSP)",
+  "version": "0.5.5",
   "publisher": "funxy",
   "engines": {
     "vscode": "^1.60.0"
   },
   "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:funxy"
+  ],
   "contributes": {
     "languages": [
       {
@@ -23,6 +27,33 @@
         "scopeName": "source.funxy",
         "path": "./syntaxes/funxy.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Funxy",
+      "properties": {
+        "funxy.lsp.path": {
+          "type": "string",
+          "default": "funxy-lsp",
+          "description": "Path to the Funxy Language Server binary (funxy-lsp)"
+        },
+        "funxy.lsp.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging for LSP"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0",
+    "@types/node": "^14.14.37"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/funvibe/funxy.git"
   }
 }

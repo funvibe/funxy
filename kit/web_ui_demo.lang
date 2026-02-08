@@ -126,10 +126,6 @@ fun healthHandler(ctx) {
 fun notFoundHandler(ctx) {
     match renderPage(notFoundPage()) {
         Ok(res: HandlerResult) -> {
-            // Apply status code 404 to the response
-            // We know renderPage returns HandlerResult (which can be Response)
-            // But if pattern matching fails, it means 'res' is considered Json?
-            // Let's force it to be HandlerResult if needed, or inspect 'res' type.
             match res {
                 resp: Response -> Ok(withStatus(404, resp) : HandlerResult)
                 _ -> Ok(res)

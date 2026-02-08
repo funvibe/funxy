@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 2:2 [P007]: index assignment is not supported. Use 'lib/list' update/insert functions for immutable list modification

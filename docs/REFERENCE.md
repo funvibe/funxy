@@ -2,32 +2,50 @@
 
 ## Table of Contents
 
-1. [Variables and Constants](#1-variables-and-constants)
-2. [Data Types](#2-data-types)
-3. [Literals](#3-literals)
-4. [Operators](#4-operators)
-5. [Control Flow](#5-control-flow)
-6. [Functions](#6-functions)
-7. [Collections](#7-collections)
-8. [Pattern Matching](#8-pattern-matching)
-9. [Types and Generics](#9-types-and-generics)
-10. [Traits](#10-traits)
+1. [Practical Orientation](#1-practical-orientation)
+2. [Variables and Constants](#2-variables-and-constants)
+3. [Data Types](#3-data-types)
+4. [Literals](#4-literals)
+5. [Operators](#5-operators)
+6. [Control Flow](#6-control-flow)
+7. [Functions](#7-functions)
+8. [Collections](#8-collections)
+9. [Pattern Matching](#9-pattern-matching)
+10. [Error Handling](#10-error-handling)
 11. [Modules and Imports](#11-modules-and-imports)
-12. [Error Handling](#12-error-handling)
-13. [Built-in Functions](#13-built-in-functions)
-14. [Standard Library](#14-standard-library)
-15. [Asynchronous Programming](#15-asynchronous-programming)
-16. [Command Line Interface](#16-command-line-interface)
-17. [Bytecode Compilation](#17-bytecode-compilation)
-18. [Advanced Functional Programming](#18-advanced-functional-programming)
-19. [Compiler Directives](#19-compiler-directives)
-20. [Tools and Debugging](#20-tools-and-debugging)
-21. [Embedding Funxy in Go](#21-embedding-funxy-in-go)
-22. [Summary Tables](#summary-tables)
+12. [Types and Generics](#12-types-and-generics)
+13. [Traits](#13-traits)
+14. [Built-in Functions](#14-built-in-functions)
+15. [Standard Library](#15-standard-library)
+16. [Asynchronous Programming](#16-asynchronous-programming)
+17. [Command Line and Scripting](#17-command-line-and-scripting)
+18. [Embedding Funxy in Go](#18-embedding-funxy-in-go)
+19. [Tools and Debugging](#19-tools-and-debugging)
+20. [Functional Programming](#20-functional-programming)
+21. [Bytecode Compilation (Experimental)](#21-bytecode-compilation-experimental)
+22. [Summary Tables](#22-summary-tables)
 
 ---
 
-## 1. Variables and Constants
+## 1. Practical Orientation
+
+Funxy is a general-purpose scripting language with static typing and type inference, so type annotations are usually optional. The standard library includes HTTP, gRPC, SQL, JSON, CSV, protobuf, crypto, logging, tasks (async), filesystem, and system calls.
+
+### Typical Use Cases
+
+- **Backend services**: `lib/http`, `lib/ws`, `lib/grpc`, `lib/sql`, `lib/json`, `lib/log`, `lib/task`
+- **ML/DevOps data pipelines**: `lib/io`, `lib/path`, `lib/regex`, `lib/csv`, `lib/json`, `lib/bytes`, `lib/uuid`, `lib/time`
+- **Scripting/automation**: `lib/sys`, `lib/flag`, `lib/io`, `lib/path`, `lib/date`, `lib/log`
+
+### Where to Go Deeper
+
+- Builtins and stdlib details: `docs/BUILTINS.md`
+- Modules & packaging: `docs/tutorial/18_modules.md`
+- Type system internals: `docs/tutorial/38_type_system.md`
+
+---
+
+## 2. Variables and Constants
 
 ### Comments
 ```rust
@@ -98,7 +116,7 @@ fun increment() {
 
 ---
 
-## 2. Data Types
+## 3. Data Types
 
 ### Primitive Types
 - `Int` - 64-bit integer
@@ -120,13 +138,13 @@ fun increment() {
 
 ### Record Types
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 p: Point = { x: 10, y: 20 }
 ```
 
 ### Algebraic Data Types (ADTs)
 ```rust
-type Option<t> = Some t | Zero
+type Option<t> = Some t | None
 type Result<e, a> = Ok a | Fail e
 type Tree<t> = Leaf t | Branch((Tree<t>, Tree<t>))
 ```
@@ -152,7 +170,7 @@ type alias ID = Int | String
 
 ---
 
-## 3. Literals
+## 4. Literals
 
 ### Numeric Literals
 ```rust
@@ -206,7 +224,7 @@ formatter(42)                       // "00042"
 [1, 2, 3]              // List<Int>
 ["a", "b", "c"]        // List<String>
 []                     // Empty list
-[1, 2, 3, 4, 5,]      // Trailing comma allowed
+[1, 2, 3, 4, 5,]       // Trailing comma allowed
 
 // Multiline
 numbers = [
@@ -226,9 +244,9 @@ numbers = [
 
 ### Record Literals
 ```rust
-{ x: 10, y: 20 }       // Anonymous record
+{ x: 10, y: 20 }            // Anonymous record
 p: Point = { x: 10, y: 20 }  // Named type
-{}                     // Empty record
+{}                          // Empty record
 ```
 
 ### Map Literals
@@ -268,7 +286,7 @@ nil
 
 ---
 
-## 4. Operators
+## 5. Operators
 
 ### Arithmetic Operators
 ```rust
@@ -371,12 +389,12 @@ sum = foldl((+), 0, [1, 2, 3])  // 6
 
 ### Error Propagation Operator
 ```rust
-value = result?  // Unwraps Ok/Some, propagates Fail/Zero
+value = result?  // Unwraps Ok/Some, propagates Fail/None
 ```
 
 ---
 
-## 5. Control Flow
+## 6. Control Flow
 
 ### If Expression
 ```rust
@@ -462,7 +480,7 @@ match x {
 
 ---
 
-## 6. Functions
+## 7. Functions
 
 ### Function Declaration
 ```rust
@@ -473,6 +491,21 @@ fun add(a: Int, b: Int) -> Int {
 // Return type inferred
 fun square(x: Int) {
     x * x  // Returns Int
+}
+```
+
+### Explicit Return
+Functions return the last expression by default, but you can exit early with `return`:
+
+```rust
+fun classify(n: Int) -> Int {
+    if n < 0 { return -1 }
+    if n == 0 { return 0 }
+    1
+}
+
+fun noop() {
+    return
 }
 ```
 
@@ -547,7 +580,7 @@ fun makeCounter() {
 
 ### Extension Methods
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 fun (p: Point) distanceFromOrigin() -> Int {
     p.x * p.x + p.y * p.y
@@ -608,7 +641,6 @@ fun factorial_bad(n: Int) -> Int {
 ```
 
 ### Argument Shorthand (Record Arguments)
-
 ```rust
 fun connect(config: { host: String, port: Int }) { ... }
 
@@ -619,7 +651,6 @@ connect({ host: "localhost", port: 8080 })
 ```
 
 ### Spread in Function Calls
-
 ```rust
 // Calling with Spread
 nums = [2, 3]
@@ -628,7 +659,7 @@ sum(1, ...nums)  // 6
 
 ---
 
-## 7. Collections
+## 8. Collections
 
 ### Lists
 
@@ -712,7 +743,7 @@ fun printPair(p: (Int, String)) -> Nil {
 
 #### Creation
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 p = { x: 10, y: 20 }
 p: Point = { x: 10, y: 20 }
 ```
@@ -786,7 +817,7 @@ items = mapItems(scores)     // [("Alice", 100), ("Bob", 85)]
 
 ---
 
-## 8. Pattern Matching
+## 9. Pattern Matching
 
 ### Literal Patterns
 ```rust
@@ -856,7 +887,7 @@ match r {
 opt = Some(42)
 match opt {
     Some(val) -> print(val)
-    Zero -> print("Nothing")
+    None -> print("Nothing")
 }
 ```
 
@@ -951,7 +982,165 @@ match (1, [2, 3]) {
 
 ---
 
-## 9. Types and Generics
+## 10. Error Handling
+
+### Panic (Unrecoverable)
+```rust
+fun myHead<t>(xs: List<t>) -> t {
+    match xs {
+        [x, ..._] -> x
+        [] -> panic("myHead: empty list")
+    }
+}
+```
+
+### Result Type
+```rust
+type Result<e, a> = Ok a | Fail e
+
+fun divide(a: Int, b: Int) -> Result<String, Int> {
+    if b == 0 {
+        Fail("division by zero")
+    } else {
+        Ok(a / b)
+    }
+}
+
+match divide(10, 2) {
+    Ok(value) -> print("Result: " ++ show(value))
+    Fail(err) -> print("Error: " ++ err)
+}
+```
+
+### Error Propagation (?)
+```rust
+import "lib/io" (fileRead, fileWrite)
+
+fun copyFile(src: String, dst: String) -> Result<String, Int> {
+    content = fileRead(src)?     // Fail → early return
+    bytes = fileWrite(dst, content)?
+    Ok(bytes)
+}
+```
+
+### Option Type
+```rust
+type Option<t> = Some t | None
+
+x = Some(42)
+y = None
+
+match x {
+    Some(value) -> print(value)
+    None -> print("Nothing")
+}
+
+// ? operator works with Option too
+first = find(fun(x) -> x > 0, xs)?
+Some(first * 2)
+```
+
+### Nullable Types (T?)
+```rust
+age: Int? = 25
+name: String? = nil
+
+// Optional Chaining (works with T?, Option, Result)
+emp?.address?.city  // Returns nil if any part is nil
+
+// Option Chaining
+optUser?.name       // Returns Some(name) or None
+
+// Result Chaining
+userResult?.email   // Returns Ok(email) or propagates Fail
+
+fun describe(x: Int?) -> String {
+    match x {
+        n: Int -> "Got number: " ++ show(n)
+        _: Nil -> "Got nil"
+    }
+}
+```
+
+---
+
+## 11. Modules and Imports
+
+See `docs/tutorial/18_modules.md` for the full module system, packaging rules, and import nuances.
+
+### Package Structure
+```
+math/
+├── math.lang    ← Entry file (controls exports)
+├── vector.lang  ← Internal file
+└── matrix.lang  ← Internal file
+```
+
+### Export Syntax
+```rust
+package math (Vector, add)  // Export only Vector and add
+package math (*)             // Export everything
+package math !(A, B)        // Export everything except A and B
+package math                // Export nothing (internal)
+```
+
+### Import Syntax
+```rust
+import "lib/list"           // Import as module object
+import "lib/list" as l      // Import with alias
+import "lib/list" (map)     // Import specific symbols
+import "lib/list" (*)       // Import all symbols
+```
+
+### Stdlib Qualified Shorthand
+Stdlib naming is designed to avoid conflicts when importing everything into one file:
+all built-in symbols (including from `lib/*`) are globally unique, and the verbose names
+carry the module name as a prefix. The shorthand lookup is just a convenience layer on top.
+
+When you import a standard library module as a module object, you can use short member names.
+If the exact member doesn't exist, Funxy tries `moduleName + Capitalized(member)`:
+
+```rust
+import "lib/string" as str
+import "lib/tuple"
+
+str.toUpper("hello")  // resolves to stringToUpper
+str.trim("  hi  ")    // resolves to stringTrim
+tuple.get((1, 2, 3), 1) // resolves to tupleGet
+```
+
+### Single Import Rule
+- Each module can be imported only once per file
+- Choose one import style per module
+
+### ADT Constructor Auto-Import
+```rust
+import "lib/sql" (SqlValue)
+
+// Constructors auto-imported
+v1 = SqlInt(42)
+v2 = SqlString("hello")
+```
+
+### Qualified Trait Names
+```rust
+import "kit/sql" as orm
+
+instance orm.Model User {
+    fun tableName(u) { "users" }
+    fun toRow(u) { }
+}
+```
+
+### File Extensions
+- Supported: `.lang`, `.funxy`, `.fx`
+- All files in a package must use the same extension
+
+---
+
+## 12. Types and Generics
+
+This section covers core typing. For type system internals and advanced inference rules, see `docs/tutorial/38_type_system.md`.
 
 ### Generic Functions
 ```rust
@@ -965,13 +1154,38 @@ s = id("hello")  // t is String
 
 ### Generic Types
 ```rust
-type Box<t> = { value: t }
+type alias Box<t> = { value: t }
 type Pair<a, b> = Pair(a, b)
 ```
 
 ### Type Parameters Convention
 - **Lowercase**: type parameters (`t`, `u`, `a`, `b`)
 - **Uppercase**: types, constructors, traits (`Int`, `Some`, `Order`)
+
+### Kinds
+Types have "types" called **Kinds**.
+- `*` (Star) is the kind of proper types (values like `Int`, `Bool`, `List<Int>`).
+- `* -> *` is the kind of type constructors that take one type argument (like `List`, `Option`).
+- `* -> * -> *` is the kind of type constructors taking two arguments (like `Map`, `Result`).
+
+#### Kind Annotations
+You can explicitly annotate the kind of a type parameter using syntax like `t: * -> *`.
+This is useful for higher-kinded types where inference might be ambiguous.
+
+```rust
+// f must be a type constructor (* -> *)
+trait Functor<f: * -> *> {
+    fun fmap<a, b>(func: (a) -> b, val: f<a>) -> f<b>
+}
+
+// t must be a proper type (*)
+type Box<t: *> = Box(t)
+```
+
+#### Kind Inference
+Funxy automatically infers kinds based on usage.
+- `List<t>` implies `List` is `* -> *` and `t` is `*`.
+- `f<a>` implies `f` is `* -> *`.
 
 ### Type Annotations
 ```rust
@@ -995,7 +1209,7 @@ typeOf(o, MyOption(Int))   // Check with parameter (use parentheses!)
 ```
 
 ### Rank-N Types
-Funxy supports Rank-N types (universally quantified types) using the `forall` keyword. This allows passing polymorphic functions as arguments.
+Funxy supports Rank-N types (universally quantified types) using the `forall` keyword. This is optional and mainly useful for advanced libraries.
 
 ```rust
 // A function that takes a polymorphic function
@@ -1043,7 +1257,7 @@ if typeOf(x, Int) {
 
 ---
 
-## 10. Traits
+## 13. Traits
 
 ### Trait Declaration
 ```rust
@@ -1125,7 +1339,7 @@ instance Functor<Option> {
     fun fmap<a, b>(f: (a) -> b, fa: Option<a>) -> Option<b> {
         match fa {
             Some(x) -> Some(f(x))
-            Zero -> Zero
+            None -> None
         }
     }
 }
@@ -1142,9 +1356,6 @@ instance Functor Result<e> {
 ```
 
 ### Multi-Parameter Type Classes (MPTC)
-
-Funxy supports traits with multiple type parameters, enabling relationships between different types:
-
 ```rust
 // Trait with two parameters defining type conversions
 trait Convert<a, b> {
@@ -1165,8 +1376,6 @@ s: String = convert(42)    // Int -> String
 i: Int = convert(true)     // Bool -> Int
 ```
 
-MPTC dispatch works through runtime type checking, allowing the same function name to work with different type combinations.
-
 ### Built-in Traits
 - `Equal<t>` - `==`, `!=`
 - `Order<t>` - `<`, `>`, `<=`, `>=` (inherits Equal)
@@ -1179,144 +1388,7 @@ MPTC dispatch works through runtime type checking, allowing the same function na
 
 ---
 
-## 11. Modules and Imports
-
-### Package Structure
-```
-math/
-├── math.lang    ← Entry file (controls exports)
-├── vector.lang  ← Internal file
-└── matrix.lang  ← Internal file
-```
-
-### Export Syntax
-```rust
-package math (Vector, add)  // Export only Vector and add
-package math (*)             // Export everything
-package math !(A, B)        // Export everything except A and B
-package math                // Export nothing (internal)
-```
-
-### Import Syntax
-```rust
-import "lib/list"           // Import as module object
-import "lib/list" as l      // Import with alias
-import "lib/list" (map)     // Import specific symbols
-import "lib/list" (*)       // Import all symbols
-```
-
-### Single Import Rule
-- Each module can be imported only once per file
-- Choose one import style per module
-
-### ADT Constructor Auto-Import
-```rust
-import "lib/sql" (SqlValue)
-
-// Constructors auto-imported
-v1 = SqlInt(42)
-v2 = SqlString("hello")
-```
-
-### Qualified Trait Names
-```rust
-import "kit/sql" as orm
-
-instance orm.Model User {
-    fun tableName(u) { "users" }
-    fun toRow(u) { }
-}
-```
-
-### File Extensions
-- Supported: `.lang`, `.funxy`, `.fx`
-- All files in a package must use the same extension
-
----
-
-## 12. Error Handling
-
-### Panic (Unrecoverable)
-```rust
-fun myHead<t>(xs: List<t>) -> t {
-    match xs {
-        [x, ..._] -> x
-        [] -> panic("myHead: empty list")
-    }
-}
-```
-
-### Result Type
-```rust
-type Result<e, a> = Ok a | Fail e
-
-fun divide(a: Int, b: Int) -> Result<String, Int> {
-    if b == 0 {
-        Fail("division by zero")
-    } else {
-        Ok(a / b)
-    }
-}
-
-match divide(10, 2) {
-    Ok(value) -> print("Result: " ++ show(value))
-    Fail(err) -> print("Error: " ++ err)
-}
-```
-
-### Error Propagation (?)
-```rust
-import "lib/io" (fileRead, fileWrite)
-
-fun copyFile(src: String, dst: String) -> Result<String, Int> {
-    content = fileRead(src)?     // Fail → early return
-    bytes = fileWrite(dst, content)?
-    Ok(bytes)
-}
-```
-
-### Option Type
-```rust
-type Option<t> = Some t | Zero
-
-x = Some(42)
-y = Zero
-
-match x {
-    Some(value) -> print(value)
-    Zero -> print("Nothing")
-}
-
-// ? operator works with Option too
-first = find(fun(x) -> x > 0, xs)?
-Some(first * 2)
-```
-
-### Nullable Types (T?)
-```rust
-age: Int? = 25
-name: String? = nil
-
-// Optional Chaining (works with T?, Option, Result)
-emp?.address?.city  // Returns nil if any part is nil
-
-// Option Chaining
-optUser?.name       // Returns Some(name) or Zero
-
-// Result Chaining
-userResult?.email   // Returns Ok(email) or propagates Fail
-
-fun describe(x: Int?) -> String {
-    match x {
-        n: Int -> "Got number: " ++ show(n)
-        _: Nil -> "Got nil"
-    }
-}
-```
-
----
-
-## 13. Built-in Functions
+## 14. Built-in Functions
 
 ### Output
 ```rust
@@ -1330,7 +1402,7 @@ write("Hello")              // Without newline
 floatToInt(3.7)      // 3
 intToFloat(42)        // 42.0
 show(42)              // "42"
-sprintf("%d, %.2f", 42, 3.14159)  // "42, 3.14"
+format("%d, %.2f", 42, 3.14159)  // "42, 3.14"
 ```
 
 ### Format String Literals
@@ -1345,7 +1417,7 @@ formatter = %".2f"
 ### Parsing
 ```rust
 read("42", Int)       // Some(42)
-read("abc", Int)      // Zero
+read("abc", Int)      // None
 read("3.14", Float)   // Some(3.14)
 read("true", Bool)    // Some(true)
 ```
@@ -1368,7 +1440,7 @@ default(String)       // ""
 ### Functional Helpers
 ```rust
 id(42)                // 42
-const(1, 2)           // 1
+constant(1, 2)        // 1
 len([1, 2, 3])        // 3
 len("Hello")          // 5 (characters)
 lenBytes("Привет")    // 12 (UTF-8 bytes)
@@ -1376,144 +1448,112 @@ lenBytes("Привет")    // 12 (UTF-8 bytes)
 
 ---
 
-## 14. Standard Library
+## 15. Standard Library
 
-### lib/list
+For full APIs, see `docs/BUILTINS.md` or `./funxy -help lib/<name>`.
+
+### Module Index
+
+| Module | Description |
+|--------|-------------|
+| `lib/http` | HTTP client and server |
+| `lib/ws` | WebSocket client and server |
+| `lib/grpc` | gRPC client and server support |
+| `lib/proto` | Protocol Buffers serialization |
+| `lib/sql` | SQLite database operations |
+| `lib/json` | JSON encoding/decoding and Json ADT |
+| `lib/csv` | CSV parsing, encoding, and file I/O |
+| `lib/regex` | Regular expression matching and manipulation |
+| `lib/log` | Structured logging |
+| `lib/task` | Async tasks and concurrency |
+| `lib/io` | File and stream I/O |
+| `lib/path` | Path manipulation |
+| `lib/sys` | System interaction (args, env, exec) |
+| `lib/date` | Date and time with timezone offset |
+| `lib/time` | Timers and sleep |
+| `lib/uuid` | UUID generation |
+| `lib/crypto` | Hashing, encoding, secure random |
+| `lib/bytes` | Byte sequence manipulation |
+| `lib/bits` | Bit sequence manipulation |
+| `lib/map` | Immutable maps |
+| `lib/list` | List utilities |
+| `lib/string` | String utilities |
+| `lib/flag` | CLI flag parsing |
+| `lib/test` | Testing framework |
+| `lib/math` | Mathematical functions |
+| `lib/tuple` | Tuple utilities |
+| `lib/bignum` | BigInt and Rational |
+| `lib/rand` | Random number generation |
+| `lib/char` | Character utilities |
+| `lib/url` | URL parsing and manipulation |
+
+### Backend and APIs
+
+#### lib/http
 ```rust
-import "lib/list" (*)
+import "lib/http" (*)
 
-head(xs)              // Some(first)
-tail(xs)              // Some(rest)
-append(xs, x)         // xs ++ [x]
-map(fun(x) -> x * 2, xs)
-filter(fun(x) -> x > 0, xs)
-foldl((+), 0, xs)
-foldr((+), 0, xs)
-reverse(xs)
-sort(xs)
-unique(xs)
-zip(xs, ys)
-unzip(pairs)
-partition(pred, xs)
-range(1, 5)           // [1, 2, 3, 4]
+// Client
+resp = httpGet("https://example.com")?
+print(resp.body)
+print(resp.status)
+
+httpPost("https://api.com", "data") // body: String or Bytes
+httpPostJson("https://api.com", { name: "Alice" })
+
+// Server
+fun handler(req) {
+    print(req.method ++ " " ++ req.path)
+    { status: 200, body: "Hello", headers: [] }
+}
+httpServe(8080, handler)
 ```
 
-### lib/string
+#### lib/ws
 ```rust
-import "lib/string" (*)
+import "lib/ws" (*)
 
-stringSplit("a,b,c", ",")           // ["a", "b", "c"]
-stringJoin(["a", "b"], ",")         // "a,b"
-stringTrim("  hello  ")              // "hello"
-stringToUpper("hello")               // "HELLO"
-stringToLower("HELLO")               // "hello"
-stringCapitalize("hello")            // "Hello"
-stringReplace("hello", "l", "L")    // "heLlo"
-stringReplaceAll("hello", "l", "L") // "heLLo"
-stringStartsWith("hello", "hel")     // true
-stringEndsWith("hello", "lo")       // true
-stringIndexOf("hello", "ll")        // Some(2)
-stringRepeat("ab", 3)                // "ababab"
-stringPadLeft("42", 5, '0')          // "00042"
-stringPadRight("42", 5, '-')        // "42---"
+// Client
+conn = wsConnect("ws://echo.websocket.org")?
+wsSend(conn, "Hello")
+msg = wsRecv(conn)?
+wsClose(conn)
+
+// Server
+wsServe(8080, fun(conn, msg) -> {
+    "Echo: " ++ msg
+})
 ```
 
-### lib/map
+#### lib/grpc
 ```rust
-import "lib/map" (*)
+import "lib/grpc" (*)
 
-mapGet(m, key)        // Option<v>
-mapGetOr(m, key, def)  // v
-mapContains(m, key)   // Bool
-mapSize(m)             // Int
-mapPut(m, key, val)    // Map<k, v>
-mapRemove(m, key)      // Map<k, v>
-mapMerge(m1, m2)       // Map<k, v>
-mapKeys(m)             // List<k>
-mapValues(m)           // List<v>
-mapItems(m)            // List<(k, v)>
+grpcLoadProto("service.proto")
+
+// Client
+conn = grpcConnect("localhost:50051")?
+resp = grpcInvoke(conn, "Greeter/SayHello", { name: "Alice" })?
+grpcClose(conn)
+
+// Server
+handler = { SayHello: fun(req) -> { message: "Hi " ++ req.name } }
+server = grpcServer()
+grpcRegister(server, "Greeter", handler)
+grpcServeAsync(server, ":50051")
+grpcStop(server)
 ```
 
-### lib/tuple
+#### lib/proto
 ```rust
-import "lib/tuple" (*)
+import "lib/proto" (*)
 
-fst(pair)              // First element
-snd(pair)              // Second element
-tupleGet(triple, 0)    // Element by index
-tupleSwap((1, "a"))    // ("a", 1)
-tupleDup(42)           // (42, 42)
-mapFst(f, pair)
-mapSnd(f, pair)
-mapPair(f, g, pair)
-curry(fn)
-uncurry(fn)
+// Encoding/Decoding maps to bytes
+bytes = protoEncode("User", { name: "Bob" })?
+user = protoDecode("User", bytes)?
 ```
 
-### lib/io
-```rust
-import "lib/io" (*)
-
-readLine()                          // Option<String>
-fileRead("path.txt")                // Result<String, String>
-fileWrite("path.txt", "content")    // Result<Int, String>
-fileAppend("path.txt", "content")   // Result<Int, String>
-fileExists("path.txt")              // Bool
-fileSize("path.txt")                // Result<Int, String>
-fileDelete("path.txt")              // Result<Nil, String>
-```
-
-### lib/time
-```rust
-import "lib/time" (*)
-
-timeNow()      // Unix timestamp (seconds)
-clockNs()      // Monotonic nanoseconds
-clockMs()      // Monotonic milliseconds
-sleep(2)       // Sleep seconds
-sleepMs(500)   // Sleep milliseconds
-```
-
-### lib/bytes
-```rust
-import "lib/bytes" (*)
-
-b = @"Hello"
-bytesSlice(b, 0, 3)     // @"Hel"
-bytesConcat(b1, b2)     // b1 ++ b2
-bytesToHex(b)           // "48..."
-bytesFromHex("FF")      // Result<Bytes, String>
-bytesEncodeInt(42, 4, "big") // Encode int
-bytesDecodeInt(b, "big")     // Decode int
-```
-
-### lib/bits
-```rust
-import "lib/bits" (*)
-
-b = #b"1010"
-bitsGet(b, 0)           // Some(1)
-bitsSet(b, 0, 0)        // #b"0010"
-bitsToBinary(b)         // "1010"
-bitsToHex(b)            // "a"
-bitsFromHex("FF")       // Result<Bits, String>
-bitsConcat(b1, b2)
-```
-
-### lib/regex
-```rust
-import "lib/regex" (*)
-
-regexMatch(pattern, str)              // Bool
-regexFind(pattern, str)               // Option<String>
-regexFindAll(pattern, str)            // List<String>
-regexCapture(pattern, str)            // Option<List<String>>
-regexReplace(pattern, repl, str)      // String
-regexReplaceAll(pattern, repl, str)   // String
-regexSplit(pattern, str)              // List<String>
-```
-
-### lib/sql
+#### lib/sql
 ```rust
 import "lib/sql" (*)
 
@@ -1531,58 +1571,173 @@ row = sqlQueryRow(db, "SELECT * FROM users WHERE id=$1", [SqlInt(1)])?
 // Types: SqlInt, SqlString, SqlFloat, SqlBool, SqlBytes, SqlNull
 ```
 
-### lib/http
+### Data Formats and Pipelines
+
+#### lib/json
 ```rust
-import "lib/http" (*)
+import "lib/json" (*)
 
-// Client
-resp = httpGet("https://example.com")?
-print(resp.body)
-print(resp.status)
+// Encode/decode
+json = jsonEncode({ name: "Alice", age: 30 })
+user = jsonDecode(json)?
 
-httpPost("https://api.com", "data")
-httpPostJson("https://api.com", { name: "Alice" })
+// Parse into Json ADT
+value = jsonParse(json)?
 
-// Server
-fun handler(req) {
-    print(req.method ++ " " ++ req.path)
-    { status: 200, body: "Hello", headers: [] }
-}
-httpServe(8080, handler)
+// Access fields
+name = jsonGet(value, "name")
 ```
 
-### lib/ws
+#### lib/csv
 ```rust
-import "lib/ws" (*)
+import "lib/csv" (csvParse, csvEncode)
 
-// Client
-conn = wsConnect("ws://echo.websocket.org")?
-wsSend(conn, "Hello")
-msg = wsRecv(conn)?
-wsClose(conn)
+// Parse CSV with headers
+csv = "name,age\nAlice,30\nBob,25"
+match csvParse(csv) {
+    Ok(rows) -> {
+        for row in rows {
+            print(row.name ++ " is " ++ row.age)
+        }
+    }
+    Fail(e) -> print("Error: " ++ e)
+}
 
-// Server
-wsServe(8080, fun(conn, msg) -> {
-    "Echo: " ++ msg
+// Encode records
+data = [{ name: "Alice", age: "30" }]
+print(csvEncode(data))  // name,age\nAlice,30
+```
+
+#### lib/regex
+```rust
+import "lib/regex" (*)
+
+regexMatch(pattern, str)              // Bool
+regexFind(pattern, str)               // Option<String>
+regexFindAll(pattern, str)            // List<String>
+regexCapture(pattern, str)            // Option<List<String>>
+regexReplace(pattern, repl, str)      // String
+regexReplaceAll(pattern, repl, str)   // String
+regexSplit(pattern, str)              // List<String>
+```
+
+### Ops and Automation
+
+#### lib/io
+```rust
+import "lib/io" (*)
+
+readLine()                          // Option<String>
+fileRead("path.txt")               // Result<String, String>
+fileReadBytes("path.bin")          // Result<String, Bytes>
+fileWrite("path.txt", "content")   // Result<String, Int> (String or Bytes)
+fileAppend("path.txt", "content")  // Result<String, Int> (String or Bytes)
+fileExists("path.txt")             // Bool
+fileSize("path.txt")               // Result<String, Int>
+fileDelete("path.txt")             // Result<String, Nil>
+```
+
+#### lib/path
+```rust
+import "lib/path" (*)
+
+path = pathJoin(["home", "user", "file.txt"])  // home/user/file.txt
+print(pathDir("/home/user/file.txt"))           // /home/user
+print(pathBase("/home/user/file.txt"))          // file.txt
+print(pathExt("/home/user/file.txt"))           // .txt
+print(pathStem("/home/user/file.txt"))          // file
+```
+
+#### lib/sys
+```rust
+import "lib/sys" (*)
+
+args = sysArgs()
+val = sysEnv("HOME")
+// sysExec("ls", ["-la"])  // Execute external command
+```
+
+#### lib/log
+```rust
+import "lib/log" (*)
+
+logLevel("debug")
+logDebug("Starting application")
+logInfo("Server listening on :8080")
+logWarn("Connection pool low")
+logError("Failed to connect")
+
+logWithFields("info", "Request", %{
+    "method" => "GET",
+    "path" => "/api/users",
+    "status" => "200"
 })
 ```
 
-### lib/flag
+#### lib/flag
 ```rust
 import "lib/flag" (*)
 
-flagSet("port", 8080, "Port number")
+flagSet("port", 8080, "Server port")
+flagSet("verbose", false, "Verbose logging")
 flagParse()
+
 port = flagGet("port")
-args = flagArgs() // Non-flag arguments
+if flagGet("verbose") {
+    print("Starting server on :" ++ show(port))
+}
 ```
 
-### lib/task
-See [15. Asynchronous Programming](#15-asynchronous-programming) for details.
+### Security and Identifiers
+
+#### lib/crypto
+```rust
+import "lib/crypto" (*)
+
+sha = sha256("payload")
+rand = cryptoRandomHex(16)
+signed = hmacSha256("secret", "message")
+```
+
+#### lib/uuid
+```rust
+import "lib/uuid" (*)
+
+id = uuidV7()
+print(uuidToString(id))
+```
+
+### Bytes and Bits (Protocols, Encoding)
+
+#### lib/bytes
+```rust
+import "lib/bytes" (*)
+
+b = @"Hello"
+bytesSlice(b, 0, 3)     // @"Hel"
+bytesConcat(b1, b2)     // b1 ++ b2
+bytesToHex(b)           // "48..."
+bytesFromHex("FF")      // Result<String, Bytes>
+bytesEncodeInt(42, 4, "big") // Encode int
+bytesDecodeInt(b, "big")     // Decode int
+```
+
+#### lib/bits
+```rust
+import "lib/bits" (*)
+
+b = #b"1010"
+bitsGet(b, 0)           // Some(1)
+bitsSet(b, 0, 0)        // #b"0010"
+bitsToBinary(b)         // "1010"
+bitsToHex(b)            // "a"
+bitsFromHex("FF")       // Result<String, Bits>
+bitsConcat(b1, b2)
+```
 
 ---
 
-## 15. Asynchronous Programming
+## 16. Asynchronous Programming
 
 Funxy supports asynchronous programming using Tasks for non-blocking I/O operations and concurrent execution.
 
@@ -1679,7 +1834,7 @@ Async allows multiple operations to run concurrently without blocking the main t
 
 ---
 
-## 16. Command Line Interface
+## 17. Command Line and Scripting
 
 ### Basic Usage
 
@@ -1701,17 +1856,7 @@ funxy test ./tests/my_test.lang
 funxy --help
 ```
 
-### Compilation Flags
-
-- `-c, --compile`: Compile to bytecode
-- `-o, --output`: Output file for compilation
-- `-r, --run`: Run bytecode file
-- `--debug`: Enable debug mode (VM backend only)
-- `--help`: Show help information
-
-### Library Usage
-
-Command-line argument parsing is available through `lib/flag`:
+### CLI in Code
 
 ```rust
 import "lib/flag" (*)
@@ -1730,53 +1875,137 @@ if flagGet("verbose") { print("Verbose mode") }
 
 ---
 
+## 18. Embedding Funxy in Go
 
-## 17. Bytecode Compilation
+Funxy provides a high-level API for embedding the language into Go applications. This allows you to use Funxy as a scripting language, configuration language, or rule engine.
 
-Funxy supports compilation to bytecode for improved performance and distribution.
+### Package `pkg/embed`
 
-### Command Line Usage
-
-```bash
-# Compile source to bytecode
-funxy -c source.lang -o output.fbc
-
-# Run compiled bytecode
-funxy -r output.fbc
-
-# Compile and run in one step
-funxy source.lang
+```go
+import "github.com/funvibe/funxy/pkg/embed"
 ```
 
-### Bytecode Format
+### Initialization
 
-- **Extension**: `.fbc` (Funxy Bytecode)
-- **Magic**: `FXYB` header with version
-- **Encoding**: Gob-encoded chunks with metadata
-- **Features**: Preserves imports, operator functions, and complex data structures
+```go
+vm := funxy.New()
+```
 
-### Compilation Process
+### Binding Go Values
 
-1. **Parse**: Source code → AST
-2. **Analyze**: Type checking and inference
-3. **Compile**: AST → Bytecode instructions
-4. **Serialize**: Bytecode → Binary format
+You can bind Go functions and values to the VM, making them available in Funxy scripts.
 
-### Limitations
+```go
+// Bind a function
+vm.Bind("double", func(x int) int {
+    return x * 2
+})
 
-- Module packages require tree-walk mode
-- Some runtime features may differ from interpreter
-- Import resolution happens at runtime
+// Bind a struct (Host Object)
+type User struct {
+    Name  string
+    Score int
+}
+user := &User{Name: "Alice", Score: 100}
+vm.Bind("user", user)
+```
 
-### Performance Benefits
+### Executing Code
 
-- Faster startup (no parsing/analysis)
-- Optimized instruction dispatch
-- Reduced memory usage for repeated execution
+```go
+// Evaluate a string
+result, err := vm.Eval("double(21)") // returns 42
+
+// Load and execute a file
+err = vm.LoadFile("script.lang")
+```
+
+### Calling Funxy from Go
+
+```go
+// Call a function defined in Funxy
+result, err := vm.Call("process_user", "Bob", 50)
+```
+
+### Host Objects
+
+Go structs bound to Funxy become **Host Objects**. Funxy scripts can:
+- Access exported fields: `user.Name`
+- Call exported methods: `user.UpdateScore(10)`
+
+### Type Mapping
+
+| Go Type | Funxy Type |
+|---------|------------|
+| `int`, `int64` | `Int` |
+| `float64` | `Float` |
+| `bool` | `Bool` |
+| `string` | `String` |
+| `[]T` | `List<T>` |
+| `map[string]T` | `Map<String, T>` |
+| `struct`, `*struct` | `HostObject` |
+| `func` | `HostObject` (callable) |
+| `nil` | `Nil` |
+
+For more details, see the [Embedding Tutorial](tutorial/41_embedding.md).
 
 ---
 
-## 18. Advanced Functional Programming
+## 19. Tools and Debugging
+
+### Debugger
+Funxy includes a built-in debugger for the VM backend.
+
+```bash
+funxy -debug program.lang
+```
+
+Commands:
+- `break`, `b <line>`: Set breakpoint
+- `continue`, `c`: Continue execution
+- `step`, `s`: Step into
+- `next`, `n`: Step over
+- `print`, `p <expr>`: Evaluate expression
+- `locals`: Show local variables
+
+See `docs/DEBUGGER.md` for full documentation.
+
+---
+
+## 20. Functional Programming
+
+FP traits are built-in and always available (no import required).
+
+### FP Trait Hierarchy
+
+```
+Semigroup
+    ↓
+  Monoid
+
+Functor
+    ↓
+Applicative
+    ↓
+  Monad
+```
+
+### Higher-Kinded Types (HKT)
+
+Functor/Applicative/Monad are defined over type constructors (HKT), so instances are written for the constructor itself:
+
+```rust
+instance Functor Option { ... }
+instance Functor Result<e> { ... }
+```
+
+Because of HKT, some operations require explicit type annotations to fix the target type:
+
+```rust
+opt: Option<Int> = pure(42)
+lst: List<Int> = pure(42)
+res: Result<String, Int> = pure(42)
+```
 
 ### Function Composition
 
@@ -1892,7 +2121,7 @@ result = do {
 
 // Short-circuiting
 result = do {
-    x <- Zero  // Stops here
+    x <- None  // Stops here
     y <- Some(20)  // Not executed
     Some(x + y)
 }
@@ -1900,115 +2129,51 @@ result = do {
 
 ---
 
-## 19. Compiler Directives
+## 21. Bytecode Compilation (Experimental)
 
-### Directives
-Directives control compiler behavior.
+Funxy supports compilation to bytecode for improved performance and distribution.
 
-```rust
-directive "strict_types"  // Enable stricter type checking
-```
-
----
-
-## 20. Tools and Debugging
-
-### Debugger
-Funxy includes a built-in debugger for the VM backend.
+### Command Line Usage
 
 ```bash
-funxy -debug program.lang
+# Compile source to bytecode
+funxy -c source.lang -o output.fbc
+
+# Run compiled bytecode
+funxy -r output.fbc
+
+# Compile and run in one step
+funxy source.lang
 ```
 
-Commands:
-- `break`, `b <line>`: Set breakpoint
-- `continue`, `c`: Continue execution
-- `step`, `s`: Step into
-- `next`, `n`: Step over
-- `print`, `p <expr>`: Evaluate expression
-- `locals`: Show local variables
+### Bytecode Format
 
-See `docs/DEBUGGER.md` for full documentation.
+- **Extension**: `.fbc` (Funxy Bytecode)
+- **Magic**: `FXYB` header with version
+- **Encoding**: Gob-encoded chunks with metadata
+- **Features**: Preserves imports, operator functions, and complex data structures
+
+### Compilation Process
+
+1. **Parse**: Source code → AST
+2. **Analyze**: Type checking and inference
+3. **Compile**: AST → Bytecode instructions
+4. **Serialize**: Bytecode → Binary format
+
+### Limitations
+
+- Bytecode compilation works only for a single source file (no packages)
+- Import resolution happens at runtime
+
+### Performance Benefits
+
+- Faster startup (no parsing/analysis)
+- Optimized instruction dispatch
+- Reduced memory usage for repeated execution
 
 ---
 
-## 21. Embedding Funxy in Go
-
-Funxy provides a high-level API for embedding the language into Go applications. This allows you to use Funxy as a scripting language, configuration language, or rule engine.
-
-### Package `pkg/embed`
-
-```go
-import "github.com/funvibe/funxy/pkg/embed"
-```
-
-### Initialization
-
-```go
-vm := funxy.New()
-```
-
-### Binding Go Values
-
-You can bind Go functions and values to the VM, making them available in Funxy scripts.
-
-```go
-// Bind a function
-vm.Bind("double", func(x int) int {
-    return x * 2
-})
-
-// Bind a struct (Host Object)
-type User struct {
-    Name  string
-    Score int
-}
-user := &User{Name: "Alice", Score: 100}
-vm.Bind("user", user)
-```
-
-### Executing Code
-
-```go
-// Evaluate a string
-result, err := vm.Eval("double(21)") // returns 42
-
-// Load and execute a file
-err = vm.LoadFile("script.lang")
-```
-
-### Calling Funxy from Go
-
-```go
-// Call a function defined in Funxy
-result, err := vm.Call("process_user", "Bob", 50)
-```
-
-### Host Objects
-
-Go structs bound to Funxy become **Host Objects**. Funxy scripts can:
-- Access exported fields: `user.Name`
-- Call exported methods: `user.UpdateScore(10)`
-
-### Type Mapping
-
-| Go Type | Funxy Type |
-|---------|------------|
-| `int`, `int64` | `Int` |
-| `float64` | `Float` |
-| `bool` | `Bool` |
-| `string` | `String` |
-| `[]T` | `List<T>` |
-| `map[string]T` | `Map<String, T>` |
-| `struct`, `*struct` | `HostObject` |
-| `func` | `HostObject` (callable) |
-| `nil` | `Nil` |
-
-For more details, see the [Embedding Tutorial](tutorial/41_embedding.md).
-
----
-
-## Summary Tables
+## 22. Summary Tables
 
 ### Operators Precedence
 1. Function application (`$`) - Lowest
@@ -2026,6 +2191,7 @@ For more details, see the [Embedding Tutorial](tutorial/41_embedding.md).
 - **Nominal types**: Named record types, ADTs
 - **Union types**: `T | U`, `T?` (nullable)
 - **Generic types**: `List<t>`, `Map<k, v>`
+- **Kinds**: `*` (proper type), `* -> *` (type constructor)
 - **Higher-kinded types**: `Functor<f>` where `f` is `* -> *`
 
 ### Error Handling Summary
@@ -2033,7 +2199,7 @@ For more details, see the [Embedding Tutorial](tutorial/41_embedding.md).
 |-----------|------|---------|---------|----------|
 | `panic` | - | - | Stops execution | Programming errors |
 | `Result<e, a>` | ADT | `Ok(value)` | `Fail(error)` | Recoverable errors |
-| `Option<t>` | ADT | `Some(value)` | `Zero` | Absent values |
+| `Option<t>` | ADT | `Some(value)` | `None` | Absent values |
 | `T?` | Union | `value` | `nil` | Nullable values |
 
 ---

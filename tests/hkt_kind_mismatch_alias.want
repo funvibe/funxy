@@ -1,2 +1,2 @@
 Processing failed with errors:
-- error at 6:23 [A003]: type error: type MyInt has kind *, but trait Functor requires kind (* -> *) for parameter f (type constructor)
+- error at 6:18 [A003]: type error: type MyInt has kind *, but trait Functor requires kind (* -> *) for parameter f (type constructor)

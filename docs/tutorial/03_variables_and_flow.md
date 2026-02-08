@@ -37,7 +37,7 @@ globalCounter = 0
 
 fun increment() {
     // Error: cannot mutate global variable 'globalCounter' from within a function
-    globalCounter = globalCounter + 1
+    // globalCounter = globalCounter + 1
 }
 ```
 

@@ -15,17 +15,17 @@ testRun("Web Context - Form Parsing", fun() {
 
     match web.formParam("name", ctx) {
         Some(val) -> assertEquals(val, "Alice", "name param correct")
-        Zero -> assertFail(Ok(0), "name param missing")
+        None -> assertFail(Ok(0), "name param missing")
     }
 
     match web.formParam("age", ctx) {
         Some(val) -> assertEquals(val, "30", "age param correct")
-        Zero -> assertFail(Ok(0), "age param missing")
+        None -> assertFail(Ok(0), "age param missing")
     }
 
     match web.formParam("missing", ctx) {
         Some(_) -> assertFail(Ok(0), "missing param found")
-        Zero -> assert(true, "missing param not found")
+        None -> assert(true, "missing param not found")
     }
 })
 

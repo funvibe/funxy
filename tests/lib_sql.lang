@@ -9,33 +9,33 @@ print("=== SQL Connection ===")
 match sqlOpen("sqlite", ":memory:") {
     Ok(db) -> {
         print("Connected to SQLite")
-        
+
         // Create table
         match sqlExec(db, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)", []) {
             Ok(_) -> print("Table created")
             Fail(e) -> print("Create error: " ++ e)
         }
-        
+
         print("=== SQL Insert ===")
-        
+
         // Insert data with SqlValue parameters
         match sqlExec(db, "INSERT INTO users (name, age) VALUES ($1, $2)", [SqlString("Alice"), SqlInt(30)]) {
             Ok(n) -> print("Inserted: " ++ show(n))
             Fail(e) -> print("Insert error: " ++ e)
         }
-        
+
         match sqlExec(db, "INSERT INTO users (name, age) VALUES ($1, $2)", [SqlString("Bob"), SqlInt(25)]) {
             Ok(n) -> print("Inserted: " ++ show(n))
             Fail(e) -> print("Insert error: " ++ e)
         }
-        
+
         match sqlExec(db, "INSERT INTO users (name, age) VALUES ($1, $2)", [SqlString("Charlie"), SqlInt(35)]) {
             Ok(n) -> print("Inserted: " ++ show(n))
             Fail(e) -> print("Insert error: " ++ e)
         }
-        
+
         print("=== SQL Query ===")
-        
+
         // Query all
         match sqlQuery(db, "SELECT * FROM users ORDER BY id", []) {
             Ok(rows) -> {
@@ -43,9 +43,9 @@ match sqlOpen("sqlite", ":memory:") {
             }
             Fail(e) -> print("Query error: " ++ e)
         }
-        
+
         print("=== SQL Query with params ===")
-        
+
         // Query with filter
         match sqlQuery(db, "SELECT name, age FROM users WHERE age > $1", [SqlInt(26)]) {
             Ok(rows) -> {
@@ -53,9 +53,9 @@ match sqlOpen("sqlite", ":memory:") {
             }
             Fail(e) -> print("Query error: " ++ e)
         }
-        
+
         print("=== SQL QueryRow ===")
-        
+
         // Query single row
         match sqlQueryRow(db, "SELECT * FROM users WHERE name = $1", [SqlString("Alice")]) {
             Ok(Some(row)) -> {
@@ -64,39 +64,39 @@ match sqlOpen("sqlite", ":memory:") {
                     Some(sqlVal) -> {
                         match sqlUnwrap(sqlVal) {
                             Some(age) -> print("Alice age: " ++ show(age))
-                            Zero -> print("Age is null")
+                            None -> print("Age is null")
                         }
                     }
-                    Zero -> print("No age field")
+                    None -> print("No age field")
                 }
             }
-            Ok(Zero) -> print("Not found")
+            Ok(None) -> print("Not found")
             Fail(e) -> print("Query error: " ++ e)
         }
-        
+
         // Query non-existent
         match sqlQueryRow(db, "SELECT * FROM users WHERE name = $1", [SqlString("Nobody")]) {
             Ok(Some(_)) -> print("Found")
-            Ok(Zero) -> print("Not found: Nobody")
+            Ok(None) -> print("Not found: Nobody")
             Fail(e) -> print("Query error: " ++ e)
         }
-        
+
         print("=== SQL Update ===")
-        
+
         // Update
         match sqlExec(db, "UPDATE users SET age = $1 WHERE name = $2", [SqlInt(31), SqlString("Alice")]) {
             Ok(n) -> print("Updated: " ++ show(n))
             Fail(e) -> print("Update error: " ++ e)
         }
-        
+
         print("=== SQL Delete ===")
-        
+
         // Delete
         match sqlExec(db, "DELETE FROM users WHERE name = $1", [SqlString("Charlie")]) {
             Ok(n) -> print("Deleted: " ++ show(n))
             Fail(e) -> print("Delete error: " ++ e)
         }
-        
+
         // Verify count
         match sqlQuery(db, "SELECT COUNT(*) as count FROM users", []) {
             Ok(rows) -> {
@@ -104,9 +104,9 @@ match sqlOpen("sqlite", ":memory:") {
             }
             Fail(e) -> print("Count error: " ++ e)
         }
-        
+
         print("=== SQL Transaction ===")
-        
+
         // Transaction
         match sqlBegin(db) {
             Ok(tx) -> {
@@ -133,7 +133,7 @@ match sqlOpen("sqlite", ":memory:") {
             }
             Fail(e) -> print("Begin error: " ++ e)
         }
-        
+
         // Verify transaction
         match sqlQuery(db, "SELECT COUNT(*) as count FROM users", []) {
             Ok(rows) -> {
@@ -141,24 +141,24 @@ match sqlOpen("sqlite", ":memory:") {
             }
             Fail(e) -> print("Count error: " ++ e)
         }
-        
+
         print("=== SQL Utility ===")
-        
+
         // Test sqlIsNull
         print("SqlNull is null: " ++ show(sqlIsNull(SqlNull)))
         print("SqlInt is null: " ++ show(sqlIsNull(SqlInt(42))))
-        
+
         // Test sqlUnwrap
         match sqlUnwrap(SqlInt(42)) {
             Some(v) -> print("Unwrapped: " ++ show(v))
-            Zero -> print("Was null")
+            None -> print("Was null")
         }
-        
+
         match sqlUnwrap(SqlNull) {
             Some(v) -> print("Unwrapped: " ++ show(v))
-            Zero -> print("Was null")
+            None -> print("Was null")
         }
-        
+
         // Close
         match sqlClose(db) {
             Ok(_) -> print("Connection closed")

@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error at 1:23 [A003]: type error: function body type String does not match return type Int
+- error at 5:24 [A003]: type error: function body type Int does not match return type Nil
+- error at 9:33 [A003]: type error: function body type { x: String } does not match return type { x: Int | t? }

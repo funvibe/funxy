@@ -4,7 +4,7 @@ import "lib/test" (*)
 // These should work: type aliases that reference themselves
 
 // 1. Simple recursive type alias
-type Tree = { val: Int, children: List<Tree> }
+type alias Tree = { val: Int, children: List<Tree> }
 
 testRun("Recursive Type Alias: Tree", fun() -> {
     // Create a tree structure
@@ -27,12 +27,12 @@ type alias Node<t> = { value: t, next: Option<Node<t>> }
 
 testRun("Recursive Type Alias: Generic Node", fun() -> {
     // Create a linked list using recursive type alias
-    node1: Node<Int> = { value: 1, next: Some({ value: 2, next: Zero }) }
+    node1: Node<Int> = { value: 1, next: Some({ value: 2, next: None }) }
     assertEquals(1, node1.value)
     assertEquals(2, node1.next.unwrap().value)
 
     // Type checking should work
-    node2: Node<String> = { value: "a", next: Some({ value: "b", next: Zero }) }
+    node2: Node<String> = { value: "a", next: Some({ value: "b", next: None }) }
     assertEquals("a", node2.value)
     assertEquals("b", node2.next.unwrap().value)
 })

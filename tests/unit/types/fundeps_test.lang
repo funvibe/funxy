@@ -1,0 +1,55 @@
+// Functional Dependencies Test
+import "lib/test" (*)
+
+trait Collection<c, e> | c -> e {
+    fun next(c: c) -> e
+}
+
+instance Collection<List<Int>, Int> {
+    fun next(c: List<Int>) -> Int { 0 }
+}
+
+// Complex case: Generic Instance with FunDeps
+trait Stream<s, e> | s -> e {
+    fun streamNext(s: s) -> e
+}
+
+// Map List<a> -> Option<a>
+instance Stream<List<a>, Option<a>> {
+    fun streamNext(s: List<a>) -> Option<a> {
+        match s {
+            [x, ..._] -> Some(x)
+            [] -> None
+        }
+    }
+}
+
+testRun("Functional Dependencies", fun() {
+    list = [1, 2, 3]
+
+    // Inference should work here because of FunDep c -> e
+    // 'list' is List<Int>, so 'c' is List<Int>.
+    // Dependency implies 'e' MUST be Int.
+    item = next(list)
+
+    // Verify type matches via assertion
+    assertEquals(item, 0, "Item should be 0")
+
+    // Static type check verification (if compilation passes, this is valid)
+    check: Int = item
+    assertEquals(check, 0, "Type check passed")
+
+    // --- Complex Test ---
+    l2 = ["a", "b"]
+    // s is List<String>, dependency s -> e implies e is Option<String>
+    val2 = streamNext(l2)
+
+    // Verify inferred type matches Option<String>
+    check2: Option<String> = val2
+
+    // Verify runtime value
+    match val2 {
+        Some(v) -> assertEquals(v, "a", "Generic FunDep inference passed")
+        None -> assert(false, "Should not be None")
+    }
+})

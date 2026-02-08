@@ -3,7 +3,7 @@ package web
 import "kit/ui" (VNode)
 import "lib/json" (Json)
 
-type HttpRequest = {
+type alias HttpRequest = {
     method: String,
     path: String,
     query: String,
@@ -13,7 +13,7 @@ type HttpRequest = {
 }
 
 // Low-level response (wire format)
-type HttpResponse = {
+type alias HttpResponse = {
     status: Int,
     headers: List<(String, String)>,
     body: String
@@ -27,13 +27,13 @@ type ResponseBody =
     | BodyEmpty
 
 // High-level response object
-type Response = {
+type alias Response = {
     status: Int,
     headers: List<(String, String)>,
     body: ResponseBody
 }
 
-type Context = {
+type alias Context = {
     req: HttpRequest,
     params: Map<String, String>,
     store: Map<String, Json>

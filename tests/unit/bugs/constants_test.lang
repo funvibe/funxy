@@ -32,7 +32,7 @@ testRun("List Constants", \ -> {
     assertEquals(200, kL2, "List 2")
 })
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 testRun("Record Constants", \ -> {
     {x: kPx, y: kPy} :- {x: 10, y: 20} : Point
     assertEquals(10, kPx, "Record X")

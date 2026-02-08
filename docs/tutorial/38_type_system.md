@@ -19,12 +19,12 @@ list = [1, 2, 3] // list: List<Int> (inferred from elements)
 Some values are **polymorphic** — they can have multiple types depending on context.
 
 ```rust
-// Zero can be Option<t> for any t
-z = Zero         // z: Option<t> (polymorphic)
+// None can be Option<t> for any t
+z = None         // z: Option<t> (polymorphic)
 
 // Static type is determined by context (at analysis time):
-x: Option<Int> = Zero      // Analyzer sees: Zero: Option<Int>
-y: Option<String> = Zero   // Analyzer sees: Zero: Option<String>
+x: Option<Int> = None      // Analyzer sees: None: Option<Int>
+y: Option<String> = None   // Analyzer sees: None: Option<String>
 
 // But at runtime, type parameter is erased:
 print(getType(x))  // type(Option) — not type(Option<Int>)!
@@ -39,8 +39,8 @@ The compiler infers types from:
 
 ```rust
 // Annotation determines the type parameter
-opt: Option<Int> = Zero
-print(opt)  // Zero is Option<Int> here
+opt: Option<Int> = None
+print(opt)  // None is Option<Int> here
 ```
 
 #### 2. Function Parameters
@@ -49,18 +49,18 @@ print(opt)  // Zero is Option<Int> here
 fun process(opt: Option<String>) -> String {
     match opt {
         Some(s) -> s
-        Zero -> "empty"
+        None -> "empty"
     }
 }
 
-process(Zero)  // Zero is Option<String> here
+process(None)  // None is Option<String> here
 ```
 
 #### 3. Return Types
 
 ```rust
 fun getEmpty() -> Option<Float> {
-    Zero  // Zero is Option<Float> here
+    None  // None is Option<Float> here
 }
 ```
 
@@ -71,8 +71,8 @@ fun getEmpty() -> Option<Float> {
 fun example() {
     opt = Some(42)  // opt: Option<Int>
 
-    // Zero must be Option<Int> to compare with opt
-    if opt == Zero {
+    // None must be Option<Int> to compare with opt
+    if opt == None {
         print("empty")
     }
 }
@@ -81,12 +81,12 @@ fun example() {
 ### Generic Function Inference
 
 ```rust
-fun id<t>(x: t) -> t { x }
+fun myId<t>(x: t) -> t { x }
 
 // t is inferred at each call site:
-id(42)       // t = Int
-id("hello")  // t = String
-id([1, 2])   // t = List<Int>
+myId(42)       // t = Int
+myId("hello")  // t = String
+myId([1, 2])   // t = List<Int>
 ```
 
 ## Type Erasure at Runtime
@@ -113,8 +113,8 @@ getType(y)  // type(Option) — same base type
 
 ```rust
 // These are the SAME at runtime:
-zero1: Option<Int> = Zero
-zero2: Option<String> = Zero
+zero1: Option<Int> = None
+zero2: Option<String> = None
 
 getType(zero1) == getType(zero2)  // true!
 ```
@@ -163,6 +163,18 @@ instance Convert<Bool, Int> {
 Even with type erasure, MPTC dispatch works correctly in Funxy by checking the runtime types of all arguments.
 
 ```rust
+trait Convert<a, b> {
+    fun convert(val: a) -> b
+}
+
+instance Convert<Int, String> {
+    fun convert(val: Int) -> String { show(val) }
+}
+
+instance Convert<Bool, Int> {
+    fun convert(val: Bool) -> Int { if val { 1 } else { 0 } }
+}
+
 // Dispatch based on argument type (Int -> String)
 s: String = convert(42)
 
@@ -171,6 +183,33 @@ i: Int = convert(true)
 ```
 
 In the VM backend, dispatch uses a fuzzy lookup strategy to find the correct instance even when partial type information is available, handling collisions correctly (e.g. `Convert<Int, String>` vs `Convert<Int, Bool>`).
+
+### Functional Dependencies (FunDeps)
+
+To resolve ambiguity in MPTC and improve type inference, Funxy supports Functional Dependencies.
+
+```rust
+// "From 'c', we can determine 'e'"
+trait Collection<c, e> | c -> e {
+    fun empty() -> c
+    fun insert(col: c, elem: e) -> c
+}
+```
+
+This declaration tells the compiler that for any given collection type `c`, there is only **one** possible element type `e`.
+
+**Benefits:**
+1.  **Resolves Ambiguity:** `empty()` returns `c`. Without FunDeps, the compiler wouldn't know what `e` is. With `c -> e`, knowing `c` is enough to fix `e`.
+2.  **Better Inference:** If you have `c`, you don't need to specify `e` explicitly.
+
+```rust
+// Without FunDeps, this might be ambiguous if multiple instances exist for List<Int>
+// With FunDeps, List<Int> -> Int implies uniqueness
+fun process(col: List<Int>) {
+    // Compiler knows 'e' must be 'Int' because of List<Int> -> Int dependency
+    col
+}
+```
 
 ## typeOf and getType Functions
 
@@ -197,14 +236,14 @@ getType(42)         // type(Int)
 getType("hello")    // type((List Char))
 getType([1, 2, 3])  // type((List Int))
 getType(Some(42))   // type(Option)  — parameter erased!
-getType(Zero)       // type(Option)  — same
+getType(None)       // type(Option)  — same
 ```
 
 ### Comparing Types
 
 ```rust
 // Same base type:
-getType(Some(42)) == getType(Zero)         // true
+getType(Some(42)) == getType(None)         // true
 getType(Some(42)) == getType(Some("hi"))   // true
 
 // Different base types:
@@ -212,7 +251,7 @@ getType(Some(42)) == getType(Ok(42))       // false
 getType([1]) == getType(%{})               // false
 
 // Nominal Types:
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 p: Point = { x: 1, y: 2 }
 anon = { x: 1, y: 2 }
 
@@ -230,9 +269,9 @@ To enforce stricter type safety, you can enable **Strict Mode** using a directiv
 ```rust
 directive "strict_types"
 
-type MyUnion = Int | String
+type alias MyUnion = Int | String
 
-fun takeInt(x: Int) { ... }
+fun takeInt(x: Int) -> Int { x + 1 }
 
 u: MyUnion = 10
 // takeInt(u)  // Compile Error in Strict Mode!
@@ -380,7 +419,7 @@ match jsonParse(input) {
         match jsonGet(obj, "age") {
             Some(JNum(age)) -> print("Age: " ++ show(age))
             Some(_) -> print("age is not a number")
-            Zero -> print("no age field")
+            None -> print("no age field")
         }
     }
     Fail(e) -> print(e)
@@ -392,7 +431,7 @@ match jsonParse(input) {
 ```rust
 import "lib/json" (jsonDecode)
 
-type User = { name: String, age: Int }
+type alias User = { name: String, age: Int }
 
 fun parseUser(json: String) -> Result<String, User> {
     data = jsonDecode(json)?
@@ -415,17 +454,17 @@ fun parseUser(json: String) -> Result<String, User> {
 ADT constructors without data are polymorphic:
 
 ```rust
-// Option is built-in: type Option<t> = Some t | Zero
+// Option is built-in: type Option<t> = Some t | None
 
-// Zero has no data, so t is determined by context
-z1: Option<Int> = Zero     // t = Int
-z2: Option<String> = Zero  // t = String
+// None has no data, so t is determined by context
+z1: Option<Int> = None     // t = Int
+z2: Option<String> = None  // t = String
 
 // Some has data, so t is inferred from it
 s1 = Some(42)      // t = Int (from 42)
 s2 = Some("hi")    // t = String (from "hi")
 
-print("z1: " ++ show(z1))  // Zero
+print("z1: " ++ show(z1))  // None
 print("s1: " ++ show(s1))  // Some(42)
 ```
 
@@ -464,11 +503,11 @@ Funxy implements **let-polymorphism** for local definitions, allowing them to be
 ```rust
 // Local definition can be polymorphic
 fun example() {
-    id = fun(x) { x }  // id: t -> t (polymorphic)
+    localId = fun(x) { x }  // localId: t -> t (polymorphic)
 
-    id(42)      // t = Int
-    id("hi")    // t = String
-    id([1, 2])  // t = List<Int>
+    localId(42)      // t = Int
+    localId("hi")    // t = String
+    localId([1, 2])  // t = List<Int>
 }
 ```
 
@@ -484,37 +523,47 @@ fun example() {
 
 This ensures that side-effecting constructs maintain correct type constraints.
 
-## Runtime Witness Passing
+## Runtime Dispatch Strategy
 
-For Higher-Kinded Types (HKT) and generic trait methods, Funxy uses **witness passing** (dictionary passing) at runtime:
+Funxy uses a flexible **Dispatch Strategy** to resolve trait methods at runtime, even with type erasure. The compiler calculates a strategy for each trait method based on its signature, determining where to find the type information needed for dispatch.
 
-### How It Works
+### Dispatch Sources
 
-1. **Analysis Phase:** The analyzer ensures trait instances exist and records witness requirements.
-2. **Runtime Phase:** The `Evaluator` maintains a `WitnessStack` that stores type dictionaries for generic calls.
-3. **Dispatch:** When calling generic methods like `pure`, the evaluator pushes the appropriate witness (e.g., `Applicative -> OptionT`) onto the stack.
-4. **Consumption:** Built-in trait methods (e.g., `OptionT.pure`) read from the witness stack to determine inner monad types.
+The runtime can dispatch based on three sources:
+
+1.  **Arguments (`DispatchArg`):** The runtime type of an argument. This is the primary and most robust method.
+    *   Example: `show(x)` dispatches on the type of `x`.
+    *   Example: `fmap(fn, list)` dispatches on the type of `list`.
+
+2.  **Return Context (`DispatchReturn`):** The expected return type of the expression. This is used for nullary methods (methods with no arguments) or "producers".
+    *   Example: `pure(x)` needs to know *what* container to wrap `x` in (e.g., `Option` or `List`).
+    *   Example: `mempty()` needs to know the Monoid type.
+    *   The compiler/interpreter propagates this context (e.g., from a type annotation `x: Option<Int> = pure(1)`).
+
+3.  **Explicit Hint (`DispatchHint`):** An injected type hint, used when types cannot be inferred from arguments or context (e.g., phantom types).
+
+### MPTC Dispatch
+
+For Multi-Parameter Type Classes (MPTC), the dispatch key is a composite of multiple sources.
+
+```rust
+trait Convert<A, B> { ... }
+```
+
+*   `convert(x)` might dispatch on `A` (from argument `x`) AND `B` (from return context).
+*   The runtime constructs a key like `Int_String` to find the correct instance `instance Convert<Int, String>`.
 
 ### Example
 
 ```rust
-// Annotation provides witness context
-f = fun() -> OptionT<Identity, Int> {
-    pure(200)  // Uses witness from return type annotation
+// Annotation provides return context for pure
+f = fun() -> Option<Int> {
+    pure(200)  // Strategy: DispatchReturn -> "Option"
 }
 
-val = runIdentity(runOptionT(f()))
+// Argument provides dispatch source for show
+print(show(42)) // Strategy: DispatchArg(0) -> "Int"
 ```
-
-### Context Isolation
-
-Monad transformers (`OptionT`, `ResultT`) require careful context isolation to prevent witness pollution:
-
-- Before calling inner monad operations, transformers save and clear `WitnessStack`, `CurrentCallNode`, and `ContainerContext`.
-- This ensures inner calls (e.g., `fmap` on `Result`) use their own witness context, not the outer transformer's context.
-- After the inner call returns, the saved context is restored.
-
-This prevents outer transformer witnesses from incorrectly affecting inner monad dispatch.
 
 ## Summary
 
@@ -525,8 +574,8 @@ This prevents outer transformer witnesses from incorrectly affecting inner monad
 | Polymorphic Values | Resolved from context | Single representation |
 | Type Errors | Compile-time errors | Only with dynamic data |
 | Let Polymorphism | Local definitions generalized | N/A (compile-time only) |
-| Witness Passing | Witnesses prepared | `WitnessStack` passes dictionaries |
-| MPTC Dispatch | Verified by solver | Fuzzy lookup by arg types |
+| Dispatch Strategy | Calculated & Registered | Used to find implementation |
+| MPTC Dispatch | Verified by solver | Composite key lookup (Arg + Context) |
 
 ### Best Practices
 

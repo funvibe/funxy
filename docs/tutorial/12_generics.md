@@ -28,12 +28,12 @@ You can define functions that accept type parameters using angle brackets `<t>`.
 
 ```rust
 // Identity function working on any type t
-fun id<t>(x: t) -> t {
+fun myId<t>(x: t) -> t {
     x
 }
 
-n = id(42)       // t is Int
-s = id("hello")  // t is String
+n = myId(42)       // t is Int
+s = myId("hello")  // t is String
 print(n)         // 42
 print(s)         // "hello"
 ```
@@ -44,7 +44,7 @@ Type declarations can also be generic. Type parameters are listed in angle brack
 
 ```rust
 // A simple wrapper type
-type Box<t> = { value: t }
+type alias Box<t> = { value: t }
 
 b = { value: 10 }  // Box<Int>
 print(b.value)     // 10
@@ -55,9 +55,9 @@ print(b.value)     // 10
 The type system infers concrete types at call sites:
 
 ```rust
-fun id<t>(x: t) -> t { x }
+fun myId<t>(x: t) -> t { x }
 
-id(42)      // t inferred as Int
-id("hello") // t inferred as String
+myId(42)      // t inferred as Int
+myId("hello") // t inferred as String
 ```
 

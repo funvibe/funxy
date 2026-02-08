@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 3:520 [P006]: expression too complex: recursion depth limit exceeded

@@ -8,7 +8,7 @@ testRun("Map creation and access", \ -> {
     // Access using mapGet (returns Option)
     match mapGet(m, "one") {
         Some(v) -> assertEquals(1, v, "mapGet existing")
-        Zero -> assertEquals(1, 0, "mapGet failed to find existing key")
+        None -> assertEquals(1, 0, "mapGet failed to find existing key")
     }
 
     // Access using mapGetOr

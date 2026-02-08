@@ -86,7 +86,7 @@ trait Showable<t> {
 
 // Child trait inherits from Showable
 trait Printable<t> : Showable<t> {
-    fun format(x: t) -> String
+    fun pretty(x: t) -> String
 }
 
 type Item = MkItem String Int
@@ -108,7 +108,7 @@ instance Showable Item {
 
 // Then implement child trait
 instance Printable Item {
-    fun format(x: Item) -> String {
+    fun pretty(x: Item) -> String {
         "[" ++ display(x) ++ "]"
     }
 }
@@ -120,7 +120,7 @@ testRun("Trait inheritance - parent method", fun() -> {
 
 testRun("Trait inheritance - child method", fun() -> {
     item = MkItem("banana", 3)
-    assertEquals(format(item), "[banana:3]")
+    assertEquals(pretty(item), "[banana:3]")
 })
 
 // =============================================

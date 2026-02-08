@@ -82,6 +82,19 @@ func (e *Evaluator) matchPattern(pat ast.Pattern, val Object, env *Environment) 
 			if litVal, ok := p.Value.(int64); ok {
 				return intVal.Value == litVal, bindings
 			}
+			// Int value vs Float literal: implicit coercion (consistent with == operator)
+			if litVal, ok := p.Value.(float64); ok {
+				return float64(intVal.Value) == litVal, bindings
+			}
+		}
+		if floatVal, ok := val.(*Float); ok {
+			// Float value vs Int literal: implicit coercion (consistent with == operator)
+			if litVal, ok := p.Value.(int64); ok {
+				return floatVal.Value == float64(litVal), bindings
+			}
+			if litVal, ok := p.Value.(float64); ok {
+				return floatVal.Value == litVal, bindings
+			}
 		}
 		if boolVal, ok := val.(*Boolean); ok {
 			if litVal, ok := p.Value.(bool); ok {
@@ -400,6 +413,9 @@ func (e *Evaluator) matchesType(val Object, astType ast.Type) bool {
 					case *Function, *Builtin, *ClassMethod, *BoundMethod, *OperatorFunction, *ComposedFunction, *PartialApplication:
 						return true
 					}
+					if val.Type() == "CLOSURE" {
+						return true
+					}
 				case typesystem.TTuple:
 					if tuple, ok := val.(*Tuple); ok {
 						if len(tuple.Elements) == len(t.Elements) {
@@ -438,7 +454,7 @@ func (e *Evaluator) matchesType(val Object, astType ast.Type) bool {
 		case *Function, *Builtin, *ClassMethod, *BoundMethod, *OperatorFunction, *ComposedFunction, *PartialApplication:
 			return true
 		default:
-			return false
+			return val.Type() == "CLOSURE"
 		}
 	case *ast.ForallType:
 		// Check if the underlying type matches
@@ -485,12 +501,12 @@ func (e *Evaluator) matchesDirectType(val Object, typeName string) bool {
 		_, ok := val.(*List)
 		return ok
 	case "Option":
-		// Option<T> is Some(T) or Zero
+		// Option<T> is Some(T) or None
 		if di, ok := val.(*DataInstance); ok {
-			return di.Name == "Some" || di.Name == "Zero"
+			return di.Name == "Some" || di.Name == "None"
 		}
 		if _, ok := val.(*Nil); ok {
-			return true // Zero
+			return true // None
 		}
 		return false
 	case "Result":

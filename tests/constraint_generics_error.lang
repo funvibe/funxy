@@ -2,18 +2,18 @@
 // String does not implement Printable
 
 trait Printable<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 
 instance Printable Int {
-    fun format(val: Int) -> String {
+    fun pretty(val: Int) -> String {
         "int"
     }
 }
 
 // Constrained function - t must implement Printable
 fun display<t: Printable>(x: t) -> String {
-    format(x)
+    pretty(x)
 }
 
 // ERROR: String (List Char) does not implement Printable

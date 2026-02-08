@@ -16,7 +16,7 @@ Restart VSCode and open any `.lang` or `.funxy` file.
 cd editors/vscode
 npm install -g @vscode/vsce
 vsce package
-code --install-extension funxy-language-0.4.1.vsix
+code --install-extension funxy-language-0.5.5.vsix
 ```
 
 ## Sublime Text

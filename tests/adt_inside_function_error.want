@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 2:5 [P006]: type definitions are only allowed at module level

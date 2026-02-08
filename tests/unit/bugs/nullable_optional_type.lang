@@ -1,0 +1,12 @@
+import "lib/test" (*)
+
+testRun("Null coalescing should be able to handle nullable types", \ -> {
+    x: Int? = nil
+    y: Int? = 42
+
+    a = x ?? 0
+    b = y ?? 0
+
+    assert(a == 0)
+    assert(b == 42)
+})

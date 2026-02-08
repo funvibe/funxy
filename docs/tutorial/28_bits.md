@@ -81,7 +81,7 @@ print(len(b) == 0)       // false
 // Get bit at index
 match bitsGet(b, 0) {
     Some(bit) -> print(bit)  // 1
-    Zero -> print("out of bounds")
+    None -> print("out of bounds")
 }
 
 // Slice [start, end)

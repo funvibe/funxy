@@ -20,20 +20,20 @@ testRun("OptionT Identity: Bind Some", \ -> {
 
     match val {
         Some(x) -> assertEquals(20, x, "OptionT bind works"),
-        Zero -> assert(false, "Should be Some")
+        None -> assert(false, "Should be Some")
     }
 })
 
-testRun("OptionT Identity: Bind Zero", \ -> {
-    base = identity(Zero)
+testRun("OptionT Identity: Bind None", \ -> {
+    base = identity(None)
     ot = optionT(base)
 
     resT = ot >>= \x -> optionT(identity(Some(x * 2)))
 
     val = runIdentity(runOptionT(resT))
     match val {
-        Some(_) -> assert(false, "Should be Zero"),
-        Zero -> assert(true, "Correctly propagated Zero")
+        Some(_) -> assert(false, "Should be None"),
+        None -> assert(true, "Correctly propagated None")
     }
 })
 
@@ -41,20 +41,20 @@ testRun("OptionT Identity: Fail inside Bind", \ -> {
     base = identity(Some(10))
     ot = optionT(base)
 
-    // Fail inside bind (return Zero)
-    resT = ot >>= \x -> optionT(identity(Zero))
+    // Fail inside bind (return None)
+    resT = ot >>= \x -> optionT(identity(None))
 
     val = runIdentity(runOptionT(resT))
     match val {
-        Some(_) -> assert(false, "Should be Zero"),
-        Zero -> assert(true, "Correctly handled failure in bind")
+        Some(_) -> assert(false, "Should be None"),
+        None -> assert(true, "Correctly handled failure in bind")
     }
 })
 
 // --- OptionT Tests with List ---
 
 testRun("OptionT List: Bind", \ -> {
-    list = [Some(1), Zero, Some(3)]
+    list = [Some(1), None, Some(3)]
     ot = optionT(list)
 
     // Bind: x -> [Some(x), Some(x*10)]
@@ -67,7 +67,7 @@ testRun("OptionT List: Bind", \ -> {
     // Check values
     match res[0] { Some(x) -> assertEquals(1, x, "0 is 1"), _ -> assert(false, "0 fail") }
     match res[1] { Some(x) -> assertEquals(10, x, "1 is 10"), _ -> assert(false, "1 fail") }
-    match res[2] { Zero -> assert(true, "2 is Zero"), _ -> assert(false, "2 fail") }
+    match res[2] { None -> assert(true, "2 is None"), _ -> assert(false, "2 fail") }
     match res[3] { Some(x) -> assertEquals(3, x, "3 is 3"), _ -> assert(false, "3 fail") }
     match res[4] { Some(x) -> assertEquals(30, x, "4 is 30"), _ -> assert(false, "4 fail") }
 })
@@ -109,7 +109,7 @@ testRun("OptionT Identity: Pure with Annotation", \ -> {
     val = runIdentity(runOptionT(x))
     match val {
         Some(v) -> assertEquals(10, v, "pure worked with witness"),
-        Zero -> assert(false, "pure failed")
+        None -> assert(false, "pure failed")
     }
 })
 
@@ -129,7 +129,7 @@ testRun("OptionT Identity: Pure inside Lambda", \ -> {
 
     match val {
         Some(v) -> assertEquals(100, v, "pure inside lambda worked"),
-        Zero -> assert(false, "pure failed inside lambda")
+        None -> assert(false, "pure failed inside lambda")
     }
 })
 
@@ -142,6 +142,6 @@ testRun("OptionT Identity: Pure with Inference", \ -> {
     val = runIdentity(runOptionT(resT))
     match val {
         Some(v) -> assertEquals(20, v, "inference worked"),
-        Zero -> assert(false, "inference failed")
+        None -> assert(false, "inference failed")
     }
 })

@@ -200,7 +200,7 @@ stringEndsWith("hello", "ll")       // false
 
 // stringIndexOf: (String, String) -> Option<Int>
 stringIndexOf("hello", "ll")      // Some(2)
-stringIndexOf("hello", "x")       // Zero
+stringIndexOf("hello", "x")       // None
 ```
 
 ### Repeat and Padding
@@ -227,9 +227,9 @@ String functions work great with pipe:
 ```rust
 import "lib/string" (*)
 
-result = "  HELLO WORLD  " 
-    |> stringTrim 
-    |> stringToLower 
+result = "  HELLO WORLD  "
+    |> stringTrim
+    |> stringToLower
     |> stringCapitalize
 print(result)  // "Hello world"
 
@@ -297,12 +297,12 @@ parseCSVLine("  a , b , c  ") // ["a", "b", "c"]
 ### Debug Output
 
 ```rust
-fun debug(label, value) {
+fun debugLog(label, value) {
     print("[DEBUG] ${label} = ${value}")
 }
 
 x = 100
-debug("x", x)  // [DEBUG] x = 100
+debugLog("x", x)  // [DEBUG] x = 100
 ```
 
 ## lib/string Summary

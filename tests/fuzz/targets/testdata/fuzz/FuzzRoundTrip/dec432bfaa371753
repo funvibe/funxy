@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("<0.0 / 00\x7fR\x7f\x7f\x7f\x7f\x7f)")

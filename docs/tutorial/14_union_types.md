@@ -161,7 +161,7 @@ Union types are automatically normalized:
 Union types and `Option<T>` are different:
 
 ```rust
-// Option<T> is an ADT with Some(T) and Zero constructors
+// Option<T> is an ADT with Some(T) and None constructors
 opt: Option<Int> = Some(42)
 
 // T? is a union type (T | Nil)
@@ -172,10 +172,10 @@ They are not compatible with each other:
 
 ```rust
 // This will NOT compile:
-// opt: Option<Int> = Nil  // Error: Nil is not Zero
+// opt: Option<Int> = Nil  // Error: Nil is not None
 
 // This works:
-opt: Option<Int> = Zero
+opt: Option<Int> = None
 nullable: Int? = Nil
 ```
 
@@ -186,7 +186,7 @@ By default, Funxy allows "unsafe" downcasting from a union type to a member type
 ```rust
 type alias NumOrStr = Int | String
 
-fun takeInt(i: Int) { ... }
+fun takeInt(i: Int) -> Int { i + 1 }
 
 val: NumOrStr = 42
 takeInt(val)  // Allowed by default (unsafe)
@@ -201,7 +201,7 @@ directive "strict_types"
 
 type alias NumOrStr = Int | String
 
-fun takeInt(i: Int) { ... }
+fun takeInt(i: Int) -> Int { i + 1 }
 
 val: NumOrStr = 42
 // takeInt(val)  // Compile Error: cannot implicitly downcast

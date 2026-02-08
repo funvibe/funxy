@@ -44,14 +44,14 @@ print(comparePair((2, 8)))   // second
 // Guards with list patterns
 fun findPositive(xs: List<Int>) -> Option<Int> {
     match xs {
-        [] -> Zero
+        [] -> None
         [x, ...rest] if x > 0 -> Some(x)
         [_, ...rest] -> findPositive(rest)
     }
 }
 
 print(findPositive([-1, -2, 3, 4]))  // Some(3)
-print(findPositive([-1, -2]))        // Zero
+print(findPositive([-1, -2]))        // None
 print(findPositive([5]))             // Some(5)
 
 // Guards with ADT

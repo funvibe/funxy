@@ -222,8 +222,8 @@ match await(doubled) {
 ```rust
 import "lib/task" (async, await, taskFlatMap)
 
-type User = { id: Int, name: String }
-type Post = { title: String }
+type alias User = { id: Int, name: String }
+type alias Post = { title: String }
 
 fun fetchUser(userId: Int) {
     async(fun() -> User { { id: userId, name: "Alice" } })

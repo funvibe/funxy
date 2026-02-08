@@ -25,7 +25,7 @@ instance UserOpChoose Option<t> {
     operator (<|>)(a: Option<t>, b: Option<t>) -> Option<t> {
         match a {
             Some(_) -> a
-            Zero -> b
+            None -> b
         }
     }
 }
@@ -42,14 +42,14 @@ print((list1 <> list2) == (list1 <|> list2))  // true
 // Option (First wins)
 opt1 = Some(10)
 opt2 = Some(20)
-optZ: Option<Int> = Zero
+optZ: Option<Int> = None
 print(opt1 <> opt2)                           // Some(10)
 print((opt1 <> opt2) == (opt1 <|> opt2))      // true
 print(opt1 <> optZ)                           // Some(10)
 print((opt1 <> optZ) == (opt1 <|> optZ))      // true
 print(optZ <> opt2)                           // Some(20)
 print((optZ <> opt2) == (optZ <|> opt2))      // true
-print(optZ <> optZ)                           // Zero
+print(optZ <> optZ)                           // None
 print((optZ <> optZ) == (optZ <|> optZ))      // true
 
 // Semigroup Law: Associativity
@@ -73,7 +73,7 @@ instance MonoidSemantics List<t> {
 }
 
 instance MonoidSemantics Option<t> {
-    fun memptyS(dummy: Option<t>) -> Option<t> { Zero }
+    fun memptyS(dummy: Option<t>) -> Option<t> { None }
 }
 
 print("=== Monoid ===")
@@ -85,8 +85,8 @@ print(emptyList <> [1, 2, 3])         // [1, 2, 3]
 print([1, 2, 3] <> emptyList)         // [1, 2, 3]
 
 // Option identity
-emptyOpt: Option<Int> = memptyS(Zero)
-print(emptyOpt)                       // Zero
+emptyOpt: Option<Int> = memptyS(None)
+print(emptyOpt)                       // None
 print(emptyOpt <> Some(42))           // Some(42)
 print(Some(42) <> emptyOpt)           // Some(42)
 
@@ -110,7 +110,7 @@ instance FunctorSemantics<Option> {
     fun fmapS(fn: (a) -> b, fa: Option<a>) -> Option<b> {
         match fa {
             Some(x) -> Some(fn(x))
-            Zero -> Zero
+            None -> None
         }
     }
 }
@@ -146,8 +146,8 @@ optVal = Some(10)
 print(fmap(fun(x) -> x * 2, optVal))                     // Some(20)
 print(fmap(fun(x) -> x * 2, optVal) == fmapS(fun(x) -> x * 2, optVal))  // true
 
-optEmpty: Option<Int> = Zero
-print(fmap(fun(x) -> x * 2, optEmpty))                   // Zero
+optEmpty: Option<Int> = None
+print(fmap(fun(x) -> x * 2, optEmpty))                   // None
 print(fmap(fun(x) -> x * 2, optEmpty) == fmapS(fun(x) -> x * 2, optEmpty))  // true
 
 // Result
@@ -186,7 +186,7 @@ instance ApplicativeSemantics<Option> {
     fun applyS(ff: Option<(a) -> b>, fa: Option<a>) -> Option<b> {
         match (ff, fa) {
             (Some(fn), Some(a)) -> Some(fn(a))
-            _ -> Zero
+            _ -> None
         }
     }
 }
@@ -210,12 +210,12 @@ result1 = Some(fn1) <*> Some(10)
 print(result1)                                           // Some(11)
 print(result1 == applyS(Some(fn1), Some(10)))            // true
 
-result2 = Some(fn1) <*> Zero
-print(result2)                                           // Zero
+result2 = Some(fn1) <*> None
+print(result2)                                           // None
 
-zeroFn: Option<(Int) -> Int> = Zero
+zeroFn: Option<(Int) -> Int> = None
 result3 = zeroFn <*> Some(10)
-print(result3)                                           // Zero
+print(result3)                                           // None
 
 // List <*> (Cartesian product)
 fns: List<(Int) -> Int> = [fn1, fn2]
@@ -237,7 +237,7 @@ instance MonadSemantics<Option> {
     fun bindS(ma: Option<a>, f: (a) -> Option<b>) -> Option<b> {
         match ma {
             Some(a) -> f(a)
-            Zero -> Zero
+            None -> None
         }
     }
 }
@@ -258,8 +258,8 @@ result5 = Some(10) >>= fun(x) -> Some(x + 1)
 print(result5)                                           // Some(11)
 print(result5 == bindS(Some(10), fun(x) -> Some(x + 1))) // true
 
-result6: Option<Int> = Zero >>= fun(x) -> Some(x + 1)
-print(result6)                                           // Zero
+result6: Option<Int> = None >>= fun(x) -> Some(x + 1)
+print(result6)                                           // None
 
 // Chain operations
 result7 = Some(10) >>= fun(x) -> Some(x * 2) >>= fun(y) -> Some(y + 5)
@@ -297,7 +297,7 @@ print(lhs == rhs)  // true
 print("=== Practical Example ===")
 
 fun safeDiv(x: Int, y: Int) -> Option<Int> {
-    if y == 0 { Zero } else { Some(x / y) }
+    if y == 0 { None } else { Some(x / y) }
 }
 
 // 100 / 2 / 5 / 2 = 5
@@ -306,6 +306,6 @@ print(result9)  // Some(5)
 
 // Division by zero stops the chain
 result10 = Some(100) >>= fun(x) -> safeDiv(x, 0) >>= fun(x) -> safeDiv(x, 5)
-print(result10)  // Zero
+print(result10)  // None
 
 print("=== FP traits tests passed! ===")

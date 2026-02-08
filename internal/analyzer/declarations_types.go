@@ -43,21 +43,157 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 		}
 	}
 
-	// Register Kind
-	kind := typesystem.Star
-	if len(stmt.TypeParameters) > 0 {
-		kinds := make([]typesystem.Kind, len(stmt.TypeParameters)+1)
-		for i := range stmt.TypeParameters {
-			kinds[i] = typesystem.Star
+	// Infer Kinds for Type Parameters using explicit annotations or fresh KVars
+	// This replaces hardcoded Star logic
+	kindContext := typesystem.NewKindContext()
+	var paramKinds []typesystem.Kind
+
+	for _, tp := range stmt.TypeParameters {
+		// If AST has explicit kind, use it.
+		// Otherwise create fresh KVar.
+		var kVar typesystem.Kind
+		if tp.Kind != nil {
+			kVar = tp.Kind
+		} else {
+			kVar = kindContext.FreshKVar()
 		}
-		kinds[len(stmt.TypeParameters)] = typesystem.Star
-		kind = typesystem.MakeArrow(kinds...)
+		kindContext.KindVars[tp.Value] = kVar
+		paramKinds = append(paramKinds, kVar)
 	}
-	table.RegisterKind(stmt.Name.Value, kind)
+
+	// Construct result kind: kParam1 -> kParam2 -> ... -> KRet
+	// KRet is usually Star for type constructors, but HKT definitions (like type Functor f = ...) are tricky.
+	// For ADT/Alias definitions `type T<Params> = Body`, the result kind is Star if it constructs a concrete type.
+	resultKind := typesystem.Star
+
+	// Infer Kind from Body to resolve KVars
+	var bodyType typesystem.Type
+	// Create temporary scope for type parameters to build body type
+	typeScope := symbols.NewEnclosedSymbolTable(table, symbols.ScopeFunction)
+	for i, tp := range stmt.TypeParameters {
+		// Define TVar with the KVar we assigned
+		typeScope.DefineType(tp.Value, typesystem.TVar{Name: tp.Value, KindVal: paramKinds[i]}, "")
+		typeScope.RegisterKind(tp.Value, paramKinds[i])
+	}
+
+	// Register the type itself in the temporary scope with a provisional kind (assuming result is Star).
+	// This is crucial for recursive types (e.g. HFix) to refer to themselves with the correct kind structure.
+	// Note: For aliases, the result kind might eventually be different, but for recursive references,
+	// assuming the structure (Params -> Star) is usually sufficient/required for ADTs.
+	provisionalSelfKind := typesystem.MakeArrow(append(paramKinds, typesystem.Star)...)
+	tConSelf := typesystem.TCon{Name: stmt.Name.Value, KindVal: provisionalSelfKind}
+	typeScope.DefineType(stmt.Name.Value, tConSelf, origin)
+	typeScope.RegisterKind(stmt.Name.Value, provisionalSelfKind)
+
+	if stmt.IsAlias {
+		if stmt.TargetType != nil {
+			bodyType = BuildType(stmt.TargetType, typeScope, &errors)
+		}
+	} else {
+		// For ADTs, we analyze constructors to infer kinds of parameters
+		// E.g. type Box<f> = MkBox(f<Int>) implies f: * -> *
+		// We construct a synthetic tuple type of all constructor arguments to infer kinds
+		var allParams []typesystem.Type
+		for _, c := range stmt.Constructors {
+			for _, p := range c.Parameters {
+				allParams = append(allParams, BuildType(p, typeScope, &errors))
+			}
+		}
+		if len(allParams) > 0 {
+			bodyType = typesystem.TTuple{Elements: allParams}
+		}
+	}
+
+	// Run Kind Inference on Body
+	var subst typesystem.KindSubst
+	if bodyType != nil {
+		kBody, s, err := typesystem.InferKind(bodyType, kindContext)
+		if err != nil {
+			errors = append(errors, diagnostics.NewError(
+				diagnostics.ErrA003,
+				stmt.Name.GetToken(),
+				"Kind inference error: "+err.Error(),
+			))
+		} else {
+			// For aliases, update resultKind if it differs from Star
+			if stmt.IsAlias {
+				resultKind = kBody
+			}
+		}
+		subst = s
+	} else {
+		subst = make(typesystem.KindSubst)
+	}
 
 	// Register the type name immediately with correct Kind
+	// If resultKind was updated, we need to update the kind.
+	// But 'kind' variable was calculated using old resultKind (Star).
+	// Recalculate kind using resultKind (which might be updated kBody).
+
+	// Apply substitution to paramKinds first
+	finalKinds := make([]typesystem.Kind, len(paramKinds))
+	for i, k := range paramKinds {
+		resolved := typesystem.ApplyKindSubst(subst, k)
+		if _, isVar := resolved.(typesystem.KVar); isVar {
+			resolved = typesystem.Star
+		}
+		finalKinds[i] = resolved
+	}
+
+	// Update resultKind with substitution too
+	resultKind = typesystem.ApplyKindSubst(subst, resultKind)
+
+	kind := typesystem.MakeArrow(append(finalKinds, resultKind)...)
+
+	table.RegisterKind(stmt.Name.Value, kind)
+
 	tCon := typesystem.TCon{Name: stmt.Name.Value, KindVal: kind}
 	table.DefineType(stmt.Name.Value, tCon, origin)
+	table.SetDefinitionNode(stmt.Name.Value, stmt.Name)
+
+	// Update constructors with finalized TCon (to propagate correct KindVal)
+	if !stmt.IsAlias {
+		for _, c := range stmt.Constructors {
+			if sym, ok := table.Find(c.Name.Value); ok && sym.Kind == symbols.ConstructorSymbol {
+				// Reconstruct result type with new TCon
+				var resultType typesystem.Type = tCon
+				if len(stmt.TypeParameters) > 0 {
+					args := []typesystem.Type{}
+					for _, tp := range stmt.TypeParameters {
+						// We need TVars with finalized kinds
+						k, _ := typeScope.GetKind(tp.Value)
+						args = append(args, typesystem.TVar{Name: tp.Value, KindVal: k})
+					}
+					resultType = typesystem.TApp{Constructor: resultType, Args: args}
+				}
+
+				// Reconstruct constructor type
+				var constructorType typesystem.Type
+				if len(c.Parameters) > 0 {
+					// Update the constructor's return type to use the finalized Type Constructor (TCon)
+					// which contains the correct Kind information. We also update the parameter types to ensure consistency.
+					if tFunc, ok := sym.Type.(typesystem.TFunc); ok {
+						tFunc.ReturnType = resultType
+						// Also replace old TCon in parameters
+						newParams := make([]typesystem.Type, len(tFunc.Params))
+						for i, p := range tFunc.Params {
+							newParams[i] = typesystem.ReplaceTCon(p, stmt.Name.Value, tCon)
+						}
+						tFunc.Params = newParams
+						constructorType = tFunc
+					} else {
+						// Not a function? Should not happen if params > 0
+						constructorType = resultType
+					}
+				} else {
+					constructorType = resultType
+				}
+
+				// Update symbol table
+				table.DefineConstructor(c.Name.Value, constructorType, origin)
+			}
+		}
+	}
 
 	// Register type parameters
 	if len(stmt.TypeParameters) > 0 {
@@ -70,11 +206,12 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 		tCon.TypeParams = &params
 	}
 
-	// Create temporary scope for type parameters
-	typeScope := symbols.NewEnclosedSymbolTable(table, symbols.ScopeFunction) // Type definition scope behaves like function scope for type params
-	for _, tp := range stmt.TypeParameters {
-		typeScope.DefineType(tp.Value, typesystem.TVar{Name: tp.Value}, "")
+	// Ensure typeScope has updated resolved kinds for body processing
+	for i, tp := range stmt.TypeParameters {
+		typeScope.DefineType(tp.Value, typesystem.TVar{Name: tp.Value, KindVal: finalKinds[i]}, "")
+		typeScope.RegisterKind(tp.Value, finalKinds[i])
 	}
+	typeScope.DefineType(stmt.Name.Value, tCon, origin)
 
 	if stmt.IsAlias {
 		if stmt.TargetType == nil {
@@ -95,6 +232,7 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 		realType := BuildType(stmt.TargetType, typeScope, &errors)
 		// Use DefineTypeAlias: TCon for trait lookup, realType for field access/unification
 		table.DefineTypeAlias(stmt.Name.Value, tCon, realType, origin)
+		table.SetDefinitionNode(stmt.Name.Value, stmt.Name) // Re-set definition node after alias redefinition
 	} else {
 		// ADT: Register constructors
 		for _, c := range stmt.Constructors {
@@ -102,7 +240,8 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 			if len(stmt.TypeParameters) > 0 {
 				args := []typesystem.Type{}
 				for _, tp := range stmt.TypeParameters {
-					args = append(args, typesystem.TVar{Name: tp.Value})
+					k, _ := typeScope.GetKind(tp.Value)
+					args = append(args, typesystem.TVar{Name: tp.Value, KindVal: k})
 				}
 				resultType = typesystem.TApp{Constructor: resultType, Args: args}
 			}
@@ -141,7 +280,7 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 			}
 
 			// Kind Check: Constructor must be well-kinded (arguments must be types)
-			if _, err := typesystem.KindCheck(constructorType); err != nil {
+			if _, _, err := typesystem.InferKind(constructorType, kindContext); err != nil {
 				errors = append(errors, diagnostics.NewError(
 					diagnostics.ErrA003,
 					c.Name.GetToken(),
@@ -150,6 +289,7 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 			}
 
 			table.DefineConstructor(c.Name.Value, constructorType, origin)
+			table.SetDefinitionNode(c.Name.Value, c.Name)
 			table.RegisterVariant(stmt.Name.Value, c.Name.Value)
 
 			for _, p := range c.Parameters {
@@ -169,38 +309,13 @@ func RegisterTypeDeclaration(stmt *ast.TypeDeclarationStatement, table *symbols.
 			}
 		}
 
-		// Special case: Single-constructor ADT wrapping a record
-		// REMOVED: This optimization caused ADTs (like MyBox) to be treated as type aliases
-		// by ResolveTypeAlias, breaking nominal typing in function signatures and pattern matching.
-		// ADTs should be strict and require constructor usage.
-		/*
-			if len(stmt.Constructors) == 1 && len(stmt.TypeParameters) == 0 {
-				c := stmt.Constructors[0]
-				if len(c.Parameters) == 1 {
-					// Build the parameter type
-					paramType := BuildType(c.Parameters[0], typeScope, &errors)
-					// If it's a record, update the TCon to include it as underlying type
-					if _, ok := paramType.(typesystem.TRecord); ok {
-						// Get the current symbol and update it
-						if sym, ok := table.Find(stmt.Name.Value); ok && sym.Kind == symbols.TypeSymbol {
-							if tCon, ok := sym.Type.(typesystem.TCon); ok {
-								tCon.UnderlyingType = paramType
-								// Re-define with updated TCon
-								table.DefineType(stmt.Name.Value, tCon, origin)
-							}
-						}
-					}
-				}
-			}
-		*/
-
 		// Fallback for Nominal Records (type Node = { ... } where IsAlias=false)
 		// Ensure UnderlyingType is set so Unify can verify structural compatibility
 		if len(stmt.Constructors) == 0 && stmt.TargetType != nil {
 			realType := BuildType(stmt.TargetType, typeScope, &errors)
 
 			// Kind Check for nominal types
-			if _, err := typesystem.KindCheck(realType); err != nil {
+			if _, _, err := typesystem.InferKind(realType, kindContext); err != nil {
 				errors = append(errors, diagnostics.NewError(
 					diagnostics.ErrA003,
 					stmt.Name.GetToken(),
@@ -293,6 +408,47 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 	}
 	w.symbolTable.DefineTrait(n.Name.Value, typeParamNames, superTraitNames, w.currentModuleName)
 
+	// Register Functional Dependencies
+	if len(n.Dependencies) > 0 {
+		for _, dep := range n.Dependencies {
+			// Validate From vars
+			for _, from := range dep.From {
+				found := false
+				for _, tp := range typeParamNames {
+					if tp == from {
+						found = true
+						break
+					}
+				}
+				if !found {
+					w.addError(diagnostics.NewError(
+						diagnostics.ErrA005,
+						n.Token,
+						fmt.Sprintf("unknown type variable '%s' in functional dependency", from),
+					))
+				}
+			}
+			// Validate To vars
+			for _, to := range dep.To {
+				found := false
+				for _, tp := range typeParamNames {
+					if tp == to {
+						found = true
+						break
+					}
+				}
+				if !found {
+					w.addError(diagnostics.NewError(
+						diagnostics.ErrA005,
+						n.Token,
+						fmt.Sprintf("unknown type variable '%s' in functional dependency", to),
+					))
+				}
+			}
+		}
+		w.symbolTable.RegisterTraitFunctionalDependencies(n.Name.Value, n.Dependencies)
+	}
+
 	// Register methods
 	// Methods are generic functions where the TypeParam is the trait variable.
 	// e.g. show(val: a) -> String. 'a' is bound to the trait param.
@@ -304,37 +460,46 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 
 	// Define the type variables with inferred Kinds
 	var traitKind typesystem.Kind
+	var traitTypeVars []typesystem.TVar
 	for i, tp := range n.TypeParams {
-		// Infer Kind from usage in signatures
-		maxArgs := 0
-		for _, sig := range n.Signatures {
-			if c := findMaxTypeArgs(tp.Value, sig.ReturnType); c > maxArgs {
-				maxArgs = c
-			}
-			for _, param := range sig.Parameters {
-				if c := findMaxTypeArgs(tp.Value, param.Type); c > maxArgs {
+		var kind typesystem.Kind
+
+		// 1. Use explicit kind annotation if available
+		if tp.Kind != nil {
+			kind = tp.Kind
+		} else {
+			// 2. Infer Kind from usage in signatures
+			maxArgs := 0
+			for _, sig := range n.Signatures {
+				if c := findMaxTypeArgs(tp.Value, sig.ReturnType); c > maxArgs {
 					maxArgs = c
 				}
+				for _, param := range sig.Parameters {
+					if c := findMaxTypeArgs(tp.Value, param.Type); c > maxArgs {
+						maxArgs = c
+					}
+				}
+			}
+
+			if maxArgs > 0 {
+				kinds := make([]typesystem.Kind, maxArgs+1)
+				for i := 0; i <= maxArgs; i++ {
+					kinds[i] = typesystem.Star
+				}
+				kind = typesystem.MakeArrow(kinds...)
+			} else {
+				kind = typesystem.Star
 			}
 		}
 
-		kind := typesystem.Star
-		if maxArgs > 0 {
-			kinds := make([]typesystem.Kind, maxArgs+1)
-			for i := 0; i <= maxArgs; i++ {
-				kinds[i] = typesystem.Star
-			}
-			kind = typesystem.MakeArrow(kinds...)
-		}
+		tv := typesystem.TVar{Name: tp.Value, KindVal: kind}
+		traitTypeVars = append(traitTypeVars, tv)
 
-		w.symbolTable.DefineType(tp.Value, typesystem.TVar{Name: tp.Value, KindVal: kind}, "")
+		w.symbolTable.DefineType(tp.Value, tv, "")
 		// Also register Kind in table for GetKind lookups
 		w.symbolTable.RegisterKind(tp.Value, kind)
 
 		// Register kind specifically for this trait parameter (for MPTC checks)
-		// NOTE: w.symbolTable is the inner scope, but we need to register it in the outer (trait declaration) scope
-		// OR better: register it in the outer scope which is where DefineTrait was called.
-		// However, the `outer` variable in this function refers to the scope where trait is defined.
 		outer.RegisterTraitTypeParamKind(n.Name.Value, tp.Value, kind)
 
 		if i == 0 {
@@ -349,10 +514,28 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 	}
 
 	for _, method := range n.Signatures {
-		// Construct function type
+		// Create a temporary scope for method type parameters
+		methodScope := symbols.NewEnclosedSymbolTable(w.symbolTable, symbols.ScopeFunction)
+
+		// Register explicit type parameters of the method
+		var methodTypeVars []typesystem.TVar
+		if len(method.TypeParams) > 0 {
+			for _, tp := range method.TypeParams {
+				var kind typesystem.Kind = typesystem.Star
+				if tp.Kind != nil {
+					kind = tp.Kind
+				}
+				tv := typesystem.TVar{Name: tp.Value, KindVal: kind}
+				methodScope.DefineType(tp.Value, tv, "")
+				methodScope.RegisterKind(tp.Value, kind)
+				methodTypeVars = append(methodTypeVars, tv)
+			}
+		}
+
+		// Construct function type using the method scope
 		var retType typesystem.Type
 		if method.ReturnType != nil {
-			retType = BuildType(method.ReturnType, w.symbolTable, &w.errors)
+			retType = BuildType(method.ReturnType, methodScope, &w.errors)
 		} else {
 			retType = typesystem.Nil
 		}
@@ -360,7 +543,7 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 		var params []typesystem.Type
 		for _, p := range method.Parameters {
 			if p.Type != nil {
-				params = append(params, BuildType(p.Type, w.symbolTable, &w.errors))
+				params = append(params, BuildType(p.Type, methodScope, &w.errors))
 			} else {
 				// Error: method signature usually requires types
 				params = append(params, w.freshVar())
@@ -386,6 +569,58 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 			})
 		}
 
+		// Collect Implicit Generics from methodScope
+		// BuildType populates methodScope with any new TVars encountered (that weren't explicit)
+		// We need to add these to the methodTypeVars list so they are quantified in TForall.
+		existingVars := make(map[string]bool)
+		for _, v := range methodTypeVars {
+			existingVars[v.Name] = true
+		}
+
+		// Get all symbols from methodScope, check if they are TVars and new
+		for name, sym := range methodScope.All() {
+			if sym.Kind == symbols.TypeSymbol {
+				if tv, ok := sym.Type.(typesystem.TVar); ok {
+					if !existingVars[name] {
+						// Found implicit generic!
+						methodTypeVars = append(methodTypeVars, tv)
+						existingVars[name] = true
+					}
+				}
+			}
+		}
+
+		// Wrap in TForall if method has generics
+		var finalMethodType typesystem.Type = methodType
+		if len(methodTypeVars) > 0 || len(traitTypeVars) > 0 {
+			// Combine trait vars and method vars
+			var allVars []typesystem.TVar
+			allVars = append(allVars, traitTypeVars...)
+			allVars = append(allVars, methodTypeVars...)
+
+			// Collect constraints from method type params (e.g. <T: Show>)
+			var constraints []typesystem.Constraint
+			for _, tp := range method.TypeParams {
+				for _, c := range tp.Constraints {
+					args := []typesystem.Type{}
+					for _, arg := range c.Args {
+						args = append(args, BuildType(arg, methodScope, &w.errors))
+					}
+					constraints = append(constraints, typesystem.Constraint{
+						TypeVar: tp.Value,
+						Trait:   c.Trait,
+						Args:    args,
+					})
+				}
+			}
+
+			finalMethodType = typesystem.TForall{
+				Vars:        allVars,
+				Constraints: constraints,
+				Type:        methodType,
+			}
+		}
+
 		// Check for collision with existing symbols in the outer scope
 		// Trait methods become global functions, so they must not conflict with existing globals or prelude
 		if sym, ok := outer.Find(method.Name.Value); ok {
@@ -403,9 +638,36 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 			}
 		}
 
+		// Calculate Dispatch Strategy
+		// Determine where to find each type parameter (A, B, ...) in the method signature
+		var dispatchSources []typesystem.DispatchSource
+		for _, typeParam := range typeParamNames {
+			source := typesystem.DispatchSource{Kind: typesystem.DispatchHint, Index: -1}
+
+			// 1. Check arguments
+			for i, paramType := range methodType.Params {
+				if containsTypeVar(paramType, typeParam) {
+					source = typesystem.DispatchSource{Kind: typesystem.DispatchArg, Index: i}
+					break
+				}
+			}
+
+			// 2. Check return type if not found in args
+			if source.Kind == typesystem.DispatchHint {
+				if containsTypeVar(methodType.ReturnType, typeParam) {
+					source = typesystem.DispatchSource{Kind: typesystem.DispatchReturn, Index: -1}
+				}
+			}
+
+			dispatchSources = append(dispatchSources, source)
+		}
+
 		// Register in Global Scope (outer) so it can be called
 		// And associate with Trait
-		outer.RegisterTraitMethod(method.Name.Value, n.Name.Value, methodType, w.currentModuleName)
+		outer.RegisterTraitMethod(method.Name.Value, n.Name.Value, finalMethodType, w.currentModuleName)
+
+		// Register Dispatch Strategy in SymbolTable (to be used by Evaluator/VM)
+		outer.RegisterTraitMethodDispatch(n.Name.Value, method.Name.Value, dispatchSources)
 
 		// Trait Method Indexing
 		// Assign unique index to method for O(1) vtable lookup

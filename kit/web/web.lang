@@ -16,7 +16,7 @@ fun handleRequest(router, req: HttpRequest) -> HttpResponse {
                     wrappedHandler = foldr(fun(mw, h) { mw(h) }, handler, middlewares)
                     wrappedHandler(updatedCtx)
                 }
-                Zero -> notFoundHandler(ctx)
+                None -> notFoundHandler(ctx)
             }
             match highLevelResult {
                 Ok(res) -> finalizeResponse(autoResponse(res))

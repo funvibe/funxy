@@ -70,6 +70,8 @@ func initListPackage() {
 			// Generation
 			"range":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.Int}}},
 			"append": typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: listT},
+			"insert": typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, T}, ReturnType: listT},
+			"update": typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, T}, ReturnType: listT},
 			// Sorting
 			"sort": typesystem.TFunc{
 				Params:      []typesystem.Type{listT},
@@ -226,11 +228,17 @@ func initBytesPackage() {
 		Constructor: typesystem.TCon{Name: config.ListTypeName},
 		Args:        []typesystem.Type{bytesType},
 	}
-	// Result<String, T>
+	// Result<String, Bytes>
 	resultStringBytes := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: config.ResultTypeName},
 		Args:        []typesystem.Type{stringType, bytesType},
 	}
+	// Result<String, Bytes> where Error is String
+	resultBytes := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: config.ResultTypeName},
+		Args:        []typesystem.Type{stringType, bytesType}, // Error=String, Success=Bytes
+	}
+
 	resultStringString := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: config.ResultTypeName},
 		Args:        []typesystem.Type{stringType, stringType},
@@ -246,7 +254,7 @@ func initBytesPackage() {
 			"bytesFromBin":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBytes},
 			"bytesFromOct":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBytes},
 			// Access
-			"bytesSlice": typesystem.TFunc{Params: []typesystem.Type{bytesType, intType, intType}, ReturnType: bytesType},
+			"bytesSlice": typesystem.TFunc{Params: []typesystem.Type{bytesType, intType, intType}, ReturnType: resultBytes},
 			// Conversion
 			"bytesToString": typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: resultStringString},
 			"bytesToList":   typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: listInt},
@@ -324,7 +332,7 @@ func initBitsPackage() {
 			"bitsToBinary": typesystem.TFunc{Params: []typesystem.Type{bitsType}, ReturnType: stringType},
 			"bitsToHex":    typesystem.TFunc{Params: []typesystem.Type{bitsType}, ReturnType: stringType},
 			// Access
-			"bitsSlice": typesystem.TFunc{Params: []typesystem.Type{bitsType, intType, intType}, ReturnType: bitsType},
+			"bitsSlice": typesystem.TFunc{Params: []typesystem.Type{bitsType, intType, intType}, ReturnType: resultStringBits},
 			"bitsGet":   typesystem.TFunc{Params: []typesystem.Type{bitsType, intType}, ReturnType: optionInt},
 			// Modification
 			"bitsConcat":   typesystem.TFunc{Params: []typesystem.Type{bitsType, bitsType}, ReturnType: bitsType},

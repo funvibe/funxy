@@ -1,6 +1,6 @@
 import "lib/test" (testRun, assertEquals)
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 testRun("Record literal and access", \ -> {
     p: Point = { x: 10, y: 20 }

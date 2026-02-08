@@ -2,10 +2,47 @@ package parser
 
 import (
 	"github.com/funvibe/funxy/internal/ast"
+	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/token"
 )
 
 func (p *Parser) parseExpression(precedence int) ast.Expression {
+	p.depth++
+	defer func() { p.depth-- }()
+
+	if p.depth > MaxRecursionDepth {
+		if !p.inRecursionRecovery {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP006,
+				p.curToken,
+				"expression too complex: recursion depth limit exceeded",
+			))
+			p.inRecursionRecovery = true
+		}
+		// Skip the rest of the statement to avoid a cascade of errors.
+		p.skipToStatementBoundary()
+		p.inRecursionRecovery = false
+		return nil
+	}
+
+	if p.curTokenIs(token.RETURN) {
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006,
+			p.curToken,
+			"return is only allowed inside function bodies",
+		))
+		// Attempt to recover by skipping to a likely expression boundary.
+		for !p.curTokenIs(token.NEWLINE) &&
+			!p.curTokenIs(token.RBRACE) &&
+			!p.curTokenIs(token.RBRACKET) &&
+			!p.curTokenIs(token.RPAREN) &&
+			!p.curTokenIs(token.COMMA) &&
+			!p.curTokenIs(token.EOF) {
+			p.nextToken()
+		}
+		return nil
+	}
+
 	prefix := p.prefixParseFns[p.curToken.Type]
 	if prefix == nil {
 		p.noPrefixParseFnError(p.curToken.Type)
@@ -35,7 +72,11 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 			return leftExp
 		}
 		p.nextToken()
-		leftExp = infix(leftExp)
+		nextExp := infix(leftExp)
+		if nextExp == nil {
+			return nil
+		}
+		leftExp = nextExp
 	}
 
 	return leftExp
@@ -148,6 +189,19 @@ func (p *Parser) parseGroupedExpression() ast.Expression {
 	}
 
 	exp := p.parseExpression(LOWEST)
+	if exp == nil {
+		// Recover: consume a closing paren if present, or bail out at a boundary.
+		for !p.curTokenIs(token.RPAREN) &&
+			!p.curTokenIs(token.NEWLINE) &&
+			!p.curTokenIs(token.RBRACE) &&
+			!p.curTokenIs(token.EOF) {
+			p.nextToken()
+		}
+		if p.peekTokenIs(token.RPAREN) {
+			p.nextToken()
+		}
+		return nil
+	}
 
 	// Skip newlines after expression
 	for p.peekTokenIs(token.NEWLINE) {
@@ -172,7 +226,11 @@ func (p *Parser) parseGroupedExpression() ast.Expression {
 			for p.curTokenIs(token.NEWLINE) {
 				p.nextToken()
 			}
-			elements = append(elements, p.parseExpression(LOWEST))
+			elem := p.parseExpression(LOWEST)
+			if elem == nil {
+				return nil
+			}
+			elements = append(elements, elem)
 			// Skip newlines after expression (for non-bracket-aware parsers)
 			for p.peekTokenIs(token.NEWLINE) {
 				p.nextToken()

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/token"
@@ -12,8 +13,8 @@ type doItem interface {
 }
 
 type doBind struct {
-	Var  *ast.Identifier
-	Expr ast.Expression
+	Pattern ast.Pattern
+	Expr    ast.Expression
 }
 
 func (d doBind) isDoItem() {}
@@ -41,7 +42,10 @@ func (p *Parser) parseDoExpression() ast.Expression {
 	// Enter the block: curToken becomes first token inside
 	p.nextToken()
 
-	var items []doItem
+	var (
+		items    []doItem
+		hadError bool
+	)
 
 	// Parse items until RBRACE, using curToken like parseBlockStatement does
 	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
@@ -51,30 +55,40 @@ func (p *Parser) parseDoExpression() ast.Expression {
 			continue
 		}
 
-		// Check for Bind: ident <- expr
-		// p.curToken should be IDENT_LOWER, peekToken should be L_ARROW
-		isBind := p.curToken.Type == token.IDENT_LOWER && p.peekTokenIs(token.L_ARROW)
+		// Check for Bind: pattern <- expr
+		if p.doHasBindAhead() {
+			pattern := p.parsePattern()
+			if pattern != nil && p.peekTokenIs(token.L_ARROW) {
+				p.nextToken() // curToken becomes <-
+				p.nextToken() // curToken becomes start of expression
 
-		if isBind {
-			ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
-			p.nextToken() // curToken becomes <-
-			p.nextToken() // curToken becomes start of expression
+				expr := p.parseExpression(LOWEST)
+				if expr == nil {
+					return nil
+				}
 
-			expr := p.parseExpression(LOWEST)
-			if expr == nil {
+				items = append(items, doBind{Pattern: pattern, Expr: expr})
+				// After parseExpression, curToken is the last token of the expression.
+				// We need to advance to the next token (likely NEWLINE or RBRACE)
+				p.nextToken()
+			} else {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP004,
+					p.curToken,
+					"cannot parse do-bind pattern before '<-'",
+				))
 				return nil
 			}
-
-			items = append(items, doBind{Var: ident, Expr: expr})
-			// After parseExpression, curToken is the last token of the expression.
-			// We need to advance to the next token (likely NEWLINE or RBRACE)
-			p.nextToken()
 		} else {
 			// Statement: Decl (ConstantDecl) or Expr
 			stmt := p.parseExpressionStatementOrConstDecl()
 			if stmt == nil {
-				p.nextToken() // advance to avoid infinite loop on error
-				continue
+				hadError = true
+				// Consume tokens until end of block to avoid cascading errors
+				for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+					p.nextToken()
+				}
+				break
 			}
 
 			switch s := stmt.(type) {
@@ -102,7 +116,55 @@ func (p *Parser) parseDoExpression() ast.Expression {
 		return nil
 	}
 
+	if hadError {
+		return nil
+	}
+
 	return p.desugarDoItems(items, doToken)
+}
+
+// doHasBindAhead checks if a '<-' token appears before the end of the current do-item.
+func (p *Parser) doHasBindAhead() bool {
+	peek := p.stream.Peek(50)
+	tokens := make([]token.Token, 0, 2+len(peek))
+	tokens = append(tokens, p.curToken, p.peekToken)
+	tokens = append(tokens, peek...)
+
+	parens := 0
+	brackets := 0
+	braces := 0
+	for _, tok := range tokens {
+		switch tok.Type {
+		case token.LPAREN:
+			parens++
+		case token.RPAREN:
+			if parens > 0 {
+				parens--
+			}
+		case token.LBRACKET:
+			brackets++
+		case token.RBRACKET:
+			if brackets > 0 {
+				brackets--
+			}
+		case token.LBRACE:
+			braces++
+		case token.RBRACE:
+			if braces == 0 {
+				return false
+			}
+			braces--
+		case token.L_ARROW:
+			if parens == 0 && brackets == 0 && braces == 0 {
+				return true
+			}
+		case token.NEWLINE, token.EOF:
+			if parens == 0 && brackets == 0 && braces == 0 {
+				return false
+			}
+		}
+	}
+	return false
 }
 
 func (p *Parser) desugarDoItems(items []doItem, doToken token.Token) ast.Expression {
@@ -146,16 +208,42 @@ func (p *Parser) desugarDoRecursive(items []doItem) ast.Expression {
 
 		restExpr := p.desugarDoRecursive(tail)
 
-		// Construct lambda: \x -> restExpr
+		bodyStmts := []ast.Statement{}
+		paramIdent := &ast.Identifier{
+			Token: token.Token{Type: token.IDENT_LOWER, Literal: "_"},
+			Value: "_",
+		}
+		switch pat := item.Pattern.(type) {
+		case *ast.IdentifierPattern:
+			paramIdent = &ast.Identifier{Token: pat.Token, Value: pat.Value}
+		case *ast.WildcardPattern:
+			// Keep "_" parameter, no binding needed.
+		default:
+			// Destructure pattern from a temp parameter.
+			paramIdent = &ast.Identifier{
+				Token: token.Token{Type: token.IDENT_LOWER, Literal: "_do"},
+				Value: fmt.Sprintf("$do_bind_%d_%d", pat.GetToken().Line, pat.GetToken().Column),
+			}
+			assignTok := token.Token{Type: token.ASSIGN, Literal: "=", Lexeme: "="}
+			bodyStmts = append(bodyStmts, &ast.ExpressionStatement{
+				Expression: &ast.PatternAssignExpression{
+					Token:   assignTok,
+					Pattern: item.Pattern,
+					Value:   paramIdent,
+				},
+			})
+		}
+
+		bodyStmts = append(bodyStmts, &ast.ExpressionStatement{Expression: restExpr})
+
+		// Construct lambda: \x -> { pattern = x; restExpr }
 		lambda := &ast.FunctionLiteral{
 			Token: token.Token{Type: token.BACKSLASH, Literal: "\\"}, // Synthetic token
 			Parameters: []*ast.Parameter{
-				{Name: item.Var, Type: nil}, // Inferred type
+				{Name: paramIdent, Type: nil}, // Inferred type
 			},
 			Body: &ast.BlockStatement{
-				Statements: []ast.Statement{
-					&ast.ExpressionStatement{Expression: restExpr},
-				},
+				Statements: bodyStmts,
 			},
 		}
 

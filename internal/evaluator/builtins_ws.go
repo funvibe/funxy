@@ -6,10 +6,10 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"io"
 	"net"
 	"net/url"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
 	"sync"
 	"time"
@@ -83,14 +83,17 @@ func SetWsBuiltinTypes(builtins map[string]*Builtin) {
 	}
 
 	// Result types
+	// Result<String, Int>
 	resultInt := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.Int, stringType},
+		Args:        []typesystem.Type{stringType, typesystem.Int},
 	}
+	// Result<String, Nil>
 	resultNil := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.Nil, stringType},
+		Args:        []typesystem.Type{stringType, typesystem.Nil},
 	}
+	// Result<String, String>
 	resultString := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
 		Args:        []typesystem.Type{stringType, stringType},
@@ -102,10 +105,10 @@ func SetWsBuiltinTypes(builtins map[string]*Builtin) {
 		Args:        []typesystem.Type{stringType},
 	}
 
-	// Result<Option<String>, String>
+	// Result<String, Option<String>>
 	resultOptionString := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{optionString, stringType},
+		Args:        []typesystem.Type{stringType, optionString},
 	}
 
 	// Handler type: (Int, String) -> String
@@ -134,7 +137,7 @@ func SetWsBuiltinTypes(builtins map[string]*Builtin) {
 }
 
 // builtinWsConnect connects to a WebSocket server
-// wsConnect(url: String) -> Result<Int, String>
+// wsConnect(url: String) -> Result<String, Int>
 func builtinWsConnect(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("wsConnect requires 1 argument (url)")
@@ -161,7 +164,7 @@ func builtinWsConnect(e *Evaluator, args ...Object) Object {
 }
 
 // builtinWsConnectTimeout connects with custom timeout
-// wsConnectTimeout(url: String, timeoutMs: Int) -> Result<Int, String>
+// wsConnectTimeout(url: String, timeoutMs: Int) -> Result<String, Int>
 func builtinWsConnectTimeout(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("wsConnectTimeout requires 2 arguments (url, timeoutMs)")
@@ -303,7 +306,7 @@ func computeAcceptKey(key string) string {
 }
 
 // builtinWsSend sends a text message
-// wsSend(connId: Int, message: String) -> Result<Nil, String>
+// wsSend(connId: Int, message: String) -> Result<String, Nil>
 func builtinWsSend(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("wsSend requires 2 arguments (connId, message)")
@@ -442,7 +445,7 @@ func builtinWsRecv(e *Evaluator, args ...Object) Object {
 }
 
 // builtinWsRecvTimeout receives with timeout
-// wsRecvTimeout(connId: Int, timeoutMs: Int) -> Result<Option<String>, String>
+// wsRecvTimeout(connId: Int, timeoutMs: Int) -> Result<String, Option<String>>
 func builtinWsRecvTimeout(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("wsRecvTimeout requires 2 arguments (connId, timeoutMs)")
@@ -472,8 +475,8 @@ func builtinWsRecvTimeout(e *Evaluator, args ...Object) Object {
 	message, err := wsReadMessage(conn)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			// Timeout -> return Ok(Zero)
-			return makeOk(makeZero())
+			// Timeout -> return Ok(None)
+			return makeOk(makeNone())
 		}
 		return makeFailStr(err.Error())
 	}
@@ -589,7 +592,7 @@ func wsReadMessage(ws *wsConnection) (string, error) {
 }
 
 // builtinWsClose closes a WebSocket connection
-// wsClose(connId: Int) -> Result<Nil, String>
+// wsClose(connId: Int) -> Result<String, Nil>
 func builtinWsClose(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("wsClose requires 1 argument (connId)")
@@ -623,7 +626,7 @@ func builtinWsClose(e *Evaluator, args ...Object) Object {
 }
 
 // builtinWsServe starts a blocking WebSocket server
-// wsServe(port: Int, handler: (connId: Int, message: String) -> String) -> Result<Nil, String>
+// wsServe(port: Int, handler: (connId: Int, message: String) -> String) -> Result<String, Nil>
 func builtinWsServe(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("wsServe requires 2 arguments (port, handler)")
@@ -669,7 +672,7 @@ func builtinWsServe(e *Evaluator, args ...Object) Object {
 }
 
 // builtinWsServeAsync starts a non-blocking WebSocket server
-// wsServeAsync(port: Int, handler: (connId: Int, message: String) -> String) -> Result<Int, String>
+// wsServeAsync(port: Int, handler: (connId: Int, message: String) -> String) -> Result<String, Int>
 func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("wsServeAsync requires 2 arguments (port, handler)")
@@ -742,7 +745,7 @@ func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 }
 
 // builtinWsServerStop stops a WebSocket server
-// wsServerStop(serverId: Int) -> Result<Nil, String>
+// wsServerStop(serverId: Int) -> Result<String, Nil>
 func builtinWsServerStop(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("wsServerStop requires 1 argument (serverId)")

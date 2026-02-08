@@ -2,12 +2,12 @@ package backend
 
 import (
 	"fmt"
-	"os"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/vm"
+	"os"
 	"path/filepath"
 )
 
@@ -31,6 +31,13 @@ func (b *VMBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
 		return nil, fmt.Errorf("no AST to compile")
 	}
 
+	if ctx.Module != nil {
+		if mod, ok := ctx.Module.(*modules.Module); ok {
+			return b.runModule(ctx, mod)
+		}
+		return nil, fmt.Errorf("invalid module in context")
+	}
+
 	// Type assert to *ast.Program
 	program, ok := ctx.AstRoot.(*ast.Program)
 	if !ok {
@@ -45,6 +52,13 @@ func (b *VMBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
 	// Pass TypeMap from analyzer to compiler for nominal record types
 	if ctx.TypeMap != nil {
 		compiler.SetTypeMap(ctx.TypeMap)
+	}
+	// Pass SymbolTable and ResolutionMap for trait dispatch strategy
+	if ctx.SymbolTable != nil {
+		compiler.SetSymbolTable(ctx.SymbolTable)
+	}
+	if ctx.ResolutionMap != nil {
+		compiler.SetResolutionMap(ctx.ResolutionMap)
 	}
 	chunk, err := compiler.Compile(program)
 	if err != nil {
@@ -114,6 +128,35 @@ func (b *VMBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
 	}
 
 	return result, nil
+}
+
+func (b *VMBackend) runModule(ctx *pipeline.PipelineContext, mod *modules.Module) (evaluator.Object, error) {
+	machine := vm.New()
+	machine.RegisterBuiltins()
+	machine.RegisterFPTraits()
+
+	if ctx.IsTestMode {
+		for name, b := range evaluator.TestBuiltins() {
+			machine.SetGlobal(name, b)
+		}
+	}
+
+	machine.SetTraitDefaults(ctx.TraitDefaults)
+
+	if ctx.Loader != nil {
+		if loader, ok := ctx.Loader.(*modules.Loader); ok {
+			machine.SetLoader(loader)
+		}
+	} else {
+		machine.SetLoader(modules.NewLoader())
+	}
+
+	machine.SetBaseDir(mod.Dir)
+	if ctx.FilePath != "" {
+		machine.SetCurrentFile(ctx.FilePath)
+	}
+
+	return machine.CompileAndExecuteModule(mod)
 }
 
 // Name returns the backend name

@@ -1,25 +1,21 @@
 # Constants
 
-Constants are named values that cannot be changed after they are defined. They are declared using the `:-` operator.
+Constants are named values that cannot be changed after they are defined. They are declared using the `const` keyword (or the `:-` operator).
 
-## Syntax
-
-```rust
-name :- value
-name : Type :- value
-```
-
-## Examples
+## Syntax & Examples
 
 ```rust
 // Inferred type (Float)
-pi :- 3.14159
+const pi = 3.14159
 
 // Explicit type
-max_retries: Int :- 5
+const max_retries: Int = 5
 
 // String constant
-app_name :- "My Application"
+const app_name = "My Application"
+
+// Using alternate syntax
+version :- "1.0.0"
 
 fun area(r: Float) -> Float {
     pi * r * r
@@ -45,13 +41,13 @@ x = 20       // OK
 print(x)     // 20
 
 // Constant (immutable) — cannot be reassigned
-y :- 10
+const y = 10
 print(y)     // 10
 // y = 20   // Would cause: Error: cannot reassign constant 'y'
 
 // Cannot redefine variable as constant
 z = 10
-// z :- 20  // Would cause: Error: redefinition of symbol 'z'
+// const z = 20  // Would cause: Error: redefinition of symbol 'z'
 ```
 
 ## Tuple Unpacking
@@ -59,17 +55,16 @@ z = 10
 Constants support tuple unpacking:
 
 ```rust
-pair :- (1, "hello")
-(a, b) :- pair      // a = 1, b = "hello"
+const pair = (1, "hello")
+const (a, b) = pair      // a = 1, b = "hello"
 
 // Nested unpacking
-nested :- ((1, 2), 3)
-((x, y), z) :- nested
+const nested = ((1, 2), 3)
+const ((x, y), z) = nested
 
 // Wildcard for unused parts
-(first, _) :- pair  // only binds first
+const (first, _) = pair  // only binds first
 ```
 
 ## Note on Naming
-Constants typically use lowerCamelCase or snake_case, just like variables. Capitalized identifiers are reserved for Types and Constructors.
-
+This is a language restriction, not just a convention: lowercase identifiers are required for variables and constants. Capitalized identifiers are reserved for Types and Constructors.

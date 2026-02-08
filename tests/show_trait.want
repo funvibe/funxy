@@ -8,7 +8,7 @@ hello
 [1, 2, 3]
 (1, "two")
 Some(5)
-Zero
+None
 Ok(42)
 Fail("err")
 Nil
@@ -27,7 +27,7 @@ Value: Red
 === Nested types ===
 [{x: 10, y: 20}, {x: 0, y: 0}]
 Some({x: 10, y: 20})
-=== Integration with sprintf ===
+=== Integration with format ===
 The point is: Point(10, 20)
 Color: Blue, Int: 42
 

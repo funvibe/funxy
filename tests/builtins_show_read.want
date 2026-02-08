@@ -11,7 +11,7 @@ hello
 [1, 2, 3]
 []
 Some(42)
-Zero
+None
 Ok("yes")
 Fail(404)
 (1, 2)
@@ -23,37 +23,37 @@ Some(42)
 Some(-100)
 Some(0)
 Some(42)
-Zero
-Zero
-Zero
-Zero
+None
+None
+None
+None
 === read Float ===
 Some(3.14)
 Some(42)
 Some(-0.5)
-Zero
+None
 === read Bool ===
 Some(true)
 Some(false)
 Some(true)
-Zero
-Zero
-Zero
+None
+None
+None
 === read Char ===
 Some('A')
 Some('я')
-Zero
-Zero
+None
+None
 === read BigInt ===
 Some(123)
 Some(12345678901234567890)
 Some(-999)
-Zero
+None
 === read Rational ===
 Some(0.7500000000)
 Some(0.3333333333)
 Some(0.5000000000)
-Zero
+None
 === read String ===
 Some("hello")
 Some([])

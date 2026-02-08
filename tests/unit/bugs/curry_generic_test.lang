@@ -1,0 +1,16 @@
+import "lib/test" (*)
+
+fun curry2<a, b, c>(f: (a, b) -> c) -> ((a) -> ((b) -> c)) {
+    fun(x: a) -> ((b) -> c) {
+        fun(y: b) -> c {
+            f(x, y)
+        }
+    }
+}
+
+testRun("Curried generic function should not cause runtime error", \ -> {
+    fun add(x: Int, y: Int) -> Int { x + y }
+    curriedAdd = curry2(add)
+    add5 = curriedAdd(5)
+    assert(add5(3) == 8)
+})

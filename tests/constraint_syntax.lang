@@ -62,9 +62,9 @@ print("=== Test 1: Single type variable, multiple constraints ===")
 
 fun processOne<t: Stringify, Compare>(x: t, y: t) -> String {
     if compare(x, y) {
-        sprintf("Same: %s", stringify(x))
+        format("Same: %s", stringify(x))
     } else {
-        sprintf("Different: %s vs %s", stringify(x), stringify(y))
+        format("Different: %s vs %s", stringify(x), stringify(y))
     }
 }
 
@@ -82,9 +82,9 @@ print("=== Test 2: Three constraints ===")
 fun processThree<t: Stringify, Compare, Hashable>(x: t, y: t) -> String {
     h = hash(x)
     if compare(x, y) {
-        sprintf("same, hash=%d", h)
+        format("same, hash=%d", h)
     } else {
-        sprintf("diff: %s vs %s, hash=%d", stringify(x), stringify(y), h)
+        format("diff: %s vs %s, hash=%d", stringify(x), stringify(y), h)
     }
 }
 
@@ -102,7 +102,7 @@ print("=== Test 3: Two type variables, single constraint each ===")
 fun formatPair<a: Stringify, b: Stringify>(x: a, y: b) -> String {
     sa = stringify(x)
     sb = stringify(y)
-    sprintf("(%s, %s)", sa, sb)
+    format("(%s, %s)", sa, sb)
 }
 
 print(formatPair(42, "hello"))
@@ -117,7 +117,7 @@ print("=== Test 4: Two type variables, one with multiple constraints ===")
 
 fun checkAndFormat<a: Stringify, Compare, b: Stringify>(x: a, y: a, z: b) -> String {
     result = if compare(x, y) { "same" } else { "different" }
-    sprintf("%s and %s are %s, also: %s", stringify(x), stringify(y), result, stringify(z))
+    format("%s and %s are %s, also: %s", stringify(x), stringify(y), result, stringify(z))
 }
 
 print(checkAndFormat(1, 1, "tag"))
@@ -132,7 +132,7 @@ print("=== Test 5: Two type variables, both with multiple constraints ===")
 fun dualCompare<a: Stringify, Compare, b: Stringify, Compare>(x1: a, x2: a, y1: b, y2: b) -> String {
     aMatch = compare(x1, x2)
     bMatch = compare(y1, y2)
-    sprintf("a: %s (%s), b: %s (%s)",
+    format("a: %s (%s), b: %s (%s)",
         stringify(x1),
         if aMatch { "=" } else { "!=" },
         stringify(y1),
@@ -151,7 +151,7 @@ print("=== Test 6: Three type variables, mixed constraints ===")
 
 fun tripleFormat<a: Stringify, b: Stringify, Compare, c: Stringify>(x: a, y1: b, y2: b, z: c) -> String {
     yResult = if compare(y1, y2) { "same" } else { "diff" }
-    sprintf("[%s] [%s %s %s] [%s]", stringify(x), stringify(y1), yResult, stringify(y2), stringify(z))
+    format("[%s] [%s %s %s] [%s]", stringify(x), stringify(y1), yResult, stringify(y2), stringify(z))
 }
 
 print(tripleFormat(100, "a", "a", true))
@@ -165,7 +165,7 @@ print("=== Test 7: Built-in traits ===")
 
 fun showAndCompare<t: Show, Order>(a: t, b: t) -> String {
     cmp = if a < b { "<" } else if a > b { ">" } else { "=" }
-    sprintf("%s %s %s", show(a), cmp, show(b))
+    format("%s %s %s", show(a), cmp, show(b))
 }
 
 print(showAndCompare(1, 2))
@@ -185,7 +185,7 @@ fun minmax<t: Show, Order>(a: t, b: t) -> (t, t) {
 
 fun formatRange<t: Show, Order>(a: t, b: t) -> String {
     (minVal, maxVal) = minmax(a, b)
-    sprintf("[%s .. %s]", show(minVal), show(maxVal))
+    format("[%s .. %s]", show(minVal), show(maxVal))
 }
 
 print(formatRange(10, 5))

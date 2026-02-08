@@ -19,9 +19,15 @@ var (
 	Char     = TCon{Name: "Char"}
 	Bool     = TCon{Name: "Bool"}
 	Nil      = TCon{Name: "Nil"}
+	Bytes    = TCon{Name: "Bytes"}
+	Bits     = TCon{Name: "Bits"}
 	// String is List<Char>, defined as TApp
 	String = TApp{
 		Constructor: TCon{Name: "List"},
 		Args:        []Type{Char},
+	}
+	// StringOrBytes is String | Bytes
+	StringOrBytes = TUnion{
+		Types: []Type{String, Bytes},
 	}
 )

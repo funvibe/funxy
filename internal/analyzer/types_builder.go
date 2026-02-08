@@ -183,7 +183,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 						}
 
 						argKind := GetKind(arg, table)
-						if !arrow.Left.Equal(argKind) {
+						if _, isKVar := argKind.(typesystem.KVar); !isKVar && !arrow.Left.Equal(argKind) {
 							*errs = append(*errs, diagnostics.NewError(
 								diagnostics.ErrA003,
 								t.Args[i].GetToken(),
@@ -215,7 +215,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 					}
 
 					// Return TCon with underlying type for nominal type preservation (non-generic alias)
-					return typesystem.TCon{Name: name, UnderlyingType: resolved}
+					return typesystem.TCon{Name: name, UnderlyingType: resolved, KindVal: aliasKind}
 				}
 			}
 		}
@@ -276,7 +276,7 @@ func BuildType(t ast.Type, table *symbols.SymbolTable, errs *[]*diagnostics.Diag
 					}
 
 					argKind := GetKind(arg, table)
-					if !arrow.Left.Equal(argKind) {
+					if _, isKVar := argKind.(typesystem.KVar); !isKVar && !arrow.Left.Equal(argKind) {
 						*errs = append(*errs, diagnostics.NewError(
 							diagnostics.ErrA003,
 							t.Args[i].GetToken(),

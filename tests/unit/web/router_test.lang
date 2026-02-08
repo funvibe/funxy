@@ -16,20 +16,20 @@ fun paramHandler(ctx) {
     found = paramNames |> foldl(fun(acc, name) {
         match acc {
             Some(_) -> acc
-            Zero -> mapGet(ctx.params, name)
+            None -> mapGet(ctx.params, name)
         }
-    }, Zero)
+    }, None)
 
     match found {
         Some(val) -> Ok(web.resText("param:" ++ val))
-        Zero -> Ok(web.resText("param:none"))
+        None -> Ok(web.resText("param:none"))
     }
 }
 
 fun wildcardHandler(ctx) {
     match mapGet(ctx.params, "_wildcard") {
         Some(val) -> Ok(web.resText("wildcard:" ++ val))
-        Zero -> Ok(web.resText("wildcard:none"))
+        None -> Ok(web.resText("wildcard:none"))
     }
 }
 

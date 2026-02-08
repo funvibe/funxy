@@ -33,7 +33,7 @@ print(len(bits) == 8)
 // =============================================
 opt: Option<Int> = Some(42)
 print(opt == Some(42))
-print(Zero == Zero)
+print(None == None)
 
 // =============================================
 // Result

@@ -1,4 +1,4 @@
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 fun getX(p: Point) -> Int {
     p.x
@@ -9,7 +9,7 @@ p = { x: 10, y: 20 }
 print(getX(p))
 
 // Nested alias
-type BoxedPoint = { inner: Point }
+type alias BoxedPoint = { inner: Point }
 bp = { inner: { x: 1, y: 2 } }
 print(bp.inner.y)
 

@@ -558,6 +558,16 @@ func (p *TreePrinter) VisitContinueStatement(n *ast.ContinueStatement) {
 	p.write("Continue\n")
 }
 
+func (p *TreePrinter) VisitReturnStatement(n *ast.ReturnStatement) {
+	p.writeIndent()
+	p.write("Return")
+	if n.Value != nil {
+		p.write(" ")
+		n.Value.Accept(p)
+	}
+	p.write("\n")
+}
+
 func (p *TreePrinter) VisitTypeDeclarationStatement(n *ast.TypeDeclarationStatement) {
 	p.writeIndent()
 	p.write("TypeDeclaration")

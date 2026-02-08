@@ -1,8 +1,8 @@
 package evaluator
 
 import (
-	"hash/fnv"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"hash/fnv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -199,7 +199,7 @@ func builtinUuidNamespaceX500(e *Evaluator, args ...Object) Object {
 
 // ===== Parsing =====
 
-// uuidParse: (String) -> Result<Uuid, String>
+// uuidParse: (String) -> Result<String, Uuid>
 func builtinUuidParse(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("uuidParse expects 1 argument, got %d", len(args))
@@ -219,7 +219,7 @@ func builtinUuidParse(e *Evaluator, args ...Object) Object {
 	return makeOk(&Uuid{Value: u})
 }
 
-// uuidFromBytes: (Bytes) -> Result<Uuid, String>
+// uuidFromBytes: (Bytes) -> Result<String, Uuid>
 func builtinUuidFromBytes(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("uuidFromBytes expects 1 argument, got %d", len(args))

@@ -57,7 +57,7 @@ fun createChain(typ, seg, rest, handler) {
             nextType = fst(nextSegInfo)
             nextS = snd(nextSegInfo)
             child = createChain(nextType, nextS, nextRest, handler)
-            MkNode(typ, seg, Zero, [child])
+            MkNode(typ, seg, None, [child])
         }
     }
 }
@@ -76,7 +76,7 @@ fun findMatchingChild(children, typ, seg) {
                 }
             }
         }
-    }, (Zero, []), children)
+    }, (None, []), children)
 }
 
 // Router Internal: insertNode
@@ -104,7 +104,7 @@ fun insertNode(node, segments, handler) {
                     otherChildren = snd(matchResult)
                     newChild = match matchOpt {
                         Some(c) -> insertNode(c, rest, handler)
-                        Zero -> createChain(childType, childSeg, rest, handler)
+                        None -> createChain(childType, childSeg, rest, handler)
                     }
                     newChildren = insertChildSorted(otherChildren, newChild)
                     MkNode(typ, s, h, newChildren)
@@ -119,7 +119,7 @@ fun addRoute(method, path, handler, r) {
         MkRouter(roots, mws, notFoundHandler, errorHandler) -> {
             root = match mapGet(roots, method) {
                 Some(n) -> n
-                Zero -> MkNode(Static, "/", Zero, [])
+                None -> MkNode(Static, "/", None, [])
             }
             parts = stringSplit(path, "/")
             segments = parts |> filter(fun(s) { s != "" })
@@ -158,7 +158,7 @@ fun setErrorHandler(r, handler) {
 // Router Internal: searchChildren
 fun searchChildren(children, seg, rest, params) {
     match children {
-        [] -> Zero
+        [] -> None
         [child, ...otherChildren] -> {
             match child {
                 MkNode(typ, childSeg, _, _) -> {
@@ -168,7 +168,7 @@ fun searchChildren(children, seg, rest, params) {
                                 res = matchNode(child, rest, params)
                                 match res {
                                     Some(_) -> res
-                                    Zero -> searchChildren(otherChildren, seg, rest, params)
+                                    None -> searchChildren(otherChildren, seg, rest, params)
                                 }
                             } else {
                                 searchChildren(otherChildren, seg, rest, params)
@@ -179,7 +179,7 @@ fun searchChildren(children, seg, rest, params) {
                             res = matchNode(child, rest, newParams)
                             match res {
                                 Some(_) -> res
-                                Zero -> searchChildren(otherChildren, seg, rest, params)
+                                None -> searchChildren(otherChildren, seg, rest, params)
                             }
                         }
                         Wildcard -> {
@@ -188,7 +188,7 @@ fun searchChildren(children, seg, rest, params) {
                             match child {
                                 MkNode(_, _, handlerOpt, _) -> match handlerOpt {
                                     Some(h) -> Some((h, newParams))
-                                    Zero -> Zero
+                                    None -> None
                                 }
                             }
                         }
@@ -206,7 +206,7 @@ fun matchNode(node, segments, params) {
             match node {
                 MkNode(_, _, handlerOpt, _) -> match handlerOpt {
                     Some(h) -> Some((h, params))
-                    Zero -> Zero
+                    None -> None
                 }
             }
         }
@@ -224,7 +224,7 @@ fun findRoute(router, method, path) {
     match router {
         MkRouter(roots, _, _, _) -> {
             match mapGet(roots, method) {
-                Zero -> Zero
+                None -> None
                 Some(root) -> {
                     parts = stringSplit(path, "/")
                     segments = parts |> filter(fun(s) { s != "" })

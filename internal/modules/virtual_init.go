@@ -2,6 +2,7 @@ package modules
 
 import (
 	"sort"
+	"sync"
 
 	"github.com/funvibe/funxy/internal/typesystem"
 )
@@ -30,44 +31,51 @@ var (
 	}
 )
 
-// InitVirtualPackages initializes all virtual packages
+var initVirtualPackagesOnce sync.Once
+
+// InitVirtualPackages initializes all virtual packages.
+// Safe to call multiple times; initialization is performed once.
 func InitVirtualPackages() {
-	initListPackage()
-	initMapPackage()
-	initBytesPackage()
-	initBitsPackage()
-	initTimePackage()
-	initIOPackage()
-	initSysPackage()
-	// Note: FP traits (Semigroup, Monoid, Functor, Applicative, Monad) are built-in
-	// and don't require import. See analyzer/builtins.go and evaluator/builtins_fp.go
-	initTuplePackage()
-	initStringPackage()
-	initMathPackage()
-	initBignumPackage()
-	initCharPackage()
-	initJsonPackage()
-	initCryptoPackage()
-	initRegexPackage()
-	initHttpPackage()
-	initTestPackage()
-	initRandPackage()
-	initDatePackage()
-	initWsPackage()
-	initSqlPackage()
-	initUrlPackage()
-	initPathPackage()
-	initUuidPackage()
-	initLogPackage()
-	initTaskPackage()
-	initCsvPackage()
-	initFlagPackage()
+	initVirtualPackagesOnce.Do(func() {
+		initListPackage()
+		initMapPackage()
+		initBytesPackage()
+		initBitsPackage()
+		initTimePackage()
+		initIOPackage()
+		initSysPackage()
+		// Note: FP traits (Semigroup, Monoid, Functor, Applicative, Monad) are built-in
+		// and don't require import. See analyzer/builtins.go and evaluator/builtins_fp.go
+		initTuplePackage()
+		initStringPackage()
+		initMathPackage()
+		initBignumPackage()
+		initCharPackage()
+		initJsonPackage()
+		initCryptoPackage()
+		initRegexPackage()
+		initHttpPackage()
+		initTestPackage()
+		initRandPackage()
+		initDatePackage()
+		initWsPackage()
+		initSqlPackage()
+		initUrlPackage()
+		initPathPackage()
+		initUuidPackage()
+		initLogPackage()
+		initTaskPackage()
+		initCsvPackage()
+		initFlagPackage()
+		initGrpcPackage()
+		initProtoPackage()
 
-	// Register "lib" meta-package (import "lib" imports all lib/*)
-	initLibMetaPackage()
+		// Register "lib" meta-package (import "lib" imports all lib/*)
+		initLibMetaPackage()
 
-	// Initialize documentation for all packages including prelude (builtins)
-	InitDocumentation()
+		// Initialize documentation for all packages including prelude (builtins)
+		InitDocumentation()
+	})
 }
 
 // GetLibSubPackages returns all lib/* package names dynamically

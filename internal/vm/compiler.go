@@ -6,6 +6,7 @@ import (
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
+	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"sort"
 	"strconv"
@@ -91,6 +92,16 @@ type Compiler struct {
 
 	// Type substitution for monomorphized functions
 	subst typesystem.Subst
+
+	// Symbol Table for looking up trait methods and dispatch strategies
+	symbolTable *symbols.SymbolTable
+
+	// Resolution Map from Analyzer for looking up symbols by AST node
+	resolutionMap map[ast.Node]symbols.Symbol
+
+	// Specialization depth counter (tracked on root compiler to detect infinite
+	// monomorphization recursion, e.g. f<T> calling f<Wrapper<T>>)
+	specializeDepth int
 }
 
 // PendingImport represents an import that needs to be processed before VM runs
@@ -121,6 +132,16 @@ func NewCompiler() *Compiler {
 	return c
 }
 
+// SetSymbolTable sets the symbol table
+func (c *Compiler) SetSymbolTable(st *symbols.SymbolTable) {
+	c.symbolTable = st
+}
+
+// SetResolutionMap sets the resolution map from analyzer
+func (c *Compiler) SetResolutionMap(resMap map[ast.Node]symbols.Symbol) {
+	c.resolutionMap = resMap
+}
+
 // SetTypeMap sets the type map from static analyzer
 func (c *Compiler) SetTypeMap(typeMap map[ast.Node]typesystem.Type) {
 	c.typeMap = typeMap
@@ -132,7 +153,7 @@ func (c *Compiler) GetTypeAliases() map[string]typesystem.Type {
 }
 
 // extractTypeConstructorName extracts the type constructor name from a type.
-// e.g., Option<Int> → "Option", List<String> → "List", Result<Int, String> → "Result"
+// e.g., Option<Int> → "Option", List<String> → "List", Result<String, Int> → "Result"
 func extractTypeConstructorName(t typesystem.Type) string {
 	switch typ := t.(type) {
 	case typesystem.TCon:
@@ -221,6 +242,8 @@ func newFunctionCompiler(enclosing *Compiler, name string, arity int) *Compiler 
 		typeAliases:      enclosing.typeAliases,      // Inherit type aliases map reference
 		functionRegistry: enclosing.functionRegistry, // Inherit registry
 		subst:            enclosing.subst,            // Inherit substitution
+		symbolTable:      enclosing.symbolTable,      // Inherit symbol table
+		resolutionMap:    enclosing.resolutionMap,    // Inherit resolution map
 	}
 	return c
 }
@@ -1020,14 +1043,19 @@ func (c *Compiler) compileBytesLiteral(lit *ast.BytesLiteral) error {
 func (c *Compiler) compileBitsLiteral(lit *ast.BitsLiteral) error {
 	line := lit.Token.Line
 	var bits *evaluator.Bits
+	var err error
 
 	switch lit.Kind {
 	case "bin":
-		bits = evaluator.BitsFromBinary(lit.Content)
+		bits, err = evaluator.BitsFromBinary(lit.Content)
 	case "hex":
-		bits = evaluator.BitsFromHex(lit.Content)
+		bits, err = evaluator.BitsFromHex(lit.Content)
 	case "oct":
-		bits = evaluator.BitsFromOctal(lit.Content)
+		bits, err = evaluator.BitsFromOctal(lit.Content)
+	}
+
+	if err != nil {
+		return fmt.Errorf("invalid bits literal at line %d: %s", line, err.Error())
 	}
 
 	c.emitConstant(bits, line)
@@ -1101,7 +1129,7 @@ func (c *Compiler) compileMemberExpression(expr *ast.MemberExpression) error {
 
 	if expr.IsOptional {
 		// Optional chaining: obj?.field
-		// Check if obj is Zero/Fail, if so return it unchanged
+		// Check if obj is None/Fail, if so return it unchanged
 		// Otherwise extract inner value, get field, wrap result
 		c.emit(OP_OPTIONAL_CHAIN_FIELD, line)
 		c.currentChunk().Write(byte(nameIdx>>8), line)
@@ -1166,11 +1194,33 @@ func buildFunctionTypeFromStatement(stmt *ast.FunctionStatement) typesystem.Type
 	}
 }
 
+// maxSpecializeDepth limits monomorphization recursion to prevent infinite
+// expansion (e.g. f<T> → f<Wrapper<T>> → f<Wrapper<Wrapper<T>>> → …).
+// Kept low because types can grow exponentially (2^depth characters).
+const maxSpecializeDepth = 8
+
 // specialize generates a specialized version of a generic function
 func (c *Compiler) specialize(name string, instantiation map[string]typesystem.Type) (string, error) {
 	stmt, ok := c.functionRegistry[name]
 	if !ok {
 		return name, nil // Not found in registry, maybe imported or built-in
+	}
+
+	// Find root compiler early — we need it for the depth check BEFORE
+	// generating specName (mangleTypeName calls t.String() which can itself
+	// recurse exponentially on deeply-nested types).
+	root := c
+	for root.enclosing != nil {
+		root = root.enclosing
+	}
+
+	// Guard against infinite monomorphization recursion.
+	// Must check BEFORE generating specName, because mangleTypeName → t.String()
+	// is itself O(2^depth) on exponentially-growing types.
+	root.specializeDepth++
+	defer func() { root.specializeDepth-- }()
+	if root.specializeDepth > maxSpecializeDepth {
+		return "", fmt.Errorf("specialization depth exceeded for %s (possible infinite monomorphization)", name)
 	}
 
 	// Generate specialized name
@@ -1184,12 +1234,6 @@ func (c *Compiler) specialize(name string, instantiation map[string]typesystem.T
 	for _, k := range keys {
 		t := instantiation[k]
 		specName += "$" + mangleTypeName(t)
-	}
-
-	// Find root compiler
-	root := c
-	for root.enclosing != nil {
-		root = root.enclosing
 	}
 
 	// Check if already compiled

@@ -5,7 +5,7 @@ trait Transform<f, g> {
     fun transform(x: f<Int>) -> g<Int>
 }
 
-instance Transform List {
+instance Transform<List, Option> {
     fun transform(x) { Some(1) }
 }
 

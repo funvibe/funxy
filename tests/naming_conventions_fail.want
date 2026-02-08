@@ -1,14 +1,14 @@
 Processing failed with errors:
-- error at 4:12 [P006]: Function name must start with a lowercase letter
-- error at 9:7 [P006]: Constant name must start with a lowercase letter
-- error at 10:14 [P006]: Variable name must start with a lowercase letter
-- error at 17:22 [P006]: Extension method name must start with a lowercase letter
-- error at 19:13 [P006]: Type name must start with an uppercase letter
-- error at 20:49 [P006]: Constructor name must start with an uppercase letter
-- error at 21:18 [P006]: Type name must start with an uppercase letter
-- error at 23:15 [P006]: Trait name must start with an uppercase letter
-- error at 27:18 [P006]: Parameter name must start with a lowercase letter
-- error at 29:6 [P006]: Constant name must start with a lowercase letter
-- error at 30:6 [P006]: Variable name must start with a lowercase letter
-- error at 13:21 [A002]: undeclared type: 'BadT'
-- error at 13:30 [A002]: undeclared type: 'BadT'
+- error at 4:5 [P006]: Function name must start with a lowercase letter
+- error at 9:1 [P006]: Variable name must start with a lowercase letter
+- error at 10:1 [P006]: Variable name must start with a lowercase letter
+- error at 17:16 [P006]: Extension method name must start with a lowercase letter
+- error at 19:6 [P006]: Type name must start with an uppercase letter
+- error at 20:35 [P006]: Constructor name must start with an uppercase letter
+- error at 21:12 [P006]: Type name must start with an uppercase letter
+- error at 23:7 [P006]: Trait name must start with an uppercase letter
+- error at 27:17 [P006]: Parameter name must start with a lowercase letter
+- error at 29:5 [P006]: Variable name must start with a lowercase letter
+- error at 30:5 [P006]: Variable name must start with a lowercase letter
+- error at 13:17 [A002]: undeclared type: 'BadT'
+- error at 13:26 [A002]: undeclared type: 'BadT'

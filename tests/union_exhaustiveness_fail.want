@@ -1,2 +1,2 @@
 Processing failed with errors:
-- error at 4:10 [A007]: match expression is not exhaustive. Missing cases: type patterns for: [String]
+- error at 4:5 [A007]: match expression is not exhaustive. Missing cases: type patterns for: [String]

@@ -157,7 +157,7 @@ print("=== Option ===")
 some = Some(100)
 print(getType(some))
 
-zero = Zero
+zero = None
 print(getType(zero))
 
 // Nested Option
@@ -187,8 +187,8 @@ fun double(x: Int) -> Int { x * 2 }
 print(getType(double))
 
 // Function with no parameters
-fun getZero() -> Int { 0 }
-print(getType(getZero))
+fun getNone() -> Int { 0 }
+print(getType(getNone))
 
 // Lambda with typed parameter
 lambda = fun(x: Int) -> x * 2

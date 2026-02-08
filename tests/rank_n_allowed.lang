@@ -13,7 +13,7 @@ print(res1) // (1, "hello")
 // B. ST-Monad style Scope Encapsulation (Rank-2)
 // We use this to ensure that 's' cannot escape the scope.
 
-type ScopeToken<s> = { token: s }
+type alias ScopeToken<s> = { token: s }
 
 // action: forall s. (ScopeToken<s>) -> a
 // We need to be careful with syntax.

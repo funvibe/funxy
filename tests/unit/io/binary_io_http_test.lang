@@ -1,0 +1,77 @@
+import "lib/test" (testRun, assert)
+import "lib/io" (fileReadBytes, fileReadBytesAt, fileWrite, fileDelete, fileExists)
+import "lib/http" (httpPost, httpServeAsync, httpServerStop)
+import "lib/time" (sleepMs)
+
+testRun("Binary IO - Read/Write Bytes", fun() -> {
+    testPath = "test_binary_unit.bin"
+    if fileExists(testPath) { fileDelete(testPath) }
+
+    // 1. Write String, Read Bytes
+    fileWrite(testPath, "ABC")
+    match fileReadBytes(testPath) {
+        Ok(bytes) -> {
+            assert(len(bytes) == 3, "Expected length 3")
+        }
+        Fail(err) -> assert(false, "fileReadBytes failed: " ++ err)
+    }
+
+    // 1.5. Read Bytes At
+    match fileReadBytesAt(testPath, 1, 2) {
+        Ok(slice) -> {
+            assert(len(slice) == 2, "Expected slice length 2")
+        }
+        Fail(err) -> assert(false, "fileReadBytesAt failed: " ++ err)
+    }
+
+    // 2. Write Bytes, Read Bytes
+    testPath2 = "test_binary_unit_2.bin"
+    if fileExists(testPath2) { fileDelete(testPath2) }
+
+    match fileReadBytes(testPath) {
+        Ok(bytes) -> {
+            match fileWrite(testPath2, bytes) {
+                Ok(n) -> {
+                    assert(n == 3, "Wrote wrong amount")
+                    match fileReadBytes(testPath2) {
+                        Ok(bytes2) -> assert(bytes == bytes2, "Bytes mismatch")
+                        Fail(e) -> assert(false, "Read back failed: " ++ e)
+                    }
+                }
+                Fail(e) -> assert(false, "fileWrite(Bytes) failed: " ++ e)
+            }
+        }
+        Fail(e) -> assert(false, "Setup failed: " ++ e)
+    }
+
+    if fileExists(testPath) { fileDelete(testPath) }
+    if fileExists(testPath2) { fileDelete(testPath2) }
+})
+
+testRun("Binary HTTP - POST Bytes", fun() -> {
+    port = 18890 // Use different port to avoid conflicts
+    serverId = httpServeAsync(port, fun(req) {
+        { status: 200, body: req.body, headers: [] }
+    })
+
+    sleepMs(200)
+
+    testPathHttp = "test_http_unit.bin"
+    fileWrite(testPathHttp, @"HTTP_BYTES")
+
+    match fileReadBytes(testPathHttp) {
+        Ok(bytes) -> {
+            match httpPost("http://localhost:${port}/echo", bytes) {
+                Ok(resp) -> {
+                    assert(resp.status == 200, "HTTP status not 200")
+                    assert(resp.body == "HTTP_BYTES", "HTTP body mismatch")
+                }
+                Fail(err) -> assert(false, "HTTP request failed: " ++ err)
+            }
+        }
+        Fail(e) -> assert(false, "Setup HTTP bytes failed: " ++ e)
+    }
+
+    httpServerStop(serverId)
+    if fileExists(testPathHttp) { fileDelete(testPathHttp) }
+})

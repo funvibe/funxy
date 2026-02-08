@@ -13,8 +13,9 @@ import (
 // Using a context instead of global state ensures predictable type variable names
 // and allows for proper scoping in tests and parallel compilation.
 type InferenceContext struct {
-	counter int
-	TypeMap map[ast.Node]typesystem.Type
+	counter       int
+	TypeMap       map[ast.Node]typesystem.Type
+	ResolutionMap map[ast.Node]symbols.Symbol // Map from AST node to resolved symbol
 	// ActiveConstraints maps type variable names to their constraints
 	// e.g. {"T": [Constraint{Trait: "Order"}, Constraint{Trait: "Equal"}]}
 	ActiveConstraints map[string][]Constraint
@@ -32,6 +33,8 @@ type InferenceContext struct {
 	GlobalSubst typesystem.Subst
 	// PendingWitnesses stores witnesses that need to be resolved after inference
 	PendingWitnesses []PendingWitness
+	// PendingReturnContexts stores return-dispatch calls that need resolution
+	PendingReturnContexts []PendingReturnContext
 	// Constraints stores accumulated type constraints to be solved later
 	Constraints []Constraint
 	// InferredConstraints stores constraints inferred from usage of rigid type variables
@@ -51,34 +54,44 @@ type PendingWitness struct {
 	Index   int               // Index in the Witnesses slice
 }
 
+// PendingReturnContext represents a call that requires return-type dispatch context.
+type PendingReturnContext struct {
+	Node   *ast.CallExpression
+	Method string
+}
+
 // NewInferenceContext creates a new inference context.
 func NewInferenceContext() *InferenceContext {
 	return &InferenceContext{
-		counter:             0,
-		BaseCounter:         0,
-		TypeMap:             make(map[ast.Node]typesystem.Type),
-		ActiveConstraints:   make(map[string][]Constraint),
-		ExpectedTypes:       make(map[ast.Node]typesystem.Type),
-		ExpectedReturnTypes: make(map[ast.Node]typesystem.Type),
-		GlobalSubst:         make(typesystem.Subst),
-		PendingWitnesses:    make([]PendingWitness, 0),
-		Constraints:         make([]Constraint, 0),
+		counter:               0,
+		BaseCounter:           0,
+		TypeMap:               make(map[ast.Node]typesystem.Type),
+		ResolutionMap:         make(map[ast.Node]symbols.Symbol),
+		ActiveConstraints:     make(map[string][]Constraint),
+		ExpectedTypes:         make(map[ast.Node]typesystem.Type),
+		ExpectedReturnTypes:   make(map[ast.Node]typesystem.Type),
+		GlobalSubst:           make(typesystem.Subst),
+		PendingWitnesses:      make([]PendingWitness, 0),
+		PendingReturnContexts: make([]PendingReturnContext, 0),
+		Constraints:           make([]Constraint, 0),
 	}
 }
 
 // NewInferenceContextWithLoader creates a new inference context with module loader.
 func NewInferenceContextWithLoader(loader ModuleLoader) *InferenceContext {
 	return &InferenceContext{
-		counter:             0,
-		BaseCounter:         0,
-		TypeMap:             make(map[ast.Node]typesystem.Type),
-		ActiveConstraints:   make(map[string][]Constraint),
-		ExpectedTypes:       make(map[ast.Node]typesystem.Type),
-		ExpectedReturnTypes: make(map[ast.Node]typesystem.Type),
-		Loader:              loader,
-		GlobalSubst:         make(typesystem.Subst),
-		PendingWitnesses:    make([]PendingWitness, 0),
-		Constraints:         make([]Constraint, 0),
+		counter:               0,
+		BaseCounter:           0,
+		TypeMap:               make(map[ast.Node]typesystem.Type),
+		ResolutionMap:         make(map[ast.Node]symbols.Symbol),
+		ActiveConstraints:     make(map[string][]Constraint),
+		ExpectedTypes:         make(map[ast.Node]typesystem.Type),
+		ExpectedReturnTypes:   make(map[ast.Node]typesystem.Type),
+		Loader:                loader,
+		GlobalSubst:           make(typesystem.Subst),
+		PendingWitnesses:      make([]PendingWitness, 0),
+		PendingReturnContexts: make([]PendingReturnContext, 0),
+		Constraints:           make([]Constraint, 0),
 	}
 }
 
@@ -191,15 +204,17 @@ func NewInferenceContextWithTypeMap(typeMap map[ast.Node]typesystem.Type) *Infer
 	}
 
 	return &InferenceContext{
-		counter:             maxCounter,
-		BaseCounter:         maxCounter,
-		TypeMap:             typeMap,
-		ExpectedTypes:       make(map[ast.Node]typesystem.Type),
-		ExpectedReturnTypes: make(map[ast.Node]typesystem.Type),
-		ActiveConstraints:   make(map[string][]Constraint),
-		GlobalSubst:         make(typesystem.Subst),
-		PendingWitnesses:    make([]PendingWitness, 0),
-		Constraints:         make([]Constraint, 0),
+		counter:               maxCounter,
+		BaseCounter:           maxCounter,
+		TypeMap:               typeMap,
+		ResolutionMap:         make(map[ast.Node]symbols.Symbol),
+		ExpectedTypes:         make(map[ast.Node]typesystem.Type),
+		ExpectedReturnTypes:   make(map[ast.Node]typesystem.Type),
+		ActiveConstraints:     make(map[string][]Constraint),
+		GlobalSubst:           make(typesystem.Subst),
+		PendingWitnesses:      make([]PendingWitness, 0),
+		PendingReturnContexts: make([]PendingReturnContext, 0),
+		Constraints:           make([]Constraint, 0),
 	}
 }
 
@@ -211,6 +226,14 @@ func (ctx *InferenceContext) RegisterPendingWitness(node *ast.CallExpression, tr
 		TypeVar: typeVar,
 		Args:    args,
 		Index:   index,
+	})
+}
+
+// RegisterPendingReturnContext registers a return-dispatch call to validate later.
+func (ctx *InferenceContext) RegisterPendingReturnContext(node *ast.CallExpression, method string) {
+	ctx.PendingReturnContexts = append(ctx.PendingReturnContexts, PendingReturnContext{
+		Node:   node,
+		Method: method,
 	})
 }
 
@@ -501,6 +524,9 @@ func InferWithContext(ctx *InferenceContext, node ast.Node, table *symbols.Symbo
 
 	case *ast.RangeExpression:
 		resultType, subst, err = inferRangeExpression(ctx, n, table, recursiveInfer)
+
+	case *ast.TypeApplicationExpression:
+		resultType, subst, err = inferTypeApplicationExpression(ctx, n, table, recursiveInfer)
 	}
 
 	if resultType != nil {

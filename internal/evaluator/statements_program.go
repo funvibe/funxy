@@ -1,0 +1,586 @@
+package evaluator
+
+import (
+	"fmt"
+	"github.com/funvibe/funxy/internal/ast"
+	"github.com/funvibe/funxy/internal/modules"
+	"github.com/funvibe/funxy/internal/symbols"
+	"github.com/funvibe/funxy/internal/typesystem"
+	"github.com/funvibe/funxy/internal/utils"
+)
+
+func (e *Evaluator) evalProgram(program *ast.Program, env *Environment) Object {
+	var result Object
+	for _, stmt := range program.Statements {
+		result = e.Eval(stmt, env)
+		switch result := result.(type) {
+		case *Error:
+			return result
+		}
+	}
+	return result
+}
+
+func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environment) Object {
+	if e.Loader == nil {
+		return &Nil{}
+	}
+
+	importPath := node.Path.Value
+	pathToCheck := utils.ResolveImportPath(e.BaseDir, importPath)
+
+	modInterface, err := e.Loader.GetModule(pathToCheck)
+	if err != nil {
+		return newError("failed to load module: %s (%s)", node.Path.Value, err.Error())
+	}
+
+	if mod, ok := modInterface.(*modules.Module); ok {
+		// Handle virtual modules (lib/list, etc.)
+		if mod.IsVirtual {
+			return e.importVirtualModule(node, mod, env)
+		}
+
+		// Handle package groups (import "dir" imports all sub-packages)
+		if mod.IsPackageGroup {
+			return e.importPackageGroup(node, mod, env)
+		}
+
+		modObj, err := e.EvaluateModule(mod)
+		if err != nil {
+			return newError("failed to evaluate module %s: %s", mod.Name, err.Error())
+		}
+
+		// Import trait implementations from the module
+		for traitName, typeImpls := range mod.ClassImplementations {
+			if e.ClassImplementations[traitName] == nil {
+				e.ClassImplementations[traitName] = make(map[string]Object)
+			}
+			for typeName, impl := range typeImpls {
+				if obj, ok := impl.(Object); ok {
+					e.ClassImplementations[traitName][typeName] = obj
+				}
+			}
+		}
+
+		record, ok := modObj.(*RecordInstance)
+		if !ok {
+			return newError("module %s is not a record", mod.Name)
+		}
+
+		// Handle import specifications
+		if node.ImportAll {
+			// import "path" (*) - import all symbols into current scope
+			for _, f := range record.Fields {
+				env.Set(f.Key, f.Value)
+			}
+			return &Nil{}
+		}
+
+		if len(node.Symbols) > 0 {
+			// import "path" (a, b, c) - import only specified symbols
+			for _, sym := range node.Symbols {
+				if val := record.Get(sym.Value); val != nil {
+					env.Set(sym.Value, val)
+
+					// Auto-import ADT constructors if present
+					if mod.SymbolTable != nil {
+						if variants, ok := mod.SymbolTable.GetVariants(sym.Value); ok {
+							for _, variantName := range variants {
+								// Only import if the variant is actually exported by the module
+								if variantVal := record.Get(variantName); variantVal != nil {
+									env.Set(variantName, variantVal)
+								}
+							}
+						}
+					}
+				} else {
+					// Check if it's a trait - traits don't have runtime values but should be importable
+					if mod.SymbolTable != nil {
+						if symVal, ok := mod.SymbolTable.Find(sym.Value); ok && symVal.Kind == symbols.TraitSymbol {
+							// Trait found - it's OK to import even though there's no runtime value
+							continue
+						}
+					}
+					// Extension methods might not be in the record yet but could be in exports
+					return newError("symbol '%s' not found in module %s", sym.Value, mod.Name)
+				}
+			}
+			return &Nil{}
+		}
+
+		if len(node.Exclude) > 0 {
+			// import "path" !(a, b, c) - import all except specified
+			excludeSet := make(map[string]bool)
+			for _, sym := range node.Exclude {
+				excludeSet[sym.Value] = true
+			}
+			for _, f := range record.Fields {
+				if !excludeSet[f.Key] {
+					env.Set(f.Key, f.Value)
+				}
+			}
+			return &Nil{}
+		}
+
+		// Default: import as module object with alias
+		name := ""
+		if node.Alias != nil {
+			name = node.Alias.Value
+		} else {
+			name = utils.ExtractModuleName(node.Path.Value)
+		}
+
+		env.Set(name, modObj)
+		return &Nil{}
+	}
+
+	return newError("invalid module type loaded")
+}
+
+// importVirtualModule handles importing built-in virtual modules
+func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.Module, env *Environment) Object {
+	// Special case: import "lib" imports all lib/* packages
+	if mod.Name == "lib" {
+		return e.importAllLibPackages(node, env)
+	}
+
+	// Get builtins for this virtual module
+	builtins := e.getVirtualModuleBuiltins(mod.Name)
+	if builtins == nil {
+		return newError("unknown virtual module: %s", mod.Name)
+	}
+
+	// Handle import specifications
+	if node.ImportAll {
+		for name, fn := range builtins {
+			env.Set(name, fn)
+		}
+		return &Nil{}
+	}
+
+	if len(node.Symbols) > 0 {
+		for _, sym := range node.Symbols {
+			if fn, ok := builtins[sym.Value]; ok {
+				env.Set(sym.Value, fn)
+
+				// Auto-import ADT constructors if present
+				// For virtual modules, we need to check the VirtualPackage definition
+				if pkg := modules.GetVirtualPackage("lib/" + mod.Name); pkg != nil {
+					if variants, ok := pkg.Variants[sym.Value]; ok {
+						for _, variantName := range variants {
+							if variantFn, exists := builtins[variantName]; exists {
+								env.Set(variantName, variantFn)
+							}
+						}
+					}
+				}
+			} else {
+				return newError("symbol '%s' not found in module %s", sym.Value, mod.Name)
+			}
+		}
+		return &Nil{}
+	}
+
+	if len(node.Exclude) > 0 {
+		excludeSet := make(map[string]bool)
+		for _, sym := range node.Exclude {
+			excludeSet[sym.Value] = true
+		}
+		for name, fn := range builtins {
+			if !excludeSet[name] {
+				env.Set(name, fn)
+			}
+		}
+		return &Nil{}
+	}
+
+	// Default: import as module object
+	fields := make(map[string]Object)
+	for name, fn := range builtins {
+		fields[name] = fn
+	}
+	modObj := NewRecord(fields)
+	modObj.ModuleName = mod.Name
+
+	name := ""
+	if node.Alias != nil {
+		name = node.Alias.Value
+	} else {
+		name = mod.Name
+	}
+
+	env.Set(name, modObj)
+	return &Nil{}
+}
+
+// getVirtualModuleBuiltins returns builtins for a virtual module by name
+func (e *Evaluator) getVirtualModuleBuiltins(name string) map[string]Object {
+	return GetVirtualModuleBuiltins(name)
+}
+
+// GetVirtualModuleBuiltins returns builtins for a virtual module by name (exported for VM use)
+func GetVirtualModuleBuiltins(name string) map[string]Object {
+	env := NewEnvironment()
+	var builtins map[string]*Builtin
+
+	switch name {
+	case "list":
+		builtins = ListBuiltins()
+		SetListBuiltinTypes(builtins)
+	case "map":
+		builtins = GetMapBuiltins()
+		SetMapBuiltinTypes(builtins)
+	case "bytes":
+		builtins = BytesBuiltins()
+		SetBytesBuiltinTypes(builtins)
+	case "bits":
+		builtins = BitsBuiltins()
+		SetBitsBuiltinTypes(builtins)
+	case "time":
+		builtins = TimeBuiltins()
+		SetTimeBuiltinTypes(builtins)
+	case "io":
+		builtins = IOBuiltins()
+		SetIOBuiltinTypes(builtins)
+	case "sys":
+		builtins = SysBuiltins()
+		SetSysBuiltinTypes(builtins)
+	case "tuple":
+		builtins = TupleBuiltins()
+		SetTupleBuiltinTypes(builtins)
+	case "string":
+		builtins = StringBuiltins()
+		SetStringBuiltinTypes(builtins)
+	case "math":
+		builtins = MathBuiltins()
+		SetMathBuiltinTypes(builtins)
+	case "bignum":
+		builtins = BignumBuiltins()
+		SetBignumBuiltinTypes(builtins)
+	case "char":
+		builtins = CharBuiltins()
+		SetCharBuiltinTypes(builtins)
+	case "json":
+		RegisterJsonBuiltins(env)
+		return env.GetStore()
+	case "crypto":
+		builtins = CryptoBuiltins()
+		SetCryptoBuiltinTypes(builtins)
+	case "regex":
+		builtins = RegexBuiltins()
+		SetRegexBuiltinTypes(builtins)
+	case "http":
+		builtins = HttpBuiltins()
+		SetHttpBuiltinTypes(builtins)
+	case "test":
+		builtins = TestBuiltins()
+		SetTestBuiltinTypes(builtins)
+	case "rand":
+		builtins = RandBuiltins()
+		SetRandBuiltinTypes(builtins)
+	case "date":
+		RegisterDateBuiltins(env)
+		return env.GetStore()
+	case "ws":
+		builtins = WsBuiltins()
+		SetWsBuiltinTypes(builtins)
+	case "sql":
+		RegisterSqlBuiltins(env)
+		return env.GetStore()
+	case "url":
+		builtins = UrlBuiltins()
+		SetUrlBuiltinTypes(builtins)
+	case "path":
+		builtins = PathBuiltins()
+		SetPathBuiltinTypes(builtins)
+	case "uuid":
+		builtins = UuidBuiltins()
+		SetUuidBuiltinTypes(builtins)
+	case "log":
+		builtins = LogBuiltins()
+		SetLogBuiltinTypes(builtins)
+	case "task":
+		builtins = TaskBuiltins()
+		SetTaskBuiltinTypes(builtins)
+	case "csv":
+		builtins = CsvBuiltins()
+		SetCsvBuiltinTypes(builtins)
+	case "flag":
+		builtins = FlagBuiltins()
+		SetFlagBuiltinTypes(builtins)
+	case "option":
+		builtins = OptionBuiltins()
+	case "result":
+		builtins = ResultBuiltins()
+	case "grpc":
+		builtins = GrpcBuiltins()
+	case "proto":
+		builtins = ProtoBuiltins()
+	default:
+		return nil
+	}
+
+	if builtins != nil {
+		for name, fn := range builtins {
+			env.Set(name, fn)
+		}
+
+		// Inject exported types for specific modules that don't use Register...Builtins
+		if name == "task" {
+			env.Set("Task", &TypeObject{TypeVal: typesystem.TCon{Name: "Task"}})
+		} else if name == "log" {
+			env.Set("Logger", &TypeObject{TypeVal: typesystem.TCon{Name: "Logger"}})
+		} else if name == "uuid" {
+			env.Set("Uuid", &TypeObject{TypeVal: typesystem.TCon{Name: "Uuid"}})
+		} else if name == "http" {
+			if vp := modules.GetVirtualPackage("lib/http"); vp != nil {
+				for typeName, typ := range vp.Types {
+					env.Set(typeName, &TypeObject{TypeVal: typ})
+				}
+			}
+		}
+
+		return env.GetStore()
+	}
+
+	return nil
+}
+
+// importAllLibPackages handles import "lib" - imports all lib/* packages
+func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environment) Object {
+	// Collect all builtins from all lib/* packages
+	allBuiltins := make(map[string]Object)
+
+	for _, pkgName := range modules.GetLibSubPackages() {
+		builtins := e.getVirtualModuleBuiltins(pkgName)
+		for name, fn := range builtins {
+			allBuiltins[name] = fn
+		}
+	}
+
+	// Handle import specifications
+	if node.ImportAll {
+		// import "lib" (*) - import all symbols from all packages
+		for name, fn := range allBuiltins {
+			env.Set(name, fn)
+		}
+		return &Nil{}
+	}
+
+	if len(node.Symbols) > 0 {
+		// import "lib" (symbol1, symbol2) - import specific symbols
+		for _, sym := range node.Symbols {
+			if fn, ok := allBuiltins[sym.Value]; ok {
+				env.Set(sym.Value, fn)
+			} else {
+				return newError("symbol '%s' not found in lib packages", sym.Value)
+			}
+		}
+		return &Nil{}
+	}
+
+	if len(node.Exclude) > 0 {
+		// import "lib" !(symbol1, symbol2) - import all except specified
+		excludeSet := make(map[string]bool)
+		for _, sym := range node.Exclude {
+			excludeSet[sym.Value] = true
+		}
+		for name, fn := range allBuiltins {
+			if !excludeSet[name] {
+				env.Set(name, fn)
+			}
+		}
+		return &Nil{}
+	}
+
+	// Default: import "lib" as module object containing subpackages
+	libFields := make(map[string]Object)
+	for _, pkgName := range modules.GetLibSubPackages() {
+		builtins := e.getVirtualModuleBuiltins(pkgName)
+		if builtins != nil {
+			pkgFields := make(map[string]Object)
+			for name, fn := range builtins {
+				pkgFields[name] = fn
+			}
+			pkgObj := NewRecord(pkgFields)
+			pkgObj.ModuleName = pkgName
+			libFields[pkgName] = pkgObj
+		}
+	}
+
+	libObj := NewRecord(libFields)
+
+	name := "lib"
+	if node.Alias != nil {
+		name = node.Alias.Value
+	}
+
+	env.Set(name, libObj)
+	return &Nil{}
+}
+
+// importPackageGroup handles importing from a directory containing sub-packages
+func (e *Evaluator) importPackageGroup(node *ast.ImportStatement, mod *modules.Module, env *Environment) Object {
+	// Collect all exported symbols from all sub-packages
+	allFields := make(map[string]Object)
+
+	for _, subMod := range mod.Imports {
+		// Evaluate each sub-package
+		subModObj, err := e.EvaluateModule(subMod)
+		if err != nil {
+			return newError("failed to evaluate sub-package %s: %s", subMod.Name, err.Error())
+		}
+
+		// Import trait implementations from sub-module
+		for traitName, typeImpls := range subMod.ClassImplementations {
+			if e.ClassImplementations[traitName] == nil {
+				e.ClassImplementations[traitName] = make(map[string]Object)
+			}
+			for typeName, impl := range typeImpls {
+				if obj, ok := impl.(Object); ok {
+					e.ClassImplementations[traitName][typeName] = obj
+				}
+			}
+		}
+
+		subRecord, ok := subModObj.(*RecordInstance)
+		if !ok {
+			return newError("sub-package %s is not a record", subMod.Name)
+		}
+
+		// Collect exported fields
+		for _, f := range subRecord.Fields {
+			if subMod.Exports[f.Key] {
+				allFields[f.Key] = f.Value
+			}
+		}
+	}
+
+	// Handle import specifications
+	if node.ImportAll {
+		for name, val := range allFields {
+			env.Set(name, val)
+		}
+		return &Nil{}
+	}
+
+	if len(node.Symbols) > 0 {
+		for _, sym := range node.Symbols {
+			if val, ok := allFields[sym.Value]; ok {
+				env.Set(sym.Value, val)
+			} else {
+				return newError("symbol '%s' not found in package group %s", sym.Value, mod.Name)
+			}
+		}
+		return &Nil{}
+	}
+
+	if len(node.Exclude) > 0 {
+		excludeSet := make(map[string]bool)
+		for _, sym := range node.Exclude {
+			excludeSet[sym.Value] = true
+		}
+		for name, val := range allFields {
+			if !excludeSet[name] {
+				env.Set(name, val)
+			}
+		}
+		return &Nil{}
+	}
+
+	// Default: import as module object containing all sub-packages
+	modObj := NewRecord(allFields)
+
+	name := ""
+	if node.Alias != nil {
+		name = node.Alias.Value
+	} else {
+		name = mod.Name
+	}
+
+	env.Set(name, modObj)
+	return &Nil{}
+}
+
+func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
+	if cached, ok := e.ModuleCache[mod.Dir]; ok {
+		return cached, nil
+	}
+
+	// Save current ClassImplementations to detect what was added by this module
+	oldClassImpls := make(map[string]map[string]Object)
+	for trait, impls := range e.ClassImplementations {
+		oldClassImpls[trait] = make(map[string]Object)
+		for typeName, impl := range impls {
+			oldClassImpls[trait][typeName] = impl
+		}
+	}
+
+	env := NewEnvironment()
+	env.SymbolTable = mod.SymbolTable // Attach module's symbol table for dispatch strategies
+	RegisterBuiltins(env)
+	RegisterFPTraits(e, env) // Register FP traits for this module
+
+	// Pre-create module object to handle cycles (empty for now)
+	modObj := NewRecord(nil)
+	e.ModuleCache[mod.Dir] = modObj
+
+	oldBaseDir := e.BaseDir
+	e.BaseDir = mod.Dir
+	defer func() { e.BaseDir = oldBaseDir }()
+
+	for _, file := range mod.OrderedFiles() {
+		res := e.Eval(file, env)
+		if isError(res) {
+			return nil, fmt.Errorf("runtime error in %s: %s", mod.Name, res.Inspect())
+		}
+	}
+
+	// Populate exports from environment
+	exports := make(map[string]Object)
+	for name := range mod.Exports {
+		if val, ok := env.Get(name); ok {
+			exports[name] = val
+		} else {
+			// Check if it's an extension method
+			// Extension methods are stored in e.ExtensionMethods[typeName][methodName]
+			// We need to find them and export them as regular functions
+			for _, methods := range e.ExtensionMethods {
+				if fn, ok := methods[name]; ok {
+					// Found the extension method, export it as a regular function
+					exports[name] = fn
+					break
+				}
+			}
+		}
+	}
+
+	// Update the existing modObj fields (in-place to preserve reference for cycles)
+	// Create a temporary record to get sorted fields, then copy to modObj
+	tempRec := NewRecord(exports)
+	modObj.Fields = tempRec.Fields
+
+	// Copy newly added ClassImplementations to module
+	mod.ClassImplementations = make(map[string]map[string]interface{})
+	for trait, impls := range e.ClassImplementations {
+		if oldImpls, had := oldClassImpls[trait]; had {
+			// Copy only new implementations for this trait
+			for typeName, impl := range impls {
+				if _, wasOld := oldImpls[typeName]; !wasOld {
+					if mod.ClassImplementations[trait] == nil {
+						mod.ClassImplementations[trait] = make(map[string]interface{})
+					}
+					mod.ClassImplementations[trait][typeName] = impl
+				}
+			}
+		} else {
+			// Copy all implementations for new trait
+			mod.ClassImplementations[trait] = make(map[string]interface{})
+			for typeName, impl := range impls {
+				mod.ClassImplementations[trait][typeName] = impl
+			}
+		}
+	}
+
+	return modObj, nil
+}

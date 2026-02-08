@@ -48,7 +48,7 @@ func UrlBuiltins() map[string]*Builtin {
 
 // Helper to create Url record
 func createUrlRecord(u *url.URL) *RecordInstance {
-	port := makeZero()
+	port := makeNone()
 	if u.Port() != "" {
 		if p, err := strconv.Atoi(u.Port()); err == nil {
 			port = makeSome(&Integer{Value: int64(p)})
@@ -290,7 +290,7 @@ func builtinUrlQueryParam(e *Evaluator, args ...Object) Object {
 	queryStr := listToString(rec.Get("query").(*List))
 	values, err := url.ParseQuery(queryStr)
 	if err != nil {
-		return makeZero()
+		return makeNone()
 	}
 
 	key := listToString(keyList)
@@ -298,7 +298,7 @@ func builtinUrlQueryParam(e *Evaluator, args ...Object) Object {
 		return makeSome(stringToList(vals[0]))
 	}
 
-	return makeZero()
+	return makeNone()
 }
 
 // urlQueryParamAll: Url, String -> List<String>
@@ -587,7 +587,7 @@ func builtinUrlDecode(e *Evaluator, args ...Object) Object {
 func copyRecord(rec *RecordInstance) *RecordInstance {
 	newFields := make([]RecordField, len(rec.Fields))
 	copy(newFields, rec.Fields)
-	return &RecordInstance{Fields: newFields, TypeName: rec.TypeName}
+	return &RecordInstance{Fields: newFields, TypeName: rec.TypeName, ModuleName: rec.ModuleName}
 }
 
 // SetUrlBuiltinTypes sets up type information for URL builtins

@@ -39,12 +39,13 @@ testRun("Format: as function assignment", fun() -> {
     assert(toHex(255) == "ff")
 })
 
-testRun("Format: sprintf explicit call", fun() -> {
-    // sprintf works like: sprintf(format_string, ...args)
-    res = sprintf("%s: %.2f", "Hello", 1.2345)
+testRun("Format: format explicit call", fun() -> {
+    // format works like: format(format_string, ...args)
+    res = format("%s: %.2f", "Hello", 1.2345)
     assert(res == "Hello: 1.23")
 
     // Single arg
-    res2 = sprintf("%.2f", 1.2345)
+    res2 = format("%.2f", 1.2345)
     assert(res2 == "1.23")
 })
+

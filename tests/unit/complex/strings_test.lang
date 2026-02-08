@@ -44,7 +44,7 @@ testRun("String module functions", \ -> {
 
     match stringIndexOf("hello", "ll") {
         Some(i) -> assertEquals(2, i, "IndexOf")
-        Zero -> assertEquals(0, 1, "IndexOf failed")
+        None -> assertEquals(0, 1, "IndexOf failed")
     }
 
     assertEquals("heLlo", stringReplace("hello", "l", "L"), "Replace first")

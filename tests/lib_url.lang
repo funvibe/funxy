@@ -21,7 +21,7 @@ match urlParse("https://user:pass@example.com:8080/api/users?id=1&name=test#sect
         print(urlHost(url) == "example.com")
         match urlPort(url) {
             Some(p) -> print(p == 8080)
-            Zero -> print(false)
+            None -> print(false)
         }
         print(urlPath(url) == "/api/users")
         print(urlQuery(url) == "id=1&name=test")
@@ -39,25 +39,25 @@ match urlParse("https://example.com?tag=a&tag=b&name=test") {
         // Single param
         match urlQueryParam(url, "name") {
             Some(v) -> print(v == "test")
-            Zero -> print(false)
+            None -> print(false)
         }
-        
+
         // First value of multi-value
         match urlQueryParam(url, "tag") {
             Some(v) -> print(v == "a")
-            Zero -> print(false)
+            None -> print(false)
         }
-        
+
         // All values
         tags = urlQueryParamAll(url, "tag")
         print(len(tags) == 2)
-        
+
         // Missing param
         match urlQueryParam(url, "missing") {
             Some(_) -> print(false)
-            Zero -> print(true)
+            None -> print(true)
         }
-        
+
         // Query params as map
         params = urlQueryParams(url)
         print(len(params) == 2)  // "tag" and "name"
@@ -74,38 +74,38 @@ match urlParse("https://example.com/old") {
         // Modify scheme
         url1 = urlWithScheme(url, "http")
         print(urlScheme(url1) == "http")
-        
+
         // Modify host
         url2 = urlWithHost(url, "new.com")
         print(urlHost(url2) == "new.com")
-        
+
         // Modify port
         url3 = urlWithPort(url, 9000)
         match urlPort(url3) {
             Some(p) -> print(p == 9000)
-            Zero -> print(false)
+            None -> print(false)
         }
-        
+
         // Modify path
         url4 = urlWithPath(url, "/new/path")
         print(urlPath(url4) == "/new/path")
-        
+
         // Modify query
         url5 = urlWithQuery(url, "key=value")
         print(urlQuery(url5) == "key=value")
-        
+
         // Modify fragment
         url6 = urlWithFragment(url, "anchor")
         print(urlFragment(url6) == "anchor")
-        
+
         // Modify userinfo
         url7 = urlWithUserinfo(url, "admin:secret")
         print(urlUserinfo(url7) == "admin:secret")
-        
+
         // Add query param
         url8 = urlAddQueryParam(url, "page", "1")
         print(urlQuery(url8) == "page=1")
-        
+
         // Chain modifications
         url9 = urlAddQueryParam(urlWithPath(url, "/api"), "v", "2")
         print(urlPath(url9) == "/api")
@@ -123,7 +123,7 @@ match urlParse("https://example.com/base/") {
             Ok(joined) -> print(urlPath(joined) == "/base/relative")
             Fail(_) -> print(false)
         }
-        
+
         match urlJoin(base, "/absolute") {
             Ok(joined) -> print(urlPath(joined) == "/absolute")
             Fail(_) -> print(false)
@@ -183,7 +183,7 @@ match urlParse("https://example.com/path") {
     Ok(url) -> {
         match urlPort(url) {
             Some(_) -> print(false)
-            Zero -> print(true)
+            None -> print(true)
         }
     }
     Fail(_) -> print(false)

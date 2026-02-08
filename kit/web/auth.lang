@@ -7,7 +7,7 @@ import "lib/string" (stringJoin, stringSplit)
 
 // --- Auth / Session ---
 
-type OAuthConfig = {
+type alias OAuthConfig = {
     clientId: String,
     clientSecret: String,
     redirectUri: String,
@@ -18,7 +18,7 @@ type OAuthConfig = {
 
 fun oauthAuthUrl(config: OAuthConfig, state) {
     scopeStr = stringJoin(config.scopes, " ")
-    sprintf("%s?client_id=%s&redirect_uri=%s&scope=%s&state=%s&response_type=code",
+    format("%s?client_id=%s&redirect_uri=%s&scope=%s&state=%s&response_type=code",
         config.authUrl,
         config.clientId,
         config.redirectUri,
@@ -64,10 +64,10 @@ fun sessionVerify(cookieVal, secret) {
                  val = base64Decode(b64data)
                  Some(val)
              } else {
-                 Zero
+                 None
              }
         }
-        _ -> Zero
+        _ -> None
     }
 }
 
@@ -80,7 +80,7 @@ fun setSession(ctx, data, secret, res) {
 fun getSession(ctx, secret) {
     match cookie("session", ctx) {
         Some(val) -> sessionVerify(val, secret)
-        Zero -> Zero
+        None -> None
     }
 }
 

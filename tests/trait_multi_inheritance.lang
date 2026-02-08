@@ -12,7 +12,7 @@ trait Cmp<t> {
 
 // Derived trait inheriting from both
 trait Print<t> : Stringify<t>, Cmp<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 
 // Implement Stringify for Int
@@ -31,7 +31,7 @@ instance Cmp Int {
 
 // Implement Print for Int
 instance Print Int {
-    fun format(val: Int) -> String {
+    fun pretty(val: Int) -> String {
         "Formatted: Int"
     }
 }
@@ -40,5 +40,5 @@ instance Print Int {
 print(stringify(42))
 print(cmp(1, 1))
 print(cmp(1, 2))
-print(format(100))
+print(pretty(100))
 

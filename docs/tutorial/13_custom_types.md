@@ -9,11 +9,11 @@ Aliases create a new name for an existing type. They are interchangeable with th
 ```rust
 type alias Money = Float
 
-fun format(m: Money) -> String {
+fun formatMoney(m: Money) -> String {
     "$" ++ show(m)
 }
 
-print(format(19.99))  // "$19.99"
+print(formatMoney(19.99))  // "$19.99"
 ```
 
 ## Records
@@ -22,7 +22,7 @@ Records are structural types with named fields.
 
 ```rust
 // Type definition
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 // Literal
 p = { x: 10, y: 20 }
@@ -36,7 +36,7 @@ print(p.x)  // 10
 You can define methods on custom types (Records or ADTs) using the `fun (receiver: Type) name()` syntax.
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 // Define a method 'dist_sq' on Point
 fun (p: Point) dist_sq() -> Int {

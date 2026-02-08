@@ -1,20 +1,20 @@
 // Test Type Classes for List, Tuple, Record
 
 trait Printable<t> {
-    fun format(x: t) -> String
+    fun pretty(x: t) -> String
 }
 
 // 1. Implementation for List (generic)
 // Note: String is List Char, so this should apply to String too unless overridden?
 instance Printable (List<Int>) {
-    fun format(l: List<Int>) -> String {
+    fun pretty(l: List<Int>) -> String {
         "List[Int]"
     }
 }
 
 // 2. Implementation for Tuple
 instance Printable (Int, Int) {
-    fun format(t: (Int, Int)) -> String {
+    fun pretty(t: (Int, Int)) -> String {
         "Tuple(Int, Int)"
     }
 }
@@ -22,20 +22,20 @@ instance Printable (Int, Int) {
 // 3. Implementation for Record
 // Note: Anonymous record type
 instance Printable { x: Int, y: Int } {
-    fun format(r: { x: Int, y: Int }) -> String {
+    fun pretty(r: { x: Int, y: Int }) -> String {
         "Record{x, y}"
     }
 }
 
 // 4. Implementation for Int
 instance Printable Int {
-    fun format(i: Int) -> String {
+    fun pretty(i: Int) -> String {
         "Integer"
     }
 }
 
 fun printFormatted<t: Printable>(item: t) {
-    print(format(item))
+    print(pretty(item))
 }
 
 printFormatted(10)
@@ -44,7 +44,7 @@ printFormatted((1, 2))
 printFormatted({x: 1, y: 2})
 
 // Test dynamic dispatch without generics wrapper
-print(format(100))
-print(format([1]))
-print(format((10, 20)))
-print(format({x: 10, y: 20}))
+print(pretty(100))
+print(pretty([1]))
+print(pretty((10, 20)))
+print(pretty({x: 10, y: 20}))

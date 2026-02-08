@@ -9,7 +9,7 @@ import "lib/map" (mapFromRecord, mapGet)
 fun containsStr(haystack, needle) {
     match stringIndexOf(haystack, needle) {
         Some(_) -> true
-        Zero -> false
+        None -> false
     }
 }
 
@@ -47,7 +47,7 @@ testRun("Web Auth - OAuth Flow", fun() {
                      // Use jsonEncode to verify content
                      assertEquals(jsonEncode(t), "\"token789\"", "access_token correct")
                 }
-                Zero -> assertFail(Ok(0), "access_token missing in JSON")
+                None -> assertFail(Ok(0), "access_token missing in JSON")
             }
         }
         Fail(e) -> assertFail(Fail(e), "Exchange failed: " ++ e)
@@ -66,13 +66,13 @@ testRun("Web Auth - Session Signature", fun() {
     // Test Verify
     match web.sessionVerify(signed, secret) {
         Some(val) -> assertEquals(val, data, "Verified data matches")
-        Zero -> assertFail(Ok(0), "Verification failed")
+        None -> assertFail(Ok(0), "Verification failed")
     }
 
     // Test Tamper
     tampered = signed ++ "x"
     match web.sessionVerify(tampered, secret) {
         Some(_) -> assertFail(Ok(0), "Tampered signature verified!")
-        Zero -> assert(true, "Tampered signature rejected")
+        None -> assert(true, "Tampered signature rejected")
     }
 })

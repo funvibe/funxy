@@ -30,7 +30,7 @@ print(jsonEncode((1, "two", true)))
 
 // Option
 print(jsonEncode(Some(42)))
-print(jsonEncode(Zero))
+print(jsonEncode(None))
 
 // === Decode Tests ===
 

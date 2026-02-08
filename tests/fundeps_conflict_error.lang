@@ -1,0 +1,54 @@
+trait BiMap<a, b> | a -> b, b -> a {
+    fun to(x: a) -> b
+}
+
+instance BiMap<Int, String> {
+    fun to(x: Int) -> String { "int" }
+}
+
+// This should fail because 'a' (Int) is already mapped to String by the previous instance
+// and the dependency a -> b requires uniqueness.
+instance BiMap<Int, Bool> {
+    fun to(x: Int) -> Bool { true }
+}
+
+// Case 2: Reverse Dependency Conflict (b -> a)
+trait RevDep<a, b> | b -> a {
+    fun from(x: b) -> a
+}
+
+instance RevDep<Int, String> {
+    fun from(x: String) -> Int { 1 }
+}
+
+// FAIL: b=String is already mapped to a=Int. Cannot map String to Bool.
+instance RevDep<Bool, String> {
+    fun from(x: String) -> Bool { true }
+}
+
+// Case 3: Transitive Conflict
+// a -> b, b -> c. Conflict in the second part of the chain.
+trait Chain<a, b, c> | a -> b, b -> c {
+    fun chain(x: a) -> c
+}
+
+instance Chain<Int, String, Bool> {
+    fun chain(x: Int) -> Bool { true }
+}
+
+// FAIL: a=Int -> b=String (OK, matches).
+// But b=String -> c=Bool (in the first) vs c=Int (in the second). Conflict.
+instance Chain<Int, String, Int> {
+    fun chain(x: Int) -> Int { 0 }
+}
+
+// Case 4: Overlapping Generic Instance Conflict
+// Checks conflict between concrete and generic instance
+trait Box<a, b> | a -> b { fun get(x: a) -> b }
+
+instance Box<Int, String> { fun get(x: Int) -> String { "s" } }
+
+// FAIL: This instance says "for any 't', Int is mapped to t".
+// But we already have a rule "Int is mapped to String".
+// If 't' becomes Bool, a contradiction will arise.
+instance Box<Int, t> { fun get(x: Int) -> t { panic("no") } }

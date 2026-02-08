@@ -2,9 +2,9 @@ package vm
 
 import (
 	"fmt"
-	"hash/fnv"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"hash/fnv"
 	"unsafe"
 )
 
@@ -33,6 +33,9 @@ type CompiledFunction struct {
 func (f *CompiledFunction) Type() evaluator.ObjectType { return "COMPILED_FUNCTION" }
 func (f *CompiledFunction) Inspect() string            { return fmt.Sprintf("<fn %s>", f.Name) }
 func (f *CompiledFunction) RuntimeType() typesystem.Type {
+	if f == nil {
+		return typesystem.TCon{Name: "Function"}
+	}
 	if f.TypeInfo != nil {
 		return f.TypeInfo
 	}
@@ -52,6 +55,9 @@ type ObjClosure struct {
 func (c *ObjClosure) Type() evaluator.ObjectType { return "CLOSURE" }
 func (c *ObjClosure) Inspect() string            { return fmt.Sprintf("<closure %s>", c.Function.Name) }
 func (c *ObjClosure) RuntimeType() typesystem.Type {
+	if c == nil {
+		return typesystem.TCon{Name: "Function"}
+	}
 	if c.Function != nil && c.Function.TypeInfo != nil {
 		return c.Function.TypeInfo
 	}
@@ -78,10 +84,15 @@ type spreadArg struct {
 	Value evaluator.Object
 }
 
-func (s *spreadArg) Type() evaluator.ObjectType   { return "SPREAD_ARG" }
-func (s *spreadArg) Inspect() string              { return "..." + s.Value.Inspect() }
-func (s *spreadArg) RuntimeType() typesystem.Type { return nil }
-func (s *spreadArg) Hash() uint32                 { return 0 }
+func (s *spreadArg) Type() evaluator.ObjectType { return "SPREAD_ARG" }
+func (s *spreadArg) Inspect() string            { return "..." + s.Value.Inspect() }
+func (s *spreadArg) RuntimeType() typesystem.Type {
+	if s == nil {
+		return typesystem.TCon{Name: "SpreadArg"}
+	}
+	return typesystem.TCon{Name: "SpreadArg"}
+}
+func (s *spreadArg) Hash() uint32 { return 0 }
 
 // VMComposedFunction represents f ,, g - native VM function composition
 type VMComposedFunction struct {
@@ -89,9 +100,14 @@ type VMComposedFunction struct {
 	G evaluator.Object // Second function to apply (first)
 }
 
-func (c *VMComposedFunction) Type() evaluator.ObjectType   { return "VM_COMPOSED_FUNC" }
-func (c *VMComposedFunction) Inspect() string              { return "<composed>" }
-func (c *VMComposedFunction) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Function"} }
+func (c *VMComposedFunction) Type() evaluator.ObjectType { return "VM_COMPOSED_FUNC" }
+func (c *VMComposedFunction) Inspect() string            { return "<composed>" }
+func (c *VMComposedFunction) RuntimeType() typesystem.Type {
+	if c == nil {
+		return typesystem.TCon{Name: "Function"}
+	}
+	return typesystem.TCon{Name: "Function"}
+}
 func (c *VMComposedFunction) Hash() uint32 {
 	return c.F.Hash() ^ c.G.Hash()
 }
@@ -103,9 +119,14 @@ type BuiltinClosure struct {
 	Fn   func(args []evaluator.Object) evaluator.Object
 }
 
-func (b *BuiltinClosure) Type() evaluator.ObjectType   { return "BUILTIN_CLOSURE" }
-func (b *BuiltinClosure) Inspect() string              { return "<builtin " + b.Name + ">" }
-func (b *BuiltinClosure) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "Function"} }
+func (b *BuiltinClosure) Type() evaluator.ObjectType { return "BUILTIN_CLOSURE" }
+func (b *BuiltinClosure) Inspect() string            { return "<builtin " + b.Name + ">" }
+func (b *BuiltinClosure) RuntimeType() typesystem.Type {
+	if b == nil {
+		return typesystem.TCon{Name: "Function"}
+	}
+	return typesystem.TCon{Name: "Function"}
+}
 func (b *BuiltinClosure) Hash() uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(b.Name))
@@ -127,6 +148,12 @@ func (r *ObjRange) Inspect() string {
 	return fmt.Sprintf("%s..%s", r.Start.Inspect(), r.End.Inspect())
 }
 func (r *ObjRange) RuntimeType() typesystem.Type {
+	if r == nil {
+		return typesystem.TApp{
+			Constructor: typesystem.TCon{Name: "Range"},
+			Args:        []typesystem.Type{typesystem.TVar{Name: "T"}},
+		}
+	}
 	// Range<T> where T is type of Start
 	return typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Range"},

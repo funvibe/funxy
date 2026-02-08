@@ -94,7 +94,7 @@ testRun("Custom Error Pages", fun() {
     foundHeader = resFail.headers |> find(fun(p) { fst(p) == "X-Error" })
     match foundHeader {
         Some(p) -> assertEquals(snd(p), "custom-handler", "Custom error handler adds custom header")
-        Zero -> assertEquals(1, 0, "Custom header missing")
+        None -> assertEquals(1, 0, "Custom header missing")
     }
 
     assert(resFail.body == "<h1>500 - Server Error</h1><p>Something went wrong</p>",

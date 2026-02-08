@@ -5,10 +5,6 @@ The `lib/json` package provides JSON encoding, decoding, and dynamic JSON manipu
 ## Import
 
 ```rust
-// Basic functions
-import "lib/json" (jsonEncode, jsonDecode)
-
-// With Json ADT
 import "lib/json" (jsonEncode, jsonDecode, jsonParse, jsonFromValue, jsonGet, jsonKeys)
 ```
 
@@ -39,7 +35,7 @@ print(jsonEncode((1, "two")))  // [1,"two"]
 
 // Option
 print(jsonEncode(Some(42)))  // 42
-print(jsonEncode(Zero))      // null
+print(jsonEncode(None))      // null
 ```
 
 ### Type Mapping (Encode)
@@ -60,7 +56,7 @@ print(jsonEncode(Zero))      // null
 
 ## Decoding
 
-### `jsonDecode(json: String) -> Result<T, String>`
+### `jsonDecode(json: String) -> Result<String, T>`
 
 Parses a JSON string into a value. Returns `Ok(value)` on success, `Fail(error)` on failure.
 
@@ -156,10 +152,10 @@ print(json)
 ```rust
 import "lib/json" (jsonDecode)
 
-type Config = { port: Int, host: String }
+type alias Config = { port: Int, host: String }
 
 // Use ? operator with Result
-fun loadConfig(json: String) -> Result<Config, String> {
+fun loadConfig(json: String) -> Result<String, Config> {
     config = jsonDecode(json)?
     Ok(config)
 }
@@ -255,7 +251,7 @@ match jsonParse(jsonStr) {
         match jsonGet(obj, "name") {
             Some(JStr(name)) -> print("Name: " ++ name)
             Some(_) -> print("name is not a string")
-            Zero -> print("no name field")
+            None -> print("no name field")
         }
     }
     Fail(e) -> print(e)
@@ -300,7 +296,7 @@ Use `decode` when:
 
 2. **Use records for structured data** - They map naturally to JSON objects
 
-3. **Prefer Option for nullable fields** - `Some(x)` → value, `Zero` → null
+3. **Prefer Option for nullable fields** - `Some(x)` → value, `None` → null
 
 4. **BigInt for large numbers** - JSON numbers have precision limits
 

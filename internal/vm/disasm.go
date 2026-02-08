@@ -45,8 +45,6 @@ func disassembleInstruction(sb *strings.Builder, chunk *Chunk, offset int) int {
 
 	case OP_POP:
 		return simpleInstruction(sb, "POP", offset)
-	case OP_POP_BELOW:
-		return byteInstruction(sb, "POP_BELOW", chunk, offset)
 	case OP_DUP:
 		return simpleInstruction(sb, "DUP", offset)
 
@@ -139,18 +137,87 @@ func disassembleInstruction(sb *strings.Builder, chunk *Chunk, offset int) int {
 	case OP_GET_TUPLE_ELEM:
 		return byteInstruction(sb, "GET_TUPLE_ELEM", chunk, offset)
 
+	case OP_CALL_SPREAD:
+		return byteInstruction(sb, "CALL_SPREAD", chunk, offset)
+	case OP_COMPOSE:
+		return simpleInstruction(sb, "COMPOSE", offset)
+	case OP_SPREAD_ARG:
+		return simpleInstruction(sb, "SPREAD_ARG", offset)
+	case OP_MAKE_RECORD:
+		// byte count + 2-byte typeNameIdx
+		count := int(chunk.Code[offset+1])
+		typeIdx := int(chunk.Code[offset+2])<<8 | int(chunk.Code[offset+3])
+		sb.WriteString(fmt.Sprintf("%-16s %d (type %d)\n", "MAKE_RECORD", count, typeIdx))
+		return offset + 4
+	case OP_MAKE_TUPLE:
+		return byteInstruction(sb, "MAKE_TUPLE", chunk, offset)
+	case OP_MAKE_MAP:
+		return byteInstruction(sb, "MAKE_MAP", chunk, offset)
+	case OP_UNWRAP_OR_RETURN:
+		return simpleInstruction(sb, "UNWRAP_OR_RETURN", offset)
+	case OP_TRAIT_OP:
+		return constantInstruction(sb, "TRAIT_OP", chunk, offset)
+	case OP_CHECK_TUPLE_LEN_GE:
+		return byteInstruction(sb, "CHECK_TUPLE_LEN_GE", chunk, offset)
+	case OP_REGISTER_TRAIT:
+		// [closure] traitIdx typeIdx methodIdx
+		traitIdx := int(chunk.Code[offset+1])<<8 | int(chunk.Code[offset+2])
+		typeIdx := int(chunk.Code[offset+3])<<8 | int(chunk.Code[offset+4])
+		methodIdx := int(chunk.Code[offset+5])<<8 | int(chunk.Code[offset+6])
+		sb.WriteString(fmt.Sprintf("%-16s %4d %4d %4d\n", "REGISTER_TRAIT", traitIdx, typeIdx, methodIdx))
+		return offset + 7
+	case OP_DEFAULT:
+		return simpleInstruction(sb, "DEFAULT", offset)
+	case OP_GET_FIELD:
+		return constantInstruction(sb, "GET_FIELD", chunk, offset)
+	case OP_GET_INDEX:
+		return simpleInstruction(sb, "GET_INDEX", offset)
+	case OP_OPTIONAL_CHAIN_FIELD:
+		return constantInstruction(sb, "OPTIONAL_CHAIN_FIELD", chunk, offset)
+	case OP_CHECK_TYPE:
+		return constantInstruction(sb, "CHECK_TYPE", chunk, offset)
+	case OP_SET_FIELD:
+		return constantInstruction(sb, "SET_FIELD", chunk, offset)
+	case OP_SET_INDEX:
+		return simpleInstruction(sb, "SET_INDEX", offset)
+	case OP_CALL_METHOD:
+		// nameIdx (2) + argCount (1)
+		nameIdx := int(chunk.Code[offset+1])<<8 | int(chunk.Code[offset+2])
+		argCount := int(chunk.Code[offset+3])
+		sb.WriteString(fmt.Sprintf("%-16s %4d (args: %d)\n", "CALL_METHOD", nameIdx, argCount))
+		return offset + 4
+	case OP_COALESCE:
+		return simpleInstruction(sb, "COALESCE", offset)
+	case OP_SET_TYPE_NAME:
+		return constantInstruction(sb, "SET_TYPE_NAME", chunk, offset)
+	case OP_SET_LIST_ELEM_TYPE:
+		return constantInstruction(sb, "SET_LIST_ELEM_TYPE", chunk, offset)
+	case OP_RANGE:
+		return simpleInstruction(sb, "RANGE", offset)
+	case OP_SET_TYPE_CONTEXT:
+		return constantInstruction(sb, "SET_TYPE_CONTEXT", chunk, offset)
+	case OP_CLEAR_TYPE_CONTEXT:
+		return simpleInstruction(sb, "CLEAR_TYPE_CONTEXT", offset)
+	case OP_EXTEND_RECORD:
+		return byteInstruction(sb, "EXTEND_RECORD", chunk, offset)
+	case OP_REGISTER_EXTENSION:
+		// [closure] typeNameIdx methodNameIdx
+		typeIdx := int(chunk.Code[offset+1])<<8 | int(chunk.Code[offset+2])
+		methodIdx := int(chunk.Code[offset+3])<<8 | int(chunk.Code[offset+4])
+		sb.WriteString(fmt.Sprintf("%-16s %4d %4d\n", "REGISTER_EXTENSION", typeIdx, methodIdx))
+		return offset + 5
+	case OP_REGISTER_TYPE_ALIAS:
+		return constantInstruction(sb, "REGISTER_TYPE_ALIAS", chunk, offset)
+	case OP_AUTO_CALL:
+		return simpleInstruction(sb, "AUTO_CALL", offset)
+	case OP_FORMATTER:
+		return constantInstruction(sb, "FORMATTER", chunk, offset)
+	case OP_TAIL_CALL:
+		return byteInstruction(sb, "TAIL_CALL", chunk, offset)
 	case OP_HALT:
 		return simpleInstruction(sb, "HALT", offset)
-
-	case OP_MATCH_STRING_PATTERN:
-		return constantInstruction(sb, "MATCH_STRING_PATTERN", chunk, offset)
-	case OP_MATCH_STRING_EXTRACT:
-		// 2 bytes constant index + 1 byte capture count
-		idx := int(chunk.Code[offset+1])<<8 | int(chunk.Code[offset+2])
-		count := int(chunk.Code[offset+3])
-		sb.WriteString(fmt.Sprintf("%-20s %4d (captures: %d)\n", "MATCH_STRING_EXTRACT", idx, count))
-		return offset + 4
-
+	case OP_POP_BELOW:
+		return byteInstruction(sb, "POP_BELOW", chunk, offset)
 	default:
 		sb.WriteString(fmt.Sprintf("Unknown opcode %d\n", op))
 		return offset + 1
@@ -203,6 +270,12 @@ func closureInstruction(sb *strings.Builder, name string, chunk *Chunk, offset i
 	}
 
 	sb.WriteString(fmt.Sprintf("%-16s %4d '%s'\n", name, idx, fn.Inspect()))
+
+	// Recursively disassemble the function chunk
+	funcDisasm := Disassemble(fn.Chunk, fn.Name)
+	// Indent the function disassembly
+	indented := strings.ReplaceAll(funcDisasm, "\n", "\n    | ")
+	sb.WriteString("    | " + indented + "\n")
 
 	// Print upvalue info
 	for i := 0; i < fn.UpvalueCount; i++ {

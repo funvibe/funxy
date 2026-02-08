@@ -2,6 +2,7 @@ package parser
 
 import (
 	"github.com/funvibe/funxy/internal/ast"
+	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/token"
 )
 
@@ -27,11 +28,26 @@ func (p *Parser) parseMatchArm() *ast.MatchArm {
 
 	p.nextToken() // consume '->'
 	expr := p.parseExpression(LOWEST)
+	if expr == nil {
+		return nil
+	}
 
 	return &ast.MatchArm{Pattern: pattern, Guard: guard, Expression: expr}
 }
 
 func (p *Parser) parsePattern() ast.Pattern {
+	p.depth++
+	defer func() { p.depth-- }()
+
+	if p.depth > MaxRecursionDepth {
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006,
+			p.curToken,
+			"pattern too complex: recursion depth limit exceeded",
+		))
+		return nil
+	}
+
 	if p.curTokenIs(token.IDENT_UPPER) {
 		return p.parseConstructorPattern()
 	}

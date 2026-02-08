@@ -29,7 +29,7 @@ func (e *Evaluator) evalIdentifier(node *ast.Identifier, env *Environment) Objec
 	if traitMethod := e.lookupTraitMethodByName(node.Value); traitMethod != nil {
 		return traitMethod
 	}
-	return newError("identifier not found: %s", node.Value)
+	return newError("undefined variable: %s", node.Value)
 }
 
 func (e *Evaluator) evalAssignExpression(node *ast.AssignExpression, env *Environment) Object {

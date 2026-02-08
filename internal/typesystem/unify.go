@@ -189,10 +189,19 @@ func unifyInternal(t1, t2 Type, allowExtra bool, visited []typePair, resolver Re
 		return Bind(t1, t2)
 	case TApp:
 		// Try to expand type aliases before unification
-		// e.g., StringResult<Int> -> Result<Int, String>
+		// e.g., StringResult<Int> -> Result<String, Int>
 		expanded1 := ExpandTypeAlias(t1)
 		if expanded1 != nil && !reflect.DeepEqual(expanded1, t1) {
 			return unifyInternal(expanded1, t2, allowExtra, visited, resolver)
+		}
+
+		// Flatten nested TApp: if constructor is TApp, merge args
+		if ctorApp, ok := t1.Constructor.(TApp); ok {
+			// Flatten and retry
+			mergedArgs := append([]Type{}, ctorApp.Args...)
+			mergedArgs = append(mergedArgs, t1.Args...)
+			flat := TApp{Constructor: ctorApp.Constructor, Args: mergedArgs}
+			return unifyInternal(flat, t2, allowExtra, visited, resolver)
 		}
 
 		switch t2 := t2.(type) {
@@ -205,8 +214,17 @@ func unifyInternal(t1, t2 Type, allowExtra bool, visited []typePair, resolver Re
 				return unifyInternal(t1, expanded2, allowExtra, visited, resolver)
 			}
 
+			// Flatten nested TApp: if constructor is TApp, merge args
+			if ctorApp, ok := t2.Constructor.(TApp); ok {
+				// Flatten and retry
+				mergedArgs := append([]Type{}, ctorApp.Args...)
+				mergedArgs = append(mergedArgs, t2.Args...)
+				flat := TApp{Constructor: ctorApp.Constructor, Args: mergedArgs}
+				return unifyInternal(t1, flat, allowExtra, visited, resolver)
+			}
+
 			// HKT: Handle higher-kinded type unification
-			// Case 1: F<A> (TVar constructor) unified with Result<String, E> (concrete)
+			// Case 1: F<A> (TVar constructor) unified with Result<E, String> (concrete)
 			// We need to bind F to a partially applied type
 			if t1Var, ok := t1.Constructor.(TVar); ok {
 				// t1 = F<A1, A2, ...Am>  (m args)

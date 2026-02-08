@@ -51,11 +51,13 @@ func (p *Parser) parseIfExpression() ast.Expression {
 			if p.peekTokenIs(token.IF) {
 				p.nextToken()
 				ifExpr := p.parseIfExpression()
-				block := &ast.BlockStatement{
-					Token:      token.Token{Type: token.LBRACE, Lexeme: "{"},
-					Statements: []ast.Statement{&ast.ExpressionStatement{Token: ifExpr.GetToken(), Expression: ifExpr}},
+				if ifExpr != nil {
+					block := &ast.BlockStatement{
+						Token:      token.Token{Type: token.LBRACE, Lexeme: "{"},
+						Statements: []ast.Statement{&ast.ExpressionStatement{Token: ifExpr.GetToken(), Expression: ifExpr}},
+					}
+					expression.Alternative = block
 				}
-				expression.Alternative = block
 			} else {
 				if !p.expectPeek(token.LBRACE) {
 					return nil
@@ -110,6 +112,9 @@ func (p *Parser) parseMatchExpression() ast.Expression {
 	p.disallowTrailingLambda = true
 	ce.Expression = p.parseExpression(LOWEST)
 	p.disallowTrailingLambda = prev
+	if ce.Expression == nil {
+		return nil
+	}
 
 	if !p.expectPeek(token.LBRACE) {
 		return nil

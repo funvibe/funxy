@@ -1,6 +1,9 @@
 package evaluator
 
-import "sync"
+import (
+	"github.com/funvibe/funxy/internal/symbols"
+	"sync"
+)
 
 func NewEnvironment() *Environment {
 	return &Environment{store: make(map[string]Object)}
@@ -9,13 +12,18 @@ func NewEnvironment() *Environment {
 func NewEnclosedEnvironment(outer *Environment) *Environment {
 	env := NewEnvironment()
 	env.outer = outer
+	// Inherit SymbolTable from outer environment
+	if outer != nil {
+		env.SymbolTable = outer.SymbolTable
+	}
 	return env
 }
 
 type Environment struct {
-	mu    sync.RWMutex
-	store map[string]Object
-	outer *Environment
+	mu          sync.RWMutex
+	store       map[string]Object
+	outer       *Environment
+	SymbolTable *symbols.SymbolTable // Reference to static symbol table
 }
 
 func (e *Environment) Get(name string) (Object, bool) {

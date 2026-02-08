@@ -45,7 +45,7 @@ math/
 ```rust
 package math (Vector, add)  // Only Vector and add are exported
 
-type Vector = { x: Int, y: Int }
+type alias Vector = { x: Int, y: Int }
 
 fun add(a: Int, b: Int) -> Int { a + b }
 ```
@@ -86,12 +86,24 @@ Funxy enforces a **strict single-import rule**: a module can be imported only on
 
 ```rust
 import "lib/list"           // Import as module object
-// OR
+nums = list.map(fun(x) -> x * 2, [1, 2, 3])
+print(nums)
+```
+
+```rust
 import "lib/list" as l      // Import with alias
-// OR
+nums = l.map(fun(x) -> x * 2, [1, 2, 3])
+print(nums)
+```
+
+```rust
 import "lib/list" (map)     // Import specific symbols
-// OR
+print(map(fun(x) -> x * 2, [1, 2, 3]))
+```
+
+```rust
 import "lib/list" (*)       // Import all symbols
+print(map(fun(x) -> x * 2, [1, 2, 3]))
 ```
 
 ### Duplicate Imports Forbidden
@@ -99,7 +111,7 @@ import "lib/list" (*)       // Import all symbols
 It is a **compilation error** to import the same module path more than once in the same file. You must choose the import style that best fits your needs.
 
 **Incorrect:**
-```rust
+```text
 import "lib/math"           // Import 1
 import "lib/math" (sqrt)    // ✗ Error: module 'lib/math' already imported
 ```
@@ -108,10 +120,17 @@ import "lib/math" (sqrt)    // ✗ Error: module 'lib/math' already imported
 ```rust
 // Use one comprehensive import
 import "lib/math" (*)       // Import everything including sqrt
-// OR
+print(sqrt(9.0))
+```
+
+```rust
 import "lib/math" (sqrt, pi) // Import what you need
-// OR
+print(sqrt(pi()))
+```
+
+```rust
 import "lib/math" as m      // Use qualified access: m.sqrt
+print(m.sqrt(9.0))
 ```
 
 ### Accessing Imported Symbols
@@ -121,6 +140,19 @@ import "lib/math" as m      // Use qualified access: m.sqrt
 import "lib/list"
 
 nums = list.map(fun(x) -> x * 2, [1, 2, 3])
+```
+
+**Stdlib qualified shorthand:**
+When you import a standard library module as a module object, you can use short member names.
+If the exact member doesn't exist, Funxy tries `moduleName + Capitalized(member)`:
+
+```rust
+import "lib/string" as str
+import "lib/tuple"
+
+str.toUpper("hello")  // resolves to stringToUpper
+str.trim("  hi  ")    // resolves to stringTrim
+tuple.get((1, 2, 3), 1) // resolves to tupleGet
 ```
 
 **With selective import:**
@@ -190,12 +222,17 @@ Explicitly specify different aliases:
 import "kit/sql" as orm
 import "lib/sql" as types
 
-type User = { name: String, age: Int }
+type alias User = { name: String, age: Int }
 
 // Now use qualified names:
 instance orm.Model User {
     fun tableName(_) { "users" }
-    fun toRow(u) { u.name }
+    fun toRow(u) {
+        %{
+            "name" => types.SqlString(u.name),
+            "age" => types.SqlInt(u.age)
+        }
+    }
 }
 v = types.SqlInt(42)
 ```
@@ -215,10 +252,17 @@ import "lib/flag"      // Default alias: flag
 import "kit/sql"        // Accessible as: kit.sql
 import "lib/sql" (SqlValue)
 
+type alias User = { name: String, age: Int }
+
 // Multi-level qualification:
 instance kit.sql.Model User {
     fun tableName(_) { "users" }
-    fun toRow(u) { u.name }
+    fun toRow(u) {
+        %{
+            "name" => SqlString(u.name),
+            "age" => SqlInt(u.age)
+        }
+    }
 }
 
 // Selectively imported symbols work directly:
@@ -236,12 +280,19 @@ v = SqlString("")
 2. **Use selective imports** to avoid bringing in module objects:
    ```rust
    import "kit/sql" (Model, toRow, tableName)
-   import "lib/sql" (SqlValue, SqlInt, SqlString)
+   import "lib/sql" (SqlValue)
+
+type alias User = { name: String, age: Int }
 
    // All symbols available directly:
    instance Model User {
        fun tableName(u) { "users" }
-       fun toRow(u) { }
+    fun toRow(u) {
+        %{
+            "name" => SqlString(u.name),
+            "age" => SqlInt(u.age)
+        }
+    }
    }
 
    v = SqlValue(42)
@@ -252,10 +303,17 @@ v = SqlString("")
    import "kit/sql" as orm
    import "lib/sql" as types
 
+type alias User = { name: String, age: Int }
+
    // Access via qualified names:
    instance orm.Model User {
        fun tableName(u) { "users" }
-       fun toRow(u) { }
+    fun toRow(u) {
+        %{
+            "name" => types.SqlString(u.name),
+            "age" => types.SqlInt(u.age)
+        }
+    }
    }
 
    v = types.SqlValue(42)
@@ -331,7 +389,10 @@ instance kit.sql.Model User {
     fun toRow(u) {
         match u {
             MkUser(r) -> {
-                // build row map
+                %{
+                    "id" => SqlInt(r.id),
+                    "name" => SqlString(r.name)
+                }
             }
         }
     }
@@ -344,26 +405,42 @@ When you selectively import trait methods, the trait itself is automatically imp
 
 ```rust
 import "kit/sql" (toRow, tableName)
+import "lib/sql" (SqlValue)
 // The Model trait is now available for implementing
 
-type User = { name: String, age: Int }
+type alias User = { name: String, age: Int }
 
 instance kit.sql.Model User {
     fun tableName(_) { "users" }
-    fun toRow(u) { u.name }
+    fun toRow(u) {
+        %{
+            "name" => SqlString(u.name),
+            "age" => SqlInt(u.age)
+        }
+    }
 }
 ```
 
 **With module aliases:**
 ```rust
 import "kit/sql" as orm
+import "lib/sql" (SqlValue)
 
 type Product = MkProduct { id: Int, name: String }
 
 // Using aliased module name in trait qualification
 instance orm.Model Product {
     fun tableName(p) { "products" }
-    fun toRow(p) { }
+    fun toRow(p) {
+        match p {
+            MkProduct(r) -> {
+                %{
+                    "id" => SqlInt(r.id),
+                    "name" => SqlString(r.name)
+                }
+            }
+        }
+    }
 }
 ```
 
@@ -394,7 +471,7 @@ Extension methods follow the same rule — they are exported with their type:
 ```
 package geometry (Point)
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 extend Point {
     fun distance(self) -> Float {

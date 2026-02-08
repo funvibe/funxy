@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error [R001]: runtime error: ERROR at 2:16: format string expects 0 arguments, got 1
+Stack trace:
+  at tests/format_extra_args_error:2 (called formatter)

@@ -1,20 +1,20 @@
 trait Printable<t> {
-  fun format(val: t) -> String
+  fun pretty(val: t) -> String
 }
 
 instance Printable (List<Int>) {
-  fun format(val: List<Int>) -> String {
+  fun pretty(val: List<Int>) -> String {
     "List of Ints"
   }
 }
 
 l = [1, 2]
-print(format(l))
+print(pretty(l))
 
 instance Printable (Int, Int) {
-  fun format(val: (Int, Int)) -> String {
+  fun pretty(val: (Int, Int)) -> String {
     "Tuple of Ints"
   }
 }
 t = (1, 2)
-print(format(t))
+print(pretty(t))

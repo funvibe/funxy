@@ -6,35 +6,35 @@ print(id("hello"))      // hello
 print(id(true))         // true
 
 // === const function ===
-print(const(1, 2))      // 1
-print(const("a", 999))  // a
-print(const(true, "x")) // true
+print(constant(1, 2))      // 1
+print(constant("a", 999))  // a
+print(constant(true, "x")) // true
 
 // === read function ===
 // Syntax: read(string, Type) -> Option<Type>
 
 // Successful parsing - various types
 x = read("42", Int)
-print(match x { Some v -> v; Zero -> -1 })  // 42
+print(match x { Some v -> v; None -> -1 })  // 42
 
 y = read("3.14", Float)
-print(match y { Some v -> v; Zero -> -1.0 })  // 3.14
+print(match y { Some v -> v; None -> -1.0 })  // 3.14
 
 z = read("true", Bool)
-print(match z { Some v -> v; Zero -> false })  // true
+print(match z { Some v -> v; None -> false })  // true
 
 w = read("false", Bool)
-print(match w { Some v -> v; Zero -> true })  // false
+print(match w { Some v -> v; None -> true })  // false
 
-// Parse failure returns Zero
+// Parse failure returns None
 bad = read("abc", Int)
-print(match bad { Some v -> v; Zero -> -999 })  // -999
+print(match bad { Some v -> v; None -> -999 })  // -999
 
 badFloat = read("not-a-number", Float)
-print(match badFloat { Some v -> v; Zero -> -1.0 })  // -1.0
+print(match badFloat { Some v -> v; None -> -1.0 })  // -1.0
 
 badBool = read("yes", Bool)
-print(match badBool { Some v -> v; Zero -> false })  // false (only "true"/"false" work)
+print(match badBool { Some v -> v; None -> false })  // false (only "true"/"false" work)
 
 // read with ? propagation
 fun parseSum() -> Option<Int> {
@@ -42,14 +42,14 @@ fun parseSum() -> Option<Int> {
     b = read("20", Int)?
     Some(a + b)
 }
-print(match parseSum() { Some v -> v; Zero -> -1 })  // 30
+print(match parseSum() { Some v -> v; None -> -1 })  // 30
 
 fun parseFail() -> Option<Int> {
     a = read("10", Int)?
     b = read("bad", Int)?
     Some(a + b)
 }
-print(match parseFail() { Some v -> v; Zero -> -1 })  // -1
+print(match parseFail() { Some v -> v; None -> -1 })  // -1
 
 // === Composition operator ,, ===
 // Right-to-left: (f ,, g)(x) = f(g(x))

@@ -10,7 +10,7 @@ trait Cmp<t> {
 
 // Print requires both Stringify and Cmp
 trait Print<t> : Stringify<t>, Cmp<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 
 // Only implement Stringify, NOT Cmp
@@ -22,7 +22,7 @@ instance Stringify Int {
 
 // ERROR: Cmp Int is not implemented
 instance Print Int {
-    fun format(val: Int) -> String {
+    fun pretty(val: Int) -> String {
         "Formatted"
     }
 }

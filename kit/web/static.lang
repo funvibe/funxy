@@ -27,7 +27,7 @@ fun staticHandler(rootPath) {
                     Ok(resText("Not Found") |> withStatus(404))
                 }
             }
-            Zero -> Ok(resText("Not Found") |> withStatus(404))
+            None -> Ok(resText("Not Found") |> withStatus(404))
         }
     }
 }

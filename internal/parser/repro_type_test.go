@@ -10,10 +10,10 @@ import (
 func TestGenericTypeParsing(t *testing.T) {
 	input := `
 	type alias MyOption<t> = Option<t>
-	type MyResult<t, e> = Ok t | Err e
+	type MyResult<e, t> = Ok t | Err e
 
 	fun foo(x: Option<Int>) {}
-	fun bar(x: MyResult<Int, String>) {}
+	fun bar(x: MyResult<String, Int>) {}
 	`
 
 	ctx := pipeline.NewPipelineContext(input)
@@ -42,7 +42,7 @@ func TestGenericTypeParsing(t *testing.T) {
 		t.Fatalf("Expected 1 generic arg, got %d", len(param1.Args))
 	}
 
-	// Check MyResult<Int, String>
+	// Check MyResult<String, Int>
 	fn2 := program.Statements[3].(*ast.FunctionStatement)
 	param2 := fn2.Parameters[0].Type.(*ast.NamedType)
 	if param2.Name.Value != "MyResult" {

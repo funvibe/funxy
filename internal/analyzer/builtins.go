@@ -233,7 +233,7 @@ func registerBuiltinsToPrelude() {
 	}
 	table.DefineConstant(config.IdFuncName, idType, prelude)
 
-	// const: (a, b) -> a
+	// constant: (a, b) -> a
 	// Constant function - returns first argument, ignores second
 	constType := typesystem.TFunc{
 		Params:     []typesystem.Type{typesystem.TVar{Name: "a"}, typesystem.TVar{Name: "b"}},
@@ -256,8 +256,8 @@ func registerBuiltinsToPrelude() {
 	}
 	table.DefineConstant("floatToInt", floatToIntType, prelude)
 
-	// sprintf: (format: String, args: ...Any) -> String
-	sprintfType := typesystem.TFunc{
+	// format: (format: String, args: ...Any) -> String
+	formatType := typesystem.TFunc{
 		Params: []typesystem.Type{
 			stringType,
 			typesystem.TVar{Name: "a"},
@@ -265,10 +265,10 @@ func registerBuiltinsToPrelude() {
 		ReturnType: stringType,
 		IsVariadic: true,
 	}
-	table.DefineConstant("sprintf", sprintfType, prelude)
+	table.DefineConstant("format", formatType, prelude)
 
 	// read: (String, Type<T>) -> Option<T>
-	// Parses a string into a typed value, returns Zero on failure
+	// Parses a string into a typed value, returns None on failure
 	readType := typesystem.TFunc{
 		Params: []typesystem.Type{
 			stringType, // String argument
@@ -485,7 +485,7 @@ func registerBuiltinsToPrelude() {
 	}
 	table.DefineConstant("optionT", optionTConstructorType, prelude)
 
-	// resultT: (M<Result<A, E>>) -> ResultT<M, A>
+	// resultT: (M<Result<E, A>>) -> ResultT<M, A>
 	// Note: We used 3 args for ResultT in ReturnType: <M, E, A>
 	eVar := typesystem.TVar{Name: "E"}
 	resultTConstructorType := typesystem.TFunc{
@@ -527,7 +527,7 @@ func registerBuiltinsToPrelude() {
 	}
 	table.DefineConstant("runOptionT", runOptionTType, prelude)
 
-	// runResultT: (ResultT<M, E, A>) -> M<Result<A, E>>
+	// runResultT: (ResultT<M, E, A>) -> M<Result<E, A>>
 	runResultTType := typesystem.TFunc{
 		Params: []typesystem.Type{
 			typesystem.TApp{
@@ -546,6 +546,27 @@ func registerBuiltinsToPrelude() {
 		},
 	}
 	table.DefineConstant("runResultT", runResultTType, prelude)
+
+	// Option helpers
+	optVar := typesystem.TVar{Name: "T"}
+	errVar := typesystem.TVar{Name: "E"}
+	optionT := typesystem.TApp{Constructor: typesystem.TCon{Name: config.OptionTypeName}, Args: []typesystem.Type{optVar}}
+	resultET := typesystem.TApp{Constructor: typesystem.TCon{Name: config.ResultTypeName}, Args: []typesystem.Type{errVar, optVar}}
+
+	table.DefineConstant("isSome", typesystem.TFunc{Params: []typesystem.Type{optionT}, ReturnType: typesystem.Bool}, prelude)
+	table.DefineConstant("isNone", typesystem.TFunc{Params: []typesystem.Type{optionT}, ReturnType: typesystem.Bool}, prelude)
+	table.DefineConstant("unwrapOr", typesystem.TFunc{Params: []typesystem.Type{optionT, optVar}, ReturnType: optVar}, prelude)
+	table.DefineConstant("unwrapOrElse", typesystem.TFunc{
+		Params:     []typesystem.Type{optionT, typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optVar}},
+		ReturnType: optVar,
+	}, prelude)
+
+	// Result helpers
+	table.DefineConstant("isOk", typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: typesystem.Bool}, prelude)
+	table.DefineConstant("isFail", typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: typesystem.Bool}, prelude)
+	table.DefineConstant("unwrapResult", typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: optVar}, prelude)
+	table.DefineConstant("unwrapError", typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: errVar}, prelude)
+	table.DefineConstant("unwrapResultOr", typesystem.TFunc{Params: []typesystem.Type{resultET, optVar}, ReturnType: optVar}, prelude)
 
 	// Register Nil as a value with type Nil (for use in expressions like `x = Nil`)
 	table.DefineConstant("Nil", typesystem.Nil, prelude)
@@ -634,29 +655,39 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 				ReturnType: stringType,
 			}
 			table.RegisterTraitMethod("show", "Show", showMethodType, prelude)
+			table.RegisterTraitMethodDispatch("Show", "show", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Equal":
 			table.RegisterTraitMethod("(==)", "Equal", binaryOp(boolType), prelude)
+			table.RegisterTraitMethodDispatch("Equal", "(==)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 			table.RegisterTraitMethod("(!=)", "Equal", binaryOp(boolType), prelude)
+			table.RegisterTraitMethodDispatch("Equal", "(!=)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Order":
 			table.RegisterTraitMethod("(<)", "Order", binaryOp(boolType), prelude)
+			table.RegisterTraitMethodDispatch("Order", "(<)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 			table.RegisterTraitMethod("(>)", "Order", binaryOp(boolType), prelude)
+			table.RegisterTraitMethodDispatch("Order", "(>)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 			table.RegisterTraitMethod("(<=)", "Order", binaryOp(boolType), prelude)
+			table.RegisterTraitMethodDispatch("Order", "(<=)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 			table.RegisterTraitMethod("(>=)", "Order", binaryOp(boolType), prelude)
+			table.RegisterTraitMethodDispatch("Order", "(>=)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Numeric":
 			for _, op := range []string{"+", "-", "*", "/", "%", "**"} {
 				table.RegisterTraitMethod("("+op+")", "Numeric", binaryOp(tvar), prelude)
+				table.RegisterTraitMethodDispatch("Numeric", "("+op+")", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 			}
 
 		case "Bitwise":
 			for _, op := range []string{"&", "|", "^", "<<", ">>"} {
 				table.RegisterTraitMethod("("+op+")", "Bitwise", binaryOp(tvar), prelude)
+				table.RegisterTraitMethodDispatch("Bitwise", "("+op+")", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 			}
 
 		case "Concat":
 			table.RegisterTraitMethod("(++)", "Concat", binaryOp(tvar), prelude)
+			table.RegisterTraitMethodDispatch("Concat", "(++)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Default":
 			getDefaultMethodType := typesystem.TFunc{
@@ -664,7 +695,9 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 				ReturnType: tvar,
 			}
 			table.RegisterTraitMethod("default", "Default", getDefaultMethodType, prelude) // Deprecated name?
+			table.RegisterTraitMethodDispatch("Default", "default", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 			table.RegisterTraitMethod("getDefault", "Default", getDefaultMethodType, prelude)
+			table.RegisterTraitMethodDispatch("Default", "getDefault", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Functor":
 			// fmap : (A -> B) -> F<A> -> F<B>
@@ -680,6 +713,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("fmap", "Functor", fmapType, prelude)
 			table.RegisterTraitMethod2("Functor", "fmap")
+			table.RegisterTraitMethodDispatch("Functor", "fmap", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 1}})
 
 		case "Applicative":
 			// pure : A -> F<A>
@@ -692,6 +726,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("pure", "Applicative", pureType, prelude)
 			table.RegisterTraitMethod2("Applicative", "pure")
+			table.RegisterTraitMethodDispatch("Applicative", "pure", []typesystem.DispatchSource{{Kind: typesystem.DispatchReturn, Index: -1}})
 
 			// (<*>) : F<(A) -> B> -> F<A> -> F<B>
 			fAtoB := typesystem.TApp{
@@ -710,6 +745,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("(<*>)", "Applicative", applyType, prelude)
 			table.RegisterTraitMethod2("Applicative", "(<*>)")
+			table.RegisterTraitMethodDispatch("Applicative", "(<*>)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Monad":
 			// (>>=) : M<A> -> (A -> M<B>) -> M<B>
@@ -726,6 +762,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("(>>=)", "Monad", bindType, prelude)
 			table.RegisterTraitMethod2("Monad", "(>>=)")
+			table.RegisterTraitMethodDispatch("Monad", "(>>=)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Semigroup":
 			semigroupOp := typesystem.TFunc{
@@ -737,6 +774,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("(<>)", "Semigroup", semigroupOp, prelude)
 			table.RegisterTraitMethod2("Semigroup", "(<>)")
+			table.RegisterTraitMethodDispatch("Semigroup", "(<>)", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Monoid":
 			// mempty : () -> A
@@ -748,6 +786,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("mempty", "Monoid", memptyType, prelude)
 			table.RegisterTraitMethod2("Monoid", "mempty")
+			table.RegisterTraitMethodDispatch("Monoid", "mempty", []typesystem.DispatchSource{{Kind: typesystem.DispatchReturn, Index: -1}})
 
 		case "Empty":
 			// isEmpty : F<A> -> Bool
@@ -760,6 +799,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("isEmpty", "Empty", isEmptyType, prelude)
 			table.RegisterTraitMethod2("Empty", "isEmpty")
+			table.RegisterTraitMethodDispatch("Empty", "isEmpty", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 		case "Optional":
 			// unwrap : F<A> -> A
@@ -772,6 +812,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("unwrap", "Optional", unwrapType, prelude)
 			table.RegisterTraitMethod2("Optional", "unwrap")
+			table.RegisterTraitMethodDispatch("Optional", "unwrap", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 
 			// wrap : A -> F<A>
 			wrapType := typesystem.TFunc{
@@ -783,6 +824,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 			}
 			table.RegisterTraitMethod("wrap", "Optional", wrapType, prelude)
 			table.RegisterTraitMethod2("Optional", "wrap")
+			table.RegisterTraitMethodDispatch("Optional", "wrap", []typesystem.DispatchSource{{Kind: typesystem.DispatchReturn, Index: -1}})
 
 		case "Iter":
 			// iter: (C) -> () -> Option<T>
@@ -798,6 +840,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 				},
 			}
 			table.RegisterTraitMethod(config.IterMethodName, config.IterTraitName, iterMethodType, prelude)
+			table.RegisterTraitMethodDispatch(config.IterTraitName, config.IterMethodName, []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 		}
 	}
 
@@ -825,6 +868,7 @@ func registerBuiltinTraits(table *symbols.SymbolTable) {
 		}
 		table.RegisterOperatorTrait(op.Symbol, op.Trait)
 		table.RegisterTraitMethod("("+op.Symbol+")", op.Trait, binaryOp(tvar), prelude)
+		table.RegisterTraitMethodDispatch(op.Trait, "("+op.Symbol+")", []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 0}})
 	}
 }
 

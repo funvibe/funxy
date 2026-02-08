@@ -1,0 +1,7 @@
+import "lib/string" as str
+import "lib/tuple"
+
+print(str.toUpper("hello"))
+print(str.toLower("WORLD"))
+print(str.trim("  hi  "))
+print(tuple.get((1, 2, 3), 1))

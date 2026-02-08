@@ -131,7 +131,7 @@ func builtinBigintToInt(e *Evaluator, args ...Object) Object {
 		return makeSome(&Integer{Value: bi.Value.Int64()})
 	}
 
-	return makeZero()
+	return makeNone()
 }
 
 // =============================================================================
@@ -225,7 +225,7 @@ func builtinRationalToFloat(e *Evaluator, args ...Object) Object {
 	f, exact := rat.Value.Float64()
 	// Check for infinity or NaN
 	if math.IsInf(f, 0) || math.IsNaN(f) {
-		return makeZero()
+		return makeNone()
 	}
 
 	// We return Some even if not exact (precision loss is expected)

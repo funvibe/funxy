@@ -9,7 +9,7 @@ equal
 first
 second
 Some(3)
-Zero
+None
 Some(5)
 12.56636
 0

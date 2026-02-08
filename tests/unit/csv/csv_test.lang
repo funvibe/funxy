@@ -6,7 +6,7 @@ import "lib/string" (stringIndexOf)
 fun contains(s: String, sub: String) -> Bool {
     match stringIndexOf(s, sub) {
         Some(_) -> true
-        Zero -> false
+        None -> false
     }
 }
 

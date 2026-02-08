@@ -30,8 +30,8 @@ print(mapSize(multiline) == 3)
 // =============================================
 print(mapGet(m, "a") == Some(1))
 print(mapGet(m, "b") == Some(2))
-print(mapGet(m, "z") == Zero)
-print(mapGet(empty, "x") == Zero)
+print(mapGet(m, "z") == None)
+print(mapGet(empty, "x") == None)
 
 // =============================================
 // mapGetOr: (Map<K, V>, K, V) -> V
@@ -56,7 +56,7 @@ print(mapSize(m2) == 4)
 print(mapGet(m2, "d") == Some(4))
 // Original unchanged (immutable)
 print(mapSize(m) == 3)
-print(mapGet(m, "d") == Zero)
+print(mapGet(m, "d") == None)
 
 // Update existing key
 m3 = mapPut(m, "a", 100)
@@ -68,7 +68,7 @@ print(mapGet(m, "a") == Some(1))
 // =============================================
 m4 = mapRemove(m, "b")
 print(mapSize(m4) == 2)
-print(mapGet(m4, "b") == Zero)
+print(mapGet(m4, "b") == None)
 // Original unchanged
 print(mapSize(m) == 3)
 print(mapGet(m, "b") == Some(2))
@@ -119,8 +119,8 @@ print(mapGet(merged, "a") == Some(1))
 // Index access: m[key] -> Option<V>
 // =============================================
 print(m["a"] == Some(1))
-print(m["z"] == Zero)
-print(empty["x"] == Zero)
+print(m["z"] == None)
+print(empty["x"] == None)
 
 // =============================================
 // Maps with different key types
@@ -129,7 +129,7 @@ intKeyMap = %{ 1 => "one", 2 => "two", 3 => "three" }
 print(mapGet(intKeyMap, 1) == Some("one"))
 print(mapGet(intKeyMap, 2) == Some("two"))
 print(intKeyMap[3] == Some("three"))
-print(intKeyMap[4] == Zero)
+print(intKeyMap[4] == None)
 
 // =============================================
 // Chained operations
@@ -146,7 +146,7 @@ print(mapSize(result) == 3)
 fun describe(m: Map<String, Int>, key: String) -> String {
     match mapGet(m, key) {
         Some(v) -> "found"
-        Zero -> "not found"
+        None -> "not found"
     }
 }
 print(describe(m, "a") == "found")

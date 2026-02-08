@@ -1,0 +1,124 @@
+import "lib/test" (*)
+
+// Tests for Int↔Float coercion in match literal patterns.
+// This ensures pattern matching behaves consistently with the == operator,
+// which does implicit Int→Float conversion.
+// Bug: TreeWalk's matchPattern didn't coerce Int↔Float, so
+// `match 48.0 { 48 -> ... }` failed in TreeWalk but succeeded in VM.
+
+testRun("Match Int value against Int literal", fun() {
+    res = match 42 {
+        42 -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("matched", res)
+})
+
+testRun("Match Float value against Int literal (coercion)", fun() {
+    // 48.0 (Float) should match pattern 48 (Int) via implicit coercion
+    // This was the exact failing case from FuzzDifferential
+    res = match 48.0 {
+        48 -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("matched", res)
+})
+
+testRun("Match Float value against non-equal Int literal", fun() {
+    // 48.5 should NOT match pattern 48
+    res = match 48.5 {
+        48 -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("no match", res)
+})
+
+testRun("Match Float value against non-equal Int literal (2)", fun() {
+    // 49.0 should NOT match pattern 48
+    res = match 49.0 {
+        48 -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("no match", res)
+})
+
+testRun("Match zero: Float 0.0 vs Int literal 0", fun() {
+    res = match 0.0 {
+        0 -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("matched", res)
+})
+
+testRun("Match negative float via variable", fun() {
+    // Negative literals in patterns may not be directly supported,
+    // so we test via a variable and pin pattern instead
+    x = -1
+    res = match -1.0 {
+        ^x -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("matched", res)
+})
+
+testRun("Coercion in match with multiple arms", fun() {
+    // The first matching arm should win
+    res = match 5.0 {
+        3 -> "three"
+        5 -> "five"
+        7 -> "seven"
+        _ -> "other"
+    }
+    assertEquals("five", res)
+})
+
+testRun("Coercion match selects correct arm", fun() {
+    res = match 10.0 {
+        5 -> "five"
+        10 -> "ten"
+        _ -> "other"
+    }
+    assertEquals("ten", res)
+})
+
+testRun("Coercion consistency with == operator", fun() {
+    // Pattern matching should agree with ==
+    val : Float = 42.0
+
+    eqResult = val == 42
+    matchResult = match val {
+        42 -> true
+        _ -> false
+    }
+    assertEquals(eqResult, matchResult, "match coercion should be consistent with ==")
+})
+
+testRun("Large float matches large int literal", fun() {
+    res = match 1000000.0 {
+        1000000 -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("matched", res)
+})
+
+testRun("Float with fractional part does not match int", fun() {
+    res = match 42.001 {
+        42 -> "matched"
+        _ -> "no match"
+    }
+    assertEquals("no match", res)
+})
+
+testRun("Match in if-else with float value (fuzz repro)", fun() {
+    // Simplified reproduction of the FuzzDifferential crash case:
+    // if true { match 48.0 { 48 -> ... } }
+    result = if true {
+        match 48.0 {
+            48 -> "arm1"
+            _ -> "wildcard"
+        }
+    } else {
+        "else"
+    }
+    assertEquals("arm1", result)
+})

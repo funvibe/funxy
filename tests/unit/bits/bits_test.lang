@@ -59,27 +59,19 @@ testRun("bitsFromBytes", fun() -> {
 })
 
 testRun("bitsFromBinary", fun() -> {
-    match bitsFromBinary("10101010") {
-        Ok(b) -> assertEquals(len(b), 8)
-        Fail(_) -> panic("should succeed")
-    }
+    b = unwrapResult(bitsFromBinary("10101010"))
+    assertEquals(len(b), 8)
 })
 
 testRun("bitsFromHex", fun() -> {
-    match bitsFromHex("FF") {
-        Ok(b) -> assertEquals(bitsToBinary(b), "11111111")
-        Fail(_) -> panic("should succeed")
-    }
+    b = unwrapResult(bitsFromHex("FF"))
+    assertEquals(bitsToBinary(b), "11111111")
 })
 
 testRun("bitsFromOctal", fun() -> {
-    match bitsFromOctal("7") {
-        Ok(b) -> {
-            assertEquals(len(b), 3)
-            assertEquals(bitsToBinary(b), "111")
-        }
-        Fail(_) -> panic("should succeed")
-    }
+    b = unwrapResult(bitsFromOctal("7"))
+    assertEquals(len(b), 3)
+    assertEquals(bitsToBinary(b), "111")
 })
 
 // === Conversion Tests ===
@@ -111,19 +103,19 @@ testRun("bitsToBinary", fun() -> {
 
 testRun("bitsSlice", fun() -> {
     b = #b"11110000"
-    assertEquals(bitsToBinary(bitsSlice(b, 0, 4)), "1111")
-    assertEquals(bitsToBinary(bitsSlice(b, 4, 8)), "0000")
+    assertEquals(bitsToBinary(unwrapResult(bitsSlice(b, 0, 4))), "1111")
+    assertEquals(bitsToBinary(unwrapResult(bitsSlice(b, 4, 8))), "0000")
 })
 
 testRun("bitsGet", fun() -> {
     b = #b"10"
     match bitsGet(b, 0) {
         Some(v) -> assertEquals(v, 1)
-        Zero -> panic("should have value")
+        None -> panic("should have value")
     }
     match bitsGet(b, 1) {
         Some(v) -> assertEquals(v, 0)
-        Zero -> panic("should have value")
+        None -> panic("should have value")
     }
 })
 
@@ -198,19 +190,10 @@ testRun("bitsExtract simple", fun() -> {
         bitsInt("flags", 4, "big"),
         bitsInt("rest", 4, "big")
     ]
-    match bitsExtract(data, specs) {
-        Ok(fields) -> {
-            match mapGet(fields, "version") {
-                Some(v) -> assertEquals(v, 1)
-                Zero -> panic("version not found")
-            }
-            match mapGet(fields, "flags") {
-                Some(v) -> assertEquals(v, 5)
-                Zero -> panic("flags not found")
-            }
-        }
-        Fail(err) -> panic("extraction failed: " ++ err)
-    }
+    fields = unwrapResult(bitsExtract(data, specs))
+
+    assertEquals(unwrap(mapGet(fields, "version")), 1)
+    assertEquals(unwrap(mapGet(fields, "flags")), 5)
 })
 
 testRun("bitsRest spec", fun() -> {
@@ -219,18 +202,10 @@ testRun("bitsRest spec", fun() -> {
         bitsInt("header", 8, "big"),
         bitsRest("tail")
     ]
-    match bitsExtract(data, specs) {
-        Ok(fields) -> {
-            match mapGet(fields, "header") {
-                Some(v) -> assertEquals(v, 255)
-                Zero -> panic("header not found")
-            }
-            match mapGet(fields, "tail") {
-                Some(tail) -> assertEquals(len(tail), 8)
-                Zero -> panic("tail not found")
-            }
-        }
-        Fail(err) -> panic("extraction failed: " ++ err)
-    }
+    fields = unwrapResult(bitsExtract(data, specs))
+
+    assertEquals(unwrap(mapGet(fields, "header")), 255)
+    tail = unwrap(mapGet(fields, "tail"))
+    assertEquals(len(tail), 8)
 })
 

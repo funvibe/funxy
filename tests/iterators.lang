@@ -19,14 +19,14 @@ fun range(start: Int, end: Int) -> () -> Option<Int> {
             curr = curr + 1
             Some(val)
         } else {
-            Zero
+            None
         }
     }
     next
 }
 
 // Wrapper struct for range
-type RangeStruct = { start: Int, end: Int }
+type alias RangeStruct = { start: Int, end: Int }
 
 // Implement Iter for RangeStruct
 instance Iter RangeStruct {
@@ -67,7 +67,7 @@ fun infinite() -> () -> Option<Int> {
     next
 }
 
-type Infinite = {} // Empty record type
+type alias Infinite = {} // Empty record type
 
 instance Iter Infinite {
     fun iter(x: Infinite) -> () -> Option<Int> {

@@ -1,8 +1,8 @@
 package evaluator
 
 import (
-	"math/rand"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -141,7 +141,7 @@ func builtinRandomChoice(e *Evaluator, args ...Object) Object {
 	}
 
 	if list.len() == 0 {
-		return makeZero()
+		return makeNone()
 	}
 
 	randMutex.Lock()

@@ -1,2 +1,2 @@
 Processing failed with errors:
-- error at 3:7 [A004]: redefinition of symbol: 'Circle' (already defined from source, cannot import from other)'
+- error at 3:1 [A004]: redefinition of symbol: 'Circle' (already defined from source, cannot import from other)'

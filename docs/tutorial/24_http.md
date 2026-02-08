@@ -8,10 +8,10 @@ import "lib/http" (*)
 
 ## Response Type
 
-All functions return `Result<HttpResponse, String>`, where:
+All functions return `Result<String, HttpResponse>`, where:
 
 ```rust
-type HttpResponse = {
+type alias HttpResponse = {
     status: Int,              // HTTP status code (200, 404, 500, ...)
     body: String,             // Response body
     headers: List<(String, String)>  // Response headers
@@ -23,7 +23,7 @@ type HttpResponse = {
 ### httpGet
 
 ```rust
-httpGet(url: String) -> Result<HttpResponse, String>
+httpGet(url: String) -> Result<String, HttpResponse>
 ```
 
 Performs a GET request.
@@ -45,10 +45,10 @@ match result {
 ### httpPost
 
 ```rust
-httpPost(url: String, body: String) -> Result<HttpResponse, String>
+httpPost(url: String, body: String | Bytes) -> Result<String, HttpResponse>
 ```
 
-Performs a POST request with string body.
+Performs a POST request with string or bytes body.
 
 ```rust
 import "lib/http" (httpPost)
@@ -64,7 +64,7 @@ match result {
 ### httpPostJson
 
 ```rust
-httpPostJson(url: String, data: A) -> Result<HttpResponse, String>
+httpPostJson(url: String, data: A) -> Result<String, HttpResponse>
 ```
 
 Performs a POST request with automatic JSON serialization of data. Adds `Content-Type: application/json` header.
@@ -88,7 +88,7 @@ httpPostJson("https://api.example.com/items", items)
 ### httpPut
 
 ```rust
-httpPut(url: String, body: String) -> Result<HttpResponse, String>
+httpPut(url: String, body: String | Bytes) -> Result<String, HttpResponse>
 ```
 
 Performs a PUT request to update a resource.
@@ -107,7 +107,7 @@ match result {
 ### httpDelete
 
 ```rust
-httpDelete(url: String) -> Result<HttpResponse, String>
+httpDelete(url: String) -> Result<String, HttpResponse>
 ```
 
 Performs a DELETE request.
@@ -126,7 +126,7 @@ match result {
 ### httpRequest
 
 ```
-httpRequest(method: String, url: String, headers: List<(String, String)>, body: String = "", timeout: Int = 0) -> Result<HttpResponse, String>
+httpRequest(method: String, url: String, headers: List<(String, String)>, body: String | Bytes = "", timeout: Int = 0) -> Result<String, HttpResponse>
 ```
 
 Full control over HTTP request: method, headers, body, timeout.
@@ -158,13 +158,7 @@ result = httpRequest("POST", "https://api.example.com/search", headers, body, 50
 match result {
     Ok(resp) -> {
         print("Status: ${resp.status}")
-        // Find header in response
-        for header in resp.headers {
-            (key, value) = header
-            if key == "Content-Type" {
-                print("Content-Type: ${value}")
-            }
-        }
+        print("Headers: " ++ show(resp.headers))
     }
     Fail(err) -> print("Error: ${err}")
 }
@@ -196,7 +190,7 @@ result = httpGet("https://slow-api.example.com/data")
 import "lib/http" (httpGet)
 import "lib/json" (jsonDecode)
 
-type User = { name: String, email: String }
+type alias User = { name: String, email: String }
 
 fun fetchUser(id: Int) -> Result<String, User> {
     match httpGet("https://api.example.com/users/${id}") {
@@ -223,7 +217,7 @@ match fetchUser(1) {
 import "lib/http" (httpGet, httpPostJson, httpDelete)
 import "lib/json" (jsonDecode)
 
-type User = { id: Int, name: String, email: String }
+type alias User = { id: Int, name: String, email: String }
 
 baseUrl = "https://api.example.com"
 
@@ -269,7 +263,7 @@ fun authenticatedGet(url: String, token: String) -> Result<String, String> {
         ("Authorization", "Bearer ${token}"),
         ("Accept", "application/json")
     ]
-    
+
     match httpRequest("GET", url, headers, "") {
         Ok(resp) -> {
             if resp.status == 200 { Ok(resp.body) }
@@ -317,12 +311,12 @@ fun fetchWithRetry(url: String, maxRetries: Int) -> Result<String, String> {
 
 | Function | Type | Description |
 |---------|-----|----------|
-| `httpGet` | `String -> Result<HttpResponse, String>` | GET request |
-| `httpPost` | `(String, String) -> Result<HttpResponse, String>` | POST with string |
-| `httpPostJson` | `(String, A) -> Result<HttpResponse, String>` | POST with JSON |
-| `httpPut` | `(String, String) -> Result<HttpResponse, String>` | PUT request |
-| `httpDelete` | `String -> Result<HttpResponse, String>` | DELETE request |
-| `httpRequest` | `(String, String, List<(String,String)>, String, Int) -> Result<HttpResponse, String>` | Full control (with timeout) |
+| `httpGet` | `String -> Result<String, HttpResponse>` | GET request |
+| `httpPost` | `(String, String \| Bytes) -> Result<String, HttpResponse>` | POST with string or bytes |
+| `httpPostJson` | `(String, A) -> Result<String, HttpResponse>` | POST with JSON |
+| `httpPut` | `(String, String \| Bytes) -> Result<String, HttpResponse>` | PUT request |
+| `httpDelete` | `String -> Result<String, HttpResponse>` | DELETE request |
+| `httpRequest` | `(String, String, List<(String,String)>, String \| Bytes, Int) -> Result<String, HttpResponse>` | Full control (with timeout) |
 | `httpSetTimeout` | `Int -> Nil` | Set timeout |
 
 ## HTTP Server
@@ -330,13 +324,13 @@ fun fetchWithRetry(url: String, maxRetries: Int) -> Result<String, String> {
 ### httpServe
 
 ```rust
-httpServe(port: Int, handler: (HttpRequest) -> HttpResponse) -> Result<Nil, String>
+httpServe(port: Int, handler: (HttpRequest) -> HttpResponse) -> Result<String, Nil>
 ```
 
 Starts an HTTP server on the specified port. Blocks program execution.
 
 ```rust
-type HttpRequest = {
+type alias HttpRequest = {
     method: String,              // "GET", "POST", etc.
     path: String,                // "/api/users"
     query: String,               // "id=1&name=test"
@@ -370,8 +364,8 @@ import "lib/http" (httpServe)
 import "lib/json" (jsonEncode, jsonDecode)
 import "lib/list" (length)
 
-type User = { id: Int, name: String }
-type UserInput = { name: String }
+type alias User = { id: Int, name: String }
+type alias UserInput = { name: String }
 
 users = [
     { id: 1, name: "Alice" },
@@ -438,6 +432,12 @@ httpServerStop(serverId: Int) -> Nil
 Stops a running server by its ID.
 
 ```rust
+import "lib/http" (*)
+
+fun handler(req: HttpRequest) -> HttpResponse {
+    { status: 200, body: "Hello!", headers: [] }
+}
+
 serverId = httpServeAsync(8080, handler)
 
 // ... work with server ...

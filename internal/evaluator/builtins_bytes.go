@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -180,7 +180,16 @@ func builtinBytesSlice(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bytesSlice expects Int as third argument, got %s", args[2].Type())
 	}
-	return b.slice(int(start.Value), int(end.Value))
+
+	from := int(start.Value)
+	to := int(end.Value)
+	length := b.Len()
+
+	if from < 0 || to > length || from > to {
+		return makeFail(stringToList(fmt.Sprintf("bytesSlice: indices [%d, %d) out of bounds for bytes of length %d", from, to, length)))
+	}
+
+	return makeOk(b.slice(from, to))
 }
 
 // === Conversion ===
@@ -491,7 +500,7 @@ func builtinBytesIndexOf(e *Evaluator, args ...Object) Object {
 	}
 	idx := bytes.Index(haystack.ToSlice(), needle.ToSlice())
 	if idx < 0 {
-		return makeZero()
+		return makeNone()
 	}
 	return makeSome(&Integer{Value: int64(idx)})
 }

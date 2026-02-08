@@ -3,6 +3,7 @@ package evaluator
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 )
 
 func init() {
@@ -155,14 +156,11 @@ func (v *PersistentVector) Update(i int, val Object) *PersistentVector {
 
 // Slice returns a new vector with elements from start to end (exclusive)
 func (v *PersistentVector) Slice(start, end int) *PersistentVector {
-	if start < 0 {
-		start = 0
-	}
-	if end > v.count {
-		end = v.count
-	}
-	if start >= end {
-		return EmptyVector()
+	if start < 0 || end > v.count || start > end {
+		// Panic to avoid silent truncation (user error)
+		// Since we can't return error easily, and this is low-level, panic is appropriate.
+		// VM/Evaluator should catch it or avoid calling with bad args.
+		panic(fmt.Sprintf("slice bounds out of range: [%d:%d] length=%d", start, end, v.count))
 	}
 
 	// For simplicity, rebuild from slice

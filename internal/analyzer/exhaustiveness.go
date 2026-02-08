@@ -68,7 +68,7 @@ func isExhaustive(t typesystem.Type, patterns []ast.Pattern, table *symbols.Symb
 		hasCons := false // Covers [h, t...] (length >= 1)
 
 		for _, p := range patterns {
-			// Handle ListPattern AND TuplePattern (some tests use (x, xs...) for variadic args which are Lists)
+			// Handle ListPattern AND TuplePattern (some tests use (x, ...xs) for variadic args which are Lists)
 			var elements []ast.Pattern
 			if lp, ok := p.(*ast.ListPattern); ok {
 				elements = lp.Elements
@@ -663,13 +663,13 @@ func getMissingListPatterns(patterns []ast.Pattern) string {
 	}
 
 	if !hasEmpty && !hasNonEmpty {
-		return "[] (empty list), [x, xs...] (non-empty list)"
+		return "[] (empty list), [x, ...xs] (non-empty list)"
 	}
 	if !hasEmpty {
 		return "[] (empty list)"
 	}
 	if !hasNonEmpty {
-		return "[x, xs...] (non-empty list)"
+		return "[x, ...xs] (non-empty list)"
 	}
 	return "_ (catch-all pattern)"
 }

@@ -44,12 +44,12 @@ for item in list {
 
 The iterator returns `Option<T>`:
 - `Some(value)` — next element exists
-- `Zero` — iteration complete
+- `None` — iteration complete
 
 **Important:** The `for` loop **automatically unwraps** the `Option`. You get the inner value directly:
 
 ```rust
-// Iterator returns: Some(1), Some(2), Some(3), Zero
+// Iterator returns: Some(1), Some(2), Some(3), None
 // Loop variable gets: 1, 2, 3 (unwrapped values)
 for x in [1, 2, 3] {
     print(x)  // prints 1, 2, 3 — not Some(1), Some(2), Some(3)

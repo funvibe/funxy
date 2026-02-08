@@ -54,7 +54,7 @@ data = @"Hello"
 // Indexing returns Option<Int>
 data[0]   // Some(72) - 'H'
 data[4]   // Some(111) - 'o'
-data[10]  // Zero - out of bounds
+data[10]  // None - out of bounds
 data[-1]  // Some(111) - last byte
 
 // Slicing
@@ -124,7 +124,7 @@ bytesContains(data, @"Foo")    // false
 
 // Find position
 bytesIndexOf(data, @"World")   // Some(6)
-bytesIndexOf(data, @"Foo")     // Zero
+bytesIndexOf(data, @"Foo")     // None
 
 // Prefix/suffix
 bytesStartsWith(data, @"Hello")  // true
@@ -197,23 +197,27 @@ print(decoded2)  // 3.14...
 ```rust
 import "lib/bytes" (bytesSlice, bytesDecodeInt)
 
-fun parseHeader(data: Bytes) -> { magic: Bytes, version: Int, length: Int } {
+fun parseHeader(data: Bytes) -> Result<String, { magic: Bytes, version: Int, length: Int }> {
     // Read magic number (4 bytes)
-    magic = bytesSlice(data, 0, 4)
-    
+    magic = bytesSlice(data, 0, 4)?
+
     // Read version (2 bytes, big-endian)
-    version = bytesDecodeInt(bytesSlice(data, 4, 6), "big")
-    
-    // Read length (4 bytes, big-endian)  
-    length = bytesDecodeInt(bytesSlice(data, 6, 10), "big")
-    
-    { magic: magic, version: version, length: length }
+    versionBytes = bytesSlice(data, 4, 6)?
+    version = bytesDecodeInt(versionBytes, "big")
+
+    // Read length (4 bytes, big-endian)
+    lengthBytes = bytesSlice(data, 6, 10)?
+    length = bytesDecodeInt(lengthBytes, "big")
+
+    Ok({ magic: magic, version: version, length: length })
 }
 
 // Example usage
 header = @x"CAFEBABE00010000001A"
-parsed = parseHeader(header)
-print(parsed)
+match parseHeader(header) {
+    Ok(parsed) -> print(parsed)
+    Fail(e) -> print("Parse error: " ++ e)
+}
 ```
 
 ### Building Binary Message
@@ -225,7 +229,7 @@ fun buildMessage(msgType: Int, payload: Bytes) -> Bytes {
     // Header: type (1 byte) + length (4 bytes)
     typeBytes = bytesEncodeInt(msgType, 1, "big")
     sizeBytes = bytesEncodeInt(len(payload), 4, "big")
-    
+
     // Concatenate header and payload
     typeBytes ++ sizeBytes ++ payload
 }
@@ -251,7 +255,7 @@ fun hexDump(data: Bytes) -> Nil {
                     print("")
                 }
             }
-            Zero -> Nil
+            None -> Nil
         }
     }
 }

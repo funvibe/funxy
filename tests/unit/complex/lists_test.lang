@@ -22,7 +22,7 @@ testRun("Head and Tail", \ -> {
     // Using safe alternatives for Option return
     match find(\x -> x == 1, l) {
         Some(x) -> assertEquals(1, x, "Find Some")
-        Zero -> assertEquals(0, 1, "Find failed")
+        None -> assertEquals(0, 1, "Find failed")
     }
 
     match tail(l) {
@@ -66,6 +66,6 @@ testRun("Search", \ -> {
 
     match indexOf(l, 30) {
         Some(i) -> assertEquals(2, i, "IndexOf")
-        Zero -> assertEquals(0, 1, "IndexOf failed")
+        None -> assertEquals(0, 1, "IndexOf failed")
     }
 })

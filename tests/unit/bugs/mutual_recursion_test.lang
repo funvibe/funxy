@@ -1,0 +1,12 @@
+import "lib/test" (*)
+
+testRun("Mutual recursion should be able to call each other", \ -> {
+    fun isEven(n: Int) -> Bool {
+        if n == 0 { true } else { isOdd(n - 1) }
+    }
+    fun isOdd(n: Int) -> Bool {
+        if n == 0 { false } else { isEven(n - 1) }
+    }
+    assert(isEven(4) == true)
+    assert(isOdd(5) == true)
+})

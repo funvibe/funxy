@@ -5,7 +5,7 @@ import "lib/test" (*)
 fun stringContains(needle, haystack) {
     match stringIndexOf(haystack, needle) {
         Some(_) -> true
-        Zero -> false
+        None -> false
     }
 }
 

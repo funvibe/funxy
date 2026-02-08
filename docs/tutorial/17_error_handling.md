@@ -168,18 +168,18 @@ fun loadFile(path: String) -> Result<String, String> {
 `Option<T>` represents a value that may or may not exist:
 
 ```
-type Option<T> = Some T | Zero
+type Option<T> = Some T | None
 ```
 
 - `Some(value)` — contains a value
-- `Zero` — no value (like `null`/`None`, but type-safe)
+- `None` — no value (like `null`/`None`, but type-safe)
 
 ### Creating Options
 
 ```rust
 x = Some(42)     // Option<Int>
 y = Some("hi")   // Option<String>
-z = Zero         // Option<T>
+z = None         // Option<T>
 ```
 
 ## 4. Nullable Types (`T?` syntax)
@@ -197,7 +197,7 @@ This is **different from `Option<T>`**:
 | Feature | `Option<T>` | `T?` (Nullable) |
 |---------|-------------|-----------------|
 | Type | Sum type (ADT) | Union type |
-| Values | `Some(x)` / `Zero` | `x` / `nil` |
+| Values | `Some(x)` / `None` | `x` / `nil` |
 | Pattern | `Some(v) -> ...` | `v: T -> ...` |
 | Use case | Explicit optionality | Lightweight nullable |
 
@@ -255,14 +255,14 @@ match safeDivide(10, 2) {
 ```rust
 fun findFirst<t>(xs: List<t>, pred: (t) -> Bool) -> Option<t> {
     match xs {
-        [] -> Zero
+        [] -> None
         [x, ...rest] -> if pred(x) { Some(x) } else { findFirst(rest, pred) }
     }
 }
 
 match findFirst([1, 2, 3], fun(x) -> x > 2) {
     Some(value) -> print("Found: " ++ show(value))
-    Zero -> print("Not found")
+    None -> print("Not found")
 }
 ```
 
@@ -271,7 +271,7 @@ match findFirst([1, 2, 3], fun(x) -> x > 2) {
 Works the same as with Result:
 
 - **`Some(value)?`** → returns `value`
-- **`Zero?`** → immediately returns `Zero` from current function
+- **`None?`** → immediately returns `None` from current function
 
 ```rust
 import "lib/list" (find)
@@ -282,7 +282,7 @@ fun getFirstPositive(xs: List<Int>) -> Option<Int> {
 }
 
 print(getFirstPositive([-1, 2, 3]))  // Some(4)
-print(getFirstPositive([-1, -2]))    // Zero
+print(getFirstPositive([-1, -2]))    // None
 ```
 
 ### Option vs Result
@@ -340,7 +340,7 @@ import "lib/list" (head, find)
 maybeFirst = find(fun(x) -> x > 10, [1, 2, 3])
 match maybeFirst {
     Some(x) -> print(x)
-    Zero -> print("not found")
+    None -> print("not found")
 }
 
 // Unsafe: panics on empty list
@@ -354,13 +354,13 @@ first = head([1, 2, 3])   // Some(1)
 |-----------|-------------|----------|
 | `panic(msg)` | Bugs, impossible states | None (program stops) |
 | `Result<E, A>` | Expected failures | Yes (handle `Fail`) |
-| `Option<T>` | Absent values (explicit) | Yes (handle `Zero`) |
+| `Option<T>` | Absent values (explicit) | Yes (handle `None`) |
 | `T?` | Nullable values (lightweight) | Yes (handle `nil`) |
 
 | Type | Success | Failure | `?` on Success | `?` on Failure |
 |------|---------|---------|----------------|----------------|
 | `Result<E, A>` | `Ok(value)` | `Fail(error)` | Returns `value` | Returns `Fail(error)` |
-| `Option<T>` | `Some(value)` | `Zero` | Returns `value` | Returns `Zero` |
+| `Option<T>` | `Some(value)` | `None` | Returns `value` | Returns `None` |
 
 **Guidelines:**
 - Use `panic` for programming errors that should never happen

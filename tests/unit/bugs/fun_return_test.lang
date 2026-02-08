@@ -1,6 +1,6 @@
 import "lib/test" (*)
 
-type Flag = { flag: Bool }
+type alias Flag = { flag: Bool }
 
 fun returnTuple(flag: Flag) -> (Float, Float, Float) {
     if flag.flag {

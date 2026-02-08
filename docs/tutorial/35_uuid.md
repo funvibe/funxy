@@ -177,7 +177,7 @@ print(c != d)  // true
 ```rust
 import "lib/uuid" (uuidNew, uuidToString)
 
-type User = {
+type alias User = {
     id: String,
     name: String,
     email: String

@@ -2,7 +2,7 @@
 // New syntax: t: Trait1, Trait2, Trait3
 
 trait Printable<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 
 trait Cmp<t> {
@@ -10,7 +10,7 @@ trait Cmp<t> {
 }
 
 instance Printable Int {
-    fun format(val: Int) -> String { "int" }
+    fun pretty(val: Int) -> String { "int" }
 }
 
 instance Cmp Int {
@@ -20,7 +20,7 @@ instance Cmp Int {
 // Function with multiple constraints - t must implement BOTH Printable AND Cmp
 fun process<t: Printable, Cmp>(x: t, y: t) -> String {
     if cmp(x, y) {
-        format(x)
+        pretty(x)
     } else {
         "different"
     }

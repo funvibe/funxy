@@ -13,12 +13,12 @@ result1 = match x {
 print(result1)
 
 // === 2. Option match - exhaustive ===
-type MyOption<t> = MySome t | MyZero
+type MyOption<t> = MySome t | MyNone
 
 opt = MySome(10)
 result2 = match opt {
     MySome(v) -> print(v)
-    MyZero -> print("none")
+    MyNone -> print("none")
 }
 
 print("All tests passed!")

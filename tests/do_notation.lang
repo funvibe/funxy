@@ -14,18 +14,18 @@ result1 = do {
 
 match result1 {
     Some(v) -> print("Test 1 PASS: " ++ show(v))  // Should be 30
-    Zero -> print("Test 1 FAIL: got Zero")
+    None -> print("Test 1 FAIL: got None")
 }
 
 // Test 2: Short-circuiting (None stops the chain)
 result2 = do {
-    x <- Zero  // This should stop the chain
+    x <- None  // This should stop the chain
     y <- Some(20)  // Should not execute
     Some(x + y)
 }
 
 match result2 {
-    Zero -> print("Test 2 PASS: short-circuited correctly")
+    None -> print("Test 2 PASS: short-circuited correctly")
     Some(_) -> print("Test 2 FAIL: should have short-circuited")
 }
 
@@ -38,7 +38,7 @@ result3 = do {
 
 match result3 {
     Some(v) -> print("Test 3 PASS: " ++ show(v))  // Should be 10
-    Zero -> print("Test 3 FAIL: got Zero")
+    None -> print("Test 3 FAIL: got None")
 }
 
 // Test 4: Nested do-notation (do inside do)
@@ -50,13 +50,13 @@ result4 = do {
     }
     match inner {
         Some(v) -> Some(x + v)
-        Zero -> Zero
+        None -> None
     }
 }
 
 match result4 {
     Some(v) -> print("Test 4 PASS: " ++ show(v))  // Should be 20
-    Zero -> print("Test 4 FAIL: got Zero")
+    None -> print("Test 4 FAIL: got None")
 }
 
 // Test 5: Do-notation with List (List is also a Monad)
@@ -79,7 +79,7 @@ result6 = do {
 
 match result6 {
     Some(v) -> print("Test 6 PASS: " ++ show(v))  // Should be 6
-    Zero -> print("Test 6 FAIL: got Zero")
+    None -> print("Test 6 FAIL: got None")
 }
 
 // Test 7: Side effect with let binding
@@ -92,7 +92,7 @@ result7 = do {
 
 match result7 {
     Some(v) -> print("Test 7 PASS: " ++ show(v))
-    Zero -> print("Test 7 FAIL: got Zero")
+    None -> print("Test 7 FAIL: got None")
 }
 
 // Test 8: Custom Monad (Box)

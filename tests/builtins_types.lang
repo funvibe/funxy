@@ -20,9 +20,9 @@ res_err = match err_val {
 }
 print(res_err)
 
-// Option t = Some t | Zero
+// Option t = Some t | None
 some_val = Some(100)
-zero_val = Zero
+zero_val = None
 
 print(some_val)
 print(zero_val)
@@ -30,13 +30,13 @@ print(zero_val)
 // Pattern matching on Option
 p1 = match some_val {
   Some(x) -> x
-  Zero -> -2
+  None -> -2
 }
 print(p1)
 
 p3 = match zero_val {
   Some(x) -> x
-  Zero -> -3
+  None -> -3
 }
 print(p3)
 

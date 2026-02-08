@@ -38,6 +38,9 @@ func (c *Compiler) compileStatement(stmt ast.Statement) error {
 	case *ast.ContinueStatement:
 		return c.compileContinueStatement(s)
 
+	case *ast.ReturnStatement:
+		return c.compileReturnStatement(s)
+
 	case *ast.TraitDeclaration:
 		return c.compileTraitDeclaration(s)
 
@@ -90,8 +93,14 @@ func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 	funcCompiler.function.RequiredArity = requiredArity
 
 	// If local function, declare variable first to support recursion
+	localSlot := -1
 	if c.scopeDepth > 0 || c.funcType == TYPE_FUNCTION {
-		c.addLocal(name, c.slotCount)
+		if slot := c.resolveLocal(name); slot != -1 {
+			localSlot = slot
+		} else {
+			c.addLocal(name, c.slotCount)
+			localSlot = c.slotCount
+		}
 	}
 
 	for i, param := range allParams {
@@ -171,8 +180,10 @@ func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 	}
 	c.slotCount++
 
-	if c.scopeDepth > 0 || c.funcType == TYPE_FUNCTION {
-		// Local function - already added to locals for recursion
+	if localSlot != -1 {
+		// Local function - ensure the closure is stored in the predeclared slot.
+		c.emit(OP_SET_LOCAL, line)
+		c.currentChunk().Write(byte(localSlot), line)
 	} else {
 		nameIdx := c.currentChunk().AddConstant(&stringConstant{Value: name})
 		c.emit(OP_SET_GLOBAL, line)
@@ -221,6 +232,23 @@ func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 		}
 	}
 
+	return nil
+}
+
+// compileReturnStatement compiles return statement.
+func (c *Compiler) compileReturnStatement(stmt *ast.ReturnStatement) error {
+	line := stmt.Token.Line
+	if stmt.Value != nil {
+		if err := c.compileExpression(stmt.Value); err != nil {
+			return err
+		}
+	} else {
+		c.emit(OP_NIL, line)
+		c.slotCount++
+	}
+	c.emit(OP_RETURN, line)
+	// Reset stack tracking to avoid cascading stack effects after return.
+	c.slotCount = c.localCount
 	return nil
 }
 
@@ -302,6 +330,13 @@ func (c *Compiler) compileTypeDeclaration(stmt *ast.TypeDeclarationStatement) er
 func (c *Compiler) compileTraitDeclaration(stmt *ast.TraitDeclaration) error {
 	line := stmt.Token.Line
 	traitName := stmt.Name.Value
+
+	// Register trait method names for dictionary lookup (FindMethodInDictionary)
+	var methodNames []string
+	for _, method := range stmt.Signatures {
+		methodNames = append(methodNames, method.Name.Value)
+	}
+	evaluator.TraitMethods[traitName] = methodNames
 
 	for _, method := range stmt.Signatures {
 		methodName := method.Name.Value
@@ -461,11 +496,29 @@ func (c *Compiler) GetPendingImports() []PendingImport {
 
 // compileFunctionBody compiles the body of a function
 func (c *Compiler) compileFunctionBody(body *ast.BlockStatement) error {
+	// Predeclare local functions to support mutual recursion within the body.
+	for _, stmt := range body.Statements {
+		fs, ok := stmt.(*ast.FunctionStatement)
+		if !ok || fs == nil || fs.Receiver != nil {
+			continue
+		}
+		if c.resolveLocal(fs.Name.Value) != -1 {
+			continue
+		}
+		line := fs.Token.Line
+		c.emit(OP_NIL, line)
+		c.slotCount++
+		c.addLocal(fs.Name.Value, c.slotCount-1)
+	}
+
 	for i, stmt := range body.Statements {
 		isLast := i == len(body.Statements)-1
 		if isLast {
 			c.inTailPosition = true
 		}
+
+		localsBefore := c.localCount
+		slotsBefore := c.slotCount
 
 		if err := c.compileStatement(stmt); err != nil {
 			return err
@@ -475,24 +528,29 @@ func (c *Compiler) compileFunctionBody(body *ast.BlockStatement) error {
 			c.inTailPosition = false
 		}
 
-		if !isLast {
-			// Only pop if the statement produced a value that needs to be discarded.
-			// Declarations (ConstantDeclaration, FunctionStatement) leave locals on the stack
-			// that must NOT be popped.
-			// ExpressionStatements produce a value that should be discarded if not last.
-			shouldPop := false
-			switch stmt.(type) {
-			case *ast.ExpressionStatement:
-				shouldPop = true
-			case *ast.ImportStatement:
-				shouldPop = true // pushes nil
-			case *ast.TraitDeclaration:
-				shouldPop = true // pushes nil
-			}
+		localsAdded := c.localCount - localsBefore
+		slotsAdded := c.slotCount - slotsBefore
+		resultsAdded := slotsAdded - localsAdded
 
-			if shouldPop {
+		if !isLast {
+			// Pop intermediate results
+			for k := 0; k < resultsAdded; k++ {
 				c.emit(OP_POP, 0)
 				c.slotCount--
+			}
+		} else {
+			// Last statement: ensure exactly one result is left on stack
+			if resultsAdded == 0 {
+				// No result produced (e.g. declaration), push nil
+				c.emit(OP_NIL, stmt.GetToken().Line)
+				c.slotCount++
+			} else if resultsAdded > 1 {
+				// Multiple results produced (shouldn't happen with correct compilation of statements,
+				// but strictly we should keep only the last one)
+				for k := 0; k < resultsAdded-1; k++ {
+					c.emit(OP_POP, 0)
+					c.slotCount--
+				}
 			}
 		}
 	}

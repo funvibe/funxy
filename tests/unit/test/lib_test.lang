@@ -28,8 +28,8 @@ testRun("assertSome passes on Some", fun() -> {
     assertSome(Some(42))
 })
 
-testRun("assertZero passes on Zero", fun() -> {
-    assertZero(Zero)
+testRun("assertNone passes on None", fun() -> {
+    assertNone(None)
 })
 
 // ============================================================================

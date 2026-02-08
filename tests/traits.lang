@@ -2,12 +2,12 @@
 
 // Define a type class
 trait Printable<t> {
-  fun format(val: t) -> String
+  fun pretty(val: t) -> String
 }
 
 // Implement for built-in type
 instance Printable Int {
-  fun format(val: Int) -> String {
+  fun pretty(val: Int) -> String {
      // Assume builtin conversion for now or manual string construction
      // For test purposes we return a static string or perform logic
      // if val == 42 { "Answer" } else { "Number" } -- commented out original implementation note
@@ -16,14 +16,14 @@ instance Printable Int {
 }
 
 instance Printable Bool {
-  fun format(val: Bool) -> String {
+  fun pretty(val: Bool) -> String {
     if val { "True" } else { "False" }
   }
 }
 
 // Generic function with constraint
 fun printIt<t: Printable>(item: t) {
-  print(format(item))
+  print(pretty(item))
 }
 
 // Test calls

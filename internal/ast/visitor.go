@@ -69,6 +69,7 @@ type Visitor interface {
 	VisitForExpression(n *ForExpression)
 	VisitBreakStatement(n *BreakStatement)
 	VisitContinueStatement(n *ContinueStatement)
+	VisitReturnStatement(n *ReturnStatement)
 	// List Comprehension
 	VisitListComprehension(n *ListComprehension)
 }

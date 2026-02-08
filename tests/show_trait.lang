@@ -14,7 +14,7 @@ print(show("hello"))      // hello
 print(show([1, 2, 3]))    // [1, 2, 3]
 print(show((1, "two")))   // (1, two)
 print(show(Some(5)))      // Some(5)
-print(show(Zero))         // Zero
+print(show(None))         // None
 print(show(Ok(42)))       // Ok(42)
 print(show(Fail("err")))  // Fail(err)
 print(show(Nil))          // Nil
@@ -25,11 +25,11 @@ print(show(Nil))          // Nil
 
 print("=== Custom Show instance ===")
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 instance Show Point {
     fun show(p) {
-        sprintf("Point(%d, %d)", p.x, p.y)
+        format("Point(%d, %d)", p.x, p.y)
     }
 }
 
@@ -50,7 +50,7 @@ instance Show Color {
             Red -> "Red"
             Green -> "Green"
             Blue -> "Blue"
-            RGB(value) -> sprintf("RGB(%d)", value)
+            RGB(value) -> format("RGB(%d)", value)
             _ -> "Unknown"
         }
     }
@@ -66,7 +66,7 @@ print(show(RGB(255)))   // RGB(255)
 
 print("=== Fallback Show ===")
 
-type Person = { name: String, age: Int }
+type alias Person = { name: String, age: Int }
 
 person = Person { name: "Alice", age: 30 }
 print(show(person))  // {name: Alice, age: 30}
@@ -78,7 +78,7 @@ print(show(person))  // {name: Alice, age: 30}
 print("=== Generic context ===")
 
 fun display<t: Show>(x: t) {
-    print(sprintf("Value: %s", show(x)))
+    print(format("Value: %s", show(x)))
 }
 
 display(42)
@@ -95,14 +95,14 @@ print(show([p, Point { x: 0, y: 0 }]))  // Uses structural for list elements
 print(show(Some(p)))  // Uses structural for Option content
 
 // ==========================================
-// 7. Integration with sprintf
+// 7. Integration with format
 // ==========================================
 
-print("=== Integration with sprintf ===")
+print("=== Integration with format ===")
 
-formatted = sprintf("The point is: %s", show(p))
+formatted = format("The point is: %s", show(p))
 print(formatted)  // The point is: Point(10, 20)
 
-formatted2 = sprintf("Color: %s, Int: %d", show(Blue), 42)
+formatted2 = format("Color: %s, Int: %d", show(Blue), 42)
 print(formatted2)  // Color: Blue, Int: 42
 

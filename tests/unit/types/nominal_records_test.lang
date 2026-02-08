@@ -1,8 +1,8 @@
 import "lib/test" (*)
 
 // 1. Nominal vs Structural Typing
-type Point = { x: Int, y: Int }
-type Vector = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
+type alias Vector = { x: Int, y: Int }
 
 fun checkPoint(p: Point) { true }
 fun checkVector(v: Vector) { true }
@@ -30,8 +30,8 @@ testRun("Nominal Typing Strictness", fun() {
 
 // 2. Forward References & Multi-pass Analysis
 // Define a type that refers to a type defined later
-type Node = { val: Int, next: Option<Link> }
-type Link = { node: Node }
+type alias Node = { val: Int, next: Option<Link> }
+type alias Link = { node: Node }
 
 testRun("Recursive/Forward Types", fun() {
     // Explicitly type the inner records to help inference
@@ -42,7 +42,7 @@ testRun("Recursive/Forward Types", fun() {
         next: Some({
             node: {
                 val: 2,
-                next: Zero : Option<Link>
+                next: None : Option<Link>
             } : Node
         } : Link)
     }
@@ -51,12 +51,12 @@ testRun("Recursive/Forward Types", fun() {
 
     match n.next {
         Some(link) -> assert(link.node.val == 2, "Access deep field")
-        Zero -> assert(false, "Should be Some")
+        None -> assert(false, "Should be Some")
     }
 })
 
 // 3. Generic Nominal Records
-type Box<t> = { value: t }
+type alias Box<t> = { value: t }
 
 testRun("Generic Nominal Records", fun() {
     b1: Box<Int> = { value: 10 }
@@ -69,7 +69,7 @@ testRun("Generic Nominal Records", fun() {
 })
 
 // 4. Pattern Matching on Nominal Records
-type User = { name: String, age: Int }
+type alias User = { name: String, age: Int }
 
 testRun("Pattern Matching Nominal", fun() {
     u: User = { name: "Alice", age: 30 }

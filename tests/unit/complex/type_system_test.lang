@@ -12,12 +12,12 @@ testRun("Type inference", \ -> {
 })
 
 testRun("Polymorphic values", \ -> {
-    z = Zero
-    assertEquals(true, typeOf(z, Option), "Zero is Option")
+    z = None
+    assertEquals(true, typeOf(z, Option), "None is Option")
 
     // Contextual typing
     fun check(opt: Option<Int>) { typeOf(opt, Option) }
-    assertEquals(true, check(Zero), "Zero passed as Option<Int>")
+    assertEquals(true, check(None), "None passed as Option<Int>")
 })
 
 testRun("Runtime type checking (erasure)", \ -> {

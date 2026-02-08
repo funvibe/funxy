@@ -1,0 +1,2 @@
+// Rational division by zero
+_ = 10r / 0r

@@ -1,6 +1,11 @@
 package typesystem
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/funvibe/funxy/internal/config"
+	"strconv"
+	"strings"
+)
 
 // Kind represents the "type of a type".
 // * (Star) is the kind of proper types (Int, Bool, List Int).
@@ -28,6 +33,28 @@ type KWildcard struct{}
 
 func (k KWildcard) String() string        { return "?" }
 func (k KWildcard) Equal(other Kind) bool { return true }
+
+// KVar represents a kind variable for inference.
+type KVar struct {
+	Name string
+}
+
+func (k KVar) String() string {
+	// Normalize auto-generated kind variables (k1, k2, k14, etc.) in tests/LSP.
+	if (config.IsTestMode || config.IsLSPMode) && strings.HasPrefix(k.Name, "k") {
+		rest := k.Name[1:]
+		if _, err := strconv.Atoi(rest); err == nil {
+			return "k?"
+		}
+	}
+	return k.Name
+}
+func (k KVar) Equal(other Kind) bool {
+	if ov, ok := other.(KVar); ok {
+		return k.Name == ov.Name
+	}
+	return false
+}
 
 // KArrow represents a higher-kinded type (k1 -> k2).
 type KArrow struct {

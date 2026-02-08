@@ -88,14 +88,14 @@ match parsed {
         print(dateMonth(d) == 12)
         print(dateDay(d) == 25)
     }
-    Zero -> print(false)
+    None -> print(false)
 }
 
 // Invalid date
 invalidParsed = dateParse("invalid", "YYYY-MM-DD")
 match invalidParsed {
     Some(_) -> print(false)
-    Zero -> print(true)
+    None -> print(true)
 }
 
 // =============================================

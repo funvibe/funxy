@@ -2,19 +2,18 @@ package vm
 
 import (
 	"fmt"
-	"math/big"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"math/big"
 	"strings"
 )
 
 func (vm *VM) executeOneOp(op Opcode) error {
 	switch op {
 	case OP_CONST:
-		idx := vm.readConstantIndex()
 		// TODO: Pre-convert constants to Value in Chunk to avoid runtime conversion
-		vm.push(ObjectToValue(vm.frame.chunk.Constants[idx]))
+		vm.push(ObjectToValue(vm.readConstant()))
 
 	case OP_NIL:
 		vm.push(NilVal())
@@ -37,7 +36,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		// Shift elements down
 		copy(vm.stack[targetIdx:], vm.stack[targetIdx+1:vm.sp])
 		vm.sp--
-		// Zero out the old top (good hygiene)
+		// None out the old top (good hygiene)
 		vm.stack[vm.sp] = NilVal()
 
 	case OP_DUP:
@@ -80,7 +79,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 				res := new(big.Rat).Neg(v.Value)
 				vm.push(ObjVal(&evaluator.Rational{Value: res}))
 			default:
-				return fmt.Errorf("operand must be a number")
+				return fmt.Errorf("unknown operator: -%s", val.RuntimeType().String())
 			}
 		}
 
@@ -101,7 +100,17 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_NOT:
 		val := vm.pop()
-		vm.push(BoolVal(!vm.isTruthy(val)))
+		if val.IsBool() {
+			vm.push(BoolVal(!val.AsBool()))
+		} else if val.IsObj() {
+			if b, ok := val.Obj.(*evaluator.Boolean); ok {
+				vm.push(BoolVal(!b.Value))
+			} else {
+				return fmt.Errorf("operator ! not supported for %s", val.Obj.Type())
+			}
+		} else {
+			return fmt.Errorf("operator ! not supported for %s", val.AsObject().Type())
+		}
 
 	case OP_BNOT:
 		val := vm.pop()
@@ -114,8 +123,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	case OP_SET_TYPE_NAME:
 		// Set TypeName on top of stack (for type-annotated records)
 		// Clean version
-		typeNameIdx := vm.readConstantIndex()
-		typeName := vm.frame.chunk.Constants[typeNameIdx].Inspect()
+		typeName := vm.readConstant().Inspect()
 		if val := vm.peek(0); val.IsObj() {
 			if rec, ok := val.AsObject().(*evaluator.RecordInstance); ok {
 				rec.TypeName = typeName
@@ -125,8 +133,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_SET_LIST_ELEM_TYPE:
 		// Set ElementType on top of stack (for type-annotated lists like List<Int>)
-		elemTypeIdx := vm.readConstantIndex()
-		elemType := vm.frame.chunk.Constants[elemTypeIdx].Inspect()
+		elemType := vm.readConstant().Inspect()
 		// Remove quotes if present
 		if len(elemType) >= 2 && elemType[0] == '"' && elemType[len(elemType)-1] == '"' {
 			elemType = elemType[1 : len(elemType)-1]
@@ -186,10 +193,10 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			if err != nil {
 				return err
 			}
-			// Check if Zero (end of iteration)
-			// itemVal is Value. We need to check if it's DataInstance "Zero" or "Some"
+			// Check if None (end of iteration)
+			// itemVal is Value. We need to check if it's DataInstance "None" or "Some"
 			if itemVal.IsObj() {
-				if di, ok := itemVal.AsObject().(*evaluator.DataInstance); ok && di.Name == "Zero" {
+				if di, ok := itemVal.AsObject().(*evaluator.DataInstance); ok && di.Name == "None" {
 					vm.push(NilVal())
 					vm.push(BoolVal(false))
 				} else if di, ok := itemVal.AsObject().(*evaluator.DataInstance); ok && di.Name == "Some" {
@@ -281,7 +288,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 					iterFn := func(args []evaluator.Object) evaluator.Object {
 						c := *currPtr
 						if (step > 0 && c > endVal) || (step < 0 && c < endVal) {
-							return &evaluator.DataInstance{Name: config.ZeroCtorName, TypeName: config.OptionTypeName}
+							return &evaluator.DataInstance{Name: config.NoneCtorName, TypeName: config.OptionTypeName}
 						}
 						*currPtr += step
 
@@ -374,29 +381,48 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_JUMP:
 		offset := vm.readJumpOffset()
-		vm.frame.ip += offset
+		newIP := vm.frame.ip + offset
+		if newIP < 0 || newIP > len(vm.frame.chunk.Code) {
+			return fmt.Errorf("jump out of bounds: ip=%d, offset=%d, len=%d", vm.frame.ip, offset, len(vm.frame.chunk.Code))
+		}
+		vm.frame.ip = newIP
 
 	case OP_JUMP_IF_FALSE:
 		offset := vm.readJumpOffset()
 		if !vm.isTruthy(vm.peek(0)) {
-			vm.frame.ip += offset
+			newIP := vm.frame.ip + offset
+			if newIP < 0 || newIP > len(vm.frame.chunk.Code) {
+				return fmt.Errorf("jump out of bounds: ip=%d, offset=%d, len=%d", vm.frame.ip, offset, len(vm.frame.chunk.Code))
+			}
+			vm.frame.ip = newIP
 		}
 
 	case OP_LOOP:
 		offset := vm.readJumpOffset()
-		vm.frame.ip -= offset
+		newIP := vm.frame.ip - offset
+		if newIP < 0 || newIP > len(vm.frame.chunk.Code) {
+			return fmt.Errorf("loop jump out of bounds: ip=%d, offset=%d, len=%d", vm.frame.ip, offset, len(vm.frame.chunk.Code))
+		}
+		vm.frame.ip = newIP
 
 	case OP_GET_LOCAL:
 		slot := int(vm.readByte())
-		vm.push(vm.stack[vm.frame.base+slot])
+		idx := vm.frame.base + slot
+		if idx >= vm.sp {
+			return fmt.Errorf("local slot %d out of bounds (sp=%d)", idx, vm.sp)
+		}
+		vm.push(vm.stack[idx])
 
 	case OP_SET_LOCAL:
 		slot := int(vm.readByte())
-		vm.stack[vm.frame.base+slot] = vm.peek(0)
+		idx := vm.frame.base + slot
+		if idx >= vm.sp {
+			return fmt.Errorf("local slot %d out of bounds (sp=%d)", idx, vm.sp)
+		}
+		vm.stack[idx] = vm.peek(0)
 
 	case OP_GET_GLOBAL:
-		nameIdx := vm.readConstantIndex()
-		name := vm.frame.chunk.Constants[nameIdx].Inspect()
+		name := vm.readConstant().Inspect()
 
 		// Priority:
 		// 1. Module-specific globals (if closure has them)
@@ -422,8 +448,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		vm.push(ObjectToValue(val))
 
 	case OP_SET_GLOBAL:
-		nameIdx := vm.readConstantIndex()
-		name := vm.frame.chunk.Constants[nameIdx].Inspect()
+		name := vm.readConstant().Inspect()
 		val := vm.peek(0).AsObject()
 
 		if vm.frame.closure != nil && vm.frame.closure.Globals != nil {
@@ -441,6 +466,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_CLOSE_SCOPE:
 		n := int(vm.readByte())
+		if vm.sp < n+1 {
+			return fmt.Errorf("stack underflow in OP_CLOSE_SCOPE: sp=%d, n=%d", vm.sp, n)
+		}
 		// Close upvalues for locals being removed (under the result)
 		// Locals start at sp - 1 - n.
 		// Note: closeUpvalues closes everything >= start, so it might close result too
@@ -452,8 +480,11 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		vm.push(result)
 
 	case OP_SET_TYPE_CONTEXT:
-		typeIdx := vm.readConstantIndex()
-		typeName := vm.frame.chunk.Constants[typeIdx].(*stringConstant).Value
+		typeNameConst, ok := vm.readConstant().(*stringConstant)
+		if !ok {
+			return fmt.Errorf("expected string constant for type context")
+		}
+		typeName := typeNameConst.Value
 		vm.typeContextStack = append(vm.typeContextStack, typeName)
 
 	case OP_CLEAR_TYPE_CONTEXT:
@@ -462,8 +493,11 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_CLOSURE:
-		idx := vm.readConstantIndex()
-		fn := vm.frame.chunk.Constants[idx].(*CompiledFunction)
+		constVal := vm.readConstant()
+		fn, ok := constVal.(*CompiledFunction)
+		if !ok {
+			return fmt.Errorf("expected CompiledFunction constant, got %T", constVal)
+		}
 		closure := &ObjClosure{
 			Function: fn,
 			Upvalues: make([]*ObjUpvalue, fn.UpvalueCount),
@@ -476,8 +510,17 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			isLocal := vm.readByte()
 			index := int(vm.readByte())
 			if isLocal == 1 {
-				closure.Upvalues[i] = vm.captureUpvalue(vm.frame.base + index)
+				loc := vm.frame.base + index
+				// Allow capturing the immediate next slot (vm.sp) for recursive closures
+				// where the closure itself will occupy that slot.
+				if loc > vm.sp {
+					return fmt.Errorf("capture upvalue index %d out of bounds (sp=%d)", loc, vm.sp)
+				}
+				closure.Upvalues[i] = vm.captureUpvalue(loc)
 			} else {
+				if index < 0 || index >= len(vm.frame.closure.Upvalues) {
+					return fmt.Errorf("upvalue index %d out of bounds (len=%d)", index, len(vm.frame.closure.Upvalues))
+				}
 				closure.Upvalues[i] = vm.frame.closure.Upvalues[index]
 			}
 		}
@@ -485,6 +528,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_GET_UPVALUE:
 		slot := int(vm.readByte())
+		if slot < 0 || slot >= len(vm.frame.closure.Upvalues) {
+			return fmt.Errorf("upvalue slot %d out of bounds (len=%d)", slot, len(vm.frame.closure.Upvalues))
+		}
 		upvalue := vm.frame.closure.Upvalues[slot]
 		if upvalue.Location >= 0 {
 			vm.push(vm.stack[upvalue.Location])
@@ -494,6 +540,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_SET_UPVALUE:
 		slot := int(vm.readByte())
+		if slot < 0 || slot >= len(vm.frame.closure.Upvalues) {
+			return fmt.Errorf("upvalue slot %d out of bounds (len=%d)", slot, len(vm.frame.closure.Upvalues))
+		}
 		upvalue := vm.frame.closure.Upvalues[slot]
 		if upvalue.Location >= 0 {
 			vm.stack[upvalue.Location] = vm.peek(0)
@@ -519,6 +568,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	case OP_CALL_SPREAD:
 		// Call with spread arguments - unpack spread args into individual args
 		argCount := int(vm.readByte())
+
+		vm.checkStack(argCount + 1)
+
 		// Collect and unpack arguments
 		var args []evaluator.Object
 		for i := 0; i < argCount; i++ {
@@ -562,15 +614,23 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_REGISTER_TRAIT:
 		// Register trait method: [closure] traitIdx typeIdx methodIdx
-		traitIdx := vm.readConstantIndex()
-		typeIdx := vm.readConstantIndex()
-		methodIdx := vm.readConstantIndex()
+		traitNameConst, ok1 := vm.readConstant().(*stringConstant)
+		typeNameConst, ok2 := vm.readConstant().(*stringConstant)
+		methodNameConst, ok3 := vm.readConstant().(*stringConstant)
 
-		traitName := vm.frame.chunk.Constants[traitIdx].(*stringConstant).Value
-		typeName := vm.frame.chunk.Constants[typeIdx].(*stringConstant).Value
-		methodName := vm.frame.chunk.Constants[methodIdx].(*stringConstant).Value
+		if !ok1 || !ok2 || !ok3 {
+			return fmt.Errorf("expected string constants for trait registration")
+		}
 
-		closure := vm.pop().AsObject().(*ObjClosure)
+		traitName := traitNameConst.Value
+		typeName := typeNameConst.Value
+		methodName := methodNameConst.Value
+
+		closureObj := vm.pop().AsObject()
+		closure, ok := closureObj.(*ObjClosure)
+		if !ok {
+			return fmt.Errorf("expected closure for trait method, got %s", closureObj.Type())
+		}
 		vm.RegisterTraitMethod(traitName, typeName, methodName, closure)
 
 	case OP_DEFAULT:
@@ -647,6 +707,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_MAKE_LIST:
+		// OP_MAKE_LIST takes a 16-bit operand representing the number of elements.
+		// Although readConstantIndex() is named for reading constant pool indices,
+		// it reads a uint16 which is used here directly as the element count.
 		count := vm.readConstantIndex()
 		elements := make([]evaluator.Object, count)
 		for i := count - 1; i >= 0; i-- {
@@ -682,6 +745,10 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 		// Set nominal type name if provided
 		if typeNameIdx != 0xFFFF {
+			// Here we need manual check because 0xFFFF is a sentinel, not a valid index
+			if typeNameIdx >= len(vm.frame.chunk.Constants) {
+				panic(errInvalidConstantIndex)
+			}
 			typeNameConst := vm.frame.chunk.Constants[typeNameIdx]
 			if strConst, ok := typeNameConst.(*stringConstant); ok {
 				record.TypeName = strConst.Value
@@ -777,10 +844,12 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		vm.push(result)
 
 	case OP_GET_FIELD:
-		nameIdx := vm.readConstantIndex()
-		fieldName := vm.frame.chunk.Constants[nameIdx].Inspect()
-		// Remove quotes if present
-		if len(fieldName) >= 2 && fieldName[0] == '"' && fieldName[len(fieldName)-1] == '"' {
+		// Inspect is safe, but let's check if it's a string constant for correctness
+		constVal := vm.readConstant()
+		fieldName := constVal.Inspect()
+		if strConst, ok := constVal.(*stringConstant); ok {
+			fieldName = strConst.Value
+		} else if len(fieldName) >= 2 && fieldName[0] == '"' && fieldName[len(fieldName)-1] == '"' {
 			fieldName = fieldName[1 : len(fieldName)-1]
 		}
 		obj := vm.pop()
@@ -793,9 +862,8 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	case OP_OPTIONAL_CHAIN_FIELD:
 		// Optional chaining: obj?.field
 		// For Some/Ok: extract inner, get field, wrap back
-		// For Zero/Fail: return unchanged
-		nameIdx := vm.readConstantIndex()
-		fieldName := vm.frame.chunk.Constants[nameIdx].Inspect()
+		// For None/Fail: return unchanged
+		fieldName := vm.readConstant().Inspect()
 		if len(fieldName) >= 2 && fieldName[0] == '"' && fieldName[len(fieldName)-1] == '"' {
 			fieldName = fieldName[1 : len(fieldName)-1]
 		}
@@ -804,7 +872,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		if obj.IsObj() {
 			if data, ok := obj.AsObject().(*evaluator.DataInstance); ok {
 				if vm.isEmptyDataInstance(data) {
-					// Zero/Fail - return unchanged
+					// None/Fail - return unchanged
 					vm.push(obj)
 				} else if vm.isWrapperDataInstance(data) || len(data.Fields) == 1 {
 					// Some/Ok or user-defined wrapper with 1 field - extract inner, get field, wrap back
@@ -855,8 +923,12 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	// Pattern matching opcodes
 	case OP_CHECK_TAG:
 		// Check if top of stack is DataInstance with given tag name
-		tagIdx := vm.readConstantIndex()
-		tagName := vm.frame.chunk.Constants[tagIdx].Inspect()
+		// Inspect() is safe on any Object, so this was actually safe, but let's be consistent
+		tagName := vm.readConstant().Inspect()
+		// Remove quotes if it's a string constant (Inspect adds quotes)
+		if len(tagName) >= 2 && tagName[0] == '"' && tagName[len(tagName)-1] == '"' {
+			tagName = tagName[1 : len(tagName)-1]
+		}
 		val := vm.peek(0)
 		if val.IsObj() {
 			if data, ok := val.AsObject().(*evaluator.DataInstance); ok && data.Name == tagName {
@@ -887,6 +959,8 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	case OP_CHECK_LIST_LEN:
 		// Check list length: operand encodes (op, length) where op: 0=exact, 1=at_least
 		op := vm.readByte()
+		// readConstantIndex returns int, not accessing constants pool here.
+		// It's used as an immediate value (length).
 		length := int(vm.readConstantIndex())
 		val := vm.peek(0)
 		if val.IsObj() {
@@ -956,8 +1030,11 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_CHECK_TYPE:
 		// Check if value is of given type
-		typeIdx := vm.readConstantIndex()
-		expectedType := vm.frame.chunk.Constants[typeIdx].(*stringConstant).Value
+		expectedTypeConst, ok := vm.readConstant().(*stringConstant)
+		if !ok {
+			return fmt.Errorf("expected string constant for type check")
+		}
+		expectedType := expectedTypeConst.Value
 		val := vm.peek(0)
 		actualType := vm.getTypeName(val)
 		// Also check against Object.Type()
@@ -1030,8 +1107,11 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_SET_FIELD:
 		// Set field in record: [record, value] -> [record] (mutates in-place for reference semantics)
-		fieldIdx := vm.readConstantIndex()
-		fieldName := vm.frame.chunk.Constants[fieldIdx].(*stringConstant).Value
+		fieldNameConst, ok := vm.readConstant().(*stringConstant)
+		if !ok {
+			return fmt.Errorf("expected string constant for field name")
+		}
+		fieldName := fieldNameConst.Value
 		value := vm.pop().AsObject()
 		obj := vm.pop()
 		if !obj.IsObj() {
@@ -1113,10 +1193,15 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_REGISTER_EXTENSION:
-		typeNameIdx := vm.readConstantIndex()
-		typeName := vm.frame.chunk.Constants[typeNameIdx].(*stringConstant).Value
-		methodNameIdx := vm.readConstantIndex()
-		methodName := vm.frame.chunk.Constants[methodNameIdx].(*stringConstant).Value
+		typeNameConst, ok1 := vm.readConstant().(*stringConstant)
+		methodNameConst, ok2 := vm.readConstant().(*stringConstant)
+
+		if !ok1 || !ok2 {
+			return fmt.Errorf("expected string constants for extension registration")
+		}
+
+		typeName := typeNameConst.Value
+		methodName := methodNameConst.Value
 
 		closureObj := vm.pop().AsObject()
 		closure, ok := closureObj.(*ObjClosure)
@@ -1137,8 +1222,11 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		vm.extensionMethods = vm.extensionMethods.Put(typeName, methodMap)
 
 	case OP_REGISTER_TYPE_ALIAS:
-		nameIdx := vm.readConstantIndex()
-		name := vm.frame.chunk.Constants[nameIdx].(*stringConstant).Value
+		nameConst, ok := vm.readConstant().(*stringConstant)
+		if !ok {
+			return fmt.Errorf("expected string constant for type alias name")
+		}
+		name := nameConst.Value
 		typeObj := vm.pop().AsObject()
 
 		if vm.typeAliases == nil {
@@ -1150,10 +1238,18 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		// Call method on object: [receiver, arg1, arg2, ...] -> [result]
 		// Stack layout: receiver, args... (receiver at bottom)
 		nameIdx := vm.readConstantIndex()
-		methodName := vm.frame.chunk.Constants[nameIdx].(*stringConstant).Value
+		if nameIdx >= len(vm.frame.chunk.Constants) {
+			panic(errInvalidConstantIndex)
+		}
+		methodNameConst, ok := vm.frame.chunk.Constants[nameIdx].(*stringConstant)
+		if !ok {
+			return fmt.Errorf("expected string constant for method name")
+		}
+		methodName := methodNameConst.Value
 		argCount := int(vm.readByte())
 
 		// Get receiver (it's below the arguments on the stack)
+		vm.checkStack(argCount + 1)
 		receiverIdx := vm.sp - argCount - 1
 		receiver := vm.stack[receiverIdx]
 
@@ -1271,8 +1367,11 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_MATCH_STRING_PATTERN:
 		// Match string against pattern with captures (legacy - returns Map or Nil)
-		partsIdx := vm.readConstantIndex()
-		patternParts := vm.frame.closure.Function.Chunk.Constants[partsIdx].(*StringPatternParts)
+		constVal := vm.readConstant()
+		patternParts, ok := constVal.(*StringPatternParts)
+		if !ok {
+			return fmt.Errorf("expected StringPatternParts constant, got %T", constVal)
+		}
 
 		val := vm.pop()
 
@@ -1305,11 +1404,21 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		vm.push(ObjVal(result))
 
 	case OP_MATCH_STRING_EXTRACT:
-		// Match string, pop input, push captures then bool
-		// Format: OP_MATCH_STRING_EXTRACT <pattern_idx:2> <capture_count:1>
+		// Match string, pop input, push captures then bool.
+		// Format: OP_MATCH_STRING_EXTRACT <pattern_idx:uint16> <capture_count:uint8>
+		// We manually read the operands to ensure correct parsing order and bounds checking.
 		partsIdx := vm.readConstantIndex()
 		captureCount := int(vm.readByte())
-		patternParts := vm.frame.closure.Function.Chunk.Constants[partsIdx].(*StringPatternParts)
+
+		if partsIdx >= len(vm.frame.chunk.Constants) {
+			panic(errInvalidConstantIndex)
+		}
+		constVal := vm.frame.chunk.Constants[partsIdx]
+
+		patternParts, ok := constVal.(*StringPatternParts)
+		if !ok {
+			return fmt.Errorf("expected StringPatternParts constant, got %T", constVal)
+		}
 
 		val := vm.pop() // pop input string
 
@@ -1354,8 +1463,11 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_TRAIT_OP:
 		// Trait-based operator dispatch (e.g., <>, <*>, >>=, ??, ?.)
-		opIdx := vm.readConstantIndex()
-		opStr := vm.frame.chunk.Constants[opIdx].(*stringConstant).Value
+		opStrConst, ok := vm.readConstant().(*stringConstant)
+		if !ok {
+			return fmt.Errorf("expected string constant for trait operator")
+		}
+		opStr := opStrConst.Value
 		right := vm.pop()
 		left := vm.pop()
 
@@ -1460,16 +1572,32 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		// Get slice of tuple from start (also supports List for variadic args)
 		startObj := vm.pop()
 		obj := vm.pop().AsObject()
+
+		if !startObj.IsInt() {
+			if startObj.AsObject() == nil {
+				return fmt.Errorf("tuple slice index must be Integer, got nil object")
+			}
+			return fmt.Errorf("tuple slice index must be Integer, got %s", startObj.RuntimeType().String())
+		}
 		start := int(startObj.AsInt())
 
 		switch v := obj.(type) {
 		case *evaluator.Tuple:
+			if start < 0 || start > len(v.Elements) {
+				return fmt.Errorf("tuple slice index out of bounds: %d (len=%d)", start, len(v.Elements))
+			}
 			rest := &evaluator.Tuple{Elements: v.Elements[start:]}
 			vm.push(ObjVal(rest))
 		case *evaluator.List:
+			if start < 0 || start > v.Len() {
+				return fmt.Errorf("list slice index out of bounds: %d (len=%d)", start, v.Len())
+			}
 			rest := v.Slice(start, v.Len())
 			vm.push(ObjVal(rest))
 		default:
+			if obj == nil {
+				return fmt.Errorf("expected Tuple or List, got nil")
+			}
 			return fmt.Errorf("expected Tuple or List, got %s", obj.Type())
 		}
 
@@ -1477,9 +1605,29 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		// Get slice of list from start to end
 		startObj := vm.pop()
 		list := vm.pop().AsObject()
+
+		if !startObj.IsInt() {
+			if startObj.AsObject() == nil {
+				return fmt.Errorf("list slice index must be Integer, got nil object")
+			}
+			return fmt.Errorf("list slice index must be Integer, got %s", startObj.RuntimeType().String())
+		}
 		start := int(startObj.AsInt())
-		listVal := list.(*evaluator.List)
-		rest := listVal.Slice(start, listVal.Len())
+
+		listVal, ok := list.(*evaluator.List)
+		if !ok {
+			if list == nil {
+				return fmt.Errorf("expected List for slice operation, got nil")
+			}
+			return fmt.Errorf("expected List for slice operation, got %s", list.Type())
+		}
+
+		length := listVal.Len()
+		if start < 0 || start > length {
+			return fmt.Errorf("slice bounds out of range: start=%d, length=%d", start, length)
+		}
+
+		rest := listVal.Slice(start, length)
 		vm.push(ObjVal(rest))
 
 	case OP_UNWRAP_OR_RETURN:
@@ -1495,7 +1643,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 					} else {
 						vm.push(NilVal())
 					}
-				case config.ZeroCtorName: // Zero - early return
+				case config.NoneCtorName: // None - early return
 					vm.push(val)
 					return errEarlyReturn
 				case config.OkCtorName: // Ok - unwrap
@@ -1511,9 +1659,16 @@ func (vm *VM) executeOneOp(op Opcode) error {
 					return fmt.Errorf("? operator requires Option or Result, got %s(%s)", data.TypeName, data.Name)
 				}
 			} else {
+				// Handle nil gracefully (e.g. popping from empty stack or invalid object)
+				if val.AsObject() == nil {
+					return fmt.Errorf("? operator called on nil object")
+				}
 				return fmt.Errorf("? operator requires Option or Result, got %s", val.RuntimeType().String())
 			}
 		} else {
+			if val.AsObject() == nil {
+				return fmt.Errorf("? operator called on nil object")
+			}
 			return fmt.Errorf("? operator requires Option or Result, got %s", val.RuntimeType().String())
 		}
 
@@ -1523,6 +1678,10 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		val := vm.pop().AsObject()
 
 		if !idxObj.IsInt() {
+			// Check if idxObj corresponds to nil/empty object which may cause RuntimeType to panic
+			if idxObj.AsObject() == nil {
+				return fmt.Errorf("tuple/list index must be Integer, got nil object")
+			}
 			return fmt.Errorf("tuple/list index must be Integer, got %s", idxObj.RuntimeType().String())
 		}
 		i := int(idxObj.AsInt())
@@ -1546,17 +1705,24 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			if i >= listLen || i < 0 {
 				return fmt.Errorf("list index %d out of bounds (len=%d)", i, listLen)
 			}
-			vm.push(ObjectToValue(v.Get(i)))
+
+			elem := v.Get(i)
+			if elem == nil {
+				return fmt.Errorf("list index %d out of bounds (nil element)", i)
+			}
+			vm.push(ObjectToValue(elem))
 		default:
+			if val == nil {
+				return fmt.Errorf("expected Tuple or List, got nil")
+			}
 			return fmt.Errorf("expected Tuple or List, got %s", val.Type())
 		}
 
 	case OP_FORMATTER:
 		// Create format string function closure (variadic)
 		// Args: [constant_index] (format string)
-		// Returns: [closure] - a variadic function that calls sprintf
-		fmtStrIdx := vm.readConstantIndex()
-		fmtStr := vm.frame.chunk.Constants[fmtStrIdx].Inspect()
+		// Returns: [closure] - a variadic function that calls format
+		fmtStr := vm.readConstant().Inspect()
 		if len(fmtStr) >= 2 && fmtStr[0] == '"' && fmtStr[len(fmtStr)-1] == '"' {
 			fmtStr = fmtStr[1 : len(fmtStr)-1]
 		}
@@ -1564,7 +1730,10 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		// For short form (no % in string), prepend % to make it a valid format specifier
 		// For full form (contains %), use as-is
 		if !strings.Contains(fmtStr, "%") {
-			fmtStr = "%" + fmtStr
+			// Only prepend % if it results in a valid format string
+			if _, err := evaluator.CountFormatVerbs("%" + fmtStr); err == nil {
+				fmtStr = "%" + fmtStr
+			}
 		}
 
 		// Create a variadic Native Function that captures the format string
@@ -1576,16 +1745,16 @@ func (vm *VM) executeOneOp(op Opcode) error {
 				IsVariadic: true,
 			},
 			Fn: func(e *evaluator.Evaluator, args ...evaluator.Object) evaluator.Object {
-				// Call internal sprintf with all arguments
-				sprintf, ok := evaluator.Builtins["sprintf"]
+				// Call internal format with all arguments
+				format, ok := evaluator.Builtins["format"]
 				if !ok {
-					return &evaluator.Error{Message: "internal error: sprintf not found"}
+					return &evaluator.Error{Message: "internal error: format not found"}
 				}
 				// Prepend format string to args
 				allArgs := make([]evaluator.Object, 0, len(args)+1)
 				allArgs = append(allArgs, evaluator.StringToList(fmtStr))
 				allArgs = append(allArgs, args...)
-				return sprintf.Fn(e, allArgs...)
+				return format.Fn(e, allArgs...)
 			},
 		}
 		vm.push(ObjVal(formatter))

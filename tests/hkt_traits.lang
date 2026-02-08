@@ -33,7 +33,7 @@ trait Container<c> {
 // Should work with Option (kind * -> *)
 instance Container<Option> {
     fun contents(con: Option<a>) -> a {
-        match con { Some(x) -> x; Zero -> panic("empty") }
+        match con { Some(x) -> x; None -> panic("empty") }
     }
 }
 

@@ -9,7 +9,7 @@ fun (o: MyOption<t>) map(f: (t) -> r) -> MyOption<r> {
     }
 }
 
-fun (o: MyOption<t>) unwrapOr(default: t) -> t {
+fun (o: MyOption<t>) unwrapOrDefault(default: t) -> t {
     match o {
         Yes(v) -> v
         NoVal -> default
@@ -27,11 +27,11 @@ fun (i: Int) add(other: Int) -> Int {
 // Chaining
 val = Yes(10)
 // map returns MyOption(Int), unwrapOr returns Int, double returns Int, add returns Int
-res = val.map(fun(x: Int) Int { x + 1 }).unwrapOr(0).double().add(5)
+res = val.map(fun(x: Int) Int { x + 1 }).unwrapOrDefault(0).double().add(5)
 print(res) // (10+1) -> 11, unwrap -> 11, double -> 22, add 5 -> 27
 
 noneVal = NoVal
-res2 = noneVal.map(fun(x: Int) Int { x + 1 }).unwrapOr(-1).double()
+res2 = noneVal.map(fun(x: Int) Int { x + 1 }).unwrapOrDefault(-1).double()
 print(res2) // map -> None, unwrap -> -1, double -> -2
 
 // Extension on List
@@ -47,7 +47,7 @@ mapped = list.mapList(fun(x: Int) Int { x * 2 })
 print(mapped)
 
 // Extension on Record
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 fun (p: Point) magnitude() Int {
     // Approximation for integer arithmetic
     p.x + p.y

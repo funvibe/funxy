@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("x\xbb\xbb\xbb\xbb\xbb: Int = 10: BooNx)yyyyyyyyyyyyyyyyyyyyyyyyy\n\x80rint(y")

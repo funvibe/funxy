@@ -9,6 +9,10 @@ var SourceFileExtensions = []string{".lang", ".funxy", ".fx"}
 // This is set once at startup in main.go when handling test command.
 var IsTestMode = false
 
+// IsLSPMode indicates if the program is running in Language Server Protocol mode.
+// This is set in cmd/lsp/main.go.
+var IsLSPMode = false
+
 // Built-in trait and method names
 const (
 	IterTraitName  = "Iter"
@@ -30,7 +34,7 @@ const (
 	ShowFuncName     = "show"
 	ReadFuncName     = "read"
 	IdFuncName       = "id"
-	ConstFuncName    = "const"
+	ConstFuncName    = "constant"
 )
 
 // Built-in type names
@@ -42,7 +46,7 @@ const (
 	OptionTypeName = "Option"
 	ResultTypeName = "Result"
 	SomeCtorName   = "Some"
-	ZeroCtorName   = "Zero"
+	NoneCtorName   = "None"
 	OkCtorName     = "Ok"
 	FailCtorName   = "Fail"
 )

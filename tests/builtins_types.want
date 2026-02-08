@@ -3,7 +3,7 @@ Fail("failed")
 10
 failed
 Some(100)
-Zero
+None
 100
 -3
 1

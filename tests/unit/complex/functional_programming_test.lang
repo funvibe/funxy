@@ -8,9 +8,9 @@ testRun("Semigroup (<>)", \ -> {
 
     // Option
     assertEquals(Some(1), Some(1) <> Some(2), "Option Some <> Some")
-    assertEquals(Some(1), Some(1) <> Zero, "Option Some <> Zero")
-    assertEquals(Some(2), Zero <> Some(2), "Option Zero <> Some")
-    assertEquals(Zero, Zero <> Zero, "Option Zero <> Zero")
+    assertEquals(Some(1), Some(1) <> None, "Option Some <> None")
+    assertEquals(Some(2), None <> Some(2), "Option None <> Some")
+    assertEquals(None, None <> None, "Option None <> None")
 })
 
 testRun("Monoid (mempty)", \ -> {
@@ -23,8 +23,8 @@ testRun("Monoid (mempty)", \ -> {
     // Option identity
     zero: Option<Int> = mempty()
     match zero {
-        Some(_) -> assertEquals(0, 1, "Should be Zero")
-        Zero -> assertEquals(0, 0, "Option mempty is Zero")
+        Some(_) -> assertEquals(0, 1, "Should be None")
+        None -> assertEquals(0, 0, "Option mempty is None")
     }
 })
 
@@ -39,7 +39,7 @@ testRun("Functor (fmap)", \ -> {
     mappedOpt = fmap(\x -> x + 5, opt)
     match mappedOpt {
         Some(v) -> assertEquals(15, v, "Option fmap")
-        Zero -> assertEquals(0, 1, "Option fmap failed")
+        None -> assertEquals(0, 1, "Option fmap failed")
     }
 
     // Result map
@@ -56,7 +56,7 @@ testRun("Applicative (pure, <*>)", \ -> {
     p: Option<Int> = pure(42)
     match p {
         Some(v) -> assertEquals(42, v, "pure Option")
-        Zero -> assertEquals(0, 1, "pure failed")
+        None -> assertEquals(0, 1, "pure failed")
     }
 
     // Apply
@@ -67,7 +67,7 @@ testRun("Applicative (pure, <*>)", \ -> {
 
     match res {
         Some(v) -> assertEquals(20, v, "Option apply")
-        Zero -> assertEquals(0, 1, "Option apply failed")
+        None -> assertEquals(0, 1, "Option apply failed")
     }
 })
 
@@ -82,20 +82,20 @@ testRun("Monad (>>=)", \ -> {
     assertEquals(2, res[2], "List bind 2")
 
     // Option bind (chaining)
-    safeDiv = \x, y -> if y == 0 { Zero } else { Some(x / y) }
+    safeDiv = \x, y -> if y == 0 { None } else { Some(x / y) }
 
     // 100 / 2 / 5 = 10
     chain = Some(100) >>= \x -> safeDiv(x, 2) >>= \y -> safeDiv(y, 5)
 
     match chain {
         Some(v) -> assertEquals(10, v, "Option bind chain")
-        Zero -> assertEquals(0, 1, "Option bind failed")
+        None -> assertEquals(0, 1, "Option bind failed")
     }
 
     // Failure chain
     failChain = Some(100) >>= \x -> safeDiv(x, 0) >>= \y -> safeDiv(y, 5)
     match failChain {
-        Some(_) -> assertEquals(0, 1, "Should be Zero")
-        Zero -> assertEquals(0, 0, "Option bind failure")
+        Some(_) -> assertEquals(0, 1, "Should be None")
+        None -> assertEquals(0, 0, "Option bind failure")
     }
 })

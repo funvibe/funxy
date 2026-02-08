@@ -167,12 +167,12 @@ testRun("MPTC: Supertrait Interaction (Pretty : Show)", fun() -> {
 // Instance of Collection for Built-in Option<Int> (Mixed with Int)
 // Note: Generic Option<t> requires conditional instance support (not yet available)
 instance Collection<Option<Int>, Int> {
-    fun empty() -> Option<Int> { Zero }
+    fun empty() -> Option<Int> { None }
     fun add(col: Option<Int>, elem: Int) -> Option<Int> { Some(elem) }
     fun contains(col: Option<Int>, elem: Int) -> Bool {
         match col {
             Some(v) -> v == elem,
-            Zero -> false
+            None -> false
         }
     }
 }

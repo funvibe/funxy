@@ -8,14 +8,14 @@ Some(10)
 true
 Some(20)
 true
-Zero
+None
 true
 true
 === Monoid ===
 []
 [1, 2, 3]
 [1, 2, 3]
-Zero
+None
 Some(42)
 Some(42)
 true
@@ -25,7 +25,7 @@ true
 true
 Some(20)
 true
-Zero
+None
 true
 Ok(105)
 true
@@ -36,14 +36,14 @@ true
 === Applicative ===
 Some(11)
 true
-Zero
-Zero
+None
+None
 [11, 21, 20, 40]
 true
 === Monad ===
 Some(11)
 true
-Zero
+None
 Some(25)
 [1, 10, 2, 20, 3, 30]
 true
@@ -52,5 +52,5 @@ true
 true
 === Practical Example ===
 Some(5)
-Zero
+None
 === FP traits tests passed! ===

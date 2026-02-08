@@ -148,6 +148,115 @@ func (w *walker) bindPatternVariablesAsConstant(pat ast.Pattern, valType typesys
 	w.bindPatternVariablesWithConstFlag(pat, valType, tok, true)
 }
 
+// bindPatternVariablesLoose binds identifiers in a pattern without requiring
+// type information. This is useful for list comprehensions where full type
+// inference happens later, but we still need symbols in scope for filters/output.
+func (w *walker) bindPatternVariablesLoose(pat ast.Pattern, tok token.Token) {
+	w.bindPatternVariablesLooseWithConstFlag(pat, tok, false)
+}
+
+func (w *walker) bindPatternVariablesLooseWithConstFlag(pat ast.Pattern, tok token.Token, isConstant bool) {
+	switch p := pat.(type) {
+	case *ast.IdentifierPattern:
+		if p.Value == "_" {
+			return
+		}
+		// Check naming convention (variable must start with lowercase)
+		if !checkValueName(p.Value, p.Token, &w.errors) {
+			return
+		}
+		// Check for redefinition
+		if w.symbolTable.IsDefined(p.Value) {
+			sym, ok := w.symbolTable.Find(p.Value)
+			if ok && !sym.IsPending {
+				w.addError(diagnostics.NewError(diagnostics.ErrA004, p.Token, p.Value))
+				return
+			}
+		}
+		if isConstant {
+			w.symbolTable.DefineConstant(p.Value, w.freshVar(), "")
+		} else {
+			w.symbolTable.Define(p.Value, w.freshVar(), "")
+		}
+
+	case *ast.TuplePattern:
+		for _, elem := range p.Elements {
+			w.bindPatternVariablesLooseWithConstFlag(elem, tok, isConstant)
+		}
+
+	case *ast.ListPattern:
+		for _, elem := range p.Elements {
+			w.bindPatternVariablesLooseWithConstFlag(elem, tok, isConstant)
+		}
+
+	case *ast.RecordPattern:
+		for _, fieldPat := range p.Fields {
+			w.bindPatternVariablesLooseWithConstFlag(fieldPat, tok, isConstant)
+		}
+
+	case *ast.SpreadPattern:
+		if p.Pattern != nil {
+			w.bindPatternVariablesLooseWithConstFlag(p.Pattern, tok, isConstant)
+		}
+
+	case *ast.ConstructorPattern:
+		for _, elem := range p.Elements {
+			w.bindPatternVariablesLooseWithConstFlag(elem, tok, isConstant)
+		}
+
+	case *ast.TypePattern:
+		if p.Name == "_" {
+			return
+		}
+		if !checkValueName(p.Name, p.Token, &w.errors) {
+			return
+		}
+		if w.symbolTable.IsDefined(p.Name) {
+			sym, ok := w.symbolTable.Find(p.Name)
+			if ok && !sym.IsPending {
+				w.addError(diagnostics.NewError(diagnostics.ErrA004, p.Token, p.Name))
+				return
+			}
+		}
+		if isConstant {
+			w.symbolTable.DefineConstant(p.Name, w.freshVar(), "")
+		} else {
+			w.symbolTable.Define(p.Name, w.freshVar(), "")
+		}
+
+	case *ast.StringPattern:
+		for _, part := range p.Parts {
+			if !part.IsCapture {
+				continue
+			}
+			if part.Value == "_" {
+				continue
+			}
+			if !checkValueName(part.Value, tok, &w.errors) {
+				continue
+			}
+			if w.symbolTable.IsDefined(part.Value) {
+				sym, ok := w.symbolTable.Find(part.Value)
+				if ok && !sym.IsPending {
+					w.addError(diagnostics.NewError(diagnostics.ErrA004, tok, part.Value))
+					continue
+				}
+			}
+			if isConstant {
+				w.symbolTable.DefineConstant(part.Value, w.freshVar(), "")
+			} else {
+				w.symbolTable.Define(part.Value, w.freshVar(), "")
+			}
+		}
+
+	case *ast.PinPattern, *ast.WildcardPattern, *ast.LiteralPattern:
+		// No new bindings.
+
+	default:
+		// Skip unsupported patterns here; full validation happens in inference.
+	}
+}
+
 // bindPatternVariablesWithConstFlag binds variables from a pattern to their types
 func (w *walker) bindPatternVariablesWithConstFlag(pat ast.Pattern, valType typesystem.Type, tok token.Token, isConstant bool) {
 	switch p := pat.(type) {

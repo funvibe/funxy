@@ -15,7 +15,7 @@ print(%"Name: %s, Age: %d, Score: %.1f"("Alice", 25, 95.5))
 // Test 5: Integer formatting
 print(%"%d in hex is %x"(255, 255))
 
-// Test 6: Zero arguments (just format string with %%)
+// Test 6: None arguments (just format string with %%)
 print(%"100%% complete"())
 
 // Test 7: Format string assigned to variable
@@ -61,3 +61,9 @@ print(%"%.3f"(2.71828))
 // Test 19: %% - escaped percent
 print(%"%%"())
 
+
+// Test 20: Escape sequences in format literal
+print(%"probe F: %0.2f\n"(0.0))
+print(%"%s\t%s"("A", "B"))
+print(%"%s"("\"hi\""))
+print(%"%s"("C:\\path"))

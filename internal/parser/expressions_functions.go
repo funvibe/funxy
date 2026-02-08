@@ -34,8 +34,8 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 		if len(lookahead) >= 1 {
 			tokenAfterArrow := lookahead[0] // Token after ARROW
 
-			if tokenAfterArrow.Type == token.IDENT_UPPER {
-				// Case: -> Int { ... } or -> Result<T> { ... }
+			if tokenAfterArrow.Type == token.IDENT_UPPER || tokenAfterArrow.Type == token.IDENT_LOWER {
+				// Case: -> Int { ... } or -> Result<T> { ... } or -> t { ... }
 				if len(lookahead) >= 2 {
 					tokenAfterType := lookahead[1]
 					if tokenAfterType.Type == token.LBRACE {
@@ -199,7 +199,7 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 func (p *Parser) parseLessThanOrTypeApp(left ast.Expression) ast.Expression {
 	// We need to decide if this is 'Left < Right' or 'Left<Type>'.
 	// Heuristic: If the token following '<' looks like a Type (Uppercase Identifier), we try to parse it as Type Application.
-	// But we need to distinguish `List<Int>` (type app) from `Zero < Some(1)` (comparison).
+	// But we need to distinguish `List<Int>` (type app) from `None < Some(1)` (comparison).
 
 	isTypeApp := false
 
@@ -210,7 +210,7 @@ func (p *Parser) parseLessThanOrTypeApp(left ast.Expression) ast.Expression {
 		// it's likely a value (constructor call or comparison), not a type argument.
 		// Type arguments are followed by ',' or '>'.
 		// E.g., `List<Int>` - Int is followed by >
-		// E.g., `Zero < Some(1)` - Some is followed by (
+		// E.g., `None < Some(1)` - Some is followed by (
 		// E.g., `Map<String, Int>` - String is followed by ,
 
 		// Save current position info
@@ -225,7 +225,7 @@ func (p *Parser) parseLessThanOrTypeApp(left ast.Expression) ast.Expression {
 			identName := ident.Value
 			// Known ADT constructors that are values, not type constructors
 			knownValueConstructors := map[string]bool{
-				"Zero": true, "Some": true, "Ok": true, "Fail": true,
+				"None": true, "Some": true, "Ok": true, "Fail": true,
 				"True": true, "False": true,
 			}
 			if knownValueConstructors[identName] {
@@ -275,16 +275,8 @@ func (p *Parser) parseTypeApplicationExpression(left ast.Expression) ast.Express
 		Expression: left,
 	}
 
-	p.nextToken() // consume '<'?
-	// parseLessThanOrTypeApp is called with curToken = '<'.
-	// so we need to consume it to start parsing types?
-	// In Pratt, infix functions are called with curToken = Operator.
-	// The Loop in parseExpression calls `nextToken` THEN `infix(leftExp)`.
-	// So curToken IS `<`.
-
-	// We need to parse types.
-	// Since we are at `<`, we advance.
-	p.nextToken() // Move to first Type
+	// We are at '<'. Advance to the first type token.
+	p.nextToken()
 
 	for {
 		t := p.parseType()

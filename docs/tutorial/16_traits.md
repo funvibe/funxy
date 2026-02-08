@@ -376,7 +376,7 @@ trait MyCmp<t> {
 
 // MyPrintable requires BOTH MyShow AND MyCmp
 trait MyPrintable<t> : MyShow<t>, MyCmp<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 ```
 
@@ -392,7 +392,7 @@ trait MyCmp<t> {
 }
 
 trait MyPrintable<t> : MyShow<t>, MyCmp<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 
 // Step 1: Implement Show
@@ -411,7 +411,7 @@ instance MyCmp Int {
 
 // Step 3: Now Printable can be implemented
 instance MyPrintable Int {
-    fun format(val: Int) -> String {
+    fun pretty(val: Int) -> String {
         "Formatted: " ++ show(val)
     }
 }
@@ -419,7 +419,7 @@ instance MyPrintable Int {
 // Usage
 print(show(42))        // Int
 print(eq(1, 1))        // true
-print(format(100))     // Formatted: Int
+print(pretty(100))     // Formatted: Int
 ```
 
 If any super trait is missing, you get an error:
@@ -512,6 +512,32 @@ trait MyIter<c, t> {
 
 This is used for iteration — `c` is the collection type, `t` is the element type.
 
+## Functional Dependencies
+
+When using multi-parameter traits, type inference can sometimes be ambiguous. Functional dependencies allow you to specify that one type parameter determines another, aiding the compiler in type inference.
+
+Syntax: `trait Name<a, b> | a -> b`
+
+This means "a determines b". For every unique `a`, there can be only one `b`.
+
+### Example: Type Conversion
+
+Consider a conversion trait:
+
+```rust
+trait Convert<from, to> | from -> to {
+    fun convert(val: from) -> to
+}
+
+instance Convert<Int, String> {
+    fun convert(val: Int) -> String {
+        "Int: " ++ show(val)
+    }
+}
+```
+
+With the dependency `from -> to`, if the compiler knows `from` is `Int`, it knows `to` must be `String` (based on the visible instances). This avoids ambiguity if `convert(42)` is called where the return type isn't explicitly known.
+
 ## Built-in Traits
 
 The language provides several built-in traits that are automatically implemented for primitive types.
@@ -591,7 +617,7 @@ This is useful for initializing values or providing fallbacks:
 fun getOrDefault<t: Default>(opt: Option<t>) -> t {
     match opt {
         Some(x) -> x
-        Zero -> default(t)
+        None -> default(t)
     }
 }
 ```
@@ -632,7 +658,7 @@ instance Functor<Option> {
     fun fmap<a, b>(f: (a) -> b, fa: Option<a>) -> Option<b> {
         match fa {
             Some(x) -> Some(f(x))
-            Zero -> Zero
+            None -> None
         }
     }
 }
@@ -709,16 +735,16 @@ trait Bifunctor<b> {
 }
 
 instance Bifunctor<Result> {
-    fun bimap<a, c, d, e>(f: (a) -> c, g: (d) -> e, x: Result<d, a>) -> Result<e, c> {
+    fun bimap<a, c, d, e>(f: (a) -> c, g: (d) -> e, x: Result<a, d>) -> Result<c, e> {
         match x {
-            Ok(a) -> Ok(f(a))
-            Fail(d) -> Fail(g(d))
+            Ok(d) -> Ok(g(d))
+            Fail(a) -> Fail(f(a))
         }
     }
 }
 
 // Map both success and error values
-res = bimap(fun(x) -> x * 2, fun(e) -> e ++ "!", Fail("err"))
+res = bimap(fun(e) -> e ++ "!", fun(x) -> x * 2, Fail("err"))
 print(res)  // Fail("err!")
 ```
 

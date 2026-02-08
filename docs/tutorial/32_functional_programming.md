@@ -48,12 +48,12 @@ The `<>` operation must be **associative**:
 [1, 2, 3] <> [4, 5, 6]  // [1, 2, 3, 4, 5, 6]
 ```
 
-**Option**: First non-Zero wins
+**Option**: First non-None wins
 ```rust
 Some(10) <> Some(20)  // Some(10)
-Some(10) <> Zero      // Some(10)
-Zero <> Some(20)      // Some(20)
-Zero <> Zero          // Zero
+Some(10) <> None      // Some(10)
+None <> Some(20)      // Some(20)
+None <> None          // None
 ```
 
 ### Custom Instance Example
@@ -105,10 +105,10 @@ mempty: List<Int>  // []
 [1, 2, 3] <> []    // [1, 2, 3]
 ```
 
-**Option**: Zero is identity
+**Option**: None is identity
 ```rust
-mempty: Option<Int>  // Zero
-Zero <> Some(42)     // Some(42)
+mempty: Option<Int>  // None
+None <> Some(42)     // Some(42)
 ```
 
 ### Custom Instance Example
@@ -158,10 +158,10 @@ trait Functor<F> {
 fmap(fun(x) -> x * 2, [1, 2, 3, 4, 5])  // [2, 4, 6, 8, 10]
 ```
 
-**Option**: Map over Some, Zero stays Zero
+**Option**: Map over Some, None stays None
 ```rust
 fmap(fun(x) -> x * 2, Some(10))  // Some(20)
-fmap(fun(x) -> x * 2, Zero)      // Zero
+fmap(fun(x) -> x * 2, None)      // None
 ```
 
 **Result**: Map over Ok, Fail stays Fail
@@ -174,8 +174,8 @@ fmap(fun(x) -> x + 100, Fail("error"))   // Fail("error")
 
 ```rust
 // Identity law
-identity = fun(x) -> x
-print(fmap(identity, [1, 2, 3]) == [1, 2, 3])  // true
+idFn = fun(x) -> x
+print(fmap(idFn, [1, 2, 3]) == [1, 2, 3])  // true
 
 // Composition law
 inc = fun(x) -> x + 1
@@ -218,8 +218,8 @@ fns <*> vals  // [11, 21, 20, 40] - applies each fn to each val
 **Option**: Apply if both are Some
 ```rust
 Some(fun(x) -> x + 1) <*> Some(10)  // Some(11)
-Some(fun(x) -> x + 1) <*> Zero      // Zero
-Zero <*> Some(10)                    // Zero
+Some(fun(x) -> x + 1) <*> None      // None
+None <*> Some(10)                    // None
 ```
 
 **Result**: Apply if both are Ok
@@ -268,8 +268,8 @@ trait Monad<M> : Applicative<M> {
 **Option**: Chain computations that may fail
 ```rust
 Some(10) >>= fun(x) -> Some(x + 1)   // Some(11)
-Some(10) >>= fun(_) -> Zero          // Zero
-Zero >>= fun(x) -> Some(x + 1)       // Zero
+Some(10) >>= fun(_) -> None          // None
+None >>= fun(x) -> Some(x + 1)       // None
 ```
 
 **Result**: Chain computations with errors
@@ -284,16 +284,16 @@ Fail("e") >>= fun(x) -> Ok(x * 2)    // Fail("e")
 ```rust
 // Safe division chain
 fun safeDiv(x: Int, y: Int) -> Option<Int> {
-    if y == 0 { Zero } else { Some(x / y) }
+    if y == 0 { None } else { Some(x / y) }
 }
 
 // 100 / 2 / 5 / 2 (chained on single line)
 result = Some(100) >>= fun(x) -> safeDiv(x, 2) >>= fun(x) -> safeDiv(x, 5) >>= fun(x) -> safeDiv(x, 2)
 print(result)  // Some(5)
 
-// Division by zero — returns Zero immediately
+// Division by zero — returns None immediately
 result2 = Some(100) >>= fun(x) -> safeDiv(x, 0) >>= fun(x) -> safeDiv(x, 5)
-print(result2)  // Zero
+print(result2)  // None
 ```
 
 ## Standard Monads
@@ -357,7 +357,7 @@ log = res[1] // ["started", "processing 10", "done"]
 // Using pure with Writer
 // Requires explicit type annotation so runtime knows the Log type (W)
 // to call the correct mempty() (empty log)
-type MyLog = List<String>
+type alias MyLog = List<String>
 wPure: Writer<MyLog, Int> = pure(42) // Writer(42, [])
 ```
 
@@ -419,11 +419,11 @@ type ValidationError = VErr String
 
 // Validation functions returning Option
 fun validateName(name: String) -> Option<String> {
-    if length(name) > 0 { Some(name) } else { Zero }
+    if length(name) > 0 { Some(name) } else { None }
 }
 
 fun validateAge(age: Int) -> Option<Int> {
-    if age >= 0 && age < 150 { Some(age) } else { Zero }
+    if age >= 0 && age < 150 { Some(age) } else { None }
 }
 
 // Combine validations
@@ -438,9 +438,9 @@ fun makePerson(name: String) -> (Int) -> Person {
 validatedPerson = fmap(makePerson, validateName("Alice")) <*> validateAge(30)
 print(validatedPerson)  // Some(MkPerson("Alice", 30))
 
-// If any fails, we get Zero
+// If any fails, we get None
 invalidPerson = fmap(makePerson, validateName("")) <*> validateAge(30)
-print(invalidPerson)  // Zero
+print(invalidPerson)  // None
 ```
 
 ## Summary of Operators

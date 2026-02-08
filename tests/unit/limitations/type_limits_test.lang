@@ -2,7 +2,7 @@ import "lib/test" (*)
 
 // 1. Recursive Types Limitation
 // Testing if we can define infinite recursive structural types without nominal wrappers.
-type RecList = { val: Int, next: RecList | Nil }
+type alias RecList = { val: Int, next: RecList | Nil }
 
 testRun("Recursive Types: Infinite alias", fun() -> {
     r1 = { val: 1, next: nil }

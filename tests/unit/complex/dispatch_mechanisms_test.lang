@@ -1,0 +1,95 @@
+import "lib/test" (testRun, assertEquals)
+
+// Complex dispatch strategy tests
+
+// 1. Producer: Nullary method, needs DispatchReturn
+trait Producer<a> {
+    fun produce() -> a
+}
+
+instance Producer Int {
+    fun produce() { 42 }
+}
+
+instance Producer String {
+    fun produce() { "produced" }
+}
+
+// 2. Wrapper: Arg -> Container, needs DispatchReturn (HKT)
+trait Wrapper<f> {
+    fun wrap<a>(val: a) -> f<a>
+}
+
+instance Wrapper Option {
+    fun wrap<a>(val: a) -> Option<a> { Some(val) }
+}
+
+instance Wrapper List {
+    fun wrap<a>(val: a) -> List<a> { [val] }
+}
+
+// 3. Converter: A -> B, needs MPTC dispatch
+trait Converter<a, b> {
+    fun conv(val: a) -> b
+}
+
+instance Converter<Int, String> {
+    fun conv(val: Int) -> String { "Int(" ++ show(val) ++ ")" }
+}
+
+instance Converter<Int, List<Int>> {
+    fun conv(val: Int) -> List<Int> { [val] }
+}
+
+// 4. Named: Dispatch via Explicit Type Application (DispatchHint)
+trait Named<a> {
+    fun getName() -> String
+}
+
+instance Named Int {
+    fun getName() { "NamedInt" }
+}
+
+instance Named String {
+    fun getName() { "NamedString" }
+}
+
+testRun("Dispatch: DispatchReturn (Nullary)", \ -> {
+    p1 : Int = produce()
+    p2 : String = produce()
+    assertEquals(42, p1, "Producer<Int>")
+    assertEquals("produced", p2, "Producer<String>")
+})
+
+testRun("Dispatch: DispatchReturn + HKT (Wrapper)", \ -> {
+    w1 : Option<Int> = wrap(10)
+    w2 : List<Int> = wrap(20)
+
+    // Check inner values since structural equality works for data classes
+    assertEquals(Some(10), w1, "Option<Int> wrap")
+    assertEquals([20], w2, "List<Int> wrap")
+})
+
+testRun("Dispatch: MPTC (Arg + Return)", \ -> {
+    c1 : String = conv(10)
+    c2 : List<Int> = conv(20)
+
+    assertEquals("Int(10)", c1, "Int -> String")
+    assertEquals([20], c2, "Int -> List<Int>")
+})
+
+testRun("Dispatch: Nested/Complex", \ -> {
+    // wrap(produce()) -> Option<Int>
+    // produce() -> Int (inferred from wrap's arg)
+    // wrap -> Option (inferred from return annotation)
+    nested : Option<Int> = wrap(produce())
+    assertEquals(Some(42), nested, "Nested inference and dispatch")
+})
+
+testRun("Dispatch: Explicit Type Application (Hint)", \ -> {
+    n1 = getName<Int>()
+    n2 = getName<String>()
+
+    assertEquals("NamedInt", n1, "Named<Int>")
+    assertEquals("NamedString", n2, "Named<String>")
+})

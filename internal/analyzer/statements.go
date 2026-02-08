@@ -65,6 +65,7 @@ func (w *walker) VisitProgram(program *ast.Program) {
 				// Register TCon with correct Kind
 				w.symbolTable.DefineTypePending(s.Name.Value, typesystem.TCon{Name: s.Name.Value, KindVal: kind}, w.currentModuleName)
 				w.symbolTable.RegisterKind(s.Name.Value, kind)
+				w.symbolTable.SetDefinitionFile(s.Name.Value, w.currentFile)
 			case *ast.FunctionStatement:
 				// Register Function Name with placeholder (skip if parsing failed)
 				if s == nil || s.Name == nil {
@@ -79,7 +80,8 @@ func (w *walker) VisitProgram(program *ast.Program) {
 						continue
 					}
 				}
-				w.symbolTable.DefinePending(s.Name.Value, typesystem.TCon{Name: "PendingFunction"}, w.currentModuleName)
+				w.symbolTable.DefinePending(s.Name.Value, typesystem.TVar{Name: "_pending_fn_" + s.Name.Value}, w.currentModuleName)
+				w.symbolTable.SetDefinitionFile(s.Name.Value, w.currentFile)
 			case *ast.TraitDeclaration:
 				if s == nil || s.Name == nil {
 					continue
@@ -90,6 +92,7 @@ func (w *walker) VisitProgram(program *ast.Program) {
 					continue
 				}
 				w.symbolTable.DefinePendingTrait(s.Name.Value, w.currentModuleName)
+				w.symbolTable.SetDefinitionFile(s.Name.Value, w.currentFile)
 			case *ast.ConstantDeclaration:
 				if s != nil && s.Name != nil {
 					// Check for redefinition (including builtins from prelude)
@@ -97,7 +100,8 @@ func (w *walker) VisitProgram(program *ast.Program) {
 						w.addError(diagnostics.NewError(diagnostics.ErrA004, s.Name.GetToken(), s.Name.Value))
 						continue
 					}
-					w.symbolTable.DefinePendingConstant(s.Name.Value, typesystem.TCon{Name: "PendingConstant"}, w.currentModuleName)
+					w.symbolTable.DefinePendingConstant(s.Name.Value, typesystem.TVar{Name: "_pending_const_" + s.Name.Value}, w.currentModuleName)
+					w.symbolTable.SetDefinitionFile(s.Name.Value, w.currentFile)
 				}
 			case *ast.ExpressionStatement:
 				// Handle top-level assignments: x = expr
@@ -109,7 +113,8 @@ func (w *walker) VisitProgram(program *ast.Program) {
 								w.addError(diagnostics.NewError(diagnostics.ErrA004, ident.GetToken(), ident.Value))
 								continue
 							}
-							w.symbolTable.DefinePending(ident.Value, typesystem.TCon{Name: "PendingVariable"}, w.currentModuleName)
+							w.symbolTable.DefinePending(ident.Value, typesystem.TVar{Name: "_pending_var_" + ident.Value}, w.currentModuleName)
+							w.symbolTable.SetDefinitionFile(ident.Value, w.currentFile)
 						}
 					}
 				}
@@ -167,8 +172,14 @@ func (w *walker) VisitProgram(program *ast.Program) {
 				if s != nil {
 					s.Accept(w)
 				}
+			case *ast.ReturnStatement:
+				if s != nil {
+					s.Accept(w)
+				}
 			case *ast.InstanceDeclaration:
 				if s != nil {
+					// We need to visit instance declarations in ModeBodies to process method bodies!
+					// In ModeInstances (Pass 3), we only checked signatures.
 					s.Accept(w)
 				}
 			case *ast.DirectiveStatement:
@@ -259,12 +270,13 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 	// Register generic type parameters (from n.TypeParams)
 	rigidSubst := make(typesystem.Subst)
 	for _, tp := range n.TypeParams {
-		// Use TCon (Rigid Type Constant) for body analysis to prevent instantiation
+		// Use TVar for body analysis to allow unification (legacy behavior compatibility)
+		// We previously used Rigid TCon, but it caused issues with implicit unification in some tests.
 		kind := inferKindFromFunction(n, tp.Value, w.symbolTable)
-		tCon := typesystem.TCon{Name: tp.Value, KindVal: kind}
-		w.symbolTable.DefineType(tp.Value, tCon, "")
+		tVar := typesystem.TVar{Name: tp.Value, KindVal: kind}
+		w.symbolTable.DefineType(tp.Value, tVar, "")
 		w.symbolTable.RegisterKind(tp.Value, kind)
-		rigidSubst[tp.Value] = tCon
+		rigidSubst[tp.Value] = tVar
 	}
 
 	// Register Witness Parameters (Dictionaries)
@@ -345,6 +357,13 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 		}
 	}
 
+	// Unwrap TForall to access TFunc structure
+	if fnType != nil {
+		if poly, ok := fnType.(typesystem.TForall); ok {
+			fnType = poly.Type
+		}
+	}
+
 	// Propagate expected return type to body with Rigid Type Constants
 	if fnType != nil {
 		if tFunc, ok := fnType.(typesystem.TFunc); ok {
@@ -361,8 +380,10 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 		if n.Receiver.Type != nil {
 			recvType := BuildType(n.Receiver.Type, w.symbolTable, &w.errors)
 			w.symbolTable.Define(n.Receiver.Name.Value, recvType, "")
+			w.symbolTable.SetDefinitionFile(n.Receiver.Name.Value, w.currentFile)
 		} else {
 			w.symbolTable.Define(n.Receiver.Name.Value, w.freshVar(), "")
+			w.symbolTable.SetDefinitionFile(n.Receiver.Name.Value, w.currentFile)
 		}
 	}
 
@@ -394,7 +415,15 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 		}
 		// Don't define ignored parameters (_) in scope
 		if !param.IsIgnored {
-			w.symbolTable.Define(param.Name.Value, paramType, "")
+			w.symbolTable.DefineWithNode(param.Name.Value, paramType, "", param.Name)
+			w.symbolTable.SetDefinitionFile(param.Name.Value, w.currentFile)
+
+			// Map parameter AST node to its symbol in ResolutionMap for LSP
+			if w.ResolutionMap != nil {
+				if sym, found := w.symbolTable.Find(param.Name.Value); found {
+					w.ResolutionMap[param.Name] = sym
+				}
+			}
 		}
 	}
 
@@ -438,6 +467,9 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 		prevInLoop := w.inLoop
 		w.inLoop = false
 
+		w.pushReturnType(expectedRetType)
+		defer w.popReturnType()
+
 		// Set inFunctionBody flag to skip redundant expression inference during walk
 		prevInFn := w.inFunctionBody
 		// We set inFunctionBody to true to prevent VisitExpressionStatement from re-inferring expressions
@@ -456,10 +488,15 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 		w.inLoop = prevInLoop
 
 		// Infer body type
-		// Clear pending witnesses from the walk phase (VisitExpressionStatement)
+		// Save pending witnesses from the outer scope (e.g. previous top-level expressions)
 		// because we are about to re-infer the whole body and we want fresh witnesses
 		// that match the fresh type variables generated in this pass.
-		w.inferCtx.PendingWitnesses = nil
+		oldPending := w.inferCtx.PendingWitnesses
+		w.inferCtx.PendingWitnesses = make([]PendingWitness, 0)
+		// Restore pending witnesses when done with this body
+		defer func() {
+			w.inferCtx.PendingWitnesses = oldPending
+		}()
 
 		// Propagate expected return type to the body block for context-sensitive inference
 		if expectedRetType != nil {
@@ -500,6 +537,23 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 			} else {
 				// Success! Update TypeMap and SymbolTable with resolved types
 				finalSubst := subst.Compose(sBody)
+
+				// Update function symbol in outer scope with resolved return type
+				// This is critical for inferred return types (where the symbol initially has a TVar)
+				// to be propagated to callers or instance verifiers.
+				if sym, ok := outer.Find(n.Name.Value); ok {
+					// We need to apply substitution to the WHOLE type (including TForall if present)
+					resolvedType := sym.Type.Apply(finalSubst)
+
+					// Only update if it actually changed (optimization)
+					if resolvedType.String() != sym.Type.String() {
+						err := outer.Update(n.Name.Value, resolvedType)
+						if err != nil {
+							// Should not happen
+							w.addError(diagnostics.NewError(diagnostics.ErrA003, n.Name.GetToken(), "failed to update function return type: "+err.Error()))
+						}
+					}
+				}
 
 				// Resolve pending witnesses
 				ResolvePendingWitnesses(w.inferCtx, finalSubst, w.symbolTable, func(n ast.Node, err error) {
@@ -678,59 +732,10 @@ func (w *walker) VisitForExpression(n *ast.ForExpression) {
 	defer func() { w.symbolTable = outer }()
 
 	if n.Iterable != nil {
-		// Iteration loop
+		// Iteration loop - traverse iterable and bind loop variable loosely.
+		// Full type validation happens in inferForExpression.
 		n.Iterable.Accept(w)
-
-		// Define loop variable
-		// We infer the iterable type to determine item type.
-		iterableType, s1, err := InferWithContext(w.inferCtx, n.Iterable, outer) // Use outer scope for inference
-		if err != nil {
-			w.appendError(n.Iterable, err)
-			// Use Any/Unknown type for item to continue analysis
-			w.symbolTable.Define(n.ItemName.Value, w.freshVar(), "")
-		} else {
-			iterableType = iterableType.Apply(s1)
-			w.TypeMap[n.Iterable] = iterableType
-
-			// Check if iterable is List (direct support)
-			var itemType typesystem.Type
-
-			if tApp, ok := iterableType.(typesystem.TApp); ok {
-				if tCon, ok := tApp.Constructor.(typesystem.TCon); ok && tCon.Name == config.ListTypeName && len(tApp.Args) == 1 {
-					itemType = tApp.Args[0]
-				}
-			}
-
-			if itemType == nil {
-				// Check for iter method via Iter trait protocol
-				// We look for an iter function that can handle this type.
-				// The function exists if the type (or a compatible type) implements Iter.
-				if iterSym, ok := w.symbolTable.Find(config.IterMethodName); ok {
-					iterType := InstantiateWithContext(w.inferCtx, iterSym.Type)
-					if tFunc, ok := iterType.(typesystem.TFunc); ok && len(tFunc.Params) > 0 {
-						subst, err := typesystem.Unify(tFunc.Params[0], iterableType)
-						if err == nil {
-							retType := tFunc.ReturnType.Apply(subst)
-							if iteratorFunc, ok := retType.(typesystem.TFunc); ok {
-								iteratorRet := iteratorFunc.ReturnType
-								if tApp, ok := iteratorRet.(typesystem.TApp); ok {
-									if tCon, ok := tApp.Constructor.(typesystem.TCon); ok && tCon.Name == config.OptionTypeName && len(tApp.Args) >= 1 {
-										itemType = tApp.Args[0]
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			if itemType == nil {
-				w.addError(diagnostics.NewError(diagnostics.ErrA003, n.Iterable.GetToken(), "iterable must be List or implement Iter trait, got "+iterableType.String()))
-				itemType = w.freshVar()
-			}
-
-			w.symbolTable.Define(n.ItemName.Value, itemType, "")
-		}
+		w.symbolTable.Define(n.ItemName.Value, w.freshVar(), "")
 	} else {
 		// Condition loop
 		n.Condition.Accept(w)
@@ -774,6 +779,69 @@ func (w *walker) VisitContinueStatement(n *ast.ContinueStatement) {
 	if !w.inLoop {
 		w.addError(diagnostics.NewError(diagnostics.ErrA003, n.Token, "continue statement outside of loop"))
 	}
+}
+
+func (w *walker) VisitReturnStatement(n *ast.ReturnStatement) {
+	if len(w.returnTypeStack) == 0 {
+		w.addError(diagnostics.NewError(diagnostics.ErrA003, n.Token, "return statement outside of function"))
+		return
+	}
+
+	var expectedRetType typesystem.Type
+	if len(w.returnTypeStack) > 0 {
+		expectedRetType = w.returnTypeStack[len(w.returnTypeStack)-1]
+	}
+
+	if n.Value != nil {
+		n.Value.Accept(w)
+	}
+
+	// If we are inside a function body, still infer return expression for checking
+	if n.Value != nil {
+		if expectedRetType != nil && w.inferCtx != nil {
+			if w.inferCtx.ExpectedReturnTypes == nil {
+				w.inferCtx.ExpectedReturnTypes = make(map[ast.Node]typesystem.Type)
+			}
+			w.inferCtx.ExpectedReturnTypes[n.Value] = expectedRetType
+		}
+
+		t, s, err := InferWithContext(w.inferCtx, n.Value, w.symbolTable)
+		if err != nil {
+			w.appendError(n.Value, err)
+			return
+		}
+		t = t.Apply(s)
+		w.TypeMap[n.Value] = t
+
+		if expectedRetType != nil {
+			if _, err := typesystem.Unify(expectedRetType, t); err != nil {
+				w.addError(diagnostics.NewError(
+					diagnostics.ErrA003,
+					n.Value.GetToken(),
+					"return type mismatch: expected "+expectedRetType.String()+", got "+t.String(),
+				))
+			}
+		}
+	} else if expectedRetType != nil {
+		if _, err := typesystem.Unify(expectedRetType, typesystem.Nil); err != nil {
+			w.addError(diagnostics.NewError(
+				diagnostics.ErrA003,
+				n.Token,
+				"return type mismatch: expected "+expectedRetType.String()+", got Nil",
+			))
+		}
+	}
+}
+
+func (w *walker) pushReturnType(t typesystem.Type) {
+	w.returnTypeStack = append(w.returnTypeStack, t)
+}
+
+func (w *walker) popReturnType() {
+	if len(w.returnTypeStack) == 0 {
+		return
+	}
+	w.returnTypeStack = w.returnTypeStack[:len(w.returnTypeStack)-1]
 }
 
 func (w *walker) VisitMatchExpression(n *ast.MatchExpression) {

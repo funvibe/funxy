@@ -70,13 +70,13 @@ print(show(true))       // true
 print(show([1, 2]))     // [1, 2]
 ```
 
-### `sprintf(format: String, ...args: Any)` → `String`
+### `format(format: String, ...args: Any)` → `String`
 
 Formats a value according to a format string (like printf).
 
 ```rust
 // Explicit call
-s = sprintf("Values: %d, %.2f", 42, 3.14159)  // "Values: 42, 3.14"
+s = format("Values: %d, %.2f", 42, 3.14159)  // "Values: 42, 3.14"
 
 // Literal syntax (creates a formatter function for single argument)
 fmt = %".2f"
@@ -118,23 +118,23 @@ print(charToCode('a'))      // 97
 
 ### `read<T>(string: String, type: Type<T>)` → `Option<T>`
 
-Parses a string into the specified type. Returns `Some(value)` on success, `Zero` on failure.
+Parses a string into the specified type. Returns `Some(value)` on success, `None` on failure.
 
 ```rust
 // Parsing integers
 x = read("42", Int)
-print(match x { Some v -> v; Zero -> -1 })  // 42
+print(match x { Some v -> v; None -> -1 })  // 42
 
 bad = read("abc", Int)
-print(match bad { Some v -> v; Zero -> -1 })  // -1
+print(match bad { Some v -> v; None -> -1 })  // -1
 
 // Parsing floats
 y = read("3.14", Float)
-print(match y { Some v -> v; Zero -> 0.0 })  // 3.14
+print(match y { Some v -> v; None -> 0.0 })  // 3.14
 
 // Parsing booleans (only "true"/"false")
 z = read("true", Bool)
-print(match z { Some v -> v; Zero -> false })  // true
+print(match z { Some v -> v; None -> false })  // true
 ```
 
 **Note**: `read` always requires an explicit type argument. Type inference from context is not supported.
@@ -206,13 +206,13 @@ transform = if needDouble { fun(x) -> x * 2 } else { id }
 print(transform(5))         // 10
 ```
 
-### `const<A, B>(x: A, y: B) -> A`
+### `constant<A, B>(x: A, y: B) -> A`
 
 Returns first argument, ignores second:
 
 ```rust
-print(const(1, 2))          // 1
-print(const("a", "b"))      // a
+print(constant(1, 2))          // 1
+print(constant("a", "b"))      // a
 ```
 
 ### `len<T>(collection: T) -> Int`
@@ -262,11 +262,21 @@ print((id ,, inc)(5))       // 6
 
 # `lib/list` — Standard List Library
 
-Import with:
+Import with one of the following styles:
+
 ```rust
-import "lib/list" (*)              // all functions
-import "lib/list" (map, filter)    // specific functions
-import "lib/list" !(sort)          // all except sort
+import "lib/list" (*)  // all functions
+print(map(fun(x) -> x * 2, [1, 2, 3]))
+```
+
+```rust
+import "lib/list" (map, filter)  // specific functions
+print(filter(fun(x) -> x > 2, map(fun(x) -> x * 2, [1, 2, 3])))
+```
+
+```rust
+import "lib/list" !(sort)  // all except sort
+print(len([1, 2, 3]))
 ```
 
 ## Access Functions
@@ -428,14 +438,14 @@ print(range(5, 5))   // [] (empty when start >= end)
 | `print` | `(args...) -> Nil` | Output to stdout with newline |
 | `write` | `(args...) -> Nil` | Output to stdout without newline |
 | `id` | `(T) -> T` | Identity function |
-| `const` | `(A, B) -> A` | Return first argument |
+| `constant` | `(A, B) -> A` | Return first argument |
 | `len` | `(collection) -> Int` | Length (chars for strings) |
 | `lenBytes` | `(String) -> Int` | Byte length |
 | `read` | `(String, Type<T>) -> Option<T>` | Parse string |
 | `getType` | `(value) -> Type<T>` | Runtime type |
 | `typeOf` | `(value, Type) -> Bool` | Check type match |
 | `show` | `(value) -> String` | String representation |
-| `sprintf` | `(fmt, value) -> String` | Format string |
+| `format` | `(fmt, value) -> String` | Format string |
 | `default` | `(Type<T>) -> T` | Default value |
 | `panic` | `(String) -> a` | Abort with message |
 
@@ -443,10 +453,17 @@ print(range(5, 5))   // [] (empty when start >= end)
 
 # `lib/time` — Time and Benchmarking
 
-Import with:
+Import with one of the following styles:
+
 ```rust
 import "lib/time" (*)
+print(timeNow())
+```
+
+```rust
 import "lib/time" (clockMs, timeNow)
+print(clockMs())
+print(timeNow())
 ```
 
 ## Functions
@@ -510,44 +527,59 @@ sleepMs(500)
 
 # `lib/io` — Input/Output
 
-Import with:
+Import with one of the following styles:
+
 ```rust
 import "lib/io" (*)
-import "lib/io" (fileRead, fileWrite)
+print(fileExists("/tmp"))
+```
+
+```rust
+import "lib/io" (fileRead, fileWrite, fileExists)
+if fileExists("/tmp/example.txt") {
+    match fileRead("/tmp/example.txt") {
+        Ok(content) -> print(content)
+        Fail(e) -> print(e)
+    }
+} else {
+    fileWrite("/tmp/example.txt", "hello")
+}
 ```
 
 ## Console
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `readLine` | `() -> Option<String>` | Read line from stdin, `Zero` at EOF |
+| `readLine` | `() -> Option<String>` | Read line from stdin, `None` at EOF |
 
 ## File Reading
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `fileRead` | `(String) -> Result<String, String>` | Read entire file |
+| `fileReadBytes` | `(String) -> Result<String, Bytes>` | Read file as bytes |
+| `fileReadBytesAt` | `(String, Int, Int) -> Result<String, Bytes>` | Read `length` bytes from `offset` as bytes |
 | `fileReadAt` | `(String, Int, Int) -> Result<String, String>` | Read `length` bytes from `offset` |
 
 ## File Writing
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `fileWrite` | `(String, String) -> Result<Int, String>` | Write to file (overwrite), returns bytes written |
-| `fileAppend` | `(String, String) -> Result<Int, String>` | Append to file, returns bytes written |
+| `fileWrite` | `(String, String | Bytes) -> Result<String, Int>` | Write to file (overwrite), returns bytes written |
+| `fileAppend` | `(String, String | Bytes) -> Result<String, Int>` | Append to file, returns bytes written |
 
 ## File Info
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `fileExists` | `(String) -> Bool` | Check if file exists |
-| `fileSize` | `(String) -> Result<Int, String>` | Get file size in bytes |
+| `fileSize` | `(String) -> Result<String, Int>` | Get file size in bytes |
 
 ## File Management
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `deleteFile` | `(String) -> Result<Nil, String>` | Delete file |
+| `deleteFile` | `(String) -> Result<String, Nil>` | Delete file |
 
 ## Usage Examples
 
@@ -557,6 +589,16 @@ import "lib/io" (fileRead)
 
 match fileRead("data.txt") {
     Ok(content) -> print("Content: " ++ content)
+    Fail(err) -> print("Error: " ++ err)
+}
+```
+
+### Read Binary File
+```rust
+import "lib/io" (fileReadBytes)
+
+match fileReadBytes("image.png") {
+    Ok(data) -> print("Read " ++ show(len(data)) ++ " bytes")
     Fail(err) -> print("Error: " ++ err)
 }
 ```
@@ -594,7 +636,7 @@ import "lib/io" (readLine)
 print("Enter your name: ")
 match readLine() {
     Some(name) -> print("Hello, " ++ name ++ "!")
-    Zero -> print("No input received")
+    None -> print("No input received")
 }
 ```
 

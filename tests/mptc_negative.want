@@ -1,4 +1,4 @@
 Processing failed with errors:
-- error at 19:33 [A003]: type error: evidence not found for Numeric[List]
-- error at 27:33 [A003]: type error: evidence not found for Show[FUNCTION]
-- error at 33:33 [A003]: type error: evidence not found for Numeric[Bool]
+- error at 19:33 [A003]: type error: types [String String Int] do not implement trait UltraConstrained
+- error at 27:33 [A003]: type error: types [Int (t?) -> t? Int] do not implement trait UltraConstrained
+- error at 33:33 [A003]: type error: types [Int String Bool] do not implement trait UltraConstrained

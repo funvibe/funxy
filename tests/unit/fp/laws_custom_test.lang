@@ -142,7 +142,7 @@ fun idAddTen(x: Int) -> MyIdentity<Int> { Id(x + 10) }
 // Maybe Laws Tests
 // =============================================
 
-testRun("Maybe Functor MyIdentity", fun() -> {
+testRun("Maybe Functor Identity", fun() -> {
     x = Just(42)
     result = fmap(id, x)
     assert(result == x)
@@ -155,7 +155,7 @@ testRun("Maybe Functor Composition", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Applicative MyIdentity", fun() -> {
+testRun("Maybe Applicative Identity", fun() -> {
     v = Just(42)
     idFn: Maybe<(Int) -> Int> = pure(id)
     result = idFn <*> v
@@ -170,7 +170,7 @@ testRun("Maybe Applicative Homomorphism", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Monad Left MyIdentity", fun() -> {
+testRun("Maybe Monad Left Identity", fun() -> {
     a = 21
     f = maybeDouble
     left = (pure(a) : Maybe<Int>) >>= f
@@ -178,7 +178,7 @@ testRun("Maybe Monad Left MyIdentity", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Monad Right MyIdentity", fun() -> {
+testRun("Maybe Monad Right Identity", fun() -> {
     m = Just(42)
     result = m >>= pure
     assert(result == m)
@@ -202,14 +202,14 @@ testRun("Maybe Semigroup Associativity", fun() -> {
     assert(left == right)
 })
 
-testRun("Maybe Monoid Left MyIdentity", fun() -> {
+testRun("Maybe Monoid Left Identity", fun() -> {
     x = Just(42)
     empty: Maybe<Int> = Nothing
     result = empty <> x
     assert(result == x)
 })
 
-testRun("Maybe Monoid Right MyIdentity", fun() -> {
+testRun("Maybe Monoid Right Identity", fun() -> {
     x = Just(42)
     empty: Maybe<Int> = Nothing
     result = x <> empty
@@ -220,13 +220,13 @@ testRun("Maybe Monoid Right MyIdentity", fun() -> {
 // Either Laws Tests
 // =============================================
 
-testRun("Either Functor MyIdentity - Right", fun() -> {
+testRun("Either Functor Identity - Right", fun() -> {
     x: Either<String, Int> = Right(42)
     result = fmap(id, x)
     assert(result == x)
 })
 
-testRun("Either Functor MyIdentity - Left", fun() -> {
+testRun("Either Functor Identity - Left", fun() -> {
     x: Either<String, Int> = Left("error")
     result = fmap(id, x)
     assert(result == x)
@@ -239,7 +239,29 @@ testRun("Either Functor Composition", fun() -> {
     assert(left == right)
 })
 
-testRun("Either Monad Left MyIdentity", fun() -> {
+testRun("Either Applicative Identity - Right", fun() -> {
+    v: Either<String, Int> = Right(42)
+    idFn: Either<String, (Int) -> Int> = pure(id)
+    result = idFn <*> v
+    assert(result == v)
+})
+
+testRun("Either Applicative Identity - Left", fun() -> {
+    v: Either<String, Int> = Left("error")
+    idFn: Either<String, (Int) -> Int> = pure(id)
+    result = idFn <*> v
+    assert(result == v)
+})
+
+testRun("Either Applicative Homomorphism", fun() -> {
+    f = double
+    x = 21
+    left: Either<String, Int> = (pure(f) : Either<String, (Int) -> Int>) <*> pure(x)
+    right: Either<String, Int> = pure(f(x))
+    assert(left == right)
+})
+
+testRun("Either Monad Left Identity", fun() -> {
     a = 21
     f = eitherDouble
     left = (pure(a) : Either<String, Int>) >>= f
@@ -247,13 +269,13 @@ testRun("Either Monad Left MyIdentity", fun() -> {
     assert(left == right)
 })
 
-testRun("Either Monad Right MyIdentity - Right", fun() -> {
+testRun("Either Monad Right Identity - Right", fun() -> {
     m: Either<String, Int> = Right(42)
     result = m >>= pure
     assert(result == m)
 })
 
-testRun("Either Monad Right MyIdentity - Left", fun() -> {
+testRun("Either Monad Right Identity - Left", fun() -> {
     m: Either<String, Int> = Left("error")
     result = m >>= pure
     assert(result == m)
@@ -272,7 +294,7 @@ testRun("Either Monad Associativity", fun() -> {
 // MyIdentity Laws Tests
 // =============================================
 
-testRun("MyIdentity Functor MyIdentity", fun() -> {
+testRun("MyIdentity Functor Identity", fun() -> {
     x = Id(42)
     result = fmap(id, x)
     assert(result == x)
@@ -285,14 +307,22 @@ testRun("MyIdentity Functor Composition", fun() -> {
     assert(left == right)
 })
 
-testRun("MyIdentity Applicative MyIdentity", fun() -> {
+testRun("MyIdentity Applicative Identity", fun() -> {
     v = Id(42)
     idFn: MyIdentity<(Int) -> Int> = pure(id)
     result = idFn <*> v
     assert(result == v)
 })
 
-testRun("MyIdentity Monad Left MyIdentity", fun() -> {
+testRun("MyIdentity Applicative Homomorphism", fun() -> {
+    f = double
+    x = 21
+    left: MyIdentity<Int> = (pure(f) : MyIdentity<(Int) -> Int>) <*> pure(x)
+    right: MyIdentity<Int> = pure(f(x))
+    assert(left == right)
+})
+
+testRun("MyIdentity Monad Left Identity", fun() -> {
     a = 21
     f = idDouble
     left = (pure(a) : MyIdentity<Int>) >>= f
@@ -300,7 +330,7 @@ testRun("MyIdentity Monad Left MyIdentity", fun() -> {
     assert(left == right)
 })
 
-testRun("MyIdentity Monad Right MyIdentity", fun() -> {
+testRun("MyIdentity Monad Right Identity", fun() -> {
     m = Id(42)
     result = m >>= pure
     assert(result == m)

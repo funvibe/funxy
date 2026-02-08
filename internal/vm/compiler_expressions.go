@@ -2,10 +2,10 @@ package vm
 
 import (
 	"fmt"
-	"hash/fnv"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"hash/fnv"
 	"sort"
 	"strings"
 )
@@ -174,7 +174,36 @@ func (c *Compiler) compileExpression(expr ast.Expression) error {
 		return nil
 
 	case *ast.TypeApplicationExpression:
-		// Generic type application - just compile inner expression
+		// If witnesses are present, compile them and bind using _bindWitness
+		if len(e.Witnesses) > 0 {
+			// Emit _bindWitness
+			builtinNameIdx := c.currentChunk().AddConstant(&stringConstant{Value: "_bindWitness"})
+			c.emit(OP_GET_GLOBAL, e.Token.Line)
+			c.currentChunk().Write(byte(builtinNameIdx>>8), e.Token.Line)
+			c.currentChunk().Write(byte(builtinNameIdx), e.Token.Line)
+			c.slotCount++
+
+			// Compile Function
+			if err := c.compileExpression(e.Expression); err != nil {
+				return err
+			}
+
+			// Compile Witnesses
+			for _, w := range e.Witnesses {
+				if err := c.compileExpression(w); err != nil {
+					return err
+				}
+			}
+
+			// Emit Call
+			argCount := 1 + len(e.Witnesses) // fn + witnesses
+			c.emit(OP_CALL, e.Token.Line)
+			c.currentChunk().Write(byte(argCount), e.Token.Line)
+			c.slotCount -= argCount // Consumes _bindWitness + fn + witnesses, pushes Result
+			return nil
+		}
+
+		// Generic type application (erased) - just compile inner expression
 		return c.compileExpression(e.Expression)
 
 	case *ast.ListComprehension:
@@ -412,10 +441,78 @@ func (c *Compiler) compileCallExpression(call *ast.CallExpression) error {
 
 	// Pass hidden type hint argument for pure/mempty if context is known
 	// This allows runtime to dispatch to the correct implementation (e.g. Reader.pure vs List.pure)
+	var functionIdent *ast.Identifier
+	var explicitTypeArgs []ast.Type
+
 	if ident, ok := call.Function.(*ast.Identifier); ok {
-		if ident.Value == "pure" || ident.Value == "mempty" {
+		functionIdent = ident
+	} else if typeApp, ok := call.Function.(*ast.TypeApplicationExpression); ok {
+		if ident, ok := typeApp.Expression.(*ast.Identifier); ok {
+			functionIdent = ident
+			explicitTypeArgs = typeApp.TypeArguments
+		}
+	}
+
+	if functionIdent != nil {
+		// Use Dispatch Strategy from SymbolTable if available
+		var needsHint bool
+		var traitName string
+		var methodName string
+
+		// Check if it's a trait method that requires a hint
+		if c.symbolTable != nil {
+			// Look up the symbol for this identifier
+			// If we have resolution map, use it
+			foundInResolution := false
+
+			if c.resolutionMap != nil {
+				// Use original node if possible, or identifier
+				node := call.Function
+				if typeApp, ok := call.Function.(*ast.TypeApplicationExpression); ok {
+					node = typeApp.Expression // Look up identifier in resolution map
+				}
+
+				if sym, ok := c.resolutionMap[node]; ok {
+					foundInResolution = true
+					if sym.IsTraitMethod {
+						if tName, found := c.symbolTable.GetTraitForMethod(functionIdent.Value); found {
+							traitName = tName
+							methodName = functionIdent.Value
+						}
+					}
+				}
+			}
+
+			// Fallback: lookup by name if not found via resolution map
+			if !foundInResolution && traitName == "" {
+				if tName, found := c.symbolTable.GetTraitForMethod(functionIdent.Value); found {
+					traitName = tName
+					methodName = functionIdent.Value
+				}
+			}
+
+			if traitName != "" {
+				if sources, found := c.symbolTable.GetTraitMethodDispatch(traitName, methodName); found {
+					for _, source := range sources {
+						// If any source is DispatchReturn or DispatchHint, we need to pass the type hint
+						if source.Kind == typesystem.DispatchReturn || source.Kind == typesystem.DispatchHint {
+							needsHint = true
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if needsHint {
 			var typeInfo typesystem.Type
-			if c.typeMap != nil {
+
+			// Priority 1: Explicit type arguments (e.g. getName<Int>)
+			if len(explicitTypeArgs) > 0 {
+				// Use the first type argument as the hint
+				typeInfo = c.astTypeToTypesystemType(explicitTypeArgs[0])
+			} else if c.typeMap != nil {
+				// Priority 2: Inferred type from TypeMap
 				typeInfo = c.typeMap[call]
 			}
 
@@ -429,7 +526,7 @@ func (c *Compiler) compileCallExpression(call *ast.CallExpression) error {
 				c.slotCount++
 				argCount++
 			} else if typeContextName != "" {
-				// Fallback: emit TypeObject with just TCon(name)
+				// Priority 3: Fallback to context name
 				typeObj := &evaluator.TypeObject{TypeVal: typesystem.TCon{Name: typeContextName}}
 				c.emitConstant(typeObj, line)
 				c.slotCount++
@@ -598,11 +695,23 @@ func (c *Compiler) compileAssignExpression(expr *ast.AssignExpression) error {
 	// Compile the value - use type hint if annotation is present
 	if expr.AnnotatedType != nil {
 		typeName := c.resolveTypeName(expr.AnnotatedType)
-		// Use withTypeContext to propagate type expectation
+		// Emit runtime type context so operator dispatch can use expected type
+		if typeName != "" {
+			typeHintIdx := c.currentChunk().AddConstant(&stringConstant{Value: typeName})
+			c.emit(OP_SET_TYPE_CONTEXT, line)
+			c.currentChunk().Write(byte(typeHintIdx>>8), line)
+			c.currentChunk().Write(byte(typeHintIdx), line)
+		}
+
+		// Use withTypeContext to propagate type expectation during compilation
 		if err := c.withTypeContext(typeName, func() error {
 			return c.compileExpression(expr.Value)
 		}); err != nil {
 			return err
+		}
+
+		if typeName != "" {
+			c.emit(OP_CLEAR_TYPE_CONTEXT, line)
 		}
 	} else {
 		// No type annotation, compile normally
@@ -862,7 +971,31 @@ func (c *Compiler) compileConstantDeclaration(stmt *ast.ConstantDeclaration) err
 
 	// Handle pattern bindings
 	if stmt.Pattern != nil {
-		return c.compilePatternBinding(stmt.Pattern, line)
+		// Value is on stack at c.slotCount - 1
+		slotsBeforeBinding := c.slotCount
+
+		if err := c.compilePatternBinding(stmt.Pattern, line); err != nil {
+			return err
+		}
+
+		// Pattern binding might have added locals on top of value.
+		// We want to remove the original value (which is now buried).
+		// If locals were added, use OP_POP_BELOW.
+		// If no locals were added, just pop.
+
+		bindingsAdded := c.slotCount - slotsBeforeBinding
+		if bindingsAdded > 0 {
+			c.emit(OP_POP_BELOW, line)
+			c.currentChunk().Write(byte(bindingsAdded), line)
+			// Adjust slots of locals we kept
+			valueSlot := slotsBeforeBinding - 1
+			c.removeSlotFromStack(valueSlot)
+		} else {
+			c.emit(OP_POP, line)
+			c.slotCount--
+		}
+
+		return nil
 	}
 
 	// Get name from Name
@@ -927,8 +1060,21 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 				}
 			} else {
 				// Nested pattern
+				slotsBeforeNested := c.slotCount
 				if err := c.compilePatternBinding(elem, line); err != nil {
 					return err
+				}
+				// Clean up the intermediate value
+				bindingsAdded := c.slotCount - slotsBeforeNested
+				if bindingsAdded > 0 {
+					c.emit(OP_POP_BELOW, line)
+					c.currentChunk().Write(byte(bindingsAdded), line)
+					// Adjust slots of locals we kept
+					valueSlot := slotsBeforeNested - 1
+					c.removeSlotFromStack(valueSlot)
+				} else {
+					c.emit(OP_POP, line)
+					c.slotCount--
 				}
 			}
 		}
@@ -966,6 +1112,24 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 						c.emit(OP_POP, line)
 						c.slotCount--
 					}
+				} else {
+					c.emit(OP_POP, line)
+					c.slotCount--
+				}
+			} else {
+				// Nested pattern
+				slotsBeforeNested := c.slotCount
+				if err := c.compilePatternBinding(elem, line); err != nil {
+					return err
+				}
+				// Clean up the intermediate value
+				bindingsAdded := c.slotCount - slotsBeforeNested
+				if bindingsAdded > 0 {
+					c.emit(OP_POP_BELOW, line)
+					c.currentChunk().Write(byte(bindingsAdded), line)
+					// Adjust slots of locals we kept
+					valueSlot := slotsBeforeNested - 1
+					c.removeSlotFromStack(valueSlot)
 				} else {
 					c.emit(OP_POP, line)
 					c.slotCount--
@@ -1020,8 +1184,21 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 				}
 			} else {
 				// Nested pattern
+				slotsBeforeNested := c.slotCount
 				if err := c.compilePatternBinding(fieldPattern, line); err != nil {
 					return err
+				}
+				// Clean up the intermediate value
+				bindingsAdded := c.slotCount - slotsBeforeNested
+				if bindingsAdded > 0 {
+					c.emit(OP_POP_BELOW, line)
+					c.currentChunk().Write(byte(bindingsAdded), line)
+					// Adjust slots of locals we kept
+					valueSlot := slotsBeforeNested - 1
+					c.removeSlotFromStack(valueSlot)
+				} else {
+					c.emit(OP_POP, line)
+					c.slotCount--
 				}
 			}
 		}
@@ -1055,9 +1232,37 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 func (c *Compiler) compileBlockStatement(block *ast.BlockStatement) error {
 	c.beginScope()
 
+	// Predeclare local functions to support mutual recursion within the block.
 	for _, stmt := range block.Statements {
+		fs, ok := stmt.(*ast.FunctionStatement)
+		if !ok || fs == nil || fs.Receiver != nil {
+			continue
+		}
+		if c.resolveLocal(fs.Name.Value) != -1 {
+			continue
+		}
+		line := fs.Token.Line
+		c.emit(OP_NIL, line)
+		c.slotCount++
+		c.addLocal(fs.Name.Value, c.slotCount-1)
+	}
+
+	for _, stmt := range block.Statements {
+		localsBefore := c.localCount
+		slotsBefore := c.slotCount
+
 		if err := c.compileStatement(stmt); err != nil {
 			return err
+		}
+
+		// Pop all results (statement block is void)
+		localsAdded := c.localCount - localsBefore
+		slotsAdded := c.slotCount - slotsBefore
+		resultsAdded := slotsAdded - localsAdded
+
+		for k := 0; k < resultsAdded; k++ {
+			c.emit(OP_POP, 0)
+			c.slotCount--
 		}
 	}
 
@@ -1067,8 +1272,8 @@ func (c *Compiler) compileBlockStatement(block *ast.BlockStatement) error {
 
 // Compile block as expression (returns last value)
 func (c *Compiler) compileBlockExpression(block *ast.BlockStatement) error {
-	localsBefore := c.localCount
-	slotsBefore := c.slotCount
+	localsBeforeScope := c.localCount
+	slotsBeforeScope := c.slotCount
 	c.beginScope()
 
 	// Save tail position - only last statement in block inherits it
@@ -1079,6 +1284,9 @@ func (c *Compiler) compileBlockExpression(block *ast.BlockStatement) error {
 
 		// Only last statement in block is in tail position (if block was)
 		c.inTailPosition = wasTail && isLast
+
+		localsBeforeStmt := c.localCount
+		slotsBeforeStmt := c.slotCount
 
 		// Clear context for non-final statements
 		if !isLast {
@@ -1094,16 +1302,33 @@ func (c *Compiler) compileBlockExpression(block *ast.BlockStatement) error {
 			}
 		}
 
-		// Pop intermediate values, keep last
+		localsAdded := c.localCount - localsBeforeStmt
+		slotsAdded := c.slotCount - slotsBeforeStmt
+		resultsAdded := slotsAdded - localsAdded
+
 		if !isLast {
-			c.emit(OP_POP, 0)
-			c.slotCount--
+			// Pop intermediate values
+			for k := 0; k < resultsAdded; k++ {
+				c.emit(OP_POP, 0)
+				c.slotCount--
+			}
+		} else {
+			// Last statement: ensure exactly one result
+			if resultsAdded == 0 {
+				c.emit(OP_NIL, stmt.GetToken().Line)
+				c.slotCount++
+			} else if resultsAdded > 1 {
+				for k := 0; k < resultsAdded-1; k++ {
+					c.emit(OP_POP, 0)
+					c.slotCount--
+				}
+			}
 		}
 	}
 
 	// Restore tail position
 	c.inTailPosition = wasTail
-	_ = slotsBefore // silence unused warning
+	_ = slotsBeforeScope // silence unused warning
 
 	// If block is empty, push nil
 	if len(block.Statements) == 0 {
@@ -1111,21 +1336,25 @@ func (c *Compiler) compileBlockExpression(block *ast.BlockStatement) error {
 		c.slotCount++
 	}
 
-	// Close scope: handle captured variables properly
-	// OP_CLOSE_SCOPE handles closing upvalues for removed locals
-
 	// Emit CLOSE_SCOPE to remove locals but keep result
 	line := block.Token.Line
-	localsAdded := c.localCount - localsBefore
-	if localsAdded > 0 {
+	localsAddedInScope := c.localCount - localsBeforeScope
+	if localsAddedInScope > 0 {
 		c.emit(OP_CLOSE_SCOPE, line)
-		c.currentChunk().Write(byte(localsAdded), line)
+		c.currentChunk().Write(byte(localsAddedInScope), line)
 	}
 
 	// Update compiler state
 	c.scopeDepth--
-	c.localCount = localsBefore
-	c.slotCount = slotsBefore + 1
+	c.localCount = localsBeforeScope
+	// We expect exactly 1 result to remain on stack after block expression
+	// If slotCount was N, we added 1 result.
+	// But slotCount tracks current stack.
+	// We popped all locals (via CLOSE_SCOPE logic conceptually, but slotCount must reflect stack state).
+	// CLOSE_SCOPE pops 1 result, pops N locals, pushes 1 result.
+	// Net change to slots: -N.
+	// So c.slotCount should decrease by localsAddedInScope.
+	c.slotCount -= localsAddedInScope
 
 	return nil
 }
@@ -1402,7 +1631,7 @@ func (c *Compiler) compileComposeOp(expr *ast.InfixExpression) error {
 }
 
 // Compile null coalescing operator: x ?? default
-// Some(v) ?? d = v, Zero ?? d = d
+// Some(v) ?? d = v, None ?? d = d
 // Ok(v) ?? d = v, Fail(_) ?? d = d
 func (c *Compiler) compileCoalesceOp(expr *ast.InfixExpression) error {
 	line := expr.Token.Line
@@ -1573,8 +1802,7 @@ func (c *Compiler) compileMatchExpression(expr *ast.MatchExpression) error {
 			for i := 0; i < extraBindings; i++ {
 				c.emit(OP_POP, line)
 			}
-			// End scope for this arm
-			c.endScopeNoEmit()
+			// End scope for this arm - already done by endScopeNoEmit above for the linear flow
 			// Jump over failJump target to next arm
 			guardCleanupJump = c.emitJump(OP_JUMP, line)
 		}

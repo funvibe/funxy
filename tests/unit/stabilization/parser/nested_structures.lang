@@ -4,13 +4,13 @@
 // Tests parsing of deeply nested and complex structures.
 // Parser bugs here often manifest as "unexpected token" or wrong AST structure.
 
-import "lib/test" (testRun, assertEquals, assertTrue, assertSome, assertZero)
+import "lib/test" (testRun, assertEquals, assertTrue, assertSome, assertNone)
 
 // Types must be defined at module level to be usable in tests
-type NsPoint = { x: Int, y: Int }
-type NsLine = { start: NsPoint, ends: NsPoint }
-type NsAddress = { city: String, zip: Int }
-type NsPerson = { name: String, address: NsAddress }
+type alias NsPoint = { x: Int, y: Int }
+type alias NsLine = { start: NsPoint, ends: NsPoint }
+type alias NsAddress = { city: String, zip: Int }
+type alias NsPerson = { name: String, address: NsAddress }
 
 // =============================================================================
 // NESTED LAMBDAS
@@ -66,23 +66,23 @@ testRun("Nested lambda: returning lambda from if", \ -> {
 testRun("Nested match: in lambda", \ -> {
     f = \opt -> match opt {
         Some(x) -> x * 2
-        Zero -> 0
+        None -> 0
     }
     assertEquals(10, f(Some(5)), "match in lambda Some")
-    assertEquals(0, f(Zero), "match in lambda Zero")
+    assertEquals(0, f(None), "match in lambda None")
 })
 
 testRun("Nested match: match in match arm", \ -> {
     f = \outer -> match outer {
         Some(inner) -> match inner {
             Some(x) -> x
-            Zero -> -1
+            None -> -1
         }
-        Zero -> -2
+        None -> -2
     }
     assertEquals(42, f(Some(Some(42))), "nested Some Some")
-    assertEquals(-1, f(Some(Zero)), "nested Some Zero")
-    assertEquals(-2, f(Zero), "nested Zero")
+    assertEquals(-1, f(Some(None)), "nested Some None")
+    assertEquals(-2, f(None), "nested None")
 })
 
 testRun("Nested match: with guards", \ -> {
@@ -280,7 +280,7 @@ testRun("Nested records", \ -> {
 })
 
 testRun("Mixed nesting: list of tuples of Options", \ -> {
-    data = [(Some(1), Some(2)), (Zero, Some(3)), (Some(4), Zero)]
+    data = [(Some(1), Some(2)), (None, Some(3)), (Some(4), None)]
 
     sumFirst = \list -> {
         fun go(acc, lst) {
@@ -288,7 +288,7 @@ testRun("Mixed nesting: list of tuples of Options", \ -> {
                 [] -> acc
                 [(opt, _), ...rest] -> match opt {
                     Some(x) -> go(acc + x, rest)
-                    Zero -> go(acc, rest)
+                    None -> go(acc, rest)
                 }
             }
         }
@@ -304,26 +304,26 @@ testRun("Mixed nesting: list of tuples of Options", \ -> {
 testRun("Complex: lambda returning match returning lambda", \ -> {
     f = \opt -> match opt {
         Some(x) -> \y -> x + y
-        Zero -> \y -> y * 2
+        None -> \y -> y * 2
     }
 
     g = f(Some(10))
-    h = f(Zero)
+    h = f(None)
 
     assertEquals(15, g(5), "Some branch lambda")
-    assertEquals(10, h(5), "Zero branch lambda")
+    assertEquals(10, h(5), "None branch lambda")
 })
 
 testRun("Complex: if in match in lambda", \ -> {
     f = \opt -> \flag -> match opt {
         Some(x) -> if flag { x * 2 } else { x + 2 }
-        Zero -> if flag { 0 } else { -1 }
+        None -> if flag { 0 } else { -1 }
     }
 
     assertEquals(10, f(Some(5))(true), "Some true")
     assertEquals(7, f(Some(5))(false), "Some false")
-    assertEquals(0, f(Zero)(true), "Zero true")
-    assertEquals(-1, f(Zero)(false), "Zero false")
+    assertEquals(0, f(None)(true), "None true")
+    assertEquals(-1, f(None)(false), "None false")
 })
 
 testRun("Complex: nested everything", \ -> {

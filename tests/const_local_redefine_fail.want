@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 3:11 [A004]: redefinition of symbol: 'x'

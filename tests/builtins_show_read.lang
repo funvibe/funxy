@@ -22,7 +22,7 @@ print(show([]))
 
 // ADT
 print(show(Some(42)))
-print(show(Zero))
+print(show(None))
 print(show(Ok("yes")))
 print(show(Fail(404)))
 
@@ -43,47 +43,47 @@ print(read("0", Int))
 print(read("  42  ", Int))  // trim whitespace
 
 // Invalid - strict parsing
-print(read("3.14", Int))    // Zero (not partial)
-print(read("42abc", Int))   // Zero
-print(read("abc", Int))     // Zero
-print(read("", Int))        // Zero
+print(read("3.14", Int))    // None (not partial)
+print(read("42abc", Int))   // None
+print(read("abc", Int))     // None
+print(read("", Int))        // None
 
 print("=== read Float ===")
 
 print(read("3.14", Float))
 print(read("42", Float))
 print(read("-0.5", Float))
-print(read("abc", Float))   // Zero
+print(read("abc", Float))   // None
 
 print("=== read Bool ===")
 
 print(read("true", Bool))
 print(read("false", Bool))
 print(read("  true  ", Bool))  // trim
-print(read("yes", Bool))       // Zero
-print(read("1", Bool))         // Zero
-print(read("True", Bool))      // Zero (case sensitive)
+print(read("yes", Bool))       // None
+print(read("1", Bool))         // None
+print(read("True", Bool))      // None (case sensitive)
 
 print("=== read Char ===")
 
 print(read("A", Char))
 print(read("я", Char))     // Unicode
-print(read("AB", Char))    // Zero (>1 char)
-print(read("", Char))      // Zero (empty)
+print(read("AB", Char))    // None (>1 char)
+print(read("", Char))      // None (empty)
 
 print("=== read BigInt ===")
 
 print(read("123", BigInt))
 print(read("12345678901234567890", BigInt))
 print(read("-999", BigInt))
-print(read("abc", BigInt))  // Zero
+print(read("abc", BigInt))  // None
 
 print("=== read Rational ===")
 
 print(read("3/4", Rational))
 print(read("1/3", Rational))
 print(read("0.5", Rational))
-print(read("abc", Rational))  // Zero
+print(read("abc", Rational))  // None
 
 print("=== read String ===")
 

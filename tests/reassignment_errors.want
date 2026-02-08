@@ -1,10 +1,10 @@
 Processing failed with errors:
-- error at 17:11 [P006]: Variable name must start with a lowercase letter
-- error at 23:12 [P006]: Variable name must start with a lowercase letter
-- error at 29:10 [P006]: Variable name must start with a lowercase letter
-- error at 41:12 [P006]: Variable name must start with a lowercase letter
-- error at 6:5 [A003]: type error: cannot assign to module 'sql'
-- error at 11:5 [A003]: type error: cannot reassign imported symbol 'html' from module 'ui'
+- error at 17:5 [P006]: Variable name must start with a lowercase letter
+- error at 23:5 [P006]: Variable name must start with a lowercase letter
+- error at 29:5 [P006]: Variable name must start with a lowercase letter
+- error at 41:5 [P006]: Variable name must start with a lowercase letter
+- error at 6:2 [A003]: type error: cannot assign to module 'sql'
+- error at 11:1 [A003]: type error: cannot reassign imported symbol 'html' from module 'ui'
 - error at 17:5 [A003]: type error: cannot assign to type 'MyType'
 - error at 23:5 [A003]: type error: cannot assign to trait 'MyTrait'
 - error at 29:5 [A003]: type error: cannot assign to constructor 'MyCon'

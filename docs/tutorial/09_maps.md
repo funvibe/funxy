@@ -36,7 +36,7 @@ config = %{
 // String keys
 stringMap = %{ "a" => 1, "b" => 2 }
 
-// Int keys  
+// Int keys
 intMap = %{ 1 => "one", 2 => "two", 3 => "three" }
 
 // Any type with Eq
@@ -58,11 +58,11 @@ scores = %{ "Alice" => 100, "Bob" => 85 }
 
 // Index access — returns Option<V>
 scores["Alice"]              // Some(100)
-scores["Unknown"]            // Zero
+scores["Unknown"]            // None
 
 // mapGet — same thing
 mapGet(scores, "Alice")      // Some(100)
-mapGet(scores, "Unknown")    // Zero
+mapGet(scores, "Unknown")    // None
 
 // mapGetOr — with default value
 mapGetOr(scores, "Alice", 0)   // 100
@@ -150,7 +150,7 @@ import "lib/map" (*)
 fun getScore(scores: Map<String, Int>, name: String) -> String {
     match mapGet(scores, name) {
         Some(s) -> "Score: " ++ show(s)
-        Zero -> "Not found"
+        None -> "Not found"
     }
 }
 
@@ -265,7 +265,7 @@ mapGet(inv, 2)               // Some("b")
 import "lib/map" (mapGet)
 
 // Record — static structure
-type User = { name: String, age: Int, email: String }
+type alias User = { name: String, age: Int, email: String }
 user: User = { name: "Alice", age: 30, email: "a@b.com" }
 user.name                    // Typed access
 

@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 3:5 [A003]: type error: cannot reassign constant 'localVal'

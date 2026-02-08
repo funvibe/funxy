@@ -159,6 +159,18 @@ func (m *PersistentMap) Merge(other *PersistentMap) *PersistentMap {
 // --- hamtNode methods ---
 
 func (n *hamtNode) get(hash uint32, key Object, shift uint) Object {
+	if shift >= 32 {
+		// Collision bucket search
+		for _, node := range n.nodes {
+			if entry, ok := node.(hamtEntry); ok {
+				if objectsEqualForMap(entry.key, key) {
+					return entry.value
+				}
+			}
+		}
+		return nil
+	}
+
 	idx := (hash >> shift) & hamtMask
 	bit := uint32(1) << idx
 
@@ -183,6 +195,31 @@ func (n *hamtNode) get(hash uint32, key Object, shift uint) Object {
 }
 
 func (n *hamtNode) put(hash uint32, key, value Object, shift uint) (*hamtNode, bool) {
+	// Handle hash collisions (identical hash, different keys)
+	// If we exhausted the hash bits, we store multiple entries in a collision bucket.
+	if shift >= 32 {
+		// Clone node to serve as collision bucket
+		newNode := &hamtNode{
+			bitmap: n.bitmap,
+			nodes:  make([]interface{}, len(n.nodes)),
+		}
+		copy(newNode.nodes, n.nodes)
+
+		// Check if key exists in the bucket
+		for i, node := range newNode.nodes {
+			if entry, ok := node.(hamtEntry); ok {
+				if objectsEqualForMap(entry.key, key) {
+					newNode.nodes[i] = hamtEntry{hash: hash, key: key, value: value}
+					return newNode, false
+				}
+			}
+		}
+
+		// Not found, append new entry
+		newNode.nodes = append(newNode.nodes, hamtEntry{hash: hash, key: key, value: value})
+		return newNode, true
+	}
+
 	idx := (hash >> shift) & hamtMask
 	bit := uint32(1) << idx
 
@@ -240,6 +277,25 @@ func (n *hamtNode) put(hash uint32, key, value Object, shift uint) (*hamtNode, b
 }
 
 func (n *hamtNode) remove(hash uint32, key Object, shift uint) (*hamtNode, bool) {
+	if shift >= 32 {
+		// Collision bucket remove
+		for i, node := range n.nodes {
+			if entry, ok := node.(hamtEntry); ok {
+				if objectsEqualForMap(entry.key, key) {
+					// Remove this entry
+					newNode := &hamtNode{
+						bitmap: n.bitmap,
+						nodes:  make([]interface{}, len(n.nodes)-1),
+					}
+					copy(newNode.nodes[:i], n.nodes[:i])
+					copy(newNode.nodes[i:], n.nodes[i+1:])
+					return newNode, true
+				}
+			}
+		}
+		return n, false
+	}
+
 	idx := (hash >> shift) & hamtMask
 	bit := uint32(1) << idx
 

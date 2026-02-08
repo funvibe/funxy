@@ -7,73 +7,33 @@ import (
 )
 
 func (p *Parser) parseAssignExpression(left ast.Expression) ast.Expression {
-	// 'left' must be a valid l-value (identifier, member expression, or pattern)
-	// Or identifier with annotation
-
-	var annotatedType ast.Type
-	var target ast.Expression
-
-	// Handle annotated expression: x: Int = 5
-	if anno, ok := left.(*ast.AnnotatedExpression); ok {
-		target = anno.Expression
-		annotatedType = anno.TypeAnnotation
-	} else {
-		target = left
+	target, pattern, annotatedType, ok := p.validateAssignmentTarget(left)
+	if !ok {
+		return nil
 	}
 
-	// Validate target is l-value or pattern
-	switch target.(type) {
-	case *ast.Identifier:
-		// OK - simple assignment
-		ident := target.(*ast.Identifier)
-		if ident.Token.Type == token.IDENT_UPPER {
-			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-				diagnostics.ErrP006,
-				ident.Token,
-				"Variable name must start with a lowercase letter",
-			))
-		}
-	case *ast.MemberExpression:
-		// OK - member assignment
-	case *ast.TupleLiteral:
-		// Pattern destructuring: (a, b) = expr
-		// Convert to ConstantDeclaration with pattern
-		pattern := p.tupleExprToPattern(target.(*ast.TupleLiteral))
-		if pattern == nil {
-			return nil
-		}
-		tok := p.curToken
-		p.nextToken() // consume '='
-		value := p.parseExpression(LOWEST)
-		return &ast.PatternAssignExpression{Token: tok, Pattern: pattern, Value: value}
-	case *ast.ListLiteral:
-		// Pattern destructuring: [a, b, rest...] = expr
-		pattern := p.listExprToPattern(target.(*ast.ListLiteral))
-		if pattern == nil {
-			return nil
-		}
-		tok := p.curToken
-		p.nextToken() // consume '='
-		value := p.parseExpression(LOWEST)
-		return &ast.PatternAssignExpression{Token: tok, Pattern: pattern, Value: value}
-	case *ast.RecordLiteral:
-		// Pattern destructuring: { x: a, y: b } = expr
-		pattern := p.recordExprToPattern(target.(*ast.RecordLiteral))
-		if pattern == nil {
-			return nil
-		}
-		tok := p.curToken
-		p.nextToken() // consume '='
-		value := p.parseExpression(LOWEST)
-		return &ast.PatternAssignExpression{Token: tok, Pattern: pattern, Value: value}
-	default:
-		return nil // Invalid assignment target
-	}
-
-	stmt := &ast.AssignExpression{Token: p.curToken, Left: target, AnnotatedType: annotatedType}
+	tok := p.curToken
 	p.nextToken() // consume '='
-	stmt.Value = p.parseExpression(LOWEST)
-	return stmt
+	value := p.parseExpression(LOWEST)
+	if value == nil {
+		return nil
+	}
+
+	if pattern != nil {
+		return &ast.PatternAssignExpression{
+			Token:         tok,
+			Pattern:       pattern,
+			Value:         value,
+			AnnotatedType: annotatedType,
+		}
+	}
+
+	return &ast.AssignExpression{
+		Token:         tok,
+		Left:          target,
+		AnnotatedType: annotatedType,
+		Value:         value,
+	}
 }
 
 // parseCompoundAssignExpression handles +=, -=, *=, /=, %=, **=
@@ -155,4 +115,67 @@ func (p *Parser) parseAnnotatedExpression(left ast.Expression) ast.Expression {
 	p.nextToken() // Consume ':'
 	expr.TypeAnnotation = p.parseType()
 	return expr
+}
+
+// validateAssignmentTarget validates the LHS of an assignment or declaration.
+// It returns the target expression (if simple identifier/member), the pattern (if pattern destructuring),
+// the type annotation (if present), and a boolean indicating validity.
+func (p *Parser) validateAssignmentTarget(left ast.Expression) (ast.Expression, ast.Pattern, ast.Type, bool) {
+	var annotatedType ast.Type
+	var target ast.Expression
+
+	// Handle annotated expression: x: Int = 5
+	if anno, ok := left.(*ast.AnnotatedExpression); ok {
+		target = anno.Expression
+		annotatedType = anno.TypeAnnotation
+	} else {
+		target = left
+	}
+
+	// Validate target is l-value or pattern
+	switch t := target.(type) {
+	case *ast.Identifier:
+		// OK - simple assignment
+		if t.Token.Type == token.IDENT_UPPER {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP006,
+				t.Token,
+				"Variable name must start with a lowercase letter",
+			))
+		}
+		return target, nil, annotatedType, true
+	case *ast.MemberExpression:
+		// OK - member assignment
+		return target, nil, annotatedType, true
+	case *ast.IndexExpression:
+		// ERROR - Index assignment (list[0] = 1) is not supported for immutable lists
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP007,
+			t.Token,
+		))
+		return nil, nil, nil, false
+	case *ast.TupleLiteral:
+		// Pattern destructuring: (a, b) = expr
+		pattern := p.tupleExprToPattern(t)
+		if pattern == nil {
+			return nil, nil, nil, false
+		}
+		return nil, pattern, annotatedType, true
+	case *ast.ListLiteral:
+		// Pattern destructuring: [a, b, rest...] = expr
+		pattern := p.listExprToPattern(t)
+		if pattern == nil {
+			return nil, nil, nil, false
+		}
+		return nil, pattern, annotatedType, true
+	case *ast.RecordLiteral:
+		// Pattern destructuring: { x: a, y: b } = expr
+		pattern := p.recordExprToPattern(t)
+		if pattern == nil {
+			return nil, nil, nil, false
+		}
+		return nil, pattern, annotatedType, true
+	default:
+		return nil, nil, nil, false
+	}
 }

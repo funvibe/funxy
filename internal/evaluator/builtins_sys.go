@@ -2,9 +2,9 @@ package evaluator
 
 import (
 	"bytes"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"os"
 	"os/exec"
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // SysBuiltins returns built-in functions for lib/sys virtual package
@@ -41,7 +41,7 @@ func builtinArgs(e *Evaluator, args ...Object) Object {
 }
 
 // env: (String) -> Option<String>
-// Returns environment variable value or Zero if not set
+// Returns environment variable value or None if not set
 func builtinEnv(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("env expects 1 argument, got %d", len(args))
@@ -55,7 +55,7 @@ func builtinEnv(e *Evaluator, args ...Object) Object {
 	name := listToString(nameList)
 	value, exists := os.LookupEnv(name)
 	if !exists {
-		return makeZero()
+		return makeNone()
 	}
 
 	return makeSome(stringToList(value))

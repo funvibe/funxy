@@ -44,6 +44,8 @@ func ListBuiltins() map[string]*Builtin {
 		"partition": {Fn: builtinPartition, Name: "partition"},
 		"forEach":   {Fn: builtinForEach, Name: "forEach"},
 		"append":    {Fn: builtinAppend, Name: "append"},
+		"insert":    {Fn: builtinInsert, Name: "insert"},
+		"update":    {Fn: builtinUpdate, Name: "update"},
 	}
 }
 
@@ -393,9 +395,9 @@ func builtinIndexOf(e *Evaluator, args ...Object) Object {
 			}
 		}
 	}
-	// Return Zero (not found)
+	// Return None (not found)
 	return &DataInstance{
-		Name:     "Zero",
+		Name:     "None",
 		Fields:   []Object{},
 		TypeName: "Option",
 	}
@@ -641,7 +643,7 @@ func builtinFind(e *Evaluator, args ...Object) Object {
 		}
 	}
 	return &DataInstance{
-		Name:     "Zero",
+		Name:     "None",
 		Fields:   []Object{},
 		TypeName: "Option",
 	}
@@ -672,7 +674,7 @@ func builtinFindIndex(e *Evaluator, args ...Object) Object {
 		}
 	}
 	return &DataInstance{
-		Name:     "Zero",
+		Name:     "None",
 		Fields:   []Object{},
 		TypeName: "Option",
 	}
@@ -843,6 +845,67 @@ func builtinAppend(e *Evaluator, args ...Object) Object {
 	return newList(result)
 }
 
+// insert: (List<T>, Int, T) -> List<T>
+func builtinInsert(e *Evaluator, args ...Object) Object {
+	if len(args) != 3 {
+		return newError("insert expects 3 arguments, got %d", len(args))
+	}
+	list, ok := args[0].(*List)
+	if !ok {
+		return newError("insert expects a list as first argument, got %s", args[0].Type())
+	}
+	idxArg, ok := args[1].(*Integer)
+	if !ok {
+		return newError("insert expects an integer as second argument, got %s", args[1].Type())
+	}
+	elem := args[2]
+
+	idx := int(idxArg.Value)
+	original := list.ToSlice()
+
+	// Check bounds: 0 <= idx <= len (insert at end is ok)
+	if idx < 0 || idx > len(original) {
+		return newError("insert: index %d out of bounds for list of length %d", idx, len(original))
+	}
+
+	result := make([]Object, len(original)+1)
+	copy(result[:idx], original[:idx])
+	result[idx] = elem
+	copy(result[idx+1:], original[idx:])
+
+	return newList(result)
+}
+
+// update: (List<T>, Int, T) -> List<T>
+func builtinUpdate(e *Evaluator, args ...Object) Object {
+	if len(args) != 3 {
+		return newError("update expects 3 arguments, got %d", len(args))
+	}
+	list, ok := args[0].(*List)
+	if !ok {
+		return newError("update expects a list as first argument, got %s", args[0].Type())
+	}
+	idxArg, ok := args[1].(*Integer)
+	if !ok {
+		return newError("update expects an integer as second argument, got %s", args[1].Type())
+	}
+	elem := args[2]
+
+	idx := int(idxArg.Value)
+	original := list.ToSlice()
+
+	// Check bounds: 0 <= idx < len
+	if idx < 0 || idx >= len(original) {
+		return newError("update: index %d out of bounds for list of length %d", idx, len(original))
+	}
+
+	result := make([]Object, len(original))
+	copy(result, original)
+	result[idx] = elem
+
+	return newList(result)
+}
+
 // objectsEqual compares two objects for equality
 func objectsEqual(a, b Object) bool {
 	switch av := a.(type) {
@@ -976,6 +1039,8 @@ func SetListBuiltinTypes(builtins map[string]*Builtin) {
 		"sortBy":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.TFunc{Params: []typesystem.Type{T, T}, ReturnType: typesystem.Int}}, ReturnType: listT},
 		"range":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.Int}}},
 		"append":    typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: listT},
+		"insert":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, T}, ReturnType: listT},
+		"update":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, T}, ReturnType: listT},
 	}
 
 	for name, typ := range types {

@@ -16,7 +16,7 @@ fun first(list: List<t>) -> Option<t> {
     if len(list) > 0 {
         Some(list[0])
     } else {
-        Zero
+        None
     }
 }
 
@@ -24,10 +24,10 @@ f1 = first([1, 2, 3])
 print(f1) // Some(1)
 
 f2 = first([])
-print(f2) // Zero
+print(f2) // None
 
 // Generic Wrapper Struct
-type Box<t> = { value: t }
+type alias Box<t> = { value: t }
 
 fun makeBox(v: t) -> Box<t> {
     { value: v }

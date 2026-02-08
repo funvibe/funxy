@@ -97,7 +97,7 @@ var AllOperators = []OperatorInfo{
 	{Symbol: ",,", Signature: "((B)->C, (A)->B) -> (A)->C", Description: "Composition (right-to-left)", Trait: "", Precedence: PrecPower, Assoc: AssocRight, CanOverride: false, Category: "Function"},
 
 	// Error handling (built-in)
-	{Symbol: "?", Signature: "Option<T> -> T / Result<T,E> -> T", Description: "Error propagation (postfix)", Trait: "", Precedence: PrecUnary, Assoc: AssocLeft, CanOverride: false, Category: "Error"},
+	{Symbol: "?", Signature: "Option<T> -> T / Result<E,T> -> T", Description: "Error propagation (postfix)", Trait: "", Precedence: PrecUnary, Assoc: AssocLeft, CanOverride: false, Category: "Error"},
 
 	// FP traits (HKT)
 	{Symbol: "<>", Signature: "(A, A) -> A", Description: "Semigroup combine", Trait: "Semigroup", Precedence: PrecAdditive, Assoc: AssocRight, CanOverride: true, Category: "FP"},

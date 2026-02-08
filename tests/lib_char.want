@@ -48,4 +48,10 @@ true
 true
 'W'
 true
+=== Unicode Literals ===
+'A'
+'ÿ'
+'Я'
+'Я'
+'😀'
 === lib/char tests passed! ===

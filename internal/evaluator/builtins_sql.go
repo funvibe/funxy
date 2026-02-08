@@ -376,7 +376,7 @@ func builtinSqlQueryRow(e *Evaluator, args ...Object) Object {
 		return makeFailStr(err.Error())
 	}
 
-	return makeOk(makeZero())
+	return makeOk(makeNone())
 }
 
 // builtinSqlExec executes INSERT/UPDATE/DELETE
@@ -602,12 +602,12 @@ func builtinSqlUnwrap(e *Evaluator, args ...Object) Object {
 
 	switch dataInst.Name {
 	case sqlNullCtor:
-		return makeZero() // Return Option Zero for null
+		return makeNone() // Return Option None for null
 	case sqlIntCtor, sqlFloatCtor, sqlStringCtor, sqlBoolCtor, sqlBytesCtor, sqlTimeCtor, sqlBigIntCtor:
 		if len(dataInst.Fields) > 0 {
 			return makeSome(dataInst.Fields[0])
 		}
-		return makeZero()
+		return makeNone()
 	default:
 		return args[0]
 	}

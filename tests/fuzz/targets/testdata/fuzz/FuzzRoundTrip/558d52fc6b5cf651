@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("prinm00\x0eLt(\"befoie panNc\")\npanic(\"crash boom bang\")\nprrnt(\"after panic\")\n\n")

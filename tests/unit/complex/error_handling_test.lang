@@ -42,16 +42,16 @@ testRun("Result propagation (?) operator", \ -> {
 
 testRun("Option type", \ -> {
     opt = Some(10)
-    zero = Zero
+    zero = None
 
     match opt {
         Some(v) -> assertEquals(10, v, "Option Some")
-        Zero -> assertEquals(0, 1, "Should be Some")
+        None -> assertEquals(0, 1, "Should be Some")
     }
 
     match zero {
-        Some(_) -> assertEquals(0, 1, "Should be Zero")
-        Zero -> assertEquals(0, 0, "Option Zero")
+        Some(_) -> assertEquals(0, 1, "Should be None")
+        None -> assertEquals(0, 0, "Option None")
     }
 })
 
@@ -64,12 +64,12 @@ testRun("Option propagation (?) operator", \ -> {
 
     match optAdd(Some(1), Some(2)) {
         Some(v) -> assertEquals(3, v, "Option prop success")
-        Zero -> assertEquals(0, 1, "Option prop failed")
+        None -> assertEquals(0, 1, "Option prop failed")
     }
 
-    match optAdd(Some(1), Zero) {
-        Some(_) -> assertEquals(0, 1, "Option prop should be Zero")
-        Zero -> assertEquals(0, 0, "Option prop Zero correct")
+    match optAdd(Some(1), None) {
+        Some(_) -> assertEquals(0, 1, "Option prop should be None")
+        None -> assertEquals(0, 0, "Option prop None correct")
     }
 })
 

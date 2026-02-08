@@ -116,8 +116,8 @@ testOption = fun() {
     some = Some(42)
     assert(typeOf(some, Option), "Some is Option")
 
-    zero = Zero
-    assert(typeOf(zero, Option), "Zero is Option")
+    zero = None
+    assert(typeOf(zero, Option), "None is Option")
 
     // With reified generics, Some now has concrete type
     someType = getType(some)
@@ -143,8 +143,8 @@ testResult = fun() {
 // 8. Record types (anonymous and named)
 // ----------------------------------------------------------------------------
 
-type Point = { x: Int, y: Int }
-type Size = { w: Int, h: Int }
+type alias Point = { x: Int, y: Int }
+type alias Size = { w: Int, h: Int }
 
 testRecords = fun() {
     // Anonymous record
@@ -227,8 +227,8 @@ testTypeAliases = fun() {
 // 9c. User-defined record types (not aliases!)
 // ----------------------------------------------------------------------------
 
-type Person = { name: String, age: Int }
-type Address = { city: String, zip: Int }
+type alias Person = { name: String, age: Int }
+type alias Address = { city: String, zip: Int }
 
 testRecordTypes = fun() {
     // Record type (ADT style, not alias)

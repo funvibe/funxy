@@ -88,6 +88,10 @@ func (p *Parser) parseStatement() ast.Statement {
 		stmt := p.parseContinueStatement()
 		p.nextToken()
 		return stmt
+	} else if p.curToken.Type == token.RETURN {
+		stmt := p.parseReturnStatement()
+		p.nextToken()
+		return stmt
 	} else if p.curToken.Type == token.PACKAGE || p.curToken.Type == token.IMPORT {
 		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
 			diagnostics.ErrP005,

@@ -63,6 +63,7 @@ sleep(1)      // pause 1 second
 ### Function Benchmark
 
 ```rust
+import "lib/list" (range)
 import "lib/time" (clockMs)
 
 fun benchmark(f: () -> Nil, iterations: Int) -> Int {
@@ -104,7 +105,7 @@ fun waitFor(condition: () -> Bool, timeoutMs: Int) -> Bool {
 ```rust
 import "lib/time" (clockNs)
 
-fun timed<T>(label: String, f: () -> T) -> T {
+fun timed<t>(label: String, f: () -> t) -> t {
     start = clockNs()
     result = f()
     elapsed = clockNs() - start

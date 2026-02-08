@@ -1,0 +1,85 @@
+import "lib/test" (*)
+
+testRun("Return explicit overrides implicit", fun() -> {
+    fun f() {
+        return 1
+        2
+    }
+    assertEquals(f(), 1)
+})
+
+testRun("Return without value yields Nil", fun() -> {
+    fun g() {
+        return
+    }
+    assertEquals(g(), nil)
+})
+
+testRun("Implicit return still works", fun() -> {
+    fun h() {
+        3
+    }
+    assertEquals(h(), 3)
+})
+
+testRun("Return inside if branch", fun() -> {
+    fun f(x) {
+        if x > 0 {
+            return 1
+        }
+        2
+    }
+    assertEquals(f(1), 1)
+    assertEquals(f(-1), 2)
+})
+
+testRun("Return inside match arm", fun() -> {
+    fun f(x) {
+        match x {
+            0 -> { return 10 }
+            _ -> 20
+        }
+    }
+    assertEquals(f(0), 10)
+    assertEquals(f(2), 20)
+})
+
+testRun("Return inside nested block", fun() -> {
+    fun f() {
+        {
+            return 4
+        }
+        5
+    }
+    assertEquals(f(), 4)
+})
+
+testRun("Return breaks out of loop and function", fun() -> {
+    fun f() {
+        for i in 0..5 {
+            if i == 3 {
+                return i
+            }
+        }
+        -1
+    }
+    assertEquals(f(), 3)
+})
+
+testRun("Return in inner function does not exit outer", fun() -> {
+    fun outer() {
+        fun inner(x) {
+            return x + 1
+        }
+        inner(1)
+        7
+    }
+    assertEquals(outer(), 7)
+})
+
+testRun("Return with explicit annotation", fun() -> {
+    fun f() -> Int {
+        return 7
+    }
+    assertEquals(f(), 7)
+})

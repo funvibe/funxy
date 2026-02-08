@@ -1,6 +1,27 @@
 # Funxy
 
-A hybrid programming language with static typing, pattern matching, and built-in binary data support.
+A pragmatic, statically typed scripting language for automation, services, and data tooling.
+
+## Example
+
+```rust
+import "lib/csv" (csvEncode)
+import "lib/json" (jsonDecode)
+import "lib/io" (readFile, writeFile)
+import "lib/list" (map)
+
+users = jsonDecode(readFile("users.json"))
+rows = map(\u -> [u.id, u.email, u.role], users)
+writeFile("users.csv", csvEncode(rows))
+```
+
+## Why Funxy
+
+- Script-first ergonomics with static types and strong inference
+- Batteries-included stdlib: HTTP/gRPC, JSON/protobuf, SQL, files, async/await, bytes/bits
+- Safe data modeling with records, unions, ADTs, and pattern matching
+- Productive pipelines (pipes, comprehensions) and fast iteration for ops/ML workflows
+- Easy embedding in Go for config, rules, and automation
 
 ## Installation
 
@@ -26,15 +47,6 @@ cd funxy
 make build
 ./funxy hello.lang
 ```
-
-- Added `-c` flag to compile source to .fbc bytecode files
-- Added `-r` flag to run pre-compiled bytecode
-```bash
-./funxy -c hello.lang
-./funxy -r hello.fbc
-```
-- Bytecode compilation (-c) works for single-file programs
-- Module imports are not yet supported in compiled bytecode
 
 **Running Tests:**
 
@@ -66,17 +78,31 @@ echo 'print("Hello!")' | ./funxy
 ./funxy -help lib/http
 ```
 
-## Hello World
+Hello world in one line:
 
 ```rust
 print("Hello, Funxy!")
 ```
 
-Save as `hello.lang` and run: `./funxy hello.lang`
+Save as `hello.lang` and run: `./funxy hello.lang`.
 
 ## Key Features
 
+### Scripting and Ops Utilities
+
+```rust
+import "lib/sys"
+import "lib/http"
+import "lib/json"
+
+url = sys.args()[1]
+status = json.decode(http.get(url).body).status
+print(status)
+```
+
 ### Static Typing with Inference
+
+Most scripts need no type annotations, but you can add them when it matters.
 
 ```rust
 import "lib/list" (map)
@@ -93,6 +119,10 @@ print(doubled) // [2.0, 4.0, 6.0]
 // Explicit types when needed
 fun add(a: Int, b: Int) -> Int { a + b }
 ```
+
+Strict mode affects:
+- Use of union values without narrowing (require `match`/`typeOf` before use)
+- Operations that previously relied on implicit union handling (e.g. `Int | String`)
 
 ### Pattern Matching
 
@@ -163,7 +193,7 @@ print(area(Rectangle(3.0, 4.0))) // 12.0
 Convenient syntax for record arguments in function calls:
 
 ```rust
-type Config = { host: String, port: Int }
+type alias Config = { host: String, port: Int }
 
 fun connect(config: Config) {
     print("Connecting to ${config.host}:${config.port}")
@@ -253,7 +283,7 @@ Funxy includes a built-in debugger.
 
 Modules can import each other — the analyzer resolves cycles automatically:
 
-```
+```rust
 // a/a.lang
 package a (getB)
 import "../b" as b
@@ -262,46 +292,52 @@ fun getB() -> b.BType { b.makeB() }
 // b/b.lang
 package b (BType, makeB)
 import "../a" as a
-type BType = { val: Int }
+type alias BType = { val: Int }
 fun makeB() -> BType { { val: 1 } }
 ```
 
 ## Standard Library
 
+Funxy ships with a batteries-included standard library for everyday scripting, backend utilities, and data workflows:
+
 | Module | Description |
 |--------|-------------|
-| `lib/list` | map, filter, foldl, sort, zip, range |
-| `lib/string` | split, trim, replace, contains |
-| `lib/map` | Key-value operations |
-| `lib/tuple` | Tuple manipulation |
-| `lib/option` | Option type utilities |
-| `lib/result` | Result type utilities |
-| `lib/json` | jsonEncode, jsonDecode |
-| `lib/http` | HTTP client and server |
-| `lib/ws` | WebSocket client and server |
-| `lib/sql` | SQLite (built-in, no drivers needed) |
+| `lib/bignum` | BigInt, Rational |
 | `lib/bits` | Bit-level parsing ([funbit](https://github.com/funvibe/funbit)) |
 | `lib/bytes` | Byte manipulation |
-| `lib/task` | async/await |
-| `lib/crypto` | sha256, md5, base64, hmac |
-| `lib/regex` | Regular expressions |
-| `lib/io` | Files and directories |
-| `lib/sys` | Args, env, exec |
-| `lib/date` | Date and time |
-| `lib/uuid` | UUID generation |
-| `lib/math` | Math functions |
-| `lib/bignum` | BigInt, Rational |
 | `lib/char` | Character functions |
-| `lib/test` | Unit testing |
-| `lib/log` | Structured logging |
+| `lib/crypto` | sha256, md5, base64, hmac |
 | `lib/csv` | CSV parsing and encoding |
+| `lib/date` | Date and time |
 | `lib/flag` | Command line flags |
+| `lib/grpc` | gRPC client/server |
+| `lib/http` | HTTP client and server |
+| `lib/io` | Files and directories |
+| `lib/json` | jsonEncode, jsonDecode |
+| `lib/list` | map, filter, foldl, sort, zip, range, insert, update |
+| `lib/log` | Structured logging |
+| `lib/map` | Key-value operations |
+| `lib/math` | Math functions |
+| `lib/path` | File path manipulation |
+| `lib/proto` | Protocol Buffers encoding/decoding |
+| `lib/rand` | Random number generation |
+| `lib/regex` | Regular expressions |
+| `lib/sql` | SQLite (built-in, no drivers needed) |
+| `lib/string` | split, trim, replace, contains |
+| `lib/sys` | Args, env, exec |
+| `lib/task` | async/await |
+| `lib/test` | Unit testing |
+| `lib/time` | Time and timing |
+| `lib/tuple` | Tuple manipulation |
+| `lib/url` | URL parsing and encoding |
+| `lib/uuid` | UUID generation |
+| `lib/ws` | WebSocket client and server |
 
 Run `./funxy -help lib/<name>` for documentation.
 
 ## Documentation
 
-- [reference](docs/REFERENCE.md) — Reference Manual
+- [reference](REFERENCE.md) — Reference Manual
 - [tutorial](docs/tutorial) — Step-by-step tutorials
 - [playground](playground) — Run code in a browser
 
@@ -309,6 +345,20 @@ Run `./funxy -help lib/<name>` for documentation.
 
 - [VS Code/Cursor extension](editors/vscode/)
 - [Sublime Text syntax](editors/sublime/)
+
+### LSP Installation
+
+To use the new Language Server Protocol features:
+
+1.  **Install the Language Server:**
+    *   Download `funxy-lsp` from [Releases](https://github.com/funvibe/funxy/releases).
+        *   macOS: `funxy-lsp-darwin-amd64` (rename to `funxy-lsp`)
+        *   Linux: `funxy-lsp-linux-amd64` (rename to `funxy-lsp`)
+        *   Windows: `funxy-lsp-windows-amd64.exe` (rename to `funxy-lsp.exe`)
+    *   Place the binary in a directory included in your system's `PATH`.
+    *   Install the updated extension from `editors/vscode`.
+    *   It will automatically try to find `funxy-lsp` in your PATH.
+    *   See `editors/vscode/README.md` for detailed configuration.
 
 ## File Extensions
 

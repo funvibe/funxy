@@ -3,8 +3,8 @@
 // Option: Some(x) ?? default = x
 print(Some(42) ?? 0)       // 42
 
-// Option: Zero ?? default = default
-print(Zero ?? 100)         // 100
+// Option: None ?? default = default
+print(None ?? 100)         // 100
 
 // Result: Ok(x) ?? default = x
 print(Ok(99) ?? 0)         // 99
@@ -13,7 +13,7 @@ print(Ok(99) ?? 0)         // 99
 print(Fail("error") ?? -1) // -1
 
 // Chaining: first non-empty wins
-print(Zero ?? Zero ?? Some(5) ?? 999)  // 5
+print(None ?? None ?? Some(5) ?? 999)  // 5
 
 // Short-circuit: right side not evaluated when unnecessary
 fun testShortCircuit() {
@@ -29,8 +29,8 @@ fun testShortCircuit() {
     print(x)       // 1
     print(counter) // 0
 
-    // Zero calls fallback
-    y = Zero ?? sideEffect()
+    // None calls fallback
+    y = None ?? sideEffect()
     print(y)       // 999
     print(counter) // 1
 
@@ -90,7 +90,7 @@ print(val1 ?? 0)  // 42
 print(val2 ?? 0)  // 0
 
 // Test ?. with Validated
-type User = { name: String, score: Int }
+type alias User = { name: String, score: Int }
 val3: Validated<String, User> = Valid({ name: "Alice", score: 100 })
 val4: Validated<String, User> = Invalid("not found")
 

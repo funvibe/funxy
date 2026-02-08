@@ -28,6 +28,7 @@ const (
 	ErrP004 ErrorCode = "P004" // No prefix parse function found
 	ErrP005 ErrorCode = "P005" // Expected closing parenthesis
 	ErrP006 ErrorCode = "P006" // Invalid import syntax
+	ErrP007 ErrorCode = "P007" // Index assignment not supported
 
 	// Analyzer Errors
 	ErrA001 ErrorCode = "A001" // Undeclared variable
@@ -54,6 +55,7 @@ var errorTemplates = map[ErrorCode]string{
 	ErrP004: "cannot parse expression starting with '%s'",
 	ErrP005: "expected next token to be '%s', but got '%s' instead",
 	ErrP006: "%s",
+	ErrP007: "index assignment is not supported. Use 'lib/list' update/insert functions for immutable list modification",
 	ErrA001: "undeclared variable: '%s'",
 	ErrA002: "undeclared type: '%s'",
 	ErrA003: "type error: %s",

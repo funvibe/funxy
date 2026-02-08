@@ -57,6 +57,53 @@ func (vm *VM) registerFPTraitMethods() {
 	vm.globals.Globals = vm.globals.Globals.Put("(>)", &evaluator.ClassMethod{Name: "(>)", ClassName: "Ord", Arity: 2})
 	vm.globals.Globals = vm.globals.Globals.Put("(>=)", &evaluator.ClassMethod{Name: "(>=)", ClassName: "Ord", Arity: 2})
 
+	// _bindWitness internal builtin
+	// _bindWitness(fn, witness1, witness2, ...) -> PartialApplication
+	vm.globals.Globals = vm.globals.Globals.Put("_bindWitness", &evaluator.Builtin{
+		Name: "_bindWitness",
+		Fn: func(e *evaluator.Evaluator, args ...evaluator.Object) evaluator.Object {
+			if len(args) < 2 {
+				return &evaluator.Error{Message: "_bindWitness expects at least 2 arguments (fn, witness)"}
+			}
+			fn := args[0]
+			witnesses := args[1:]
+
+			// Check if fn is already a PartialApplication
+			if existingPa, ok := fn.(*evaluator.PartialApplication); ok {
+				// Append witnesses to existing applied args
+				newArgs := append(existingPa.AppliedArgs, witnesses...)
+				return &evaluator.PartialApplication{
+					Function:        existingPa.Function,
+					Builtin:         existingPa.Builtin,
+					Constructor:     existingPa.Constructor,
+					ClassMethod:     existingPa.ClassMethod,
+					VMClosure:       existingPa.VMClosure,
+					AppliedArgs:     newArgs,
+					RemainingParams: existingPa.RemainingParams,
+				}
+			}
+
+			// Create new PartialApplication
+			res := &evaluator.PartialApplication{
+				AppliedArgs: witnesses,
+			}
+			switch f := fn.(type) {
+			case *evaluator.Function:
+				res.Function = f
+			case *evaluator.Builtin:
+				res.Builtin = f
+			case *evaluator.ClassMethod:
+				res.ClassMethod = f
+			case *evaluator.Constructor:
+				res.Constructor = f
+			default:
+				// Assume it's a VM Closure or compatible object
+				res.VMClosure = f
+			}
+			return res
+		},
+	})
+
 	// Register builtin trait implementations for primitive types
 	vm.registerBuiltinTraitImpls()
 }
@@ -163,13 +210,13 @@ func (vm *VM) registerBuiltinTraitImpls() {
 
 	// Monoid for Option
 	vm.registerBuiltinTraitMethod("Monoid", "Option", "mempty", func(args []evaluator.Object) evaluator.Object {
-		return &evaluator.DataInstance{Name: "Zero", TypeName: "Option"}
+		return &evaluator.DataInstance{Name: "None", TypeName: "Option"}
 	})
 
 	// Empty for Option
 	vm.registerBuiltinTraitMethod("Empty", "Option", "isEmpty", func(args []evaluator.Object) evaluator.Object {
 		if di, ok := args[0].(*evaluator.DataInstance); ok {
-			return &evaluator.Boolean{Value: di.Name == "Zero"}
+			return &evaluator.Boolean{Value: di.Name == "None"}
 		}
 		return &evaluator.Boolean{Value: false}
 	})

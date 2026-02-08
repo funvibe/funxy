@@ -11,7 +11,7 @@ fun unsafeCoerce<aa, bb>(v: aa) -> bb {
 }
 
 // 2. Scope Leaking (ST Monad style)
-type ScopeToken<s> = { token: s }
+type alias ScopeToken<s> = { token: s }
 
 fun runScope<a>(action: (forall s. ScopeToken<s> -> a)) -> a {
     action({ token: "dummy" })

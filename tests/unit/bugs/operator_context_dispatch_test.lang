@@ -1,0 +1,146 @@
+import "lib/test" (testRun, assertEquals)
+
+type alias Vec2 = { x: Float, y: Float }
+
+instance Numeric Vec2 {
+    operator (+)(a: Vec2, b: Vec2) -> Vec2 {
+        { x: a.x + b.x, y: a.y + b.y }
+    }
+    operator (-)(a: Vec2, b: Vec2) -> Vec2 {
+        { x: a.x - b.x, y: a.y - b.y }
+    }
+    operator (*)(a: Vec2, b: Vec2) -> Vec2 {
+        { x: a.x * b.x, y: a.y * b.y }
+    }
+    operator (/)(a: Vec2, b: Vec2) -> Vec2 {
+        { x: a.x / b.x, y: a.y / b.y }
+    }
+    operator (%)(a: Vec2, b: Vec2) -> Vec2 {
+        { x: a.x % b.x, y: a.y % b.y }
+    }
+    operator (**)(a: Vec2, b: Vec2) -> Vec2 {
+        { x: a.x ** b.x, y: a.y ** b.y }
+    }
+}
+
+testRun("Annotated assignment provides operator dispatch context", \ -> {
+    v1 = { x: 1.0, y: 2.0 }
+    v2 = { x: 3.0, y: 4.0 }
+
+    v3: Vec2 = v1 + v2
+    assertEquals(4.0, v3.x, "x component")
+    assertEquals(6.0, v3.y, "y component")
+})
+
+testRun("Context propagates through nested operator expression", \ -> {
+    v1 = { x: 1.0, y: 2.0 }
+    v2 = { x: 3.0, y: 4.0 }
+
+    v4: Vec2 = (v1 + v2) * v2
+    assertEquals(12.0, v4.x, "x component")
+    assertEquals(24.0, v4.y, "y component")
+})
+
+type alias Flags = { v: Int }
+
+instance Bitwise Flags {
+    operator (&)(a: Flags, b: Flags) -> Flags { { v: a.v & b.v } }
+    operator (|)(a: Flags, b: Flags) -> Flags { { v: a.v | b.v } }
+    operator (^)(a: Flags, b: Flags) -> Flags { { v: a.v ^ b.v } }
+    operator (<<)(a: Flags, b: Flags) -> Flags { { v: a.v << b.v } }
+    operator (>>)(a: Flags, b: Flags) -> Flags { { v: a.v >> b.v } }
+}
+
+testRun("Annotated assignment provides bitwise operator context", \ -> {
+    a = { v: 0b1100 }
+    b = { v: 0b1010 }
+
+    andRes: Flags = a & b
+    orRes: Flags = a | b
+    xorRes: Flags = a ^ b
+    shiftL: Flags = a << { v: 1 }
+    shiftR: Flags = a >> { v: 2 }
+
+    assertEquals(0b1000, andRes.v, "and")
+    assertEquals(0b1110, orRes.v, "or")
+    assertEquals(0b0110, xorRes.v, "xor")
+    assertEquals(0b11000, shiftL.v, "shift left")
+    assertEquals(0b11, shiftR.v, "shift right")
+})
+
+testRun("Bitwise operators work in nested expressions", \ -> {
+    a = { v: 0b1100 }
+    b = { v: 0b1010 }
+
+    combo: Flags = (a & b) | (a ^ b)
+    assertEquals(0b1110, combo.v, "combined")
+})
+
+type alias Score = { v: Int }
+
+instance Equal Score {
+    operator (==)(a: Score, b: Score) -> Bool { a.v == b.v }
+    operator (!=)(a: Score, b: Score) -> Bool { a.v != b.v }
+}
+
+instance Order Score {
+    operator (<)(a: Score, b: Score) -> Bool { a.v < b.v }
+    operator (<=)(a: Score, b: Score) -> Bool { a.v <= b.v }
+    operator (>)(a: Score, b: Score) -> Bool { a.v > b.v }
+    operator (>=)(a: Score, b: Score) -> Bool { a.v >= b.v }
+}
+
+testRun("Order operators work for nominal records", \ -> {
+    s1: Score = { v: 10 }
+    s2: Score = { v: 20 }
+
+    assertEquals(true, s1 < s2, "lt")
+    assertEquals(true, s1 <= s2, "lte")
+    assertEquals(true, s2 > s1, "gt")
+    assertEquals(true, s2 >= s1, "gte")
+    assertEquals(false, s1 == s2, "eq")
+    assertEquals(true, s1 != s2, "neq")
+})
+
+testRun("Order operators work with annotated variables and compound boolean", \ -> {
+    left: Score = { v: 5 }
+    right: Score = { v: 7 }
+
+    ok: Bool = (left < right) && (right >= left)
+    assertEquals(true, ok, "combined compare")
+})
+
+type alias Tag = { v: String }
+
+instance Concat Tag {
+    operator (++ )(a: Tag, b: Tag) -> Tag {
+        { v: a.v ++ b.v }
+    }
+}
+
+testRun("Concat operator uses annotated context for nominal records", \ -> {
+    t1 = { v: "a" }
+    t2 = { v: "b" }
+
+    t3: Tag = t1 ++ t2
+    assertEquals("ab", t3.v, "concat")
+})
+
+testRun("List cons and concat work in chains", \ -> {
+    list = 1 :: [2, 3]
+    merged = [0] ++ list
+    assertEquals([0, 1, 2, 3], merged, "merged list")
+
+    nested: List<Int> = 0 :: ([1, 2] ++ [3, 4])
+    assertEquals([0, 1, 2, 3, 4], nested, "nested chain")
+})
+
+testRun("Mixed bitwise + comparison chain in one expression", \ -> {
+    a = { v: 0b1100 }
+    b = { v: 0b1010 }
+
+    andRes: Flags = a & b
+    orRes: Flags = a | b
+    ok: Bool = (andRes.v == 0b1000) && (orRes.v >= 0b1110)
+    assertEquals(true, ok, "mixed chain")
+})

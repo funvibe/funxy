@@ -11,6 +11,14 @@ func initHttpPackage() {
 		Args:        []typesystem.Type{typesystem.Char},
 	}
 
+	// Bytes type
+	bytesType := typesystem.Bytes
+
+	// String | Bytes
+	stringOrBytes := typesystem.TUnion{
+		Types: []typesystem.Type{stringType, bytesType},
+	}
+
 	// (String, String) - header tuple
 	headerTuple := typesystem.TTuple{
 		Elements: []typesystem.Type{stringType, stringType},
@@ -31,8 +39,19 @@ func initHttpPackage() {
 		},
 	}
 
+	// HttpRequest = { method: String, path: String, query: String, headers: List<(String, String)>, body: String }
+	requestType := typesystem.TRecord{
+		Fields: map[string]typesystem.Type{
+			"method":  stringType,
+			"path":    stringType,
+			"query":   stringType,
+			"headers": headersType,
+			"body":    stringType,
+		},
+	}
+
 	// Result<String, HttpResponse> - error is String, success is HttpResponse
-	resultStringResponse := typesystem.TApp{
+	resultResponse := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
 		Args:        []typesystem.Type{stringType, responseType},
 	}
@@ -43,38 +62,38 @@ func initHttpPackage() {
 			// Simple GET request
 			"httpGet": typesystem.TFunc{
 				Params:     []typesystem.Type{stringType},
-				ReturnType: resultStringResponse,
+				ReturnType: resultResponse,
 			},
 
 			// POST with string body
 			"httpPost": typesystem.TFunc{
-				Params:     []typesystem.Type{stringType, stringType},
-				ReturnType: resultStringResponse,
+				Params:     []typesystem.Type{stringType, stringOrBytes},
+				ReturnType: resultResponse,
 			},
 
 			// POST with JSON body (auto-encodes)
 			"httpPostJson": typesystem.TFunc{
 				Params:     []typesystem.Type{stringType, typesystem.TVar{Name: "A"}},
-				ReturnType: resultStringResponse,
+				ReturnType: resultResponse,
 			},
 
 			// PUT with string body
 			"httpPut": typesystem.TFunc{
-				Params:     []typesystem.Type{stringType, stringType},
-				ReturnType: resultStringResponse,
+				Params:     []typesystem.Type{stringType, stringOrBytes},
+				ReturnType: resultResponse,
 			},
 
 			// DELETE request
 			"httpDelete": typesystem.TFunc{
 				Params:     []typesystem.Type{stringType},
-				ReturnType: resultStringResponse,
+				ReturnType: resultResponse,
 			},
 
 			// Full control request (timeout in ms, 0 = use global default)
 			// Last 2 params have defaults: body="" and timeout=0
 			"httpRequest": typesystem.TFunc{
-				Params:       []typesystem.Type{stringType, stringType, headersType, stringType, typesystem.Int},
-				ReturnType:   resultStringResponse,
+				Params:       []typesystem.Type{stringType, stringType, headersType, stringOrBytes, typesystem.Int},
+				ReturnType:   resultResponse,
 				DefaultCount: 2,
 			},
 
@@ -86,8 +105,7 @@ func initHttpPackage() {
 
 			// ========== Server functions ==========
 
-			// HttpRequest = { method: String, path: String, query: String, headers: List<(String, String)>, body: String }
-			// httpServe: (Int, (HttpRequest) -> HttpResponse) -> Result<Nil, String>
+			// httpServe: (Int, (HttpRequest) -> HttpResponse) -> Result<String, Nil>
 			// Starts server and blocks, calling handler for each request
 			"httpServe": typesystem.TFunc{
 				Params: []typesystem.Type{
@@ -95,15 +113,7 @@ func initHttpPackage() {
 					typesystem.TFunc{
 						Params: []typesystem.Type{
 							// HttpRequest record
-							typesystem.TRecord{
-								Fields: map[string]typesystem.Type{
-									"method":  stringType,
-									"path":    stringType,
-									"query":   stringType,
-									"headers": headersType,
-									"body":    stringType,
-								},
-							},
+							requestType,
 						},
 						ReturnType: responseType,
 					},
@@ -121,15 +131,7 @@ func initHttpPackage() {
 					typesystem.Int,
 					typesystem.TFunc{
 						Params: []typesystem.Type{
-							typesystem.TRecord{
-								Fields: map[string]typesystem.Type{
-									"method":  stringType,
-									"path":    stringType,
-									"query":   stringType,
-									"headers": headersType,
-									"body":    stringType,
-								},
-							},
+							requestType,
 						},
 						ReturnType: responseType,
 					},
@@ -144,6 +146,10 @@ func initHttpPackage() {
 				ReturnType:   typesystem.Nil,
 				DefaultCount: 1,
 			},
+		},
+		Types: map[string]typesystem.Type{
+			"HttpRequest":  requestType,
+			"HttpResponse": responseType,
 		},
 	}
 

@@ -6,7 +6,7 @@ fun double(x) { x * 2 }
 fun add(a, b) { a + b }
 fun sub(a, b) { a - b }
 fun triple_add(a, b, c) { a + b + c }
-fun format(prefix, val, suffix) { prefix ++ val ++ suffix }
+fun fmt(prefix, val, suffix) { prefix ++ val ++ suffix }
 
 testRun("Basic pipe: x |> f", \ -> {
     res = 10 |> double
@@ -100,8 +100,8 @@ testRun("Expression in pipe arguments", \ -> {
 })
 
 testRun("Pipe with strings", \ -> {
-    // "world" |> format("hello ", _, "!") -> "hello world!"
-    res = "world" |> format("hello ", _, "!")
+    // "world" |> fmt("hello ", _, "!") -> "hello world!"
+    res = "world" |> fmt("hello ", _, "!")
     assert(res == "hello world!", "string format pipe failed")
 })
 

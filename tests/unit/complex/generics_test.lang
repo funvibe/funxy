@@ -19,7 +19,7 @@ testRun("Generic functions", \ -> {
     assertEquals(1, swapped[1], "Swap 1")
 })
 
-type Box<t> = { value: t }
+type alias Box<t> = { value: t }
 
 testRun("Generic record type", \ -> {
     b1: Box<Int> = { value: 10 }
@@ -29,7 +29,7 @@ testRun("Generic record type", \ -> {
     assertEquals("hi", b2.value, "Box String")
 })
 
-type Pair<a, b> = { first: a, second: b }
+type alias Pair<a, b> = { first: a, second: b }
 
 testRun("Multi-param generic type", \ -> {
     p: Pair<Int, Bool> = { first: 1, second: true }

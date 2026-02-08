@@ -23,7 +23,7 @@ print("abc" < "abd")
 // Containers - direct comparisons work with constructors
 print([1, 2] < [1, 3])
 print([] < [1])
-print(Zero < Some(1))
+print(None < Some(1))
 print(Some(1) < Some(2))
 print((1, 2) < (1, 3))
 print((1, 2) < (2, 0))
@@ -41,8 +41,7 @@ print("=== Semigroup (<>) ===")
 print([1, 2] <> [3, 4])
 print("hello" <> " " <> "world")
 print(Some(5) <> Some(10))
-zero = Zero: Option<Int>
-print(zero <> Some(42))
+print(None <> Some(42))
 
 print("=== Monoid (mempty via Semigroup identity) ===")
 print([] <> [1, 2, 3])

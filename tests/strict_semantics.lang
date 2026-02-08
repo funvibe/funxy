@@ -1,0 +1,17 @@
+import "lib/bytes" (*)
+import "lib/bits" (*)
+import "lib/list" (slice)
+
+print("=== Bytes Strictness ===")
+// bytesSlice returns Result, should not panic
+// We expect failure, so we unwrap the error
+print("Bytes: " ++ unwrapError(bytesSlice(@"Hi", 0, 100)))
+
+print("=== Bits Strictness ===")
+// bitsSlice returns Result, should not panic
+print("Bits: " ++ unwrapError(bitsSlice(#b"10", 0, 100)))
+
+print("=== List Strictness ===")
+// List slice should panic on out of bounds
+l = [1, 2]
+print(slice(l, 0, 100))

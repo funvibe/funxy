@@ -1,0 +1,11 @@
+import "lib/test" (*)
+
+globalList = [-1, -2, -3, -4, -5]
+testRun("List comprehension should be able to access variables from enclosing function scope", \ -> {
+    myList = [1, 2, 3, 4, 5]
+    multiplier = 10
+    result = [x * multiplier | x <- myList]
+    resultGlobal = [x * multiplier | x <- globalList]
+    assert(result == [10, 20, 30, 40, 50])
+    assert(resultGlobal == [-10, -20, -30, -40, -50])
+})

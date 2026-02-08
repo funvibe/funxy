@@ -20,12 +20,12 @@ if x == 10 {
 y = if x > 5 { 100 } else { 200 }
 print(y)
 
-z = if x < 5 { 
-  100 
-} else if x == 10 { 
-  200 
-} else { 
-  300 
+z = if x < 5 {
+  100
+} else if x == 10 {
+  200
+} else {
+  300
 }
 print(z)
 
@@ -33,10 +33,10 @@ print(!true)
 print(!false)
 print(10 != 20)
 
-if x < 5 { 
+if x < 5 {
   print(100)
-} else if x == 10 { 
+} else if x == 10 {
   print(200)
-} else { 
+} else {
   print(300)
 }

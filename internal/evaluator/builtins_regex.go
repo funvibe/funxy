@@ -69,12 +69,12 @@ func builtinRegexFind(e *Evaluator, args ...Object) Object {
 
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return makeZero()
+		return makeNone()
 	}
 
 	match := re.FindString(str)
 	if match == "" && !re.MatchString(str) {
-		return makeZero()
+		return makeNone()
 	}
 
 	return makeSome(stringToList(match))
@@ -136,12 +136,12 @@ func builtinRegexCapture(e *Evaluator, args ...Object) Object {
 
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return makeZero()
+		return makeNone()
 	}
 
 	matches := re.FindStringSubmatch(str)
 	if matches == nil {
-		return makeZero()
+		return makeNone()
 	}
 
 	elements := make([]Object, len(matches))
@@ -263,7 +263,7 @@ func builtinRegexSplit(e *Evaluator, args ...Object) Object {
 	return newList(elements)
 }
 
-// validate: (String) -> Result<Nil, String>
+// validate: (String) -> Result<String, Nil>
 // Validates regex pattern syntax
 func builtinRegexValidate(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
@@ -307,7 +307,7 @@ func SetRegexBuiltinTypes(builtins map[string]*Builtin) {
 		Constructor: typesystem.TCon{Name: "Option"},
 		Args:        []typesystem.Type{listString},
 	}
-	// Result<Nil, String>
+	// Result<String, Nil>
 	resultNil := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
 		Args:        []typesystem.Type{typesystem.Nil, stringType},

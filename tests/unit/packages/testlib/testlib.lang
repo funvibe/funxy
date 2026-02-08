@@ -3,7 +3,7 @@ package testlib (Point, Circle, Radius, add, distance, scale, area)
 import "lib/math" (sqrt, pi)
 
 // Type alias to record - tests extension methods on type aliases
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 // ADT type - tests extension methods and trait instances on ADTs
 type Circle = Radius Float

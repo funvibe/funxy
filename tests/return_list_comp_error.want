@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 1:2 [P006]: return is only allowed inside function bodies

@@ -1,0 +1,110 @@
+import "lib/test" (*)
+
+type alias Box = { value: Int }
+
+fun (b: Box) getOrZero() -> Int {
+    if b.value < 0 {
+        return 0
+    }
+    b.value
+}
+
+testRun("Return: nested if/match/block", fun() -> {
+    fun f(x: Int) -> Int {
+        if x < 0 {
+            return -1
+        }
+        match x {
+            0 -> { return 0 }
+            _ -> {
+                {
+                    return 1
+                }
+            }
+        }
+    }
+    assertEquals(f(-5), -1)
+    assertEquals(f(0), 0)
+    assertEquals(f(2), 1)
+})
+
+testRun("Return: for-in loop early exit", fun() -> {
+    fun f(xs: List<Int>) -> Int {
+        for x in xs {
+            if x == 3 {
+                return x
+            }
+        }
+        -1
+    }
+    assertEquals(f([1, 2, 3, 4]), 3)
+    assertEquals(f([1, 2]), -1)
+})
+
+testRun("Return: while-style loop early exit", fun() -> {
+    fun f() -> Int {
+        i = 0
+        for i < 10 {
+            if i == 4 {
+                return i
+            }
+            i = i + 1
+        }
+        -1
+    }
+    assertEquals(f(), 4)
+})
+
+testRun("Return: inner function does not exit outer", fun() -> {
+    fun outer() -> Int {
+        fun inner(x: Int) -> Int {
+            return x + 1
+        }
+        inner(1)
+        7
+    }
+    assertEquals(outer(), 7)
+})
+
+testRun("Return: explicit annotation with nil return", fun() -> {
+    fun f() -> Nil {
+        return
+    }
+    assertEquals(f(), nil)
+})
+
+testRun("Return: extension method", fun() -> {
+    b1: Box = { value: 5 }
+    b2: Box = { value: -1 }
+    assertEquals(b1.getOrZero(), 5)
+    assertEquals(b2.getOrZero(), 0)
+})
+
+testRun("Return: lambda value is isolated", fun() -> {
+    fun applyTwice(x: Int, f: (Int) -> Int) -> Int {
+        f(x) + f(x)
+    }
+    inc = fun(n: Int) -> Int {
+        if n > 0 {
+            return n + 1
+        }
+        0
+    }
+    assertEquals(applyTwice(1, inc), 4)
+})
+
+testRun("Return: nested function in match arm", fun() -> {
+    fun f(x: Int) -> Int {
+        match x {
+            1 -> {
+                fun g() -> Int {
+                    return 10
+                }
+                g()
+            }
+            _ -> 0
+        }
+    }
+    assertEquals(f(1), 10)
+    assertEquals(f(2), 0)
+})

@@ -3,8 +3,8 @@ package basic (pubVal, PubType)
 pubVal = 42
 privVal = 100
 
-type PubType = { x: Int }
-type PrivType = { y: Int }
+type alias PubType = { x: Int }
+type alias PrivType = { y: Int }
 
 fun getPriv() { privVal }
 

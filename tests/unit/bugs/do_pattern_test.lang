@@ -1,0 +1,10 @@
+import "lib/test" (*)
+
+testRun("Do pattern should be able to bind variables", \ -> {
+    pairs: Option<(Int, Int)> = Some((3, 4))
+    result = do {
+        (a, b) <- pairs
+        Some(a + b)
+    }
+    assert(result == Some(7))
+})

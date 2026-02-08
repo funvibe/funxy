@@ -1,0 +1,176 @@
+import "lib/test" (testRun, assertEquals)
+
+testRun("Expected union context: if expression", \ -> {
+    v1 = if true { 1 } else { "one" }
+    v2 = if false { 1 } else { "one" }
+
+    match v1 {
+        i: Int -> assertEquals(1, i, "if(true) returns Int")
+        _: String -> assertEquals(0, 1, "should be Int")
+    }
+    match v2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "if(false) returns String")
+    }
+})
+
+testRun("Expected union context: match expression", \ -> {
+    v1 = match true {
+        true -> 1
+        false -> "one"
+    }
+    v2 = match false {
+        true -> 1
+        false -> "one"
+    }
+
+    match v1 {
+        i: Int -> assertEquals(1, i, "match(true) returns Int")
+        _: String -> assertEquals(0, 1, "should be Int")
+    }
+    match v2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "match(false) returns String")
+    }
+})
+
+testRun("Expected union context: function return (if)", \ -> {
+    fun pick(b: Bool) -> Int | String {
+        if b { 1 } else { "one" }
+    }
+
+    r1 = pick(true)
+    r2 = pick(false)
+
+    match r1 {
+        i: Int -> assertEquals(1, i, "pick(true)")
+        _: String -> assertEquals(0, 1, "should be Int")
+    }
+    match r2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "pick(false)")
+    }
+})
+
+testRun("Expected union context: function return (match)", \ -> {
+    fun pickMatch(b: Bool) -> Int | String {
+        match b {
+            true -> 1
+            false -> "one"
+        }
+    }
+
+    r1 = pickMatch(true)
+    r2 = pickMatch(false)
+
+    match r1 {
+        i: Int -> assertEquals(1, i, "pickMatch(true)")
+        _: String -> assertEquals(0, 1, "should be Int")
+    }
+    match r2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "pickMatch(false)")
+    }
+})
+
+testRun("Expected union context: nested if", \ -> {
+    v = if true {
+        if false { 1 } else { 2 }
+    } else {
+        "one"
+    }
+
+    match v {
+        i: Int -> assertEquals(2, i, "nested if returns Int")
+        _: String -> assertEquals(0, 1, "should be Int")
+    }
+})
+
+testRun("Expected union context: function returns (return)", \ -> {
+    fun choose(b: Bool) -> Int | String {
+        if b { return 1 }
+        return "one"
+    }
+
+    r1 = choose(true)
+    r2 = choose(false)
+
+    match r1 {
+        i: Int -> assertEquals(1, i, "choose(true)")
+        _: String -> assertEquals(0, 1, "should be Int")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+    match r2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "choose(false)")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+})
+
+testRun("Expected union context: inferred return (return)", \ -> {
+    fun chooseInferred(b: Bool) {
+        if b { return 1 }
+        return "one"
+    }
+
+    r1 = chooseInferred(true)
+    r2 = chooseInferred(false)
+
+    match r1 {
+        i: Int -> assertEquals(1, i, "chooseInferred(true)")
+        _: String -> assertEquals(0, 1, "should be Int")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+    match r2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "chooseInferred(false)")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+})
+
+testRun("Expected union context: early return inside match", \ -> {
+    fun pickEarly(b: Bool) {
+        match b {
+            true -> { return 1 }
+            false -> { return "one" }
+        }
+    }
+
+    r1 = pickEarly(true)
+    r2 = pickEarly(false)
+
+    match r1 {
+        i: Int -> assertEquals(1, i, "pickEarly(true)")
+        _: String -> assertEquals(0, 1, "should be Int")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+    match r2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "pickEarly(false)")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+})
+
+testRun("Expected union context: early return in nested if", \ -> {
+    fun pickNested(b: Bool) {
+        if b {
+            if false { return 1 }
+            return 2
+        }
+        return "one"
+    }
+
+    r1 = pickNested(true)
+    r2 = pickNested(false)
+
+    match r1 {
+        i: Int -> assertEquals(2, i, "pickNested(true)")
+        _: String -> assertEquals(0, 1, "should be Int")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+    match r2 {
+        _: Int -> assertEquals(0, 1, "should be String")
+        s: String -> assertEquals("one", s, "pickNested(false)")
+        _ -> assertEquals(0, 1, "unexpected")
+    }
+})

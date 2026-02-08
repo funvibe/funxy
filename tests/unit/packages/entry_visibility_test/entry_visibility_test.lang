@@ -1,0 +1,8 @@
+package entry_visibility_test
+
+import "lib/test" (*)
+
+testRun("Entry file sees package symbols from other files", fun() -> {
+    assertEquals(add(2, 3), 5)
+    assertEquals(internalVal, 41)
+})

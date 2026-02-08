@@ -15,7 +15,7 @@ result = regexFind("\d+", "abc123def456")
 print(result)  // Some("123")
 
 noMatch = regexFind("\d+", "abcdef")
-print(noMatch)  // Zero
+print(noMatch)  // None
 
 // =============================================
 // regexFindAll: (String, String) -> List<String>
@@ -38,11 +38,11 @@ match dateCapture {
         print(groups[2])  // "03" (month)
         print(groups[3])  // "15" (day)
     }
-    Zero -> print("No match")
+    None -> print("No match")
 }
 
 noCapture = regexCapture("(\d+)-(\d+)", "no numbers here")
-print(noCapture)  // Zero
+print(noCapture)  // None
 
 // =============================================
 // regexReplace: (String, String, String) -> String

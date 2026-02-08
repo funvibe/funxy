@@ -1,4 +1,7 @@
 Processing failed with errors:
-- error at 3:26 [A003]: type error: Type Box has kind (* -> *), cannot be applied to argument 2
-- error at 4:25 [A003]: type error: Type Int has kind *, cannot be applied to argument 1
-- error at 5:29 [A003]: type error: Type argument mismatch: expected kind *, got (* -> *)
+- error at 3:12 [A003]: type error: Kind inference error: kind mismatch in application: kind mismatch: expected *, got (* -> k?)
+- error at 3:23 [A003]: type error: Type Box has kind (* -> *), cannot be applied to argument 2
+- error at 4:12 [A003]: type error: Kind inference error: kind mismatch in application: kind mismatch: expected *, got ((* -> *) -> k?)
+- error at 4:22 [A003]: type error: Type Int has kind *, cannot be applied to argument 1
+- error at 5:12 [A003]: type error: Kind inference error: kind mismatch in application: kind mismatch: expected *, got (* -> *)
+- error at 5:25 [A003]: type error: Type argument mismatch: expected kind *, got (* -> *)

@@ -1,2 +1,2 @@
 Processing failed with errors:
-- error at 24:9 [A003]: type error: cannot implement Print for Int: missing implementation of super trait Cmp
+- error at 24:1 [A003]: type error: cannot implement Print for Int: missing implementation of super trait Cmp

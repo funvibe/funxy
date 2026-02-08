@@ -1,3 +1,3 @@
 Processing failed with errors:
-- error at 4:10 [P006]: Variable name must start with a lowercase letter
-- error at 2:17 [A004]: redefinition of symbol: 'Int'
+- error at 4:5 [P006]: Variable name must start with a lowercase letter
+- error at 2:14 [A004]: redefinition of symbol: 'Int'

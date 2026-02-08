@@ -1,0 +1,9 @@
+=== Bytes Strictness ===
+Bytes: bytesSlice: indices [0, 100) out of bounds for bytes of length 2
+=== Bits Strictness ===
+Bits: bitsSlice: indices [0, 100) out of bounds for bits of length 2
+=== List Strictness ===
+Processing failed with errors:
+- error [R001]: runtime error: ERROR at 17:12: slice: indices [0, 100) out of bounds for list of length 2
+Stack trace:
+  at tests/strict_semantics:17 (called slice)

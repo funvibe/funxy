@@ -7,9 +7,9 @@
 import "lib/test" (testRun, assertEquals, assertTrue, assertFalse)
 
 // Types must be defined at module level
-type PmPoint = { x: Int, y: Int }
-type PmPerson = { name: String, age: Int }
-type PmStatus = { code: Int, msg: String }
+type alias PmPoint = { x: Int, y: Int }
+type alias PmPerson = { name: String, age: Int }
+type alias PmStatus = { code: Int, msg: String }
 
 // =============================================================================
 // BASIC PATTERNS
@@ -177,10 +177,10 @@ testRun("Pattern: list with literal", \ -> {
 testRun("Pattern: Option", \ -> {
     f = \opt -> match opt {
         Some(x) -> x * 2
-        Zero -> 0
+        None -> 0
     }
     assertEquals(84, f(Some(42)), "Some")
-    assertEquals(0, f(Zero), "Zero")
+    assertEquals(0, f(None), "None")
 })
 
 testRun("Pattern: Result", \ -> {
@@ -195,12 +195,12 @@ testRun("Pattern: Result", \ -> {
 testRun("Pattern: nested ADT", \ -> {
     f = \opt -> match opt {
         Some(Some(x)) -> "double some: " ++ show(x)
-        Some(Zero) -> "some zero"
-        Zero -> "zero"
+        Some(None) -> "some zero"
+        None -> "zero"
     }
     assertEquals("double some: 42", f(Some(Some(42))), "nested some")
-    assertEquals("some zero", f(Some(Zero)), "some zero")
-    assertEquals("zero", f(Zero), "zero")
+    assertEquals("some zero", f(Some(None)), "some zero")
+    assertEquals("zero", f(None), "zero")
 })
 
 // =============================================================================
@@ -217,10 +217,10 @@ testRun("Pattern: record via field access", \ -> {
 testRun("Pattern: record with ADT wrapper", \ -> {
     f = \opt -> match opt {
         Some(p) -> p.name
-        Zero -> "unknown"
+        None -> "unknown"
     }
     assertEquals("Alice", f(Some(PmPerson { name: "Alice", age: 30 })), "record in Option")
-    assertEquals("unknown", f(Zero), "none")
+    assertEquals("unknown", f(None), "none")
 })
 
 // =============================================================================
@@ -302,14 +302,14 @@ testRun("Complex: list of tuples", \ -> {
 testRun("Complex: Option in tuple", \ -> {
     f = \t -> match t {
         (Some(x), Some(y)) -> x + y
-        (Some(x), Zero) -> x
-        (Zero, Some(y)) -> y
-        (Zero, Zero) -> 0
+        (Some(x), None) -> x
+        (None, Some(y)) -> y
+        (None, None) -> 0
     }
     assertEquals(5, f((Some(2), Some(3))), "both some")
-    assertEquals(2, f((Some(2), Zero)), "first some")
-    assertEquals(3, f((Zero, Some(3))), "second some")
-    assertEquals(0, f((Zero, Zero)), "both zero")
+    assertEquals(2, f((Some(2), None)), "first some")
+    assertEquals(3, f((None, Some(3))), "second some")
+    assertEquals(0, f((None, None)), "both zero")
 })
 
 testRun("Complex: pattern with computation", \ -> {
@@ -339,10 +339,10 @@ testRun("Exhaustive: bool", \ -> {
 testRun("Exhaustive: option", \ -> {
     f = \o -> match o {
         Some(x) -> x
-        Zero -> 0
+        None -> 0
     }
     assertEquals(42, f(Some(42)), "exhaust some")
-    assertEquals(0, f(Zero), "exhaust zero")
+    assertEquals(0, f(None), "exhaust zero")
 })
 
 testRun("Exhaustive: with wildcard", \ -> {

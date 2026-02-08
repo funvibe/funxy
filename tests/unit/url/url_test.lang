@@ -32,7 +32,7 @@ testRun("urlParse full URL", fun() -> {
 
 testRun("urlParse without port", fun() -> {
     match urlParse("https://example.com/path") {
-        Ok(url) -> assertZero(urlPort(url))
+        Ok(url) -> assertNone(urlPort(url))
         Fail(_) -> assert(false)
     }
 })
@@ -58,7 +58,7 @@ testRun("urlQueryParam single value", fun() -> {
         Ok(url) -> {
             match urlQueryParam(url, "name") {
                 Some(v) -> assertEquals(v, "test")
-                Zero -> assert(false)
+                None -> assert(false)
             }
         }
         Fail(_) -> assert(false)
@@ -67,7 +67,7 @@ testRun("urlQueryParam single value", fun() -> {
 
 testRun("urlQueryParam missing", fun() -> {
     match urlParse("https://example.com?name=test") {
-        Ok(url) -> assertZero(urlQueryParam(url, "missing"))
+        Ok(url) -> assertNone(urlQueryParam(url, "missing"))
         Fail(_) -> assert(false)
     }
 })
@@ -122,7 +122,7 @@ testRun("urlWithPort", fun() -> {
             url2 = urlWithPort(url, 9000)
             match urlPort(url2) {
                 Some(p) -> assertEquals(p, 9000)
-                Zero -> assert(false)
+                None -> assert(false)
             }
         }
         Fail(_) -> assert(false)

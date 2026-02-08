@@ -22,7 +22,7 @@ testRun("Row Polymorphism: Subtyping", fun() -> {
     assertEquals(20, res_rec.y, "Row polymorphism should preserve extra fields")
 })
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 // Row Polymorphism with type aliases
 testRun("Row Polymorphism: Type Aliases", fun() -> {
@@ -47,7 +47,7 @@ testRun("Row Polymorphism: Type Aliases", fun() -> {
     assertEquals(7, result.y, "Row polymorphism should preserve y from Point")
 })
 
-type Base = { x: Int }
+type alias Base = { x: Int }
 
 // Row Polymorphism with extended records
 testRun("Row Polymorphism: Extended Records", fun() -> {
@@ -101,8 +101,8 @@ testRun("Row Polymorphism: Nested Records", fun() -> {
     assertEquals("production", result.env, "Row polymorphism should preserve top-level env")
 })
 
-type TestPoint = { x: Int, y: Int }
-type Config = { name: String, value: Int }
+type alias TestPoint = { x: Int, y: Int }
+type alias Config = { name: String, value: Int }
 
 // Edge cases: spread without new fields and type alias preservation
 testRun("Row Polymorphism: Edge Cases", fun() -> {

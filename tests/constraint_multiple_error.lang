@@ -2,7 +2,7 @@
 // Bool implements Printable but NOT Cmp
 
 trait Printable<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 
 trait Cmp<t> {
@@ -11,14 +11,14 @@ trait Cmp<t> {
 
 // Only Printable for Bool, NOT Cmp
 instance Printable Bool {
-    fun format(val: Bool) -> String {
+    fun pretty(val: Bool) -> String {
         if val { "true" } else { "false" }
     }
 }
 
 // Both Printable and Cmp for Int
 instance Printable Int {
-    fun format(val: Int) -> String { "int" }
+    fun pretty(val: Int) -> String { "int" }
 }
 
 instance Cmp Int {
@@ -27,7 +27,7 @@ instance Cmp Int {
 
 // Function requires BOTH Printable AND Cmp
 fun process<t: Printable, Cmp>(x: t, y: t) -> String {
-    if cmp(x, y) { format(x) } else { "different" }
+    if cmp(x, y) { pretty(x) } else { "different" }
 }
 
 // Works - Int implements both

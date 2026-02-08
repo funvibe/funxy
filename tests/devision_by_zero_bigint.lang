@@ -1,0 +1,2 @@
+// BigInt division by zero
+_ = 10n / 0n

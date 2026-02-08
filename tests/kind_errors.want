@@ -1,0 +1,5 @@
+Processing failed with errors:
+- error at 3:12 [A003]: type error: Kind inference error: kind mismatch in application: kind mismatch: expected *, got (* -> k?)
+- error at 3:20 [A003]: type error: Type Int has kind *, cannot be applied to argument 1
+- error at 9:12 [A003]: type error: Kind inference error: kind mismatch in application: kind mismatch: expected (* -> *), got *
+- error at 12:12 [A003]: type error: Kind inference error: kind mismatch in application: kind mismatch: expected *, got (* -> *)

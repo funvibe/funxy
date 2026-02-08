@@ -76,11 +76,11 @@ func objectToGo(obj Object) (interface{}, error) {
 		}
 		return obj, nil
 	case *DataInstance:
-		// Option: Some(x) -> x, Zero -> null
+		// Option: Some(x) -> x, None -> null
 		if v.Name == "Some" && len(v.Fields) == 1 {
 			return objectToGo(v.Fields[0])
 		}
-		if v.Name == "Zero" {
+		if v.Name == "None" {
 			return nil, nil
 		}
 		// Result: Ok(x) -> x, Fail(e) -> error
@@ -391,7 +391,7 @@ func builtinJsonGet(e *Evaluator, args ...Object) Object {
 			}
 		}
 	}
-	return makeZero()
+	return makeNone()
 }
 
 // builtinJsonKeys gets all keys from JObj
@@ -488,11 +488,11 @@ func objectToJsonADT(obj Object) Object {
 		pairList := newList(pairs)
 		return &DataInstance{Name: "JObj", Fields: []Object{pairList}, TypeName: "Json"}
 	case *DataInstance:
-		// Option: Some -> value, Zero -> null
+		// Option: Some -> value, None -> null
 		if v.Name == "Some" && len(v.Fields) == 1 {
 			return objectToJsonADT(v.Fields[0])
 		}
-		if v.Name == "Zero" || v.Name == "JNull" {
+		if v.Name == "None" || v.Name == "JNull" {
 			return &DataInstance{Name: "JNull", Fields: []Object{}, TypeName: "Json"}
 		}
 		// Json types pass through

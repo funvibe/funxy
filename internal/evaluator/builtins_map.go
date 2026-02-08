@@ -62,7 +62,7 @@ func builtinMapGet(e *Evaluator, args ...Object) Object {
 	key := args[1]
 	val := m.get(key)
 	if val == nil {
-		return makeZero() // Zero (None)
+		return makeNone() // None
 	}
 	return makeSome(val) // Some(value)
 }

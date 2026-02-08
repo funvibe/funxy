@@ -105,13 +105,13 @@ testRun("Generic const function", fun() {
 // Polymorphic Constructors
 // ============================================================================
 
-testRun("Zero with explicit Int type", fun() {
-    z: Option<Int> = Zero
+testRun("None with explicit Int type", fun() {
+    z: Option<Int> = None
     assert(typeOf(z, Option), "z should be Option")
 })
 
-testRun("Zero with explicit String type", fun() {
-    z: Option<String> = Zero
+testRun("None with explicit String type", fun() {
+    z: Option<String> = None
     assert(typeOf(z, Option), "z should be Option")
 })
 
@@ -130,11 +130,11 @@ testRun("Fail infers type from value", fun() {
     assert(typeOf(r, Result), "r should be Result")
 })
 
-testRun("Zero and Some are both Option types", fun() {
-    z: Option<Int> = Zero
+testRun("None and Some are both Option types", fun() {
+    z: Option<Int> = None
     s = Some(42)
     // Both should be Option types at runtime
-    assert(typeOf(z, Option), "Zero is Option")
+    assert(typeOf(z, Option), "None is Option")
     assert(typeOf(s, Option), "Some is Option")
 })
 
@@ -215,8 +215,8 @@ testRun("typeOf Option positive", fun() {
     assert(typeOf(Some(42), Option), "Some should be Option")
 })
 
-testRun("typeOf Zero positive", fun() {
-    assert(typeOf(Zero, Option), "Zero should be Option")
+testRun("typeOf None positive", fun() {
+    assert(typeOf(None, Option), "None should be Option")
 })
 
 testRun("typeOf Result positive", fun() {
@@ -425,7 +425,7 @@ testRun("Bytes type", fun() {
     assertEquals("type(Bytes)", show(getType(b)))
 })
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 testRun("Record with spread preserves type", fun() {
     p1: Point = { x: 1, y: 2 }
     p2 = { ...p1, x: 10 }
@@ -436,7 +436,7 @@ testRun("Pattern matching preserves types", fun() {
     opt = Some(42)
     result = match opt {
         Some(x) -> x
-        Zero -> 0
+        None -> 0
     }
     assert(typeOf(result, Int), "result should be Int")
 })
@@ -475,9 +475,9 @@ testRun("Different Option contents have different types (reified)", fun() {
     assert(t1 != t2 && t2 != t3 && t1 != t3, "all should have different types")
 })
 
-testRun("Zero is always Option", fun() {
-    z1: Option<Int> = Zero
-    z2: Option<List<String>> = Zero
+testRun("None is always Option", fun() {
+    z1: Option<Int> = None
+    z2: Option<List<String>> = None
     assertEquals("type(Option)", show(getType(z1)))
     assertEquals("type(Option)", show(getType(z2)))
 })

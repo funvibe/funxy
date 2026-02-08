@@ -59,14 +59,14 @@ fun convert<f, g, a>(fa: f<a>, converter: (f<a>) -> g<a>) -> g<a> {
 optToList = fun(opt: Option<Int>) -> List<Int> {
     match opt {
         Some(x) -> [x]
-        Zero -> []
+        None -> []
     }
 }
 
 list2 = convert(Some(5), optToList)
 print(list2)  // [5]
 
-list3 = convert(Zero, optToList)
+list3 = convert(None, optToList)
 print(list3)  // []
 
 // -----------------------------------------------------------------------------
@@ -78,8 +78,8 @@ fun nested<f, g, a>(fga: f<g<a>>) -> f<g<a>> {
 }
 
 // List of Options
-listOpts = nested([Some(1), Some(2), Zero])
-print(listOpts)  // [Some(1), Some(2), Zero]
+listOpts = nested([Some(1), Some(2), None])
+print(listOpts)  // [Some(1), Some(2), None]
 
 // Option of List
 optList = nested(Some([1, 2, 3]))

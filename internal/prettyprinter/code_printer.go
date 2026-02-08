@@ -3,6 +3,8 @@ package prettyprinter
 import (
 	"bytes"
 	"github.com/funvibe/funxy/internal/ast"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +22,7 @@ var operatorPrecedence = map[string]int{
 	">=":  4,
 	"<>":  5, // Semigroup
 	"++":  5, // Concatenation
+	"|":   5, // Bitwise OR (used for list comp separator precedence)
 	"|>":  6, // Pipe
 	"<|":  6,
 	"+":   7,
@@ -87,8 +90,16 @@ func countPipeSteps(expr ast.Expression) int {
 
 // printExpr prints an expression, adding parentheses only if needed
 func (p *CodePrinter) printExpr(expr ast.Expression, parentPrec int, isRight bool) {
+	if expr == nil {
+		p.write("<???>")
+		return
+	}
 	switch e := expr.(type) {
 	case *ast.InfixExpression:
+		if e == nil {
+			p.write("<???>")
+			return
+		}
 		prec := getPrecedence(e.Operator)
 		needParens := prec < parentPrec
 		// For same precedence, check associativity
@@ -116,6 +127,10 @@ func (p *CodePrinter) printExpr(expr ast.Expression, parentPrec int, isRight boo
 			p.write(")")
 		}
 	case *ast.PrefixExpression:
+		if e == nil {
+			p.write("<???>")
+			return
+		}
 		p.write(e.Operator)
 		// Prefix has high precedence
 		p.printExpr(e.Right, 100, false)
@@ -132,6 +147,9 @@ func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
 	var steps []ast.Expression
 	current := ast.Expression(expr)
 	for {
+		if current == nil {
+			break
+		}
 		infix, ok := current.(*ast.InfixExpression)
 		if !ok || infix.Operator != "|>" {
 			// This is the leftmost (source) expression
@@ -139,8 +157,17 @@ func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
 			break
 		}
 		// Prepend the right side (the function being piped to)
-		steps = append(steps, infix.Right)
+		if infix.Right != nil {
+			steps = append(steps, infix.Right)
+		} else {
+			steps = append(steps, nil)
+		}
 		current = infix.Left
+	}
+
+	if len(steps) == 0 {
+		p.write("<?>")
+		return
 	}
 
 	// Reverse to get [source, step1, step2, ...]
@@ -149,7 +176,11 @@ func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
 	}
 
 	// Print first step (source)
-	steps[0].Accept(p)
+	if steps[0] != nil {
+		steps[0].Accept(p)
+	} else {
+		p.write("<?>")
+	}
 
 	// Print remaining steps on new lines
 	p.indent++
@@ -157,7 +188,11 @@ func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
 		p.writeln()
 		p.writeIndent()
 		p.write("|> ")
-		steps[i].Accept(p)
+		if steps[i] != nil {
+			steps[i].Accept(p)
+		} else {
+			p.write("<?>")
+		}
 	}
 	p.indent--
 }
@@ -183,7 +218,11 @@ func (p *CodePrinter) writeln() {
 
 func (p *CodePrinter) VisitPackageDeclaration(n *ast.PackageDeclaration) {
 	p.write("package ")
-	p.write(n.Name.Value)
+	if n.Name != nil {
+		p.write(n.Name.Value)
+	} else {
+		p.write("<???>")
+	}
 	if n.ExportAll || len(n.Exports) > 0 {
 		p.write(" (")
 		first := true
@@ -231,18 +270,30 @@ func (p *CodePrinter) VisitImportStatement(n *ast.ImportStatement) {
 
 func (p *CodePrinter) VisitProgram(n *ast.Program) {
 	for _, stmt := range n.Statements {
-		stmt.Accept(p)
+		if stmt != nil {
+			stmt.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 		p.write("\n")
 	}
 }
 
 func (p *CodePrinter) VisitExpressionStatement(n *ast.ExpressionStatement) {
-	n.Expression.Accept(p)
+	if n.Expression != nil {
+		n.Expression.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitFunctionStatement(n *ast.FunctionStatement) {
 	p.write("fun ")
-	p.write(n.Name.Value)
+	if n.Name != nil {
+		p.write(n.Name.Value)
+	} else {
+		p.write("<???>")
+	}
 
 	// Generics <T: Show>
 	if len(n.TypeParams) > 0 {
@@ -272,8 +323,10 @@ func (p *CodePrinter) VisitFunctionStatement(n *ast.FunctionStatement) {
 		// Multiline parameters with alignment
 		maxNameLen := 0
 		for _, param := range n.Parameters {
-			if len(param.Name.Value) > maxNameLen {
-				maxNameLen = len(param.Name.Value)
+			if param != nil && param.Name != nil {
+				if len(param.Name.Value) > maxNameLen {
+					maxNameLen = len(param.Name.Value)
+				}
 			}
 		}
 
@@ -281,17 +334,25 @@ func (p *CodePrinter) VisitFunctionStatement(n *ast.FunctionStatement) {
 		p.indent++
 		for i, param := range n.Parameters {
 			p.writeIndent()
-			p.write(param.Name.Value)
-			// Align colons
-			for j := len(param.Name.Value); j < maxNameLen; j++ {
-				p.write(" ")
-			}
-			p.write(": ")
-			if param.IsVariadic {
-				p.write("...")
-			}
-			if param.Type != nil {
-				param.Type.Accept(p)
+			if param != nil {
+				if param.Name != nil {
+					p.write(param.Name.Value)
+					// Align colons
+					for j := len(param.Name.Value); j < maxNameLen; j++ {
+						p.write(" ")
+					}
+				} else {
+					p.write("<???>")
+				}
+				p.write(": ")
+				if param.IsVariadic {
+					p.write("...")
+				}
+				if param.Type != nil {
+					param.Type.Accept(p)
+				}
+			} else {
+				p.write("<???>")
 			}
 			if i < len(n.Parameters)-1 {
 				p.write(",")
@@ -307,13 +368,21 @@ func (p *CodePrinter) VisitFunctionStatement(n *ast.FunctionStatement) {
 			if i > 0 {
 				p.write(", ")
 			}
-			p.write(param.Name.Value)
-			p.write(": ")
-			if param.IsVariadic {
-				p.write("...")
-			}
-			if param.Type != nil {
-				param.Type.Accept(p)
+			if param != nil {
+				if param.Name != nil {
+					p.write(param.Name.Value)
+				} else {
+					p.write("<???>")
+				}
+				p.write(": ")
+				if param.IsVariadic {
+					p.write("...")
+				}
+				if param.Type != nil {
+					param.Type.Accept(p)
+				}
+			} else {
+				p.write("<???>")
 			}
 		}
 		p.write(")")
@@ -331,70 +400,132 @@ func (p *CodePrinter) VisitFunctionStatement(n *ast.FunctionStatement) {
 }
 
 func (p *CodePrinter) VisitTraitDeclaration(n *ast.TraitDeclaration) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("trait ")
-	p.write(n.Name.Value)
+	if n.Name != nil {
+		p.write(n.Name.Value)
+	} else {
+		p.write("<???>")
+	}
 	if len(n.TypeParams) > 0 {
 		p.write("<")
 		for i, tp := range n.TypeParams {
 			if i > 0 {
 				p.write(", ")
 			}
-			p.write(tp.Value)
+			if tp != nil {
+				p.write(tp.Value)
+			} else {
+				p.write("<???>")
+			}
 		}
 		p.write(">")
 	}
 	p.write(" {\n")
 	for _, method := range n.Signatures {
-		method.Accept(p) // Prints the function signature
+		if method != nil {
+			method.Accept(p) // Prints the function signature
+		} else {
+			p.write("<???>")
+		}
 		p.write("\n")
 	}
 	p.write("}")
 }
 
 func (p *CodePrinter) VisitInstanceDeclaration(n *ast.InstanceDeclaration) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("instance ")
-	p.write(n.TraitName.Value)
+	if n.TraitName != nil {
+		p.write(n.TraitName.Value)
+	} else {
+		p.write("<???>")
+	}
 	if len(n.Args) > 1 {
 		p.write("<")
 		for i, arg := range n.Args {
 			if i > 0 {
 				p.write(", ")
 			}
-			arg.Accept(p)
+			if arg != nil {
+				arg.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		}
 		p.write(">")
 	} else if len(n.Args) == 1 {
 		p.write(" ")
-		n.Args[0].Accept(p)
+		if n.Args[0] != nil {
+			n.Args[0].Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(" {\n")
 	for _, method := range n.Methods {
-		method.Accept(p)
+		if method != nil {
+			method.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 		p.write("\n")
 	}
 	p.write("}")
 }
 
 func (p *CodePrinter) VisitConstantDeclaration(n *ast.ConstantDeclaration) {
-	n.Name.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Name != nil {
+		n.Name.Accept(p)
+	} else if n.Pattern != nil {
+		n.Pattern.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	if n.TypeAnnotation != nil {
 		p.write(": ")
 		n.TypeAnnotation.Accept(p)
 	}
 	p.write(" :- ")
-	n.Value.Accept(p)
+	if n.Value != nil {
+		n.Value.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitFunctionLiteral(n *ast.FunctionLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("fun(")
 	for i, param := range n.Parameters {
 		if i > 0 {
 			p.write(", ")
 		}
-		p.write(param.Name.Value)
-		if param.Type != nil {
-			p.write(": ")
-			param.Type.Accept(p)
+		if param != nil {
+			if param.Name != nil {
+				p.write(param.Name.Value)
+			} else {
+				p.write("<???>")
+			}
+			if param.Type != nil {
+				p.write(": ")
+				param.Type.Accept(p)
+			}
+		} else {
+			p.write("<???>")
 		}
 	}
 	p.write(")")
@@ -403,30 +534,58 @@ func (p *CodePrinter) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 		n.ReturnType.Accept(p)
 	}
 	p.write(" ")
-	n.Body.Accept(p)
+	if n.Body != nil {
+		n.Body.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitIdentifier(n *ast.Identifier) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Value)
 }
 
 func (p *CodePrinter) VisitIntegerLiteral(n *ast.IntegerLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Token.Lexeme)
 }
 
 func (p *CodePrinter) VisitFloatLiteral(n *ast.FloatLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Token.Lexeme)
 }
 
 func (p *CodePrinter) VisitBigIntLiteral(n *ast.BigIntLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Token.Lexeme)
 }
 
 func (p *CodePrinter) VisitRationalLiteral(n *ast.RationalLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Token.Lexeme)
 }
 
 func (p *CodePrinter) VisitBooleanLiteral(n *ast.BooleanLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Token.Lexeme)
 }
 
@@ -441,7 +600,11 @@ func (p *CodePrinter) VisitTupleLiteral(n *ast.TupleLiteral) {
 		p.indent++
 		for i, el := range n.Elements {
 			p.writeIndent()
-			el.Accept(p)
+			if el != nil {
+				el.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 			if i < len(n.Elements)-1 {
 				p.write(",")
 			}
@@ -456,20 +619,37 @@ func (p *CodePrinter) VisitTupleLiteral(n *ast.TupleLiteral) {
 			if i > 0 {
 				p.write(", ")
 			}
-			el.Accept(p)
+			if el != nil {
+				el.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		}
 		p.write(")")
 	}
 }
 
 func (p *CodePrinter) VisitListLiteral(n *ast.ListLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	if len(n.Elements) > 5 {
 		// Multiline for large lists
 		p.write("[\n")
 		p.indent++
 		for i, el := range n.Elements {
 			p.writeIndent()
-			el.Accept(p)
+			if i == 0 {
+				// First element needs to avoid ambiguity with list comprehension |
+				p.printExpr(el, getPrecedence("|"), false)
+			} else {
+				if el != nil {
+					el.Accept(p)
+				} else {
+					p.write("<???>")
+				}
+			}
 			if i < len(n.Elements)-1 {
 				p.write(",")
 			}
@@ -484,32 +664,63 @@ func (p *CodePrinter) VisitListLiteral(n *ast.ListLiteral) {
 			if i > 0 {
 				p.write(", ")
 			}
-			el.Accept(p)
+			if i == 0 {
+				// First element needs to avoid ambiguity with list comprehension |
+				p.printExpr(el, getPrecedence("|"), false)
+			} else {
+				if el != nil {
+					el.Accept(p)
+				} else {
+					p.write("<???>")
+				}
+			}
 		}
 		p.write("]")
 	}
 }
 
 func (p *CodePrinter) VisitIndexExpression(n *ast.IndexExpression) {
-	n.Left.Accept(p)
+	if n.Left != nil {
+		n.Left.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write("[")
-	n.Index.Accept(p)
+	if n.Index != nil {
+		n.Index.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write("]")
 }
 
 func (p *CodePrinter) VisitStringLiteral(n *ast.StringLiteral) {
-	p.write("\"" + n.Value + "\"")
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	p.write(strconv.Quote(n.Value))
 }
 
 func (p *CodePrinter) VisitFormatStringLiteral(n *ast.FormatStringLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("%\"" + n.Value + "\"")
 }
 
 func (p *CodePrinter) VisitInterpolatedString(n *ast.InterpolatedString) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("\"")
 	for _, part := range n.Parts {
 		if sl, ok := part.(*ast.StringLiteral); ok {
-			p.write(sl.Value)
+			// Escape the string content but remove the surrounding quotes added by Quote
+			quoted := strconv.Quote(sl.Value)
+			p.write(quoted[1 : len(quoted)-1])
 		} else {
 			p.write("${")
 			part.Accept(p)
@@ -520,10 +731,18 @@ func (p *CodePrinter) VisitInterpolatedString(n *ast.InterpolatedString) {
 }
 
 func (p *CodePrinter) VisitCharLiteral(n *ast.CharLiteral) {
-	p.write("'" + string(rune(n.Value)) + "'")
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	p.write(strconv.QuoteRune(rune(n.Value)))
 }
 
 func (p *CodePrinter) VisitBytesLiteral(n *ast.BytesLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	switch n.Kind {
 	case "string":
 		p.write("@\"" + n.Content + "\"")
@@ -535,6 +754,10 @@ func (p *CodePrinter) VisitBytesLiteral(n *ast.BytesLiteral) {
 }
 
 func (p *CodePrinter) VisitBitsLiteral(n *ast.BitsLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	switch n.Kind {
 	case "bin":
 		p.write("#b\"" + n.Content + "\"")
@@ -551,7 +774,11 @@ func (p *CodePrinter) VisitTupleType(n *ast.TupleType) {
 		if i > 0 {
 			p.write(", ")
 		}
-		t.Accept(p)
+		if t != nil {
+			t.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(")")
 }
@@ -562,51 +789,127 @@ func (p *CodePrinter) VisitFunctionType(n *ast.FunctionType) {
 		if i > 0 {
 			p.write(", ")
 		}
-		t.Accept(p)
+		if t != nil {
+			t.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(") -> ")
-	n.ReturnType.Accept(p)
+	if n.ReturnType != nil {
+		n.ReturnType.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitPrefixExpression(n *ast.PrefixExpression) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Operator)
 	p.printExpr(n.Right, 100, false)
 }
 
 func (p *CodePrinter) VisitInfixExpression(n *ast.InfixExpression) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	// When called directly (not via printExpr), use lowest precedence context
 	p.printExpr(n, 0, false)
 }
 
 func (p *CodePrinter) VisitOperatorAsFunction(n *ast.OperatorAsFunction) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("(" + n.Operator + ")")
 }
 
 func (p *CodePrinter) VisitPostfixExpression(n *ast.PostfixExpression) {
-	n.Left.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Left != nil {
+		n.Left.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write(n.Operator)
 }
 
 func (p *CodePrinter) VisitAssignExpression(n *ast.AssignExpression) {
-	n.Left.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Left != nil {
+		n.Left.Accept(p)
+	} else {
+		p.write("<???>")
+	}
+	if n.AnnotatedType != nil {
+		p.write(" : ")
+		n.AnnotatedType.Accept(p)
+	}
 	p.write(" = ")
-	n.Value.Accept(p)
+	if n.Value != nil {
+		n.Value.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitPatternAssignExpression(n *ast.PatternAssignExpression) {
-	n.Pattern.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Pattern != nil {
+		n.Pattern.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write(" = ")
-	n.Value.Accept(p)
+	if n.Value != nil {
+		n.Value.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitAnnotatedExpression(n *ast.AnnotatedExpression) {
-	n.Expression.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Expression != nil {
+		n.Expression.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write(": ")
-	n.TypeAnnotation.Accept(p)
+	if n.TypeAnnotation != nil {
+		n.TypeAnnotation.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitCallExpression(n *ast.CallExpression) {
-	n.Function.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Function != nil {
+		n.Function.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write("(")
 
 	// If many args or long, format multiline
@@ -621,29 +924,53 @@ func (p *CodePrinter) VisitCallExpression(n *ast.CallExpression) {
 				p.write("    ") // extra indent for args
 			}
 		}
-		arg.Accept(p)
+		if arg != nil {
+			arg.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(")")
 }
 
 func (p *CodePrinter) VisitTypeApplicationExpression(n *ast.TypeApplicationExpression) {
-	n.Expression.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Expression != nil {
+		n.Expression.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write("<")
 	for i, t := range n.TypeArguments {
 		if i > 0 {
 			p.write(", ")
 		}
-		t.Accept(p)
+		if t != nil {
+			t.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(">")
 }
 
 func (p *CodePrinter) VisitBlockStatement(n *ast.BlockStatement) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("{\n")
 	p.indent++
 	for _, stmt := range n.Statements {
 		p.writeIndent()
-		stmt.Accept(p)
+		if stmt != nil {
+			stmt.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 		p.write("\n")
 	}
 	p.indent--
@@ -652,10 +979,22 @@ func (p *CodePrinter) VisitBlockStatement(n *ast.BlockStatement) {
 }
 
 func (p *CodePrinter) VisitIfExpression(n *ast.IfExpression) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("if ")
-	n.Condition.Accept(p)
+	if n.Condition != nil {
+		n.Condition.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write(" ")
-	n.Consequence.Accept(p)
+	if n.Consequence != nil {
+		n.Consequence.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	if n.Alternative != nil {
 		p.write(" else ")
 		n.Alternative.Accept(p)
@@ -663,21 +1002,41 @@ func (p *CodePrinter) VisitIfExpression(n *ast.IfExpression) {
 }
 
 func (p *CodePrinter) VisitForExpression(n *ast.ForExpression) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("for ")
 	if n.Iterable != nil {
 		// for item in iterable
-		p.write(n.ItemName.Value)
+		if n.ItemName != nil {
+			p.write(n.ItemName.Value)
+		} else {
+			p.write("<???>")
+		}
 		p.write(" in ")
 		n.Iterable.Accept(p)
 	} else {
 		// for condition
-		n.Condition.Accept(p)
+		if n.Condition != nil {
+			n.Condition.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(" ")
-	n.Body.Accept(p)
+	if n.Body != nil {
+		n.Body.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitBreakStatement(n *ast.BreakStatement) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("break")
 	if n.Value != nil {
 		p.write(" ")
@@ -686,15 +1045,39 @@ func (p *CodePrinter) VisitBreakStatement(n *ast.BreakStatement) {
 }
 
 func (p *CodePrinter) VisitContinueStatement(n *ast.ContinueStatement) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("continue")
 }
 
+func (p *CodePrinter) VisitReturnStatement(n *ast.ReturnStatement) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	p.write("return")
+	if n.Value != nil {
+		p.write(" ")
+		n.Value.Accept(p)
+	}
+}
+
 func (p *CodePrinter) VisitTypeDeclarationStatement(n *ast.TypeDeclarationStatement) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("type ")
 	if n.IsAlias {
 		p.write("alias ")
 	}
-	n.Name.Accept(p)
+	if n.Name != nil {
+		n.Name.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 
 	if len(n.TypeParameters) > 0 {
 		p.write("<")
@@ -702,7 +1085,11 @@ func (p *CodePrinter) VisitTypeDeclarationStatement(n *ast.TypeDeclarationStatem
 			if i > 0 {
 				p.write(", ")
 			}
-			param.Accept(p)
+			if param != nil {
+				param.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		}
 		p.write(">")
 	}
@@ -716,35 +1103,69 @@ func (p *CodePrinter) VisitTypeDeclarationStatement(n *ast.TypeDeclarationStatem
 		if i > 0 {
 			p.write(" | ")
 		}
-		c.Accept(p)
+		if c != nil {
+			c.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 }
 
 func (p *CodePrinter) VisitNamedType(n *ast.NamedType) {
 	n.Name.Accept(p)
-	for _, arg := range n.Args {
-		p.write(" ")
-		arg.Accept(p)
+	if len(n.Args) > 0 {
+		p.write("<")
+		for i, arg := range n.Args {
+			if i > 0 {
+				p.write(", ")
+			}
+			arg.Accept(p)
+		}
+		// Avoid >> token ambiguity
+		if strings.HasSuffix(p.buf.String(), ">") {
+			p.write(" ")
+		}
+		p.write(">")
 	}
 }
 
 func (p *CodePrinter) VisitDataConstructor(n *ast.DataConstructor) {
-	n.Name.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Name != nil {
+		n.Name.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	if len(n.Parameters) > 0 {
 		p.write("(")
 		for i, param := range n.Parameters {
 			if i > 0 {
 				p.write(", ")
 			}
-			param.Accept(p)
+			if param != nil {
+				param.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		}
 		p.write(")")
 	}
 }
 
 func (p *CodePrinter) VisitMatchExpression(n *ast.MatchExpression) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("match ")
-	n.Expression.Accept(p)
+	if n.Expression != nil {
+		n.Expression.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write(" {\n")
 	p.indent++
 
@@ -754,7 +1175,11 @@ func (p *CodePrinter) VisitMatchExpression(n *ast.MatchExpression) {
 	for i, arm := range n.Arms {
 		// Print pattern to temp buffer to get length
 		temp := &CodePrinter{indent: 0, lineWidth: 0}
-		arm.Pattern.Accept(temp)
+		if arm.Pattern != nil {
+			arm.Pattern.Accept(temp)
+		} else {
+			temp.write("<???>")
+		}
 		patStrings[i] = temp.String()
 		if len(patStrings[i]) > maxPatLen {
 			maxPatLen = len(patStrings[i])
@@ -769,7 +1194,11 @@ func (p *CodePrinter) VisitMatchExpression(n *ast.MatchExpression) {
 			p.write(" ")
 		}
 		p.write(" -> ")
-		arm.Expression.Accept(p)
+		if arm.Expression != nil {
+			arm.Expression.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 		p.write("\n")
 	}
 	p.indent--
@@ -783,63 +1212,115 @@ func (p *CodePrinter) VisitIdentifierPattern(n *ast.IdentifierPattern) {
 	p.write(n.Value)
 }
 func (p *CodePrinter) VisitConstructorPattern(n *ast.ConstructorPattern) {
-	n.Name.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Name != nil {
+		n.Name.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	if len(n.Elements) > 0 {
 		p.write("(")
 		for i, el := range n.Elements {
 			if i > 0 {
 				p.write(", ")
 			}
-			el.Accept(p)
+			if el != nil {
+				el.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		}
 		p.write(")")
 	}
 }
 
 func (p *CodePrinter) VisitListPattern(n *ast.ListPattern) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("[")
 	for i, el := range n.Elements {
 		if i > 0 {
 			p.write(", ")
 		}
-		el.Accept(p)
+		if el != nil {
+			el.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write("]")
 }
 
 func (p *CodePrinter) VisitTuplePattern(n *ast.TuplePattern) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("(")
 	for i, el := range n.Elements {
 		if i > 0 {
 			p.write(", ")
 		}
-		el.Accept(p)
+		if el != nil {
+			el.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(")")
 }
 
 func (p *CodePrinter) VisitRecordPattern(n *ast.RecordPattern) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("{")
-	i := 0
-	for k, v := range n.Fields {
+	keys := make([]string, 0, len(n.Fields))
+	for k := range n.Fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for i, k := range keys {
 		if i > 0 {
 			p.write(", ")
 		}
 		p.write(k)
 		p.write(": ")
-		v.Accept(p)
-		i++
+		if n.Fields[k] != nil {
+			n.Fields[k].Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write("}")
 }
 
 func (p *CodePrinter) VisitTypePattern(n *ast.TypePattern) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write(n.Name)
 	p.write(": ")
-	n.Type.Accept(p)
+	if n.Type != nil {
+		n.Type.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitStringPattern(n *ast.StringPattern) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("\"")
 	for _, part := range n.Parts {
 		if part.IsCapture {
@@ -857,21 +1338,45 @@ func (p *CodePrinter) VisitStringPattern(n *ast.StringPattern) {
 }
 
 func (p *CodePrinter) VisitPinPattern(n *ast.PinPattern) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("^")
 	p.write(n.Name)
 }
 
 func (p *CodePrinter) VisitSpreadExpression(n *ast.SpreadExpression) {
-	n.Expression.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Expression != nil {
+		n.Expression.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write("...")
 }
 
 func (p *CodePrinter) VisitSpreadPattern(n *ast.SpreadPattern) {
-	n.Pattern.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Pattern != nil {
+		n.Pattern.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write("...")
 }
 
 func (p *CodePrinter) VisitRecordLiteral(n *ast.RecordLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	// Check if it's shorthand { name } where value is same as key
 	isShorthand := func(k string, v ast.Expression) bool {
 		if v == nil {
@@ -903,9 +1408,19 @@ func (p *CodePrinter) VisitRecordLiteral(n *ast.RecordLiteral) {
 				maxKeyLen = len(k)
 			}
 		}
+		sort.Strings(keys)
 
 		p.write("{\n")
 		p.indent++
+
+		// Handle spread expression first if present
+		if n.Spread != nil {
+			p.writeIndent()
+			p.write("...")
+			n.Spread.Accept(p)
+			p.write(",\n")
+		}
+
 		for i, k := range keys {
 			p.writeIndent()
 			p.write(k)
@@ -914,7 +1429,11 @@ func (p *CodePrinter) VisitRecordLiteral(n *ast.RecordLiteral) {
 				p.write(" ")
 			}
 			p.write(": ")
-			n.Fields[k].Accept(p)
+			if n.Fields[k] != nil {
+				n.Fields[k].Accept(p)
+			} else {
+				p.write("<???>")
+			}
 			if i < len(keys)-1 {
 				p.write(",")
 			}
@@ -926,10 +1445,20 @@ func (p *CodePrinter) VisitRecordLiteral(n *ast.RecordLiteral) {
 	} else if allShorthand && len(n.Fields) > 3 {
 		// Multiline shorthand with commas
 		p.write("{ ")
+
+		// Handle spread expression first if present
+		if n.Spread != nil {
+			p.write("...")
+			n.Spread.Accept(p)
+			p.write(", ")
+		}
+
 		keys := make([]string, 0, len(n.Fields))
 		for k := range n.Fields {
 			keys = append(keys, k)
 		}
+		sort.Strings(keys)
+
 		for i, k := range keys {
 			if i > 0 {
 				p.write(", ")
@@ -940,8 +1469,24 @@ func (p *CodePrinter) VisitRecordLiteral(n *ast.RecordLiteral) {
 	} else {
 		// Inline for small records
 		p.write("{ ")
-		i := 0
-		for k, v := range n.Fields {
+
+		// Handle spread expression first if present
+		if n.Spread != nil {
+			p.write("...")
+			n.Spread.Accept(p)
+			if len(n.Fields) > 0 {
+				p.write(", ")
+			}
+		}
+
+		keys := make([]string, 0, len(n.Fields))
+		for k := range n.Fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for i, k := range keys {
+			v := n.Fields[k]
 			if i > 0 {
 				p.write(", ")
 			}
@@ -950,22 +1495,31 @@ func (p *CodePrinter) VisitRecordLiteral(n *ast.RecordLiteral) {
 			} else {
 				p.write(k)
 				p.write(": ")
-				v.Accept(p)
+				if v != nil {
+					v.Accept(p)
+				} else {
+					p.write("<???>")
+				}
 			}
-			i++
 		}
 		p.write(" }")
 	}
 }
 
 func (p *CodePrinter) VisitMapLiteral(n *ast.MapLiteral) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	if len(n.Pairs) > 3 {
 		// Multiline with key alignment
 		maxKeyLen := 0
 		keyStrings := make([]string, len(n.Pairs))
 		for i, pair := range n.Pairs {
 			temp := &CodePrinter{indent: 0, lineWidth: 0}
-			pair.Key.Accept(temp)
+			if pair.Key != nil {
+				pair.Key.Accept(temp)
+			}
 			keyStrings[i] = temp.String()
 			if len(keyStrings[i]) > maxKeyLen {
 				maxKeyLen = len(keyStrings[i])
@@ -982,7 +1536,11 @@ func (p *CodePrinter) VisitMapLiteral(n *ast.MapLiteral) {
 				p.write(" ")
 			}
 			p.write(" => ")
-			pair.Value.Accept(p)
+			if pair.Value != nil {
+				pair.Value.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 			if i < len(n.Pairs)-1 {
 				p.write(",")
 			}
@@ -997,57 +1555,119 @@ func (p *CodePrinter) VisitMapLiteral(n *ast.MapLiteral) {
 			if i > 0 {
 				p.write(", ")
 			}
-			pair.Key.Accept(p)
+			if pair.Key != nil {
+				pair.Key.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 			p.write(" => ")
-			pair.Value.Accept(p)
+			if pair.Value != nil {
+				pair.Value.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		}
 		p.write(" }")
 	}
 }
 
 func (p *CodePrinter) VisitRecordType(n *ast.RecordType) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("{")
-	i := 0
-	for k, v := range n.Fields {
+	keys := make([]string, 0, len(n.Fields))
+	for k := range n.Fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for i, k := range keys {
 		if i > 0 {
 			p.write(", ")
 		}
 		p.write(k)
 		p.write(": ")
-		v.Accept(p)
-		i++
+		if n.Fields[k] != nil {
+			n.Fields[k].Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write("}")
 }
 
 func (p *CodePrinter) VisitUnionType(n *ast.UnionType) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	for i, t := range n.Types {
 		if i > 0 {
 			p.write(" | ")
 		}
-		t.Accept(p)
+		if t != nil {
+			t.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 }
 
 func (p *CodePrinter) VisitForallType(n *ast.ForallType) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("forall")
 	for _, param := range n.Vars {
 		p.write(" ")
-		param.Accept(p)
+		if param != nil {
+			param.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write(". ")
-	n.Type.Accept(p)
+	if n.Type != nil {
+		n.Type.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitMemberExpression(n *ast.MemberExpression) {
-	n.Left.Accept(p)
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	if n.Left != nil {
+		n.Left.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 	p.write(".")
-	p.write(n.Member.Value)
+	if n.Member != nil {
+		p.write(n.Member.Value)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitListComprehension(n *ast.ListComprehension) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("[")
-	n.Output.Accept(p)
+	// Use precedence of | to ensure output expression is parenthesized if needed
+	// e.g. [(a && b) | ...] because && has lower precedence than |
+	if n.Output != nil {
+		p.printExpr(n.Output, getPrecedence("|"), false)
+	} else {
+		p.write("<???>")
+	}
 	p.write(" | ")
 	for i, clause := range n.Clauses {
 		if i > 0 {
@@ -1055,31 +1675,71 @@ func (p *CodePrinter) VisitListComprehension(n *ast.ListComprehension) {
 		}
 		switch c := clause.(type) {
 		case *ast.CompGenerator:
-			c.Pattern.Accept(p)
+			if c == nil {
+				p.write("<???>")
+				continue
+			}
+			if c.Pattern != nil {
+				c.Pattern.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 			p.write(" <- ")
-			c.Iterable.Accept(p)
+			if c.Iterable != nil {
+				c.Iterable.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		case *ast.CompFilter:
-			c.Condition.Accept(p)
+			if c == nil {
+				p.write("<???>")
+				continue
+			}
+			if c.Condition != nil {
+				c.Condition.Accept(p)
+			} else {
+				p.write("<???>")
+			}
 		}
 	}
 	p.write("]")
 }
 
 func (p *CodePrinter) VisitRangeExpression(n *ast.RangeExpression) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	if n.Next != nil {
 		p.write("(")
-		n.Start.Accept(p)
+		if n.Start != nil {
+			n.Start.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 		p.write(", ")
 		n.Next.Accept(p)
 		p.write(")")
 	} else {
-		n.Start.Accept(p)
+		if n.Start != nil {
+			n.Start.Accept(p)
+		} else {
+			p.write("<???>")
+		}
 	}
 	p.write("..")
-	n.End.Accept(p)
+	if n.End != nil {
+		n.End.Accept(p)
+	} else {
+		p.write("<???>")
+	}
 }
 
 func (p *CodePrinter) VisitDirectiveStatement(n *ast.DirectiveStatement) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
 	p.write("directive \"")
 	p.write(n.Name)
 	p.write("\"\n")

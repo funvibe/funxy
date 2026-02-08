@@ -3,8 +3,8 @@ package evaluator
 import (
 	"encoding/csv"
 	"fmt"
-	"os"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"os"
 	"strings"
 )
 

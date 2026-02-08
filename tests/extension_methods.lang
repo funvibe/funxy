@@ -21,7 +21,7 @@ fun (i: Int) double() -> Int {
 print(10.double())
 
 // Define extension on Record
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 fun (p: Point) sum() -> Int {
     p.x + p.y
 }

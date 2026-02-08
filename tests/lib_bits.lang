@@ -59,8 +59,8 @@ print(bitsToBytes(#b"101", "high"))
 
 print("=== Bits Slicing ===")
 b4 = #b"11110000"
-print(bitsSlice(b4, 0, 4))
-print(bitsSlice(b4, 4, 8))
+print(unwrapResult(bitsSlice(b4, 0, 4)))
+print(unwrapResult(bitsSlice(b4, 4, 8)))
 
 print("=== Bits Concatenation ===")
 b5 = #b"1111" ++ #b"0000"

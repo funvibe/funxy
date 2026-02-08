@@ -164,12 +164,12 @@ testRun("Generic: explicit return type", \ -> {
 testRun("Generic: option return", \ -> {
     fun maybeFirst<t>(list: List<t>) -> Option<t> {
         match list {
-            [] -> Zero
+            [] -> None
             [h, ...rest] -> Some(h)
         }
     }
     assertEquals(Some(1), maybeFirst([1, 2, 3]), "maybeFirst some")
-    assertEquals(Zero, maybeFirst([]), "maybeFirst none")
+    assertEquals(None, maybeFirst([]), "maybeFirst none")
 })
 
 // =============================================================================
@@ -204,7 +204,7 @@ testRun("Edge: deeply nested generic", \ -> {
     match n {
         GsInner(opt) -> match opt {
             Some(list) -> assertEquals([1, 2, 3], list, "deeply nested")
-            Zero -> assertTrue(false, "should be Some")
+            None -> assertTrue(false, "should be Some")
         }
     }
 })

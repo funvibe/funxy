@@ -12,7 +12,7 @@ testRun("OptionT<Identity>", \ -> {
     opt = runIdentity(runOptionT(val))
     match opt {
         Some(x) -> assertEquals(10, x, "OptionT pure value correct"),
-        Zero -> assert(false, "Should be Some")
+        None -> assert(false, "Should be Some")
     }
 
     // Chain with >>=
@@ -25,7 +25,7 @@ testRun("OptionT<Identity>", \ -> {
     opt2 = runIdentity(runOptionT(doubled))
     match opt2 {
         Some(x) -> assertEquals(20, x, "OptionT bind works"),
-        Zero -> assert(false, "Should be Some")
+        None -> assert(false, "Should be Some")
     }
 })
 
@@ -77,7 +77,7 @@ testRun("Nested OptionT<ResultT<Identity>>", \ -> {
         Ok(opt) -> {
             match opt {
                 Some(x) -> assertEquals(42, x, "Nested stack value is 42"),
-                Zero -> assert(false, "Inner Option is Zero")
+                None -> assert(false, "Inner Option is None")
             }
         },
         Fail(_) -> assert(false, "Outer Result is Fail")

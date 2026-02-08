@@ -26,7 +26,7 @@ fun findById(db, table, key, mapper) {
     q = "SELECT * FROM " ++ table ++ " WHERE id = $1"
     match sqlQueryRow(db, q, [key]) {
         Ok(Some(row)) -> Ok(Some(mapper(row)))
-        Ok(Zero) -> Ok(Zero)
+        Ok(None) -> Ok(None)
         Fail(e) -> Fail(e)
     }
 }
@@ -52,7 +52,7 @@ fun insert<t: Model>(db, model: t) {
 
     valStr = stringJoin(placeholders, ", ")
 
-    q = sprintf("INSERT INTO %s (%s) VALUES (%s)", table, colStr, valStr)
+    q = format("INSERT INTO %s (%s) VALUES (%s)", table, colStr, valStr)
 
     sqlExec(db, q, vals)
 }

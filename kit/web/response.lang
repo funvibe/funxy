@@ -37,7 +37,7 @@ fun setHeader(key, val, res: Response) -> Response {
 }
 
 fun setCookie(name, val, res: Response) -> Response {
-    cookieHeader = ("Set-Cookie", sprintf("%s=%s; Path=/; HttpOnly", name, val))
+    cookieHeader = ("Set-Cookie", format("%s=%s; Path=/; HttpOnly", name, val))
     newHeaders = res.headers ++ [cookieHeader]
     { status: res.status, headers: newHeaders, body: res.body }
 }

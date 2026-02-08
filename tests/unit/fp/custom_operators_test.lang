@@ -220,14 +220,14 @@ testRun("Convert between Option and Attempt", fun() -> {
     fun attemptToOption(att: Attempt<a>) -> Option<a> {
         match att {
             Success(a) -> Some(a)
-            Failure(_) -> Zero
+            Failure(_) -> None
         }
     }
 
     fun optionToAttempt(opt: Option<a>, errMsg: String) -> Attempt<a> {
         match opt {
             Some(a) -> Success(a)
-            Zero -> Failure(errMsg)
+            None -> Failure(errMsg)
         }
     }
 
@@ -291,7 +291,7 @@ instance Init Bool {
     fun init() -> Bool { false }
 }
 
-type Coord = { x: Int, y: Int }
+type alias Coord = { x: Int, y: Int }
 
 instance Init Coord {
     fun init() -> Coord { { x: 0, y: 0 } }
@@ -336,12 +336,12 @@ testRun("Built-in mempty - no explicit call needed", fun() -> {
     assertEquals(empty, [])
 
     emptyOpt: Option<Int> = mempty
-    assertEquals(emptyOpt, Zero)
+    assertEquals(emptyOpt, None)
 })
 
 testRun("Built-in mempty - in expressions", fun() -> {
     assertEquals((mempty : List<Int>), [])
-    assertEquals((mempty : Option<Int>), Zero)
+    assertEquals((mempty : Option<Int>), None)
 })
 
 print("All custom operator tests completed!")

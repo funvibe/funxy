@@ -62,7 +62,7 @@ testRun("SqlNull", fun() -> {
     assert(sqlIsNull(SqlNull))
     match sqlUnwrap(SqlNull) {
         Some(_) -> assert(false)
-        Zero -> assert(true)
+        None -> assert(true)
     }
 })
 
@@ -71,7 +71,7 @@ testRun("SqlInt", fun() -> {
     assert(sqlIsNull(v) == false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -80,7 +80,7 @@ testRun("SqlFloat", fun() -> {
     assert(sqlIsNull(v) == false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -89,7 +89,7 @@ testRun("SqlString", fun() -> {
     assert(sqlIsNull(v) == false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -98,7 +98,7 @@ testRun("SqlBool true", fun() -> {
     assert(sqlIsNull(v) == false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -106,7 +106,7 @@ testRun("SqlBool false", fun() -> {
     v = SqlBool(false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -115,7 +115,7 @@ testRun("SqlBytes", fun() -> {
     assert(sqlIsNull(v) == false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -125,7 +125,7 @@ testRun("SqlTime", fun() -> {
     assert(sqlIsNull(v) == false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -135,7 +135,7 @@ testRun("SqlBigInt", fun() -> {
     assert(sqlIsNull(v) == false)
     match sqlUnwrap(v) {
         Some(_) -> assert(true)
-        Zero -> assert(false)
+        None -> assert(false)
     }
 })
 
@@ -196,7 +196,7 @@ testRun("INSERT multiple", fun() -> {
             sqlExec(db, "INSERT INTO t (name) VALUES ($1)", [SqlString("A")])
             sqlExec(db, "INSERT INTO t (name) VALUES ($1)", [SqlString("B")])
             sqlExec(db, "INSERT INTO t (name) VALUES ($1)", [SqlString("C")])
-            
+
             match sqlQuery(db, "SELECT COUNT(*) as cnt FROM t", []) {
                 Ok(rows) -> assertEquals(len(rows), 1)
                 Fail(_) -> assert(false)
@@ -314,12 +314,12 @@ testRun("SELECT column access", fun() -> {
                     // Check name column exists
                     match mapGet(row, "name") {
                         Some(_) -> assert(true)
-                        Zero -> assert(false)
+                        None -> assert(false)
                     }
-                    // Check age column exists  
+                    // Check age column exists
                     match mapGet(row, "age") {
                         Some(_) -> assert(true)
-                        Zero -> assert(false)
+                        None -> assert(false)
                     }
                 }
                 Fail(_) -> assert(false)
@@ -339,10 +339,10 @@ testRun("sqlQueryRow found", fun() -> {
                 Ok(Some(row)) -> {
                     match mapGet(row, "name") {
                         Some(_) -> assert(true)
-                        Zero -> assert(false)
+                        None -> assert(false)
                     }
                 }
-                Ok(Zero) -> assert(false)
+                Ok(None) -> assert(false)
                 Fail(_) -> assert(false)
             }
             sqlClose(db)
@@ -357,7 +357,7 @@ testRun("sqlQueryRow not found", fun() -> {
             sqlExec(db, "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)", [])
             match sqlQueryRow(db, "SELECT * FROM t WHERE name = $1", [SqlString("Nobody")]) {
                 Ok(Some(_)) -> assert(false)
-                Ok(Zero) -> assert(true)
+                Ok(None) -> assert(true)
                 Fail(_) -> assert(false)
             }
             sqlClose(db)
@@ -443,7 +443,7 @@ testRun("Transaction commit", fun() -> {
     match sqlOpen("sqlite", ":memory:") {
         Ok(db) -> {
             sqlExec(db, "CREATE TABLE t (id INTEGER PRIMARY KEY, val INTEGER)", [])
-            
+
             match sqlBegin(db) {
                 Ok(tx) -> {
                     sqlTxExec(tx, "INSERT INTO t (val) VALUES ($1)", [SqlInt(1)])
@@ -471,7 +471,7 @@ testRun("Transaction rollback", fun() -> {
         Ok(db) -> {
             sqlExec(db, "CREATE TABLE t (id INTEGER PRIMARY KEY, val INTEGER)", [])
             sqlExec(db, "INSERT INTO t (val) VALUES (100)", [])
-            
+
             match sqlBegin(db) {
                 Ok(tx) -> {
                     sqlTxExec(tx, "UPDATE t SET val = 200", [])
@@ -481,7 +481,7 @@ testRun("Transaction rollback", fun() -> {
                                 Ok(Some(row)) -> {
                                     match mapGet(row, "val") {
                                         Some(_) -> assert(true)
-                                        Zero -> assert(false)
+                                        None -> assert(false)
                                     }
                                 }
                                 _ -> assert(false)
@@ -503,7 +503,7 @@ testRun("sqlTxQuery", fun() -> {
         Ok(db) -> {
             sqlExec(db, "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)", [])
             sqlExec(db, "INSERT INTO t (name) VALUES ('A'), ('B')", [])
-            
+
             match sqlBegin(db) {
                 Ok(tx) -> {
                     match sqlTxQuery(tx, "SELECT * FROM t", []) {
@@ -623,7 +623,7 @@ testRun("SELECT verify NULL value", fun() -> {
                 Ok(Some(row)) -> {
                     match mapGet(row, "val") {
                         Some(v) -> assert(sqlIsNull(v))
-                        Zero -> assert(false)
+                        None -> assert(false)
                     }
                 }
                 _ -> assert(false)
@@ -664,7 +664,7 @@ testRun("INSERT and SELECT Date", fun() -> {
                 Ok(Some(row)) -> {
                     match mapGet(row, "created") {
                         Some(_) -> assert(true)
-                        Zero -> assert(false)
+                        None -> assert(false)
                     }
                 }
                 _ -> assert(false)
@@ -719,7 +719,7 @@ testRun("Multiple columns all types", fun() -> {
                     }
                     match mapGet(row, "n") {
                         Some(v) -> assert(sqlIsNull(v))
-                        Zero -> assert(false)
+                        None -> assert(false)
                     }
                 }
                 _ -> assert(false)
@@ -744,7 +744,7 @@ testRun("File DB: create and open", fun() -> {
             Fail(_) -> Nil
         }
     }
-    
+
     match sqlOpen("sqlite", dbFile) {
         Ok(db) -> {
             assert(fileExists(dbFile))
@@ -772,7 +772,7 @@ testRun("File DB: data persistence", fun() -> {
         }
         Fail(_) -> assert(false)
     }
-    
+
     // Second connection: verify data persisted
     match sqlOpen("sqlite", dbFile) {
         Ok(db) -> {
@@ -821,13 +821,13 @@ testRun("File DB: update persists", fun() -> {
         }
         Fail(_) -> assert(false)
     }
-    
+
     // Reopen and verify
     match sqlOpen("sqlite", dbFile) {
         Ok(db) -> {
             match sqlQueryRow(db, "SELECT name FROM users WHERE name = $1", [SqlString("Charlie")]) {
                 Ok(Some(_)) -> assert(true)
-                Ok(Zero) -> assert(false)
+                Ok(None) -> assert(false)
                 Fail(_) -> assert(false)
             }
             match sqlClose(db) {
@@ -859,13 +859,13 @@ testRun("File DB: transaction commit persists", fun() -> {
         }
         Fail(_) -> assert(false)
     }
-    
+
     // Reopen and verify
     match sqlOpen("sqlite", dbFile) {
         Ok(db) -> {
             match sqlQueryRow(db, "SELECT name FROM users WHERE name = $1", [SqlString("Dave")]) {
                 Ok(Some(_)) -> assert(true)
-                Ok(Zero) -> assert(false)
+                Ok(None) -> assert(false)
                 Fail(_) -> assert(false)
             }
             match sqlClose(db) {
@@ -897,13 +897,13 @@ testRun("File DB: transaction rollback does not persist", fun() -> {
         }
         Fail(_) -> assert(false)
     }
-    
+
     // Reopen and verify Eve was NOT added
     match sqlOpen("sqlite", dbFile) {
         Ok(db) -> {
             match sqlQueryRow(db, "SELECT name FROM users WHERE name = $1", [SqlString("Eve")]) {
                 Ok(Some(_)) -> assert(false)
-                Ok(Zero) -> assert(true)
+                Ok(None) -> assert(true)
                 Fail(_) -> assert(false)
             }
             match sqlClose(db) {

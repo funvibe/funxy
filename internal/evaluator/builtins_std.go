@@ -57,7 +57,7 @@ func registerShowTrait(e *Evaluator, env *Environment) {
 
 	// Also register for specific DataInstance types if needed,
 	// but usually they fall back to their ADT type name.
-	// For example, "Option" covers Some/Zero if RuntimeType() returns Option.
+	// For example, "Option" covers Some/None if RuntimeType() returns Option.
 
 	for _, typeName := range types {
 		e.ClassImplementations[traitName][typeName] = &MethodTable{

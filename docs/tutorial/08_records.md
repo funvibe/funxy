@@ -8,13 +8,13 @@ You can define a record type using the `type` keyword:
 
 ```rust
 // Named record type
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 // Type with multiple fields of different types
-type Person = { name: String, age: Int, active: Bool }
+type alias Person = { name: String, age: Int, active: Bool }
 
 // Nested records
-type Rectangle = { topLeft: Point, bottomRight: Point }
+type alias Rectangle = { topLeft: Point, bottomRight: Point }
 ```
 
 ## Creating Records
@@ -22,8 +22,8 @@ type Rectangle = { topLeft: Point, bottomRight: Point }
 ### Record Literals
 
 ```rust
-type Point = { x: Int, y: Int }
-type Person = { name: String, age: Int, active: Bool }
+type alias Point = { x: Int, y: Int }
+type alias Person = { name: String, age: Int, active: Bool }
 
 // Anonymous record (without type declaration)
 point = { x: 10, y: 20 }
@@ -38,9 +38,9 @@ person: Person = { age: 30, name: "Alice", active: true }
 ### Empty Record
 
 ```rust
-type Empty = {}
+type alias EmptyRec = {}
 
-e: Empty = {}
+e: EmptyRec = {}
 ```
 
 ## Field Access
@@ -79,7 +79,7 @@ print(rect.tl.y)  // 50
 Creating a new record based on an existing one with some fields changed:
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 base: Point = { x: 1, y: 2 }
 
@@ -99,7 +99,7 @@ Funxy supports a convenient shorthand for record arguments in functions, similar
 If you have a function that accepts a record:
 
 ```rust
-type Config = { host: String, port: Int }
+type alias Config = { host: String, port: Int }
 
 fun connect(config: Config) {
     // ...
@@ -170,7 +170,7 @@ print(b)  // 4
 ### With Named Types
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 p: Point = { x: 10, y: 20 }
 { x: x, y: y } = p
@@ -209,7 +209,7 @@ print(c)         // 42
 ```rust
 import "lib/math" (sqrt)
 
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 fun magnitude(p: Point) -> Float {
     { x: x, y: y } = p
@@ -237,25 +237,25 @@ When you define a record type and use annotation, the record has a nominal type:
 
 ```rust
 // Record type definition
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 p: Point = { x: 10, y: 20 }
 print(getType(p))  // Point
 ```
 
-**Important:** `type Point = { ... }` is a **record type definition**, not a type alias. It creates a new type identity.
+**Important:** `type alias Point = { ... }` creates a type alias for a record structure. It does not create a new nominal type identity, but it gives a name to the structure.
 
 For assignment, Funxy allows assigning a structurally compatible anonymous record to a nominal type variable (implicit conversion):
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 p: Point = { x: 1, y: 2 } // OK, converted to Point
 ```
 
 But at runtime, they are distinct:
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 anon = { x: 1, y: 2 }
 named: Point = { x: 1, y: 2 }
 
@@ -270,7 +270,7 @@ Nominal types are needed for:
 1. **Extension methods** — methods are bound to the type name:
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 fun (p: Point) length() -> Int {
     p.x + p.y  // simplified
@@ -288,7 +288,7 @@ anon = { x: 3, y: 4 }
 2. **Trait instances** — trait implementations are bound to the type name:
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 instance Default Point {}
 
@@ -302,7 +302,7 @@ p: Point = default(Point)  // { x: 0, y: 0 }
 Defining methods on records:
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 // Method without parameters
 fun (p: Point) distanceFromOrigin() -> Int {
@@ -344,7 +344,7 @@ print(describe(p))  // "on Y axis"
 For named record types, use field access:
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 fun describePoint(p: Point) -> String {
     if p.x == 0 && p.y == 0 { "origin" }
@@ -398,7 +398,7 @@ print(getX(config))  // 100
 ### As Parameters
 
 ```rust
-type Config = { host: String, port: Int, debug: Bool }
+type alias Config = { host: String, port: Int, debug: Bool }
 
 fun connect(cfg: Config) -> String {
     cfg.host ++ ":" ++ show(cfg.port)
@@ -411,7 +411,7 @@ print(connect(config))  // "localhost:8080"
 ### As Return Value
 
 ```rust
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 fun makePoint(x: Int, y: Int) -> Point {
     { x: x, y: y }
@@ -424,7 +424,7 @@ print(p.x)  // 10
 ## Generics with Records
 
 ```rust
-type Box<t> = { value: t }
+type alias Box<t> = { value: t }
 
 fun makeBox<t>(v: t) -> Box<t> {
     { value: v }
@@ -442,7 +442,7 @@ print(strBox.value)  // "hello"
 ### Configuration
 
 ```rust
-type ServerConfig = {
+type alias ServerConfig = {
     host: String,
     port: Int,
     timeout: Int,
@@ -463,7 +463,7 @@ prodConfig = { ...defaultConfig, host: "api.example.com", debug: false }
 ### Game State
 
 ```rust
-type Player = { name: String, health: Int, x: Int, y: Int }
+type alias Player = { name: String, health: Int, x: Int, y: Int }
 
 fun damage(p: Player, amount: Int) -> Player {
     { ...p, health: p.health - amount }
@@ -483,8 +483,8 @@ print(player.x)       // 10
 ### DTO for API
 
 ```rust
-type User = { id: Int, name: String, email: String }
-type CreateUserRequest = { name: String, email: String }
+type alias User = { id: Int, name: String, email: String }
+type alias CreateUserRequest = { name: String, email: String }
 
 fun createUser(req: CreateUserRequest, id: Int) -> User {
     { id: id, name: req.name, email: req.email }
@@ -512,7 +512,7 @@ fun createUser(req: CreateUserRequest, id: Int) -> User {
 
 | Operation | Syntax | Example |
 |----------|-----------|--------|
-| Type definition | `type Name = { field: Type }` | `type Point = { x: Int, y: Int }` |
+| Type definition | `type alias Name = { field: Type }` | `type alias Point = { x: Int, y: Int }` |
 | Creation | `{ field: value }` | `{ x: 10, y: 20 }` |
 | With annotation | `name: Type = { ... }` | `p: Point = { x: 10, y: 20 }` |
 | Field access | `record.field` | `p.x` |

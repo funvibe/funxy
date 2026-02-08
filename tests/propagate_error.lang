@@ -23,12 +23,12 @@ res2 = complex_calc(10, 0) // Fail("division by zero")
 print(res2) // Fail("division by zero")
 
 // Test Option propagation
-// Option t = Some t | Zero
+// Option t = Some t | None
 fun maybe_val(x: Int) -> Option<Int> {
   if x > 0 {
     Some(x)
   } else {
-    Zero
+    None
   }
 }
 
@@ -38,4 +38,4 @@ fun option_chain(x: Int) -> Option<Int> {
 }
 
 print(option_chain(5)) // Some(10)
-print(option_chain(-1)) // Zero
+print(option_chain(-1)) // None

@@ -23,13 +23,13 @@ testRun("BigInt conversions", \ -> {
     y = bigIntFromInt(42)
     match bigIntToInt(y) {
         Some(i) -> assertEquals(42, i, "BigInt to Int success")
-        Zero -> assertEquals(0, 1, "BigInt to Int failed")
+        None -> assertEquals(0, 1, "BigInt to Int failed")
     }
 
     z = bigIntNew("99999999999999999999")
     match bigIntToInt(z) {
         Some(_) -> assertEquals(0, 1, "Should not fit in Int")
-        Zero -> assertEquals(0, 0, "BigInt too large correctly handled")
+        None -> assertEquals(0, 0, "BigInt too large correctly handled")
     }
 })
 
@@ -56,6 +56,6 @@ testRun("Rational properties", \ -> {
 
     match ratToFloat(ratFromInt(1, 4)) {
         Some(f) -> assertEquals(0.25, f, "Rational to Float")
-        Zero -> assertEquals(0, 1, "Float conversion failed")
+        None -> assertEquals(0, 1, "Float conversion failed")
     }
 })

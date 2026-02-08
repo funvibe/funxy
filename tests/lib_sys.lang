@@ -10,13 +10,13 @@ print(len(argsList) >= 1)  // at least the script file
 // =============================================
 // sysEnv: (String) -> Option<String>
 // =============================================
-// Returns environment variable or Zero
+// Returns environment variable or None
 
 // PATH should exist on all systems
 pathOpt = sysEnv("PATH")
 hasPath = match pathOpt {
     Some(_) -> true
-    Zero -> false
+    None -> false
 }
 print(hasPath)  // true
 
@@ -24,7 +24,7 @@ print(hasPath)  // true
 noVar = sysEnv("DEFINITELY_NOT_A_REAL_VAR_12345")
 hasNoVar = match noVar {
     Some(_) -> true
-    Zero -> false
+    None -> false
 }
 print(hasNoVar)  // false
 

@@ -112,7 +112,7 @@ Pattern matching is the primary way to work with ADTs.
 opt = Some(42)
 match opt {
     Some(val) -> print(val)
-    Zero -> print("Nothing")
+    None -> print("Nothing")
 }
 ```
 
@@ -197,14 +197,14 @@ fun comparePair(pair: (Int, Int)) -> String {
 ```rust
 fun findFirstPositive(xs: List<Int>) -> Option<Int> {
     match xs {
-        [] -> Zero
+        [] -> None
         [x, ...rest] if x > 0 -> Some(x)
         [_, ...rest] -> findFirstPositive(rest)
     }
 }
 
 print(findFirstPositive([-1, -2, 3, 4]))  // Some(3)
-print(findFirstPositive([-1, -2]))        // Zero
+print(findFirstPositive([-1, -2]))        // None
 ```
 
 ### Guards with ADTs
@@ -486,7 +486,7 @@ opt = Some(42)
 match opt {
     Some(^expected) -> "matched 42"
     Some(n) -> "got " ++ show(n)
-    Zero -> "empty"
+    None -> "empty"
 }
 // Result: "matched 42"
 ```

@@ -24,7 +24,7 @@ print(bigIntToString(a))
 
 // bigIntToInt: (BigInt) -> Option<Int>
 print(bigIntToInt(b))           // Some(42) - fits
-print(bigIntToInt(a))           // Zero - doesn't fit
+print(bigIntToInt(a))           // None - doesn't fit
 print(bigIntToInt(bigIntFromInt(-50)))  // Some(-50)
 
 print("=== BigInt Operators ===")

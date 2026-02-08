@@ -86,7 +86,7 @@ print(stringEndsWith("", "a"))             // false
 // stringIndexOf: (String, String) -> Option<Int>
 print(stringIndexOf("hello", "ll"))      // Some(2)
 print(stringIndexOf("hello", "o"))       // Some(4)
-print(stringIndexOf("hello", "x"))       // Zero
+print(stringIndexOf("hello", "x"))       // None
 print(stringIndexOf("hello", ""))        // Some(0)
 
 print("=== Other ===")

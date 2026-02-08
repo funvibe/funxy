@@ -15,8 +15,8 @@ Invalid connection close: OK
 Invalid server stop: OK
 
 5. Testing async server with echo...
-Server started with ID: 1
-Connected with ID: 2
+Server started with ID: OK
+Connected with ID: OK
 Message sent
 Received: Hello WebSocket!
 Connection closed

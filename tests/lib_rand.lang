@@ -51,14 +51,14 @@ list = [1, 2, 3, 4, 5]
 choice = randomChoice(list)
 match choice {
     Some(x) -> print(x >= 1 && x <= 5)
-    Zero -> print(false)  // Should not happen
+    None -> print(false)  // Should not happen
 }
 
 // Empty list
 emptyChoice = randomChoice([])
 match emptyChoice {
     Some(_) -> print(false)  // Should not happen
-    Zero -> print(true)
+    None -> print(true)
 }
 
 // =============================================
@@ -86,7 +86,7 @@ print(len(sample) == 3)
 largeSample = randomSample([1, 2, 3], 10)
 print(len(largeSample) == 3)
 
-// Zero sample
+// None sample
 zeroSample = randomSample([1, 2, 3], 0)
 print(len(zeroSample) == 0)
 

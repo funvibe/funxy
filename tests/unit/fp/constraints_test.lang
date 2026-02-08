@@ -16,7 +16,7 @@ testRun("Constraints: Monoid List", fun() {
     assertEquals(res, [1, 2, 3])
 })
 
-type Sum = { val: Int }
+type alias Sum = { val: Int }
 
 instance Semigroup Sum {
     operator (<>)(a: Sum, b: Sum) -> Sum {

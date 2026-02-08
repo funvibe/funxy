@@ -4,7 +4,7 @@ package shapes (*)
 type Shape = Circle Int | Rectangle((Int, Int)) | Point
 
 // Record type
-type Config = {
+type alias Config = {
     name: String,
     value: Int
 }

@@ -7,7 +7,7 @@ import "lib/test" (*)
 // It cannot represent or check Higher-Kinded Types properly in definitions.
 
 type Proxy<t> = Proxy
-type Box<x> = { val: x }
+type alias Box<x> = { val: x }
 
 // This passes (t is inferred as *)
 testRun("1. Kind System: Value Type", fun() -> {
@@ -31,7 +31,7 @@ testRun("1. Kind System: Constructor Failure", fun() -> {
 // It cannot handle types where the parameter we want to vary is NOT the last one.
 
 // A type with 2 params: Pair<Left, Right>
-type Pair<l, r> = { left: l, right: r }
+type alias Pair<l, r> = { left: l, right: r }
 
 // A trait for things that can map over the FIRST parameter?
 // (Like Bifunctor but just the first one).
@@ -111,8 +111,8 @@ testRun("3. Unsoundness: Mutable State", fun() -> {
     // 'store' is inferred as Option<$a>
     // returned function is inferred as $a -> $a
     make_store = fun() {
-        // Use id(Zero) to prevent generalization (Value Restriction).
-        store = id(Zero)
+        // Use id(None) to prevent generalization (Value Restriction).
+        store = id(None)
         fun(x) {
             store = Some(x)
             x
@@ -162,8 +162,8 @@ testRun("5. Unsoundness: Mutable State Conflict", fun() -> {
     // They share the SAME variable 'val'.
 
     make_cell = fun() {
-        // Use id(Zero) to prevent generalization
-        val = id(Zero) // Option<$a>
+        // Use id(None) to prevent generalization
+        val = id(None) // Option<$a>
 
         // Setter: $a -> Option<$a>
         setter = fun(x) {
@@ -188,7 +188,7 @@ testRun("5. Unsoundness: Mutable State Conflict", fun() -> {
     // To force constraint $a ~ Int:
     _ = match val_opt {
         Some(x) -> x + 1
-        Zero -> 0
+        None -> 0
     }
 
     // 2. Now try to put a String into the cell using the setter.
@@ -200,6 +200,6 @@ testRun("5. Unsoundness: Mutable State Conflict", fun() -> {
     val_opt_2 = cell.get()
     res = match val_opt_2 {
         Some(x) -> x + 1 // Runtime Error: "hello" + 1
-        Zero -> 0
+        None -> 0
     }
 })

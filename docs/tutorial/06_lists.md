@@ -123,7 +123,7 @@ import "lib/list" (*)
 xs = [10, 20, 30, 40, 50]
 
 indexOf(xs, 30)                   // Some(2)
-indexOf(xs, 99)                   // Zero
+indexOf(xs, 99)                   // None
 
 find(fun(x) -> x > 25, xs)        // Some(30)
 findIndex(fun(x) -> x > 25, xs)   // Some(2)
@@ -182,6 +182,15 @@ zip([1, 2, 3], ["a", "b", "c"])   // [(1, "a"), (2, "b"), (3, "c")]
 // Unzip — separate pairs
 pairs: List<(Int, String)> = [(1, "a"), (2, "b")]
 unzip(pairs)                      // ([1, 2], ["a", "b"])
+
+// Append (adds to end)
+append([1, 2], 3)           // [1, 2, 3]
+
+// Insert (adds at index)
+insert([1, 3], 1, 2)        // [1, 2, 3]
+
+// Update (replaces at index)
+update([1, 2, 3], 1, 5)     // [1, 5, 3]
 
 // Concat — combine lists
 concat([[1, 2], [3], [4, 5]])     // [1, 2, 3, 4, 5]
@@ -423,9 +432,13 @@ fun countWords(text: String) -> Int {
 
 // Find longest word
 fun longestWord(text: String) -> Option<String> {
-    stringWords(text)
-        |> fun(ws) -> sortBy(ws, fun(a, b) -> length(b) - length(a))
-        |> head
+    words = stringWords(text)
+    if isEmpty(words) {
+        None
+    } else {
+        sorted = sortBy(words, fun(a, b) -> length(b) - length(a))
+        Some(head(sorted))
+    }
 }
 
 // Character frequency
@@ -454,6 +467,9 @@ fun charFreq(s: String) -> List<(Char, Int)> {
 | `foldl`, `foldr` | Folds |
 | `reverse`, `sort`, `sortBy` | Ordering |
 | `unique` | Remove duplicates |
+| `append` | Append element |
+| `insert` | Insert element |
+| `update` | Update element |
 | `concat`, `flatten` | Combine |
 | `zip`, `unzip` | Combine |
 | `partition` | Split |

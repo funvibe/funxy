@@ -3,10 +3,11 @@ package vm
 import (
 	"bytes"
 	"fmt"
-	"math"
-	"math/big"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/evaluator"
+	"github.com/funvibe/funxy/internal/utils"
+	"math"
+	"math/big"
 )
 
 // binaryOp performs binary arithmetic operations
@@ -188,14 +189,25 @@ func (vm *VM) binaryOp(op Opcode) error {
 	}
 
 	typeName := vm.getTypeName(a)
-	if closure := vm.LookupOperator(typeName, opName); closure != nil {
-		vm.push(ObjVal(closure))
-		vm.push(a)
-		vm.push(b)
-		return vm.callClosure(closure, 2)
+	// Nil does not support arithmetic traits, and we want to ensure we return a type mismatch error
+	if !a.IsNil() {
+		if closure := vm.LookupOperator(typeName, opName); closure != nil {
+			vm.push(ObjVal(closure))
+			vm.push(a)
+			vm.push(b)
+			return vm.callClosure(closure, 2)
+		}
+		if contextType := vm.getTypeContext(); contextType != "" && contextType != typeName {
+			if closure := vm.LookupOperator(contextType, opName); closure != nil {
+				vm.push(ObjVal(closure))
+				vm.push(a)
+				vm.push(b)
+				return vm.callClosure(closure, 2)
+			}
+		}
 	}
 
-	return fmt.Errorf("no operator %s for types %s and %s", opName, aObj.Type(), bObj.Type())
+	return fmt.Errorf("type mismatch: %s %s %s", aObj.Type(), opName, bObj.Type())
 }
 
 // intPow computes integer power
@@ -232,8 +244,14 @@ func (vm *VM) bitwiseOp(op Opcode) error {
 		case OP_BXOR:
 			result = aVal ^ bVal
 		case OP_LSHIFT:
+			if bVal < 0 {
+				return fmt.Errorf("negative shift amount: %d", bVal)
+			}
 			result = aVal << bVal
 		case OP_RSHIFT:
+			if bVal < 0 {
+				return fmt.Errorf("negative shift amount: %d", bVal)
+			}
 			result = aVal >> bVal
 		}
 		vm.push(IntVal(result))
@@ -255,14 +273,25 @@ func (vm *VM) bitwiseOp(op Opcode) error {
 	}
 
 	typeName := vm.getTypeName(a)
-	if closure := vm.LookupOperator(typeName, opName); closure != nil {
-		vm.push(ObjVal(closure))
-		vm.push(a)
-		vm.push(b)
-		return vm.callClosure(closure, 2)
+	// Nil does not support bitwise traits
+	if !a.IsNil() {
+		if closure := vm.LookupOperator(typeName, opName); closure != nil {
+			vm.push(ObjVal(closure))
+			vm.push(a)
+			vm.push(b)
+			return vm.callClosure(closure, 2)
+		}
+		if contextType := vm.getTypeContext(); contextType != "" && contextType != typeName {
+			if closure := vm.LookupOperator(contextType, opName); closure != nil {
+				vm.push(ObjVal(closure))
+				vm.push(a)
+				vm.push(b)
+				return vm.callClosure(closure, 2)
+			}
+		}
 	}
 
-	return fmt.Errorf("no bitwise operator %s for type %s", opName, typeName)
+	return fmt.Errorf("type mismatch: %s %s %s", a.AsObject().Type(), opName, b.AsObject().Type())
 }
 
 // concatOp performs concatenation (++)
@@ -315,14 +344,26 @@ func (vm *VM) concatOp() error {
 	}
 
 	typeName := vm.getTypeName(a)
-	if closure := vm.LookupOperator(typeName, "++"); closure != nil {
-		vm.push(ObjVal(closure))
-		vm.push(a)
-		vm.push(b)
-		return vm.callClosure(closure, 2)
+	opName := "++"
+	// Nil does not support concatenation traits
+	if !a.IsNil() {
+		if closure := vm.LookupOperator(typeName, opName); closure != nil {
+			vm.push(ObjVal(closure))
+			vm.push(a)
+			vm.push(b)
+			return vm.callClosure(closure, 2)
+		}
+		if contextType := vm.getTypeContext(); contextType != "" && contextType != typeName {
+			if closure := vm.LookupOperator(contextType, opName); closure != nil {
+				vm.push(ObjVal(closure))
+				vm.push(a)
+				vm.push(b)
+				return vm.callClosure(closure, 2)
+			}
+		}
 	}
 
-	return fmt.Errorf("cannot concatenate %s and %s", aObj.Type(), bObj.Type())
+	return fmt.Errorf("type mismatch: %s ++ %s", aObj.Type(), bObj.Type())
 }
 
 // consOp performs cons operation (::)
@@ -333,7 +374,7 @@ func (vm *VM) consOp() error {
 	bObj := b.AsObject()
 	bList, ok := bObj.(*evaluator.List)
 	if !ok {
-		return fmt.Errorf(":: requires list on right side, got %s", bObj.Type())
+		return fmt.Errorf("right operand of :: must be List, got %s", bObj.Type())
 	}
 
 	vm.push(ObjVal(bList.Prepend(a.AsObject())))
@@ -381,8 +422,8 @@ func (vm *VM) getIndex(obj, index Value) (Value, error) {
 			// Return Some(value) for consistency with tree-walk
 			return ObjVal(&evaluator.DataInstance{Name: "Some", Fields: []evaluator.Object{val}}), nil
 		}
-		// Return Zero for not found
-		return ObjVal(&evaluator.DataInstance{Name: "Zero", Fields: nil}), nil
+		// Return None for not found
+		return ObjVal(&evaluator.DataInstance{Name: "None", Fields: nil}), nil
 
 	case *evaluator.Bytes:
 		idx, ok := idxVal.(*evaluator.Integer)
@@ -395,8 +436,8 @@ func (vm *VM) getIndex(obj, index Value) (Value, error) {
 			i = len(data) + i
 		}
 		if i < 0 || i >= len(data) {
-			// Return Zero for out of bounds
-			return ObjVal(&evaluator.DataInstance{Name: "Zero", Fields: nil}), nil
+			// Return None for out of bounds
+			return ObjVal(&evaluator.DataInstance{Name: "None", Fields: nil}), nil
 		}
 		// Return Some(byte)
 		return ObjVal(&evaluator.DataInstance{Name: "Some", Fields: []evaluator.Object{&evaluator.Integer{Value: int64(data[i])}}}), nil
@@ -412,8 +453,8 @@ func (vm *VM) getIndex(obj, index Value) (Value, error) {
 			i = bitsLen + i
 		}
 		if i < 0 || i >= bitsLen {
-			// Return Zero for out of bounds
-			return ObjVal(&evaluator.DataInstance{Name: "Zero", Fields: nil}), nil
+			// Return None for out of bounds
+			return ObjVal(&evaluator.DataInstance{Name: "None", Fields: nil}), nil
 		}
 		// Return Some(bit)
 		return ObjVal(&evaluator.DataInstance{Name: "Some", Fields: []evaluator.Object{&evaluator.Integer{Value: int64(o.Get(i))}}}), nil
@@ -431,6 +472,13 @@ func (vm *VM) getField(obj Value, name string) (Value, error) {
 	case *evaluator.RecordInstance:
 		if val := o.Get(name); val != nil {
 			return ObjectToValue(val), nil
+		}
+		if o.ModuleName != "" {
+			if altName := utils.ModuleMemberFallbackName(o.ModuleName, name); altName != "" {
+				if val := o.Get(altName); val != nil {
+					return ObjectToValue(val), nil
+				}
+			}
 		}
 		return NilVal(), fmt.Errorf("record has no field '%s'", name)
 
@@ -556,14 +604,28 @@ func (vm *VM) comparisonOp(op Opcode) error {
 	bObj := b.AsObject()
 
 	typeName := vm.getTypeName(a)
-	if closure := vm.LookupOperator(typeName, opName); closure != nil {
-		vm.push(ObjVal(closure))
-		vm.push(a)
-		vm.push(b)
-		if err := vm.callClosure(closure, 2); err != nil {
-			return err
+	// Nil does not support comparison traits
+	if !a.IsNil() {
+		if closure := vm.LookupOperator(typeName, opName); closure != nil {
+			vm.push(ObjVal(closure))
+			vm.push(a)
+			vm.push(b)
+			if err := vm.callClosure(closure, 2); err != nil {
+				return err
+			}
+			return nil
 		}
-		return nil
+		if contextType := vm.getTypeContext(); contextType != "" && contextType != typeName {
+			if closure := vm.LookupOperator(contextType, opName); closure != nil {
+				vm.push(ObjVal(closure))
+				vm.push(a)
+				vm.push(b)
+				if err := vm.callClosure(closure, 2); err != nil {
+					return err
+				}
+				return nil
+			}
+		}
 	}
 
 	// Handle BigInt comparison
@@ -732,7 +794,7 @@ func (vm *VM) comparisonOp(op Opcode) error {
 		return nil
 	}
 
-	return vm.runtimeError("cannot compare %s and %s with %s", aObj.Type(), bObj.Type(), opName)
+	return fmt.Errorf("type mismatch: %s %s %s", aObj.Type(), opName, bObj.Type())
 }
 
 // compareLists returns -1, 0, or 1 for lexicographic comparison
@@ -779,9 +841,9 @@ func (vm *VM) compareTuples(a, b *evaluator.Tuple) int {
 
 // compareDataInstances compares DataInstances (for Option, Result ordering)
 func (vm *VM) compareDataInstances(a, b *evaluator.DataInstance) int {
-	// Compare by constructor name first (Zero < Some, Fail < Ok, etc.)
+	// Compare by constructor name first (None < Some, Fail < Ok, etc.)
 	if a.Name != b.Name {
-		// Define ordering: Zero < Some, Fail < Ok
+		// Define ordering: None < Some, Fail < Ok
 		aRank := vm.constructorRank(a.Name)
 		bRank := vm.constructorRank(b.Name)
 		if aRank < bRank {
@@ -811,7 +873,7 @@ func (vm *VM) compareDataInstances(a, b *evaluator.DataInstance) int {
 // constructorRank returns ordering rank for Option/Result constructors
 func (vm *VM) constructorRank(name string) int {
 	switch name {
-	case config.ZeroCtorName, config.FailCtorName:
+	case config.NoneCtorName, config.FailCtorName:
 		return 0
 	case config.SomeCtorName, config.OkCtorName:
 		return 1

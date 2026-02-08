@@ -1,6 +1,6 @@
 Processing failed with errors:
-- error at 23:18 [A003]: type error: Type argument mismatch: expected kind *, got (* -> *)
-- error at 79:24 [A003]: type error: argument 1 type mismatch: ((t? Int)) vs { left: Int, right: String }
-- error at 102:21 [A003]: type error: argument 1 type mismatch: (Int) vs String
-- error at 129:22 [A003]: type error: argument 1 type mismatch: (Int) vs String
-- error at 197:24 [A003]: type error: argument 1 type mismatch: (Int) vs String
+- error at 23:14 [A003]: type error: Type argument mismatch: expected kind *, got (* -> *)
+- error at 79:23 [A003]: type error: argument 1 type mismatch: ((t? Int)) vs { left: Int, right: String }
+- error at 102:15 [A003]: type error: argument 1 type mismatch: (Int) vs String
+- error at 129:16 [A003]: type error: argument 1 type mismatch: (Int) vs String
+- error at 197:18 [A003]: type error: argument 1 type mismatch: (Int) vs String

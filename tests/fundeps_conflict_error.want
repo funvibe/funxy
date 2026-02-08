@@ -1,0 +1,5 @@
+Processing failed with errors:
+- error at 11:1 [A004]: redefinition of symbol: 'Conflicting instances for trait BiMap. Dependency [a] -> [b] violated. Input matches existing instance ([Int String]), but output maps to different type (Bool vs String)'
+- error at 25:1 [A004]: redefinition of symbol: 'Conflicting instances for trait RevDep. Dependency [b] -> [a] violated. Input matches existing instance ([Int String]), but output maps to different type (Bool vs Int)'
+- error at 41:1 [A004]: redefinition of symbol: 'Conflicting instances for trait Chain. Dependency [b] -> [c] violated. Input matches existing instance ([Int String Bool]), but output maps to different type (Int vs Bool)'
+- error at 54:1 [A003]: type error: instance violates functional dependency a -> b: variable(s) [t] in output are not determined by input

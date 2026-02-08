@@ -83,7 +83,7 @@ func (vm *VM) importUserModule(imp PendingImport) error {
 	}
 
 	// Compile and execute the module
-	modObj, err := vm.compileAndExecuteModule(mod)
+	modObj, err := vm.CompileAndExecuteModule(mod)
 	if err != nil {
 		delete(vm.loadingModules, absPath)
 		return fmt.Errorf("failed to execute module %s: %v", imp.Path, err)
@@ -103,8 +103,9 @@ func (vm *VM) importUserModule(imp PendingImport) error {
 	return vm.applyModuleImport(imp, modObj)
 }
 
-// compileAndExecuteModule compiles a module's files and executes them
-func (vm *VM) compileAndExecuteModule(mod *modules.Module) (*evaluator.RecordInstance, error) {
+// CompileAndExecuteModule compiles a module's files and executes them.
+// This is exported for running entry packages through the VM backend.
+func (vm *VM) CompileAndExecuteModule(mod *modules.Module) (*evaluator.RecordInstance, error) {
 	// Handle package groups specially
 	if mod.IsPackageGroup {
 		exports := make(map[string]evaluator.Object)
@@ -112,7 +113,7 @@ func (vm *VM) compileAndExecuteModule(mod *modules.Module) (*evaluator.RecordIns
 		// Load and execute each sub-package
 		for subName, subMod := range mod.Imports {
 			// Compile and execute sub-module
-			subObj, err := vm.compileAndExecuteModule(subMod)
+			subObj, err := vm.CompileAndExecuteModule(subMod)
 			if err != nil {
 				return nil, fmt.Errorf("failed to execute sub-package %s: %v", subName, err)
 			}
@@ -129,8 +130,14 @@ func (vm *VM) compileAndExecuteModule(mod *modules.Module) (*evaluator.RecordIns
 	// Regular module compilation
 	compiler := NewCompiler()
 	compiler.SetBaseDir(mod.Dir)
+	if mod.TypeMap != nil {
+		compiler.SetTypeMap(mod.TypeMap)
+	}
+	if mod.SymbolTable != nil {
+		compiler.SetSymbolTable(mod.SymbolTable)
+	}
 
-	for _, file := range mod.Files {
+	for _, file := range mod.OrderedFiles() {
 		if err := compiler.compileProgram(file); err != nil {
 			return nil, fmt.Errorf("compilation error in %s: %v", mod.Name, err)
 		}
@@ -392,7 +399,9 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 		for name, fn := range builtins {
 			fields[name] = fn
 		}
-		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, evaluator.NewRecord(fields))
+		modObj := evaluator.NewRecord(fields)
+		modObj.ModuleName = pkgName
+		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, modObj)
 	} else if imp.ImportAll {
 		// Create a set of excluded symbols for efficient lookup
 		excluded := make(map[string]bool)
@@ -442,7 +451,9 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 		for name, fn := range builtins {
 			fields[name] = fn
 		}
-		vm.globals.Globals = vm.globals.Globals.Put(pkgName, evaluator.NewRecord(fields))
+		modObj := evaluator.NewRecord(fields)
+		modObj.ModuleName = pkgName
+		vm.globals.Globals = vm.globals.Globals.Put(pkgName, modObj)
 	}
 
 	return nil
@@ -491,7 +502,9 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 				for name, fn := range builtins {
 					pkgFields[name] = fn
 				}
-				libFields[pkg] = evaluator.NewRecord(pkgFields)
+				pkgObj := evaluator.NewRecord(pkgFields)
+				pkgObj.ModuleName = pkg
+				libFields[pkg] = pkgObj
 			}
 		}
 		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, evaluator.NewRecord(libFields))
@@ -504,7 +517,9 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 				for name, fn := range builtins {
 					pkgFields[name] = fn
 				}
-				libFields[pkg] = evaluator.NewRecord(pkgFields)
+				pkgObj := evaluator.NewRecord(pkgFields)
+				pkgObj.ModuleName = pkg
+				libFields[pkg] = pkgObj
 			}
 		}
 		vm.globals.Globals = vm.globals.Globals.Put("lib", evaluator.NewRecord(libFields))

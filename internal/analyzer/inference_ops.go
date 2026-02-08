@@ -492,6 +492,19 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 	case "??":
 		// Null coalescing via Optional trait: F<A> ?? A -> A
 		// Left must implement Optional, right must match inner type
+		if union, ok := l.(typesystem.TUnion); ok {
+			nonNil, hasNil := splitNilUnion(union)
+			if hasNil && len(nonNil) == 1 {
+				baseType := nonNil[0]
+				subst, err := typesystem.Unify(r, baseType)
+				if err != nil {
+					return nil, nil, inferErrorf(n.Right, "fallback value must be %s, got %s", baseType, r)
+				}
+				totalSubst = subst.Compose(totalSubst)
+				return baseType.Apply(totalSubst), totalSubst, nil
+			}
+		}
+
 		if !CheckTraitImplementation(l, "Optional", table) {
 			return nil, nil, inferErrorf(n.Left, "type %s does not implement Optional trait", l)
 		}

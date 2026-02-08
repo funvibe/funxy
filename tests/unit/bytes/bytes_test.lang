@@ -83,10 +83,10 @@ testRun("Bytes indexing returns Option<Int>", fun() -> {
     assertEquals(b[4], Some(111))
 })
 
-testRun("Bytes indexing out of bounds returns Zero", fun() -> {
+testRun("Bytes indexing out of bounds returns None", fun() -> {
     b = @"Hi"
-    assertEquals(b[10], Zero)
-    assertEquals(b[-10], Zero)
+    assertEquals(b[10], None)
+    assertEquals(b[-10], None)
 })
 
 testRun("Bytes negative indexing", fun() -> {
@@ -101,14 +101,16 @@ testRun("Bytes negative indexing", fun() -> {
 
 testRun("bytesSlice extracts substring", fun() -> {
     b = @"Hello World"
-    assertEquals(bytesSlice(b, 0, 5), @"Hello")
-    assertEquals(bytesSlice(b, 6, 11), @"World")
+    assertEquals(unwrapResult(bytesSlice(b, 0, 5)), @"Hello")
+    assertEquals(unwrapResult(bytesSlice(b, 6, 11)), @"World")
 })
 
 testRun("bytesSlice with out of bounds", fun() -> {
     b = @"Hi"
-    assertEquals(bytesSlice(b, 0, 100), @"Hi")
-    assertEquals(bytesSlice(b, 10, 20), @"")
+    // bytesSlice returns Result<Error, Bytes> now, not Bytes directly
+    // Use unwrapError to assert that it failed
+    _ = unwrapError(bytesSlice(b, 0, 100))
+    _ = unwrapError(bytesSlice(b, 10, 20))
 })
 
 // =============================================
@@ -198,7 +200,7 @@ testRun("bytesContains checks presence", fun() -> {
 testRun("bytesIndexOf finds position", fun() -> {
     b = @"Hello World"
     assertEquals(bytesIndexOf(b, @"World"), Some(6))
-    assertEquals(bytesIndexOf(b, @"Foo"), Zero)
+    assertEquals(bytesIndexOf(b, @"Foo"), None)
 })
 
 testRun("bytesStartsWith checks prefix", fun() -> {

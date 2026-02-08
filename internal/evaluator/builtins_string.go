@@ -436,7 +436,7 @@ func builtinStringIndexOf(e *Evaluator, args ...Object) Object {
 	// Find byte index
 	byteIdx := strings.Index(str, substr)
 	if byteIdx == -1 {
-		return makeZero()
+		return makeNone()
 	}
 
 	// Convert byte index to rune index

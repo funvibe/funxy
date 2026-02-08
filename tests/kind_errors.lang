@@ -1,0 +1,12 @@
+// 1. Kind Mismatch (Application)
+// Int has kind *, but is applied to arguments
+type alias Fail1 = Int<String>
+
+// 2. Explicit Kind Mismatch
+type Box<f: * -> *> = B(f<Int>)
+
+// Int is *, expected * -> *
+type alias Fail3 = Box<Int>
+
+// Map is * -> * -> *, expected * -> *
+type alias Fail4 = Box<Map>

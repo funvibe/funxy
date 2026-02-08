@@ -12,20 +12,12 @@ fun logger(next) {
         req = ctx.req
         match result {
             Ok(res) -> {
-                // We rely on duck typing for status access, or autoResponse if needed.
-                // But generally handler results should be compatible with Response structure.
-                // If we want to be safe against non-Response objects (like VNode returned directly),
-                // we should use autoResponse, but autoResponse requires tagged Response to pass through correctly.
-                // Since we are fixing handlers to return tagged Responses (or autoResponse will handle them in handleRequest),
-                // we can just peek at status if it exists.
-                // However, `res` could be "Hello" (String). String doesn't have .status.
-                // So we MUST use autoResponse to normalize it for logging.
                 respObj = autoResponse(res)
-                msg = sprintf("%s %s -> %d (%d ms)", req.method, req.path, respObj.status, duration)
+                msg = format("%s %s -> %d (%d ms)", req.method, req.path, respObj.status, duration)
                 print(msg)
             }
             Fail(err) -> {
-                msg = sprintf("%s %s -> ERROR (%d ms)", req.method, req.path, duration)
+                msg = format("%s %s -> ERROR (%d ms)", req.method, req.path, duration)
                 print(msg)
             }
         }

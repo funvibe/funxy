@@ -51,13 +51,13 @@ func initJsonPackage() {
 				Params:     []typesystem.Type{typesystem.TVar{Name: "A"}},
 				ReturnType: stringType,
 			},
-			// jsonDecode<T>(json: String) -> Result<T, String>
+			// jsonDecode<T>(json: String) -> Result<String, T>
 			// Decodes JSON string to typed value
 			"jsonDecode": typesystem.TFunc{
 				Params:     []typesystem.Type{stringType},
 				ReturnType: resultType(tVar),
 			},
-			// jsonParse(str: String) -> Result<Json, String>
+			// jsonParse(str: String) -> Result<String, Json>
 			// Parses JSON string into Json ADT
 			"jsonParse": typesystem.TFunc{
 				Params:     []typesystem.Type{stringType},

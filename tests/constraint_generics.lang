@@ -2,24 +2,24 @@
 // fun display<t: Printable>(x: t) -> String
 
 trait Printable<t> {
-    fun format(val: t) -> String
+    fun pretty(val: t) -> String
 }
 
 instance Printable Int {
-    fun format(val: Int) -> String {
+    fun pretty(val: Int) -> String {
         "int"
     }
 }
 
 instance Printable Bool {
-    fun format(val: Bool) -> String {
+    fun pretty(val: Bool) -> String {
         if val { "true" } else { "false" }
     }
 }
 
 // Constrained function - t must implement Printable
 fun display<t: Printable>(x: t) -> String {
-    format(x)
+    pretty(x)
 }
 
 // Test with Int - works

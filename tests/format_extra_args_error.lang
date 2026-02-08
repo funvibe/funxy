@@ -1,0 +1,4 @@
+// Test: format string with no verbs should reject extra arguments
+print $ %"A\tB"(0)
+
+print $ %"A\t%dB"(0, 1)

@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 1:1 [A003]: type error: return statement outside of function

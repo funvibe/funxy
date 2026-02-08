@@ -11,7 +11,7 @@ fun double<f: Functor>(fa: f<Int>) -> f<Int> {
 opt1 = double(Some(21))
 print(opt1)
 
-opt2 = double(Zero)
+opt2 = double(None)
 print(opt2)
 
 // Test with List

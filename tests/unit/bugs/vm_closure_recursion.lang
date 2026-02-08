@@ -17,7 +17,7 @@ testRun("Recursive closure with state", fun() -> {
                 curr = curr + 1
                 Some(val)
             } else {
-                Zero
+                None
             }
         }
         range_next
@@ -28,8 +28,8 @@ testRun("Recursive closure with state", fun() -> {
         fun filter_next() {
             fun find() {
                 opt = iterator()
-                if opt == Zero {
-                    Zero
+                if opt == None {
+                    None
                 } else {
                     // Unwrap manually for test stability
                     val = match opt {
@@ -62,7 +62,7 @@ testRun("Recursive closure with state", fun() -> {
     assertEquals(v2, Some(4), "Second element should be 4")
 
     v3 = f()
-    assertEquals(v3, Zero, "Third element should be Zero")
+    assertEquals(v3, None, "Third element should be None")
 })
 
 // --- Test 2: Nested function calls returning values ---

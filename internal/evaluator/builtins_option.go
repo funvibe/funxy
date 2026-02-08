@@ -9,9 +9,9 @@ func OptionBuiltins() map[string]*Builtin {
 			Fn:   builtinIsSome,
 			Name: "isSome",
 		},
-		"isZero": {
-			Fn:   builtinIsZero,
-			Name: "isZero",
+		"isNone": {
+			Fn:   builtinIsNone,
+			Name: "isNone",
 		},
 		"unwrap": {
 			Fn:   builtinUnwrap,
@@ -41,20 +41,20 @@ func builtinIsSome(e *Evaluator, args ...Object) Object {
 	return FALSE
 }
 
-// isZero: Option<T> -> Bool
-func builtinIsZero(e *Evaluator, args ...Object) Object {
+// isNone: Option<T> -> Bool
+func builtinIsNone(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
-		return newError("isZero expects 1 argument, got %d", len(args))
+		return newError("isNone expects 1 argument, got %d", len(args))
 	}
 	if di, ok := args[0].(*DataInstance); ok {
-		if di.Name == "Zero" && di.TypeName == "Option" {
+		if di.Name == "None" && di.TypeName == "Option" {
 			return TRUE
 		}
 	}
 	return FALSE
 }
 
-// unwrap: Option<T> -> T (panics on Zero)
+// unwrap: Option<T> -> T (panics on None)
 func builtinUnwrap(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("unwrap expects 1 argument, got %d", len(args))
@@ -62,7 +62,7 @@ func builtinUnwrap(e *Evaluator, args ...Object) Object {
 	if di, ok := args[0].(*DataInstance); ok && di.Name == "Some" && len(di.Fields) == 1 {
 		return di.Fields[0]
 	}
-	return newError("unwrap: expected Some, got Zero")
+	return newError("unwrap: expected Some, got None")
 }
 
 // unwrapOr: (Option<T>, T) -> T
@@ -99,7 +99,7 @@ func SetOptionBuiltinTypes(builtins map[string]*Builtin) {
 	if b, ok := builtins["isSome"]; ok {
 		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{optionT}, ReturnType: typesystem.Bool}
 	}
-	if b, ok := builtins["isZero"]; ok {
+	if b, ok := builtins["isNone"]; ok {
 		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{optionT}, ReturnType: typesystem.Bool}
 	}
 	if b, ok := builtins["unwrap"]; ok {

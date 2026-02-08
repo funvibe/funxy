@@ -1,0 +1,152 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/list" (map)
+
+// 1. Define User Functor Trait (HKT)
+trait UserFunctor<f> {
+    fun userMap<a, b>(fn: (a) -> b, x: f<a>) -> f<b>
+}
+
+// 2. Custom Box Type (Simple container)
+type Box<a> = Val(a)
+
+instance UserFunctor Box {
+    fun userMap<a, b>(fn: (a) -> b, x: Box<a>) -> Box<b> {
+        match x {
+            Val(v) -> Val(fn(v))
+        }
+    }
+}
+
+// 3. Custom Maybe Type (Handling Empty/None case)
+type MyMaybe<a> = MyJust(a) | MyNothing
+
+instance UserFunctor MyMaybe {
+    fun userMap<a, b>(fn: (a) -> b, x: MyMaybe<a>) -> MyMaybe<b> {
+        match x {
+            MyJust(v) -> MyJust(fn(v))
+            MyNothing -> MyNothing
+        }
+    }
+}
+
+// 4. Recursive Type (Tree)
+// Tests recursive dispatch (List map -> Tree map)
+type Tree<a> = Leaf(a) | Node(List<Tree<a>>)
+
+// We need to implement UserFunctor for Tree
+// This requires mapping over the List of Trees
+instance UserFunctor Tree {
+    fun userMap<a, b>(fn: (a) -> b, x: Tree<a>) -> Tree<b> {
+        match x {
+            Leaf(v) -> Leaf(fn(v))
+            Node(children) -> {
+                // Here we map over the list, and for each element (Tree), recursively call userMap
+                // Note: userMap is polymorphic, so we need to be careful with type inference
+                // map expects (Tree<a>) -> Tree<b>.
+                // We use a lambda that calls userMap recursively.
+                // Explicit type application might be needed if inference struggles with HKT recursion.
+                newChildren = map(\child -> userMap(fn, child), children)
+                Node(newChildren)
+            }
+        }
+    }
+}
+
+// 5. Standard Types Implementation
+instance UserFunctor List {
+    fun userMap<a, b>(fn: (a) -> b, x: List<a>) -> List<b> {
+        map(fn, x)
+    }
+}
+
+instance UserFunctor Option {
+    fun userMap<a, b>(fn: (a) -> b, x: Option<a>) -> Option<b> {
+        match x {
+            Some(v) -> Some(fn(v))
+            None -> None
+        }
+    }
+}
+
+// 6. Generic Function with Constraint
+// Tests if the dictionary is correctly passed to the inner call
+fun doubleContainer<f: UserFunctor>(c: f<Int>) -> f<Int> {
+    userMap(\x -> x * 2, c)
+}
+
+// 7. MPTC with User Types
+trait Transformer<a, b> {
+    fun transform(x: a) -> b
+}
+
+instance Transformer<Box<Int>, Int> {
+    fun transform(x: Box<Int>) -> Int {
+        match x { Val(v) -> v }
+    }
+}
+
+instance Transformer<Int, Box<Int>> {
+    fun transform(x: Int) -> Box<Int> {
+        Val(x)
+    }
+}
+
+// --- Tests ---
+
+testRun("UserFunctor: Box", \ -> {
+    b = Val(10)
+    res = userMap(\x -> x + 1, b)
+    assertEquals(Val(11), res, "Box map")
+})
+
+testRun("UserFunctor: MyMaybe (Just)", \ -> {
+    m = MyJust(10)
+    res = userMap(\x -> x * 2, m)
+    assertEquals(MyJust(20), res, "MyMaybe Just map")
+})
+
+testRun("UserFunctor: MyMaybe (Nothing)", \ -> {
+    m : MyMaybe<Int> = MyNothing
+    res = userMap(\x -> x * 2, m)
+    assertEquals(MyNothing, res, "MyMaybe Nothing map")
+})
+
+testRun("UserFunctor: Tree (Recursive)", \ -> {
+    // Tree: Node([Leaf(1), Node([Leaf(2), Leaf(3)])])
+    tree = Node([Leaf(1), Node([Leaf(2), Leaf(3)])])
+
+    // Map: x * 10
+    // Expected: Node([Leaf(10), Node([Leaf(20), Leaf(30)])])
+    res = userMap(\x -> x * 10, tree)
+
+    expected = Node([Leaf(10), Node([Leaf(20), Leaf(30)])])
+    assertEquals(expected, res, "Tree recursive map")
+})
+
+testRun("UserFunctor: Generic Constraint (Box)", \ -> {
+    res = doubleContainer(Val(5))
+    assertEquals(Val(10), res, "Generic Box")
+})
+
+testRun("UserFunctor: Generic Constraint (List)", \ -> {
+    res = doubleContainer([1, 2, 3])
+    assertEquals([2, 4, 6], res, "Generic List")
+})
+
+testRun("UserFunctor: Empty List (Type Erasure Check)", \ -> {
+    l : List<Int> = []
+    res = userMap(\x -> x + 1, l)
+    assertEquals([], res, "Empty List map")
+})
+
+testRun("MPTC: User Types (Box -> Int)", \ -> {
+    b = Val(42)
+    res = transform(b)
+    assertEquals(42, res, "Box to Int")
+})
+
+testRun("MPTC: User Types (Int -> Box)", \ -> {
+    i = 42
+    res = transform(i)
+    assertEquals(Val(42), res, "Int to Box")
+})

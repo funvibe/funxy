@@ -1,11 +1,11 @@
 // Test optional chaining (?.)
 
 // Define a record type
-type Person = { name: String, age: Int }
+type alias Person = { name: String, age: Int }
 
 // Test with Option
 person1: Option<Person> = Some({ name: "Alice", age: 30 })
-person2: Option<Person> = Zero
+person2: Option<Person> = None
 
 // ?. on Some returns Some(field)
 result1 = person1?.name
@@ -14,12 +14,12 @@ print(result1)  // Some("Alice")
 result2 = person1?.age
 print(result2)  // Some(30)
 
-// ?. on Zero returns Zero
+// ?. on None returns None
 result3 = person2?.name
-print(result3)  // Zero
+print(result3)  // None
 
 result4 = person2?.age
-print(result4)  // Zero
+print(result4)  // None
 
 // Chaining with ??
 name1 = person1?.name ?? "Unknown"
@@ -29,7 +29,7 @@ name2 = person2?.name ?? "Unknown"
 print(name2)  // Unknown
 
 // Test with Result
-type User = { id: Int, email: String }
+type alias User = { id: Int, email: String }
 
 user1: Result<String, User> = Ok({ id: 1, email: "alice@example.com" })
 user2: Result<String, User> = Fail("User not found")
@@ -50,21 +50,21 @@ email4 = user2?.email ?? "no-email"
 print(email4)  // no-email
 
 // Nested chaining
-type Address = { city: String, zip: Int }
-type Employee = { name: String, address: Address }
+type alias Address = { city: String, zip: Int }
+type alias Employee = { name: String, address: Address }
 
 emp1: Option<Employee> = Some({ name: "Ivan", address: { city: "Moscow", zip: 101 } })
-emp2: Option<Employee> = Zero
+emp2: Option<Employee> = None
 
 // Double chain
 print(emp1?.address?.city)  // Some("Moscow")
-print(emp2?.address?.city)  // Zero
+print(emp2?.address?.city)  // None
 
 // Triple with ??
 city1 = emp1?.address?.city ?? "Unknown"
 print(city1)  // Moscow
 
-city2 = emp2?.address?.city ?? "Unknown"  
+city2 = emp2?.address?.city ?? "Unknown"
 print(city2)  // Unknown
 
 print("Optional chaining test passed!")

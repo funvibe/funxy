@@ -203,7 +203,7 @@ func TestIfExpressions(t *testing.T) {
 	}{
 		{"if true { 10 }", int64(10)},
 		{"if false { 10 }", nil},
-		{"if 1 { 10 }", int64(10)}, // truthy
+		{"if 1 { 10 }", nil}, // 1 is falsey in strict mode
 		{"if 1 < 2 { 10 }", int64(10)},
 		{"if 1 > 2 { 10 }", nil},
 		{"if 1 > 2 { 10 } else { 20 }", int64(20)},
@@ -857,10 +857,10 @@ func TestCounterPattern(t *testing.T) {
 		}
 		inc
 	}
-	
+
 	c1 = makeCounter()
 	c2 = makeCounter()
-	
+
 	c1() // 1
 	c1() // 2
 	c2() // 1 (independent counter)
@@ -1155,9 +1155,9 @@ func TestOptionConstructors(t *testing.T) {
 			"Some(42)",
 		},
 		{
-			"Zero constructor",
-			`Zero`,
-			"Zero",
+			"None constructor",
+			`None`,
+			"None",
 		},
 		{
 			"isSome with Some",
@@ -1165,8 +1165,8 @@ func TestOptionConstructors(t *testing.T) {
 			"true",
 		},
 		{
-			"isSome with Zero",
-			`isSome(Zero)`,
+			"isSome with None",
+			`isSome(None)`,
 			"false",
 		},
 	}
@@ -1281,7 +1281,7 @@ func TestPatternMatchingBasic(t *testing.T) {
 	}
 }
 
-// Test pattern matching with Option type (Some/Zero)
+// Test pattern matching with Option type (Some/None)
 func TestPatternMatchingOption(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1294,18 +1294,18 @@ func TestPatternMatchingOption(t *testing.T) {
 			opt = Some(42)
 			match opt {
 				Some(x) -> x
-				Zero -> 0
+				None -> 0
 			}
 			`,
 			42,
 		},
 		{
-			"match Zero",
+			"match None",
 			`
-			opt = Zero
+			opt = None
 			match opt {
 				Some(x) -> x
-				Zero -> -1
+				None -> -1
 			}
 			`,
 			-1,

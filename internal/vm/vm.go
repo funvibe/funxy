@@ -1,15 +1,16 @@
 package vm
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -39,6 +40,10 @@ func formatFilePath(file string) string {
 
 var errEarlyReturn = errors.New("early return")
 var errDebugBreak = errors.New("debug break")
+var errTruncatedBytecode = errors.New("truncated bytecode")
+var errStackUnderflow = errors.New("stack underflow")
+var errStackOverflow = errors.New("stack overflow")
+var errInvalidConstantIndex = errors.New("invalid constant index")
 
 // Initial sizes for stack and frames
 const InitialStackSize = 2048
@@ -47,6 +52,12 @@ const InitialFrameCount = 1024
 // Growth increment when stack/frames need to expand
 const StackGrowthIncrement = 1024
 const FrameGrowthIncrement = 512
+
+// Maximum call stack depth to prevent infinite recursion and stack overflow
+const MaxFrameCount = 4096
+
+// Maximum operand stack size to prevent OOM
+const MaxStackSize = 1024 * 1024 // 1M elements
 
 // CallFrame represents a single ongoing function call
 type CallFrame struct {
@@ -123,6 +134,9 @@ type VM struct {
 
 	// Debugger for debugging support
 	debugger *Debugger
+
+	// Context for cancellation
+	Context context.Context
 }
 
 // New creates a new VM instance
@@ -148,6 +162,14 @@ func (vm *VM) SetOutput(w io.Writer) {
 	vm.out = w
 	if vm.eval != nil {
 		vm.eval.Out = w
+	}
+}
+
+// SetContext sets the context for cancellation
+func (vm *VM) SetContext(ctx context.Context) {
+	vm.Context = ctx
+	if vm.eval != nil {
+		vm.eval.Context = ctx
 	}
 }
 
@@ -475,6 +497,7 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 	if vm.eval == nil {
 		vm.eval = evaluator.New()
 		vm.eval.Out = vm.out
+		vm.eval.Context = vm.Context // Propagate context
 		vm.eval.BaseDir = "."
 		vm.eval.CurrentFile = "<vm>"
 		// Set VMCallHandler to allow builtins to call VM closures
@@ -777,7 +800,20 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 
 // step executes one instruction and returns (result, done, error)
 // done is true if OP_RETURN or OP_HALT was executed
-func (vm *VM) step() (Value, bool, error) {
+func (vm *VM) step() (res Value, done bool, err error) {
+	// Recover from truncated bytecode panic
+	defer func() {
+		if r := recover(); r != nil {
+			if r == errTruncatedBytecode || r == errStackUnderflow || r == errInvalidConstantIndex {
+				err = r.(error)
+				res = NilVal()
+				done = false
+			} else {
+				panic(r) // Re-panic other errors
+			}
+		}
+	}()
+
 	// Check debugger breakpoint before executing instruction
 	if vm.debugger != nil && vm.debugger.Enabled && vm.debugger.ShouldBreak(vm) {
 		// Debugger wants to break - call OnStop callback if set
@@ -786,6 +822,13 @@ func (vm *VM) step() (Value, bool, error) {
 		}
 		// Return special error to signal debug break
 		return NilVal(), false, errDebugBreak
+	}
+
+	if vm.frame.ip >= len(vm.frame.chunk.Code) {
+		// End of code reached without explicit return/halt
+		// This can happen if control flow falls off the end
+		// Implicit return nil
+		return NilVal(), true, nil
 	}
 
 	op := Opcode(vm.frame.chunk.Code[vm.frame.ip])
@@ -839,7 +882,17 @@ func (vm *VM) step() (Value, bool, error) {
 }
 
 // executeOneOp executes a single opcode (except RETURN and HALT)
-func (vm *VM) Run(chunk *Chunk) (evaluator.Object, error) {
+func (vm *VM) Run(chunk *Chunk) (result evaluator.Object, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok && e == errStackOverflow {
+				err = e
+				return
+			}
+			panic(r)
+		}
+	}()
+
 	// Create a "script" function and closure for top-level code
 	scriptFn := &CompiledFunction{
 		Chunk: chunk,
@@ -884,7 +937,24 @@ func (vm *VM) execute() (Value, error) {
 
 // executeWithDebugger is the main interpreter loop with debugger support
 func (vm *VM) executeWithDebugger() (Value, error) {
+	// Instruction counter for periodic context checks
+	opsSinceCheck := 0
+	const checkInterval = 1000
+
 	for {
+		// Check for cancellation periodically
+		opsSinceCheck++
+		if opsSinceCheck >= checkInterval {
+			opsSinceCheck = 0
+			if vm.Context != nil {
+				select {
+				case <-vm.Context.Done():
+					return NilVal(), vm.Context.Err()
+				default:
+				}
+			}
+		}
+
 		result, done, err := vm.step()
 		if err != nil {
 			// Check for early return signal
@@ -966,6 +1036,9 @@ func (vm *VM) returnWithValue(result Value) {
 func (vm *VM) push(obj Value) {
 	// Grow stack if needed
 	if vm.sp >= len(vm.stack) {
+		if vm.sp >= MaxStackSize {
+			panic(errStackOverflow)
+		}
 		// Grow by increment or double, whichever is larger
 		growBy := StackGrowthIncrement
 		if len(vm.stack) > growBy {
@@ -987,18 +1060,32 @@ func (vm *VM) push(obj Value) {
 
 func (vm *VM) pop() Value {
 	if vm.sp <= 0 {
-		panic("stack underflow")
+		panic(errStackUnderflow)
 	}
 	vm.sp--
 	return vm.stack[vm.sp]
 }
 
 func (vm *VM) peek(distance int) Value {
-	return vm.stack[vm.sp-1-distance]
+	idx := vm.sp - 1 - distance
+	if idx < 0 {
+		panic(errStackUnderflow)
+	}
+	return vm.stack[idx]
+}
+
+// checkStack ensures there are at least n elements on the stack
+func (vm *VM) checkStack(n int) {
+	if vm.sp < n {
+		panic(errStackUnderflow)
+	}
 }
 
 // Read helpers
 func (vm *VM) readByte() byte {
+	if vm.frame.ip >= len(vm.frame.chunk.Code) {
+		panic(errTruncatedBytecode)
+	}
 	b := vm.frame.chunk.Code[vm.frame.ip]
 	vm.frame.ip++
 	return b
@@ -1008,6 +1095,14 @@ func (vm *VM) readConstantIndex() int {
 	high := vm.readByte()
 	low := vm.readByte()
 	return int(high)<<8 | int(low)
+}
+
+func (vm *VM) readConstant() evaluator.Object {
+	idx := vm.readConstantIndex()
+	if idx >= len(vm.frame.chunk.Constants) {
+		panic(errInvalidConstantIndex)
+	}
+	return vm.frame.chunk.Constants[idx]
 }
 
 func (vm *VM) readJumpOffset() int {
@@ -1104,27 +1199,13 @@ func (vm *VM) isTruthy(obj Value) bool {
 	if obj.IsBool() {
 		return obj.AsBool()
 	}
-	if obj.IsNil() {
-		return false
-	}
-	// Primitive Int/Float are always true? Or 0 is false?
-	// In Funxy, only False and Nil are falsey. 0 is truthy.
-	// But let's check legacy behavior.
-	// evaluator/object.go: boolean is object.
-	// isTruthy checks for *evaluator.Boolean(false) or *evaluator.Nil.
-	// So Int(0) is true.
-
+	// Check for boxed Boolean
 	if obj.IsObj() {
-		switch v := obj.Obj.(type) {
-		case *evaluator.Nil:
-			return false
-		case *evaluator.Boolean:
-			return v.Value
-		default:
-			return true
+		if b, ok := obj.Obj.(*evaluator.Boolean); ok {
+			return b.Value
 		}
 	}
-	return true
+	return false
 }
 
 func (vm *VM) runtimeError(format string, args ...interface{}) error {
@@ -1202,7 +1283,7 @@ func (vm *VM) closeUpvalues(lastSlot int) {
 func (vm *VM) isEmptyDataInstance(data *evaluator.DataInstance) bool {
 	// First check builtin Option/Result types for fast path
 	switch data.Name {
-	case config.ZeroCtorName, config.FailCtorName:
+	case config.NoneCtorName, config.FailCtorName:
 		return true
 	case config.SomeCtorName, config.OkCtorName:
 		return false
@@ -1241,7 +1322,7 @@ func (vm *VM) isWrapperDataInstance(data *evaluator.DataInstance) bool {
 	switch data.Name {
 	case config.SomeCtorName, config.OkCtorName:
 		return true
-	case config.ZeroCtorName, config.FailCtorName:
+	case config.NoneCtorName, config.FailCtorName:
 		return false
 	}
 
@@ -1626,6 +1707,7 @@ func (vm *VM) RegisterFPTraits() {
 				typeMap = typeMap.Put(typeName, methodMap)
 			}
 		}
+
 		vm.traitMethods = vm.traitMethods.Put(traitName, typeMap)
 	}
 }

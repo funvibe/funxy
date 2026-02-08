@@ -1,2 +1,2 @@
 Processing failed with errors:
-- error at 5:19 [A003]: type error: type List has kind (* -> *), but trait Show requires kind * for parameter t (concrete type)
+- error at 5:15 [A003]: type error: type List has kind (* -> *), but trait Show requires kind * for parameter t (concrete type)

@@ -15,7 +15,7 @@
 === Indexing ===
 Some(72)
 Some(111)
-Zero
+None
 Some(111)
 === Slicing ===
 @"Hello"
@@ -37,7 +37,7 @@ hello
 true
 false
 Some(6)
-Zero
+None
 true
 true
 === Split/Join ===

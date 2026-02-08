@@ -9,11 +9,11 @@ import "lib/string" (stringSplit, stringIndexOf)
 // --- Mime Types ---
 
 fun getMimeType(filePath) {
-    if stringIndexOf(filePath, ".html") != Zero { "text/html" }
-    else if stringIndexOf(filePath, ".css") != Zero { "text/css" }
-    else if stringIndexOf(filePath, ".js") != Zero { "application/javascript" }
-    else if stringIndexOf(filePath, ".json") != Zero { "application/json" }
-    else if stringIndexOf(filePath, ".png") != Zero { "image/png" }
+    if stringIndexOf(filePath, ".html") != None { "text/html" }
+    else if stringIndexOf(filePath, ".css") != None { "text/css" }
+    else if stringIndexOf(filePath, ".js") != None { "application/javascript" }
+    else if stringIndexOf(filePath, ".json") != None { "application/json" }
+    else if stringIndexOf(filePath, ".png") != None { "image/png" }
     else { "application/octet-stream" }
 }
 
@@ -40,7 +40,7 @@ fun queryParam(key: String, ctx: Context) -> Option<String> {
     fullUrl = "http://dummy/?" ++ ctx.req.query
     match urlParse(fullUrl) {
         Ok(u) -> urlQueryParam(u, key)
-        Fail(_) -> Zero
+        Fail(_) -> None
     }
 }
 
@@ -53,7 +53,7 @@ fun cookie(name: String, ctx: Context) -> Option<String> {
 
     match found {
         Some(pair) -> Some(snd(pair))
-        Zero -> Zero
+        None -> None
     }
 }
 

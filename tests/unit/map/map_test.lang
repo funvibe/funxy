@@ -38,9 +38,9 @@ testRun("mapGet returns Some for existing key", fun() -> {
     assertEquals(mapGet(m, "key"), Some(42))
 })
 
-testRun("mapGet returns Zero for missing key", fun() -> {
+testRun("mapGet returns None for missing key", fun() -> {
     m = %{ "key" => 42 }
-    assertEquals(mapGet(m, "other"), Zero)
+    assertEquals(mapGet(m, "other"), None)
 })
 
 // =============================================
@@ -92,7 +92,7 @@ testRun("mapPut is immutable", fun() -> {
     m = %{ "a" => 1 }
     m2 = mapPut(m, "b", 2)
     assertEquals(mapSize(m), 1)
-    assertEquals(mapGet(m, "b"), Zero)
+    assertEquals(mapGet(m, "b"), None)
 })
 
 // =============================================
@@ -103,7 +103,7 @@ testRun("mapRemove removes existing key", fun() -> {
     m = %{ "a" => 1, "b" => 2 }
     m2 = mapRemove(m, "a")
     assertEquals(mapSize(m2), 1)
-    assertEquals(mapGet(m2, "a"), Zero)
+    assertEquals(mapGet(m2, "a"), None)
 })
 
 testRun("mapRemove is immutable", fun() -> {
@@ -166,7 +166,7 @@ testRun("mapMerge second map wins on conflict", fun() -> {
 testRun("Index access returns Option", fun() -> {
     m = %{ "a" => 1 }
     assertEquals(m["a"], Some(1))
-    assertEquals(m["b"], Zero)
+    assertEquals(m["b"], None)
 })
 
 // =============================================
@@ -176,7 +176,7 @@ testRun("Index access returns Option", fun() -> {
 testRun("Map with Int keys", fun() -> {
     m = %{ 1 => "one", 2 => "two" }
     assertEquals(mapGet(m, 1), Some("one"))
-    assertEquals(mapGet(m, 3), Zero)
+    assertEquals(mapGet(m, 3), None)
 })
 
 // =============================================

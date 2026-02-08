@@ -6,6 +6,7 @@ import (
 	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/token"
+	"reflect"
 )
 
 // Parser holds the state of our parser.
@@ -18,13 +19,20 @@ type Parser struct {
 	prefixParseFns map[token.TokenType]prefixParseFn
 	infixParseFns  map[token.TokenType]infixParseFn
 
-	// splitRshift tracks when we've consumed one > from >>
-	// When true, the next nextToken() call will return > instead of reading from stream
-	splitRshift bool
+	// bufferedToken holds a token that was peeked but temporarily displaced by a synthetic token
+	bufferedToken *token.Token
 
 	// disallowTrailingLambda allows disabling trailing lambda syntax in contexts like if/match conditions
 	disallowTrailingLambda bool
+
+	// depth tracks recursion depth to prevent stack overflow
+	depth int
+
+	// inRecursionRecovery suppresses duplicate depth errors while we resync
+	inRecursionRecovery bool
 }
+
+const MaxRecursionDepth = 500
 
 type (
 	prefixParseFn func() ast.Expression
@@ -217,22 +225,14 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 }
 
 func (p *Parser) nextToken() {
-	// Handle split >> case: after consuming one > from >>, inject a synthetic >
-	if p.splitRshift {
-		p.splitRshift = false
-		// Create synthetic > token at the same position
-		p.curToken = token.Token{
-			Type:    token.GT,
-			Lexeme:  ">",
-			Literal: ">",
-			Line:    p.curToken.Line,
-			Column:  p.curToken.Column + 1,
-		}
-		// peekToken remains unchanged (it was already peeked)
+	p.curToken = p.peekToken
+
+	if p.bufferedToken != nil {
+		p.peekToken = *p.bufferedToken
+		p.bufferedToken = nil
 		return
 	}
 
-	p.curToken = p.peekToken
 	peekResult := p.stream.Peek(1)
 	if len(peekResult) > 0 {
 		p.peekToken = peekResult[0]
@@ -240,6 +240,34 @@ func (p *Parser) nextToken() {
 		p.peekToken = token.Token{Type: token.EOF}
 	}
 	p.stream.Next()
+}
+
+// splitRshiftToken splits the current RSHIFT (>>) token into two GT (>) tokens.
+// It modifies curToken to be GT, sets peekToken to be GT, and buffers the original peekToken.
+func (p *Parser) splitRshiftToken() {
+	if p.bufferedToken != nil {
+		// This should not happen if logic is correct
+		panic("splitRshiftToken called with non-nil bufferedToken")
+	}
+
+	// Save original peekToken
+	originalPeek := p.peekToken
+	p.bufferedToken = &originalPeek
+
+	// Modify curToken to be GT
+	p.curToken.Type = token.GT
+	p.curToken.Literal = ">"
+	p.curToken.Lexeme = ">"
+	// Column remains same
+
+	// Set peekToken to be GT (the second half)
+	p.peekToken = token.Token{
+		Type:    token.GT,
+		Lexeme:  ">",
+		Literal: ">",
+		Line:    p.curToken.Line,
+		Column:  p.curToken.Column + 1,
+	}
 }
 
 // parseExpressionStatementOrConstDecl parses an expression statement OR a constant declaration
@@ -256,60 +284,22 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 		p.nextToken() // consume last token of expr
 		p.nextToken() // consume :-
 
-		// validate LHS - can be identifier, annotated identifier, or tuple pattern
-		var name *ast.Identifier
-		var pattern ast.Pattern
-		var typeAnnot ast.Type
-
-		if ident, ok := expr.(*ast.Identifier); ok {
-			if ident.Token.Type == token.IDENT_UPPER {
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-					diagnostics.ErrP006,
-					ident.Token,
-					"Constant name must start with a lowercase letter",
-				))
-			}
-			name = ident
-		} else if anno, ok := expr.(*ast.AnnotatedExpression); ok {
-			if ident, ok := anno.Expression.(*ast.Identifier); ok {
-				if ident.Token.Type == token.IDENT_UPPER {
-					p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-						diagnostics.ErrP006,
-						ident.Token,
-						"Constant name must start with a lowercase letter",
-					))
-				}
-				name = ident
-				typeAnnot = anno.TypeAnnotation
-			} else {
-				// Error: LHS of constant decl must be identifier or pattern
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP001, expr.GetToken(), "identifier or pattern", expr.GetToken().Type))
-				return nil
-			}
-		} else if tuple, ok := expr.(*ast.TupleLiteral); ok {
-			// Convert tuple literal to tuple pattern
-			pattern = p.tupleExprToPattern(tuple)
-			if pattern == nil {
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP006, expr.GetToken(), "invalid pattern in tuple destructuring"))
-				return nil
-			}
-		} else if list, ok := expr.(*ast.ListLiteral); ok {
-			// Convert list literal to list pattern
-			pattern = p.listExprToPattern(list)
-			if pattern == nil {
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP006, expr.GetToken(), "invalid pattern in list destructuring"))
-				return nil
-			}
-		} else if rec, ok := expr.(*ast.RecordLiteral); ok {
-			// Convert record literal to record pattern
-			pattern = p.recordExprToPattern(rec)
-			if pattern == nil {
-				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP006, expr.GetToken(), "invalid pattern in record destructuring"))
-				return nil
-			}
-		} else {
+		// validate LHS - using shared helper that also handles pattern conversion and type extraction
+		target, pattern, typeAnnot, ok := p.validateAssignmentTarget(expr)
+		if !ok {
 			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP001, expr.GetToken(), "identifier or pattern", expr.GetToken().Type))
 			return nil
+		}
+
+		// Constants cannot be MemberExpressions (e.g. obj.prop :- val is invalid)
+		if _, isMember := target.(*ast.MemberExpression); isMember {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP001, expr.GetToken(), "constant name cannot be a member expression", expr.GetToken().Type))
+			return nil
+		}
+
+		var name *ast.Identifier
+		if target != nil {
+			name = target.(*ast.Identifier)
 		}
 
 		val := p.parseExpression(LOWEST)
@@ -337,6 +327,16 @@ func (p *Parser) tupleExprToPattern(tuple *ast.TupleLiteral) ast.Pattern {
 		elements[i] = pat
 	}
 	return &ast.TuplePattern{Token: tuple.Token, Elements: elements}
+}
+
+// skipToStatementBoundary advances to a safe resync point after a fatal expression error.
+// It stops at NEWLINE, RBRACE, or EOF to avoid cascading errors.
+func (p *Parser) skipToStatementBoundary() {
+	for !p.curTokenIs(token.NEWLINE) &&
+		!p.curTokenIs(token.RBRACE) &&
+		!p.curTokenIs(token.EOF) {
+		p.nextToken()
+	}
 }
 
 // listExprToPattern converts a ListLiteral expression to a ListPattern
@@ -468,6 +468,9 @@ func (p *Parser) ParseProgram() *ast.Program {
 				p.nextToken()
 			}
 			p.nextToken()
+		} else if p.curToken.Type == token.CONST {
+			stmt = p.parseConstKeywordDeclaration()
+			p.nextToken()
 		} else if p.curToken.Type == token.FUN && (p.peekTokenIs(token.IDENT_LOWER) || p.peekTokenIs(token.IDENT_UPPER) || p.peekTokenIs(token.LT) || p.peekTokenIs(token.LPAREN)) {
 			// Function declaration (named)
 			// Or generic function fun foo<T>(...)
@@ -526,13 +529,19 @@ func (p *Parser) ParseProgram() *ast.Program {
 				// Newline handling same as default
 			}
 		} else if p.curToken.Type == token.TRAIT {
-			stmt = p.parseTraitDeclaration()
+			traitStmt := p.parseTraitDeclaration()
+			if traitStmt != nil {
+				stmt = traitStmt
+			}
 			if p.peekTokenIs(token.NEWLINE) {
 				p.nextToken()
 			}
 			p.nextToken()
 		} else if p.curToken.Type == token.INSTANCE {
-			stmt = p.parseInstanceDeclaration()
+			instStmt := p.parseInstanceDeclaration()
+			if instStmt != nil {
+				stmt = instStmt
+			}
 			if p.peekTokenIs(token.NEWLINE) {
 				p.nextToken()
 			}
@@ -543,6 +552,9 @@ func (p *Parser) ParseProgram() *ast.Program {
 		} else if p.curToken.Type == token.CONTINUE {
 			stmt = p.parseContinueStatement()
 			p.nextToken() // consume continue
+		} else if p.curToken.Type == token.RETURN {
+			stmt = p.parseReturnStatement()
+			p.nextToken() // consume return or value
 		} else if p.curToken.Type == token.PACKAGE || p.curToken.Type == token.IMPORT {
 			// Error: package/import must be at top
 			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
@@ -610,7 +622,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 			}
 		}
 
-		if stmt != nil {
+		if stmt != nil && !isNilStatement(stmt) {
 			program.Statements = append(program.Statements, stmt)
 		}
 
@@ -629,6 +641,17 @@ func (p *Parser) ParseProgram() *ast.Program {
 		}
 	}
 	return program
+}
+
+func isNilStatement(stmt ast.Statement) bool {
+	if stmt == nil {
+		return true
+	}
+	val := reflect.ValueOf(stmt)
+	if val.Kind() == reflect.Ptr && val.IsNil() {
+		return true
+	}
+	return false
 }
 
 func (p *Parser) curTokenIs(t token.TokenType) bool {

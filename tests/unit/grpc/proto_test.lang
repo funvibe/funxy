@@ -1,0 +1,67 @@
+import "lib/test" (*)
+import "lib/proto" (*)
+import "lib/grpc" (grpcLoadProto)
+import "lib/list" (contains)
+import "lib/map" (mapGet)
+
+testRun("Proto Encode/Decode", fun() {
+    // 1. Load Proto
+    // Note: Path depends on where tests are run from.
+    // Assuming project root for standard 'go test' or 'funxy test'.
+    // If running from tests/unit/grpc, we might need adjustments,
+    // but typically paths are relative to CWD.
+    res = grpcLoadProto("tests/unit/grpc/test.proto")
+
+    match res {
+        Fail(_) -> {
+            // Fallback strategy: attempt to load from the current directory
+            // if the relative path resolution fails
+            match grpcLoadProto("test.proto") {
+                Ok(_) -> ()
+                Fail(e) -> panic("Failed to load test.proto: " ++ e)
+            }
+        }
+        Ok(_) -> ()
+    }
+
+    // 2. Prepare Data
+    user = {
+        id: 101,
+        name: "Alice",
+        roles: ["admin", "dev"],
+        address: {
+            street: "123 Main St",
+            city: "Wonderland"
+        }
+    }
+
+    // 3. Encode
+    encoded = protoEncode("test.User", user)
+    assertOk(encoded)
+    bytes = unwrapResult(encoded)
+
+    // 4. Decode
+    decoded = protoDecode("test.User", bytes)
+    assertOk(decoded)
+
+    u = unwrapResult(decoded)
+
+    // 5. Assertions
+
+    // "id" -> 101
+    assertEquals(u.id, 101)
+
+    // "name" -> "Alice"
+    assertEquals(u.name, "Alice")
+
+    // "roles" -> ["admin", "dev"]
+    roles = u.roles
+    assertEquals(len(roles), 2)
+    assert(contains(roles, "admin"))
+    assert(contains(roles, "dev"))
+
+    // "address" -> Map or Record
+    addr = u.address
+    assertEquals(addr.street, "123 Main St")
+    assertEquals(addr.city, "Wonderland")
+})

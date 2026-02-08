@@ -3,8 +3,10 @@ package analyzer
 import (
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
+	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"github.com/funvibe/funxy/internal/utils"
 )
 
 // resolveTypeAlias resolves a type alias to its underlying type.
@@ -22,6 +24,47 @@ func resolveTypeAlias(t typesystem.Type, table *symbols.SymbolTable) typesystem.
 		}
 	}
 	return t
+}
+
+func isVirtualLibModule(ctx *InferenceContext, packageName string) bool {
+	if ctx == nil || ctx.Loader == nil || packageName == "" || packageName == "lib" {
+		return false
+	}
+	modInterface := ctx.Loader.GetModuleByPackageName(packageName)
+	if mod, ok := modInterface.(*modules.Module); ok {
+		return mod.IsVirtual
+	}
+	return false
+}
+
+func lookupModuleMemberFallback(ctx *InferenceContext, n *ast.MemberExpression, table *symbols.SymbolTable, tRec typesystem.TRecord) (typesystem.Type, bool) {
+	ident, ok := n.Left.(*ast.Identifier)
+	if !ok {
+		return nil, false
+	}
+	sym, ok := table.Find(ident.Value)
+	if !ok || sym.Kind != symbols.ModuleSymbol {
+		return nil, false
+	}
+	packageName, ok := table.GetPackageNameByAlias(ident.Value)
+	if !ok {
+		packageName = ident.Value
+	}
+	if !isVirtualLibModule(ctx, packageName) {
+		return nil, false
+	}
+	altName := utils.ModuleMemberFallbackName(packageName, n.Member.Value)
+	if altName == "" || altName == n.Member.Value {
+		return nil, false
+	}
+	if fieldType, ok := tRec.Fields[altName]; ok {
+		instType, _ := instantiateMemberType(ctx, n, fieldType, table)
+		if ctx.TypeMap != nil {
+			ctx.TypeMap[n.Member] = instType
+		}
+		return instType, true
+	}
+	return nil, false
 }
 
 // isImplementationInSourceModule checks if a type implements a trait in its source module.
@@ -209,9 +252,24 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 
 	// 1. Check Record Field
 	if tRec, ok := leftType.(typesystem.TRecord); ok {
+		// Populate ResolutionMap for the member if it exists
+		if ctx.ResolutionMap != nil {
+			// For records, we don't have a specific DefinitionNode for the field unless we track it during record literal creation or type definition.
+			// If TRecord comes from a type definition (unwrapped TCon), we could find the field definition.
+			// But TRecord structure doesn't store source info.
+			// We can at least resolve to something if possible, but skipping for now.
+		}
+
 		if fieldType, ok := tRec.Fields[n.Member.Value]; ok {
 			instType, _ := instantiateMemberType(ctx, n, fieldType, table)
+			// Explicitly set type for the member identifier for LSP hover
+			if ctx.TypeMap != nil {
+				ctx.TypeMap[n.Member] = instType
+			}
 			return instType, totalSubst, nil
+		}
+		if fallbackType, ok := lookupModuleMemberFallback(ctx, n, table, tRec); ok {
+			return fallbackType, totalSubst, nil
 		} else if tRec.IsOpen {
 			// Row Polymorphism: Inferred from TVar usage.
 			// We generate a substitution to refine the record type.
@@ -641,6 +699,12 @@ func inferIndexExpression(ctx *InferenceContext, n *ast.IndexExpression, table *
 		return ctx.FreshVar(), totalSubst, nil
 	}
 
+	// If the left side is still unknown, don't force it to List here.
+	// Defer until other constraints (e.g., assignments, returns) clarify.
+	if _, ok := leftType.(typesystem.TVar); ok {
+		return ctx.FreshVar(), totalSubst, nil
+	}
+
 	// Handle List indexing
 	itemType := ctx.FreshVar()
 	expectedListType := typesystem.TApp{
@@ -664,6 +728,29 @@ func inferIndexExpression(ctx *InferenceContext, n *ast.IndexExpression, table *
 // Uses the Optional trait - works with any type implementing Optional<F>
 // F<A>?.field -> F<B> where B is the type of the field
 func inferOptionalChain(ctx *InferenceContext, n *ast.MemberExpression, leftType typesystem.Type, totalSubst typesystem.Subst, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
+	// Allow nullable unions (T | Nil) to use optional chaining.
+	if union, ok := leftType.(typesystem.TUnion); ok {
+		nonNil, hasNil := splitNilUnion(union)
+		if hasNil {
+			if len(nonNil) == 0 {
+				return typesystem.Nil, totalSubst, nil
+			}
+
+			fieldTypes := make([]typesystem.Type, 0, len(nonNil)+1)
+			for _, baseType := range nonNil {
+				ft, fieldSubst, err := inferMemberOnType(ctx, n, baseType, totalSubst, table, inferFn)
+				if err != nil {
+					return nil, nil, err
+				}
+				totalSubst = fieldSubst.Compose(totalSubst)
+				fieldTypes = append(fieldTypes, ft)
+			}
+
+			fieldTypes = append(fieldTypes, typesystem.Nil)
+			return typesystem.NormalizeUnion(fieldTypes), totalSubst, nil
+		}
+	}
+
 	// Check that leftType implements Optional trait
 	if !CheckTraitImplementation(leftType, "Optional", table) {
 		return nil, nil, inferErrorf(n, "optional chaining (?.) requires type implementing Optional, got %s", leftType)
@@ -713,6 +800,19 @@ func inferOptionalChain(ctx *InferenceContext, n *ast.MemberExpression, leftType
 		Constructor: tApp.Constructor,
 		Args:        newArgs,
 	}, totalSubst, nil
+}
+
+func splitNilUnion(u typesystem.TUnion) ([]typesystem.Type, bool) {
+	nonNil := make([]typesystem.Type, 0, len(u.Types))
+	hasNil := false
+	for _, t := range u.Types {
+		if isNilType(t) {
+			hasNil = true
+			continue
+		}
+		nonNil = append(nonNil, t)
+	}
+	return nonNil, hasNil
 }
 
 // findInnerTypePosition finds which argument position matches the inner type

@@ -2,8 +2,8 @@ package evaluator
 
 import (
 	"bufio"
-	"os"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"os"
 	"sync"
 )
 
@@ -25,14 +25,16 @@ func getStdinReader() *bufio.Reader {
 func IOBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
 		// File operations
-		"readLine":   {Fn: builtinReadLine, Name: "readLine"},
-		"fileRead":   {Fn: builtinReadFile, Name: "fileRead"},
-		"fileReadAt": {Fn: builtinReadFileAt, Name: "fileReadAt"},
-		"fileWrite":  {Fn: builtinWriteFile, Name: "fileWrite"},
-		"fileAppend": {Fn: builtinAppendFile, Name: "fileAppend"},
-		"fileExists": {Fn: builtinFileExists, Name: "fileExists"},
-		"fileSize":   {Fn: builtinFileSize, Name: "fileSize"},
-		"fileDelete": {Fn: builtinDeleteFile, Name: "fileDelete"},
+		"readLine":        {Fn: builtinReadLine, Name: "readLine"},
+		"fileRead":        {Fn: builtinReadFile, Name: "fileRead"},
+		"fileReadBytes":   {Fn: builtinReadFileBytes, Name: "fileReadBytes"},
+		"fileReadBytesAt": {Fn: builtinReadFileBytesAt, Name: "fileReadBytesAt"},
+		"fileReadAt":      {Fn: builtinReadFileAt, Name: "fileReadAt"},
+		"fileWrite":       {Fn: builtinWriteFile, Name: "fileWrite"},
+		"fileAppend":      {Fn: builtinAppendFile, Name: "fileAppend"},
+		"fileExists":      {Fn: builtinFileExists, Name: "fileExists"},
+		"fileSize":        {Fn: builtinFileSize, Name: "fileSize"},
+		"fileDelete":      {Fn: builtinDeleteFile, Name: "fileDelete"},
 
 		// Directory operations
 		"dirCreate":    {Fn: builtinDirCreate, Name: "dirCreate"},
@@ -48,26 +50,6 @@ func IOBuiltins() map[string]*Builtin {
 	}
 }
 
-// stringToCharList converts a Go string to List<Char>
-func stringToCharList(s string) []Object {
-	chars := make([]Object, 0, len(s))
-	for _, r := range s {
-		chars = append(chars, &Char{Value: int64(r)})
-	}
-	return chars
-}
-
-// charListToString converts List<Char> to Go string
-func charListToString(list *List) string {
-	runes := make([]rune, list.len())
-	for i, elem := range list.ToSlice() {
-		if ch, ok := elem.(*Char); ok {
-			runes[i] = rune(ch.Value)
-		}
-	}
-	return string(runes)
-}
-
 // readLine: () -> Option<String>
 func builtinReadLine(e *Evaluator, args ...Object) Object {
 	if len(args) != 0 {
@@ -78,7 +60,7 @@ func builtinReadLine(e *Evaluator, args ...Object) Object {
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		// EOF or error
-		return makeZero()
+		return makeNone()
 	}
 
 	// Remove trailing newline
@@ -90,7 +72,7 @@ func builtinReadLine(e *Evaluator, args ...Object) Object {
 		line = line[:len(line)-1]
 	}
 
-	return makeSome(newList(stringToCharList(line)))
+	return makeSome(stringToList(line))
 }
 
 // readFile: (String) -> Result<String, String>
@@ -103,14 +85,14 @@ func builtinReadFile(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("readFile expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return makeFailStr(err.Error())
 	}
 
-	return makeOk(newList(stringToCharList(string(content))))
+	return makeOk(stringToList(string(content)))
 }
 
 // readFileAt: (String, Int, Int) -> Result<String, String>
@@ -123,7 +105,7 @@ func builtinReadFileAt(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("readFileAt expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	offsetArg, ok := args[1].(*Integer)
 	if !ok {
@@ -161,10 +143,81 @@ func builtinReadFileAt(e *Evaluator, args ...Object) Object {
 		return makeFailStr(err.Error())
 	}
 
-	return makeOk(newList(stringToCharList(string(buffer[:n]))))
+	return makeOk(stringToList(string(buffer[:n])))
 }
 
-// writeFile: (String, String) -> Result<Int, String>
+// readFileBytes: (String) -> Result<String, Bytes>
+func builtinReadFileBytes(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("readFileBytes expects 1 argument, got %d", len(args))
+	}
+
+	pathList, ok := args[0].(*List)
+	if !ok {
+		return newError("readFileBytes expects a string path, got %s", args[0].Type())
+	}
+	path := ListToString(pathList)
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return makeFailStr(err.Error())
+	}
+
+	return makeOk(BytesFromSlice(content))
+}
+
+// readFileBytesAt: (String, Int, Int) -> Result<String, Bytes>
+func builtinReadFileBytesAt(e *Evaluator, args ...Object) Object {
+	if len(args) != 3 {
+		return newError("readFileBytesAt expects 3 arguments, got %d", len(args))
+	}
+
+	pathList, ok := args[0].(*List)
+	if !ok {
+		return newError("readFileBytesAt expects a string path, got %s", args[0].Type())
+	}
+	path := ListToString(pathList)
+
+	offsetArg, ok := args[1].(*Integer)
+	if !ok {
+		return newError("readFileBytesAt expects an integer offset, got %s", args[1].Type())
+	}
+	offset := offsetArg.Value
+
+	lengthArg, ok := args[2].(*Integer)
+	if !ok {
+		return newError("readFileBytesAt expects an integer length, got %s", args[2].Type())
+	}
+	length := lengthArg.Value
+
+	if offset < 0 {
+		return makeFailStr("offset cannot be negative")
+	}
+	if length < 0 {
+		return makeFailStr("length cannot be negative")
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return makeFailStr(err.Error())
+	}
+	defer func() { _ = file.Close() }()
+
+	_, err = file.Seek(offset, 0)
+	if err != nil {
+		return makeFailStr(err.Error())
+	}
+
+	buffer := make([]byte, length)
+	n, err := file.Read(buffer)
+	if err != nil && n == 0 {
+		return makeFailStr(err.Error())
+	}
+
+	return makeOk(BytesFromSlice(buffer[:n]))
+}
+
+// writeFile: (String, String | Bytes) -> Result<String, Int>
 func builtinWriteFile(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("writeFile expects 2 arguments, got %d", len(args))
@@ -174,15 +227,14 @@ func builtinWriteFile(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("writeFile expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
-	contentList, ok := args[1].(*List)
-	if !ok {
-		return newError("writeFile expects a string content, got %s", args[1].Type())
+	content, err := GetContentBytes(args[1])
+	if err != nil {
+		return makeFailStr(err.Error())
 	}
-	content := charListToString(contentList)
 
-	err := os.WriteFile(path, []byte(content), 0644)
+	err = os.WriteFile(path, content, 0644)
 	if err != nil {
 		return makeFailStr(err.Error())
 	}
@@ -190,7 +242,7 @@ func builtinWriteFile(e *Evaluator, args ...Object) Object {
 	return makeOk(&Integer{Value: int64(len(content))})
 }
 
-// appendFile: (String, String) -> Result<Int, String>
+// appendFile: (String, String | Bytes) -> Result<String, Int>
 func builtinAppendFile(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("appendFile expects 2 arguments, got %d", len(args))
@@ -200,13 +252,12 @@ func builtinAppendFile(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("appendFile expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
-	contentList, ok := args[1].(*List)
-	if !ok {
-		return newError("appendFile expects a string content, got %s", args[1].Type())
+	content, err := GetContentBytes(args[1])
+	if err != nil {
+		return makeFailStr(err.Error())
 	}
-	content := charListToString(contentList)
 
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -214,7 +265,7 @@ func builtinAppendFile(e *Evaluator, args ...Object) Object {
 	}
 	defer func() { _ = file.Close() }()
 
-	n, err := file.WriteString(content)
+	n, err := file.Write(content)
 	if err != nil {
 		return makeFailStr(err.Error())
 	}
@@ -232,7 +283,7 @@ func builtinFileExists(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("fileExists expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -241,7 +292,7 @@ func builtinFileExists(e *Evaluator, args ...Object) Object {
 	return TRUE
 }
 
-// fileSize: (String) -> Result<Int, String>
+// fileSize: (String) -> Result<String, Int>
 func builtinFileSize(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("fileSize expects 1 argument, got %d", len(args))
@@ -251,7 +302,7 @@ func builtinFileSize(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("fileSize expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -261,7 +312,7 @@ func builtinFileSize(e *Evaluator, args ...Object) Object {
 	return makeOk(&Integer{Value: info.Size()})
 }
 
-// deleteFile: (String) -> Result<Nil, String>
+// fileDelete: (String) -> Result<String, Nil>
 func builtinDeleteFile(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("deleteFile expects 1 argument, got %d", len(args))
@@ -271,7 +322,7 @@ func builtinDeleteFile(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("deleteFile expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	err := os.Remove(path)
 	if err != nil {
@@ -285,7 +336,7 @@ func builtinDeleteFile(e *Evaluator, args ...Object) Object {
 // Directory operations
 // ============================================================================
 
-// dirCreate: (String) -> Result<Nil, String>
+// dirCreate: (String) -> Result<String, Nil>
 func builtinDirCreate(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("dirCreate expects 1 argument, got %d", len(args))
@@ -295,7 +346,7 @@ func builtinDirCreate(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dirCreate expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	err := os.Mkdir(path, 0755)
 	if err != nil {
@@ -305,7 +356,7 @@ func builtinDirCreate(e *Evaluator, args ...Object) Object {
 	return makeOk(&Nil{})
 }
 
-// dirCreateAll: (String) -> Result<Nil, String>
+// dirCreateAll: (String) -> Result<String, Nil>
 func builtinDirCreateAll(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("dirCreateAll expects 1 argument, got %d", len(args))
@@ -315,7 +366,7 @@ func builtinDirCreateAll(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dirCreateAll expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	err := os.MkdirAll(path, 0755)
 	if err != nil {
@@ -325,7 +376,7 @@ func builtinDirCreateAll(e *Evaluator, args ...Object) Object {
 	return makeOk(&Nil{})
 }
 
-// dirRemove: (String) -> Result<Nil, String>
+// dirRemove: (String) -> Result<String, Nil>
 func builtinDirRemove(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("dirRemove expects 1 argument, got %d", len(args))
@@ -335,7 +386,7 @@ func builtinDirRemove(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dirRemove expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	err := os.Remove(path)
 	if err != nil {
@@ -345,7 +396,7 @@ func builtinDirRemove(e *Evaluator, args ...Object) Object {
 	return makeOk(&Nil{})
 }
 
-// dirRemoveAll: (String) -> Result<Nil, String>
+// dirRemoveAll: (String) -> Result<String, Nil>
 func builtinDirRemoveAll(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("dirRemoveAll expects 1 argument, got %d", len(args))
@@ -355,7 +406,7 @@ func builtinDirRemoveAll(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dirRemoveAll expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	err := os.RemoveAll(path)
 	if err != nil {
@@ -365,7 +416,7 @@ func builtinDirRemoveAll(e *Evaluator, args ...Object) Object {
 	return makeOk(&Nil{})
 }
 
-// dirList: (String) -> Result<List<String>, String>
+// dirList: (String) -> Result<String, List<String>>
 func builtinDirList(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("dirList expects 1 argument, got %d", len(args))
@@ -375,7 +426,7 @@ func builtinDirList(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dirList expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -384,7 +435,7 @@ func builtinDirList(e *Evaluator, args ...Object) Object {
 
 	names := make([]Object, len(entries))
 	for i, entry := range entries {
-		names[i] = newList(stringToCharList(entry.Name()))
+		names[i] = stringToList(entry.Name())
 	}
 
 	return makeOk(newList(names))
@@ -400,7 +451,7 @@ func builtinDirExists(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("dirExists expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -426,7 +477,7 @@ func builtinIsDir(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("isDir expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -449,7 +500,7 @@ func builtinIsFile(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("isFile expects a string path, got %s", args[0].Type())
 	}
-	path := charListToString(pathList)
+	path := ListToString(pathList)
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -464,22 +515,29 @@ func builtinIsFile(e *Evaluator, args ...Object) Object {
 
 // SetIOBuiltinTypes sets type info for io builtins
 func SetIOBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
+	stringType := typesystem.String
+	// String | Bytes
+	stringOrBytes := typesystem.StringOrBytes
+
+	// Result<String, Bytes>
+	resultBytes := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "Result"},
+		Args:        []typesystem.Type{stringType, typesystem.Bytes},
 	}
-	resultStringString := typesystem.TApp{
+
+	resultString := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
 		Args:        []typesystem.Type{stringType, stringType},
 	}
-	resultIntString := typesystem.TApp{
+	// Result<String, Int>
+	resultInt := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.Int, stringType},
+		Args:        []typesystem.Type{stringType, typesystem.Int},
 	}
-	resultNilString := typesystem.TApp{
+	// Result<String, Nil>
+	resultNil := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.Nil, stringType},
+		Args:        []typesystem.Type{stringType, typesystem.Nil},
 	}
 	optionString := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Option"},
@@ -490,6 +548,7 @@ func SetIOBuiltinTypes(builtins map[string]*Builtin) {
 		Constructor: typesystem.TCon{Name: "List"},
 		Args:        []typesystem.Type{stringType},
 	}
+	// Result<String, List<String>>
 	resultListString := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
 		Args:        []typesystem.Type{stringType, listString},
@@ -497,20 +556,22 @@ func SetIOBuiltinTypes(builtins map[string]*Builtin) {
 
 	types := map[string]typesystem.Type{
 		// File operations
-		"readLine":   typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optionString},
-		"fileRead":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringString},
-		"fileReadAt": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Int}, ReturnType: resultStringString},
-		"fileWrite":  typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultIntString},
-		"fileAppend": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultIntString},
-		"fileExists": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-		"fileSize":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultIntString},
-		"fileDelete": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNilString},
+		"readLine":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optionString},
+		"fileRead":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultString},
+		"fileReadBytes":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytes},
+		"fileReadBytesAt": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Int}, ReturnType: resultBytes},
+		"fileReadAt":      typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Int}, ReturnType: resultString},
+		"fileWrite":       typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultInt},
+		"fileAppend":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultInt},
+		"fileExists":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
+		"fileSize":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultInt},
+		"fileDelete":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
 
 		// Directory operations
-		"dirCreate":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNilString},
-		"dirCreateAll": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNilString},
-		"dirRemove":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNilString},
-		"dirRemoveAll": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNilString},
+		"dirCreate":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
+		"dirCreateAll": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
+		"dirRemove":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
+		"dirRemoveAll": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
 		"dirList":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultListString},
 		"dirExists":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
 

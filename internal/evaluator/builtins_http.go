@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"io"
 	"net/http"
-	"github.com/funvibe/funxy/internal/typesystem"
+	"strings"
 	"sync"
 	"time"
 )
@@ -41,7 +42,23 @@ func HttpBuiltins() map[string]*Builtin {
 	}
 }
 
-// httpGet: (String) -> Result<HttpResponse, String>
+// getBodyReader converts String or Bytes object to io.Reader
+func getBodyReader(obj Object) (io.Reader, error) {
+	switch o := obj.(type) {
+	case *List:
+		// Empty list is empty string
+		if o.len() == 0 || isStringList(o) {
+			return strings.NewReader(ListToString(o)), nil
+		}
+		return nil, fmt.Errorf("expected String or Bytes body, got %s", o.Type())
+	case *Bytes:
+		return bytes.NewReader(o.data), nil
+	default:
+		return nil, fmt.Errorf("expected String or Bytes body, got %s", o.Type())
+	}
+}
+
+// httpGet: (String) -> Result<String, HttpResponse>
 func builtinHttpGet(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("httpGet expects 1 argument, got %d", len(args))
@@ -52,11 +69,11 @@ func builtinHttpGet(e *Evaluator, args ...Object) Object {
 		return newError("httpGet expects a string URL, got %s", args[0].Type())
 	}
 
-	url := listToString(urlList)
-	return doHttpRequest("GET", url, nil, "")
+	url := ListToString(urlList)
+	return doHttpRequest("GET", url, nil, nil)
 }
 
-// httpPost: (String, String) -> Result<HttpResponse, String>
+// httpPost: (String, String | Bytes) -> Result<String, HttpResponse>
 func builtinHttpPost(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("httpPost expects 2 arguments, got %d", len(args))
@@ -67,17 +84,16 @@ func builtinHttpPost(e *Evaluator, args ...Object) Object {
 		return newError("httpPost expects a string URL, got %s", args[0].Type())
 	}
 
-	bodyList, ok := args[1].(*List)
-	if !ok {
-		return newError("httpPost expects a string body, got %s", args[1].Type())
+	bodyReader, err := getBodyReader(args[1])
+	if err != nil {
+		return newError("httpPost: %s", err.Error())
 	}
 
-	url := listToString(urlList)
-	body := listToString(bodyList)
-	return doHttpRequest("POST", url, nil, body)
+	url := ListToString(urlList)
+	return doHttpRequest("POST", url, nil, bodyReader)
 }
 
-// httpPostJson: (String, A) -> Result<HttpResponse, String>
+// httpPostJson: (String, A) -> Result<String, HttpResponse>
 func builtinHttpPostJson(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("httpPostJson expects 2 arguments, got %d", len(args))
@@ -88,7 +104,7 @@ func builtinHttpPostJson(e *Evaluator, args ...Object) Object {
 		return newError("httpPostJson expects a string URL, got %s", args[0].Type())
 	}
 
-	url := listToString(urlList)
+	url := ListToString(urlList)
 
 	// Encode data to JSON
 	jsonBody, err := objectToJson(args[1])
@@ -97,10 +113,10 @@ func builtinHttpPostJson(e *Evaluator, args ...Object) Object {
 	}
 
 	headers := [][2]string{{"Content-Type", "application/json"}}
-	return doHttpRequest("POST", url, headers, jsonBody)
+	return doHttpRequest("POST", url, headers, strings.NewReader(jsonBody))
 }
 
-// httpPut: (String, String) -> Result<HttpResponse, String>
+// httpPut: (String, String | Bytes) -> Result<String, HttpResponse>
 func builtinHttpPut(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("httpPut expects 2 arguments, got %d", len(args))
@@ -111,17 +127,16 @@ func builtinHttpPut(e *Evaluator, args ...Object) Object {
 		return newError("httpPut expects a string URL, got %s", args[0].Type())
 	}
 
-	bodyList, ok := args[1].(*List)
-	if !ok {
-		return newError("httpPut expects a string body, got %s", args[1].Type())
+	bodyReader, err := getBodyReader(args[1])
+	if err != nil {
+		return newError("httpPut: %s", err.Error())
 	}
 
-	url := listToString(urlList)
-	body := listToString(bodyList)
-	return doHttpRequest("PUT", url, nil, body)
+	url := ListToString(urlList)
+	return doHttpRequest("PUT", url, nil, bodyReader)
 }
 
-// httpDelete: (String) -> Result<HttpResponse, String>
+// httpDelete: (String) -> Result<String, HttpResponse>
 func builtinHttpDelete(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("httpDelete expects 1 argument, got %d", len(args))
@@ -132,11 +147,11 @@ func builtinHttpDelete(e *Evaluator, args ...Object) Object {
 		return newError("httpDelete expects a string URL, got %s", args[0].Type())
 	}
 
-	url := listToString(urlList)
-	return doHttpRequest("DELETE", url, nil, "")
+	url := ListToString(urlList)
+	return doHttpRequest("DELETE", url, nil, nil)
 }
 
-// httpRequest: (String, String, List<(String, String)>, String, Int) -> Result<HttpResponse, String>
+// httpRequest: (String, String, List<(String, String)>, String, Int) -> Result<String, HttpResponse>
 // timeout is in milliseconds, 0 or negative means use global default
 func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 	if len(args) != 5 {
@@ -158,9 +173,9 @@ func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 		return newError("httpRequest expects a list of headers, got %s", args[2].Type())
 	}
 
-	bodyList, ok := args[3].(*List)
-	if !ok {
-		return newError("httpRequest expects a string body, got %s", args[3].Type())
+	bodyReader, err := getBodyReader(args[3])
+	if err != nil {
+		return newError("httpRequest: %s", err.Error())
 	}
 
 	timeoutInt, ok := args[4].(*Integer)
@@ -168,9 +183,8 @@ func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 		return newError("httpRequest expects an integer timeout (ms), got %s", args[4].Type())
 	}
 
-	method := listToString(methodList)
-	url := listToString(urlList)
-	body := listToString(bodyList)
+	method := ListToString(methodList)
+	url := ListToString(urlList)
 
 	// Parse headers
 	var headers [][2]string
@@ -184,7 +198,7 @@ func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 		if !ok1 || !ok2 {
 			return newError("httpRequest header key and value must be strings")
 		}
-		headers = append(headers, [2]string{listToString(keyList), listToString(valList)})
+		headers = append(headers, [2]string{ListToString(keyList), ListToString(valList)})
 	}
 
 	// Use per-request timeout if specified, otherwise global
@@ -193,7 +207,7 @@ func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 		timeout = time.Duration(timeoutInt.Value) * time.Millisecond
 	}
 
-	return doHttpRequestWithTimeout(method, url, headers, body, timeout)
+	return doHttpRequestWithTimeout(method, url, headers, bodyReader, timeout)
 }
 
 // httpSetTimeout: (Int) -> Nil
@@ -212,12 +226,12 @@ func builtinHttpSetTimeout(e *Evaluator, args ...Object) Object {
 }
 
 // doHttpRequest performs the actual HTTP request with global timeout
-func doHttpRequest(method, url string, headers [][2]string, body string) Object {
+func doHttpRequest(method, url string, headers [][2]string, body io.Reader) Object {
 	return doHttpRequestWithTimeout(method, url, headers, body, httpTimeout)
 }
 
 // doHttpRequestWithTimeout performs HTTP request with specified timeout
-func doHttpRequestWithTimeout(method, url string, headers [][2]string, body string, timeout time.Duration) Object {
+func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.Reader, timeout time.Duration) Object {
 	// Check for HTTP mocks first
 	tr := GetTestRunner()
 
@@ -241,12 +255,7 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body stri
 		Timeout: timeout,
 	}
 
-	var reqBody io.Reader
-	if body != "" {
-		reqBody = bytes.NewBufferString(body)
-	}
-
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return makeFail(stringToList("failed to create request: " + err.Error()))
 	}
@@ -311,7 +320,7 @@ func objectToGoValue(obj Object) interface{} {
 	case *List:
 		// Check if it's a string (list of chars)
 		if isStringList(o) {
-			return listToString(o)
+			return ListToString(o)
 		}
 		// Regular list
 		arr := make([]interface{}, o.len())
@@ -339,7 +348,7 @@ func objectToGoValue(obj Object) interface{} {
 				return objectToGoValue(o.Fields[0])
 			}
 			return nil
-		case "Zero", "JNull":
+		case "None", "JNull":
 			return nil
 		case "Ok":
 			if len(o.Fields) > 0 {
@@ -381,7 +390,7 @@ func isStringList(l *List) bool {
 	return ok
 }
 
-// httpServe: (Int, (HttpRequest) -> HttpResponse) -> Result<Nil, String>
+// httpServe: (Int, (HttpRequest) -> HttpResponse) -> Result<String, Nil>
 func builtinHttpServe(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("httpServe expects 2 arguments, got %d", len(args))
@@ -473,8 +482,8 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 			if headersList, ok := headersObj.(*List); ok {
 				for _, h := range headersList.ToSlice() {
 					if tuple, ok := h.(*Tuple); ok && len(tuple.Elements) == 2 {
-						key := listToString(tuple.Elements[0].(*List))
-						val := listToString(tuple.Elements[1].(*List))
+						key := ListToString(tuple.Elements[0].(*List))
+						val := ListToString(tuple.Elements[1].(*List))
 						w.Header().Set(key, val)
 					}
 				}
@@ -493,7 +502,7 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		// Write body
 		if bodyObj := respRec.Get("body"); bodyObj != nil {
 			if bodyList, ok := bodyObj.(*List); ok {
-				_, _ = w.Write([]byte(listToString(bodyList)))
+				_, _ = w.Write([]byte(ListToString(bodyList)))
 			}
 		}
 	})
@@ -606,8 +615,8 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 			if headersList, ok := headersObj.(*List); ok {
 				for _, h := range headersList.ToSlice() {
 					if tuple, ok := h.(*Tuple); ok && len(tuple.Elements) == 2 {
-						key := listToString(tuple.Elements[0].(*List))
-						val := listToString(tuple.Elements[1].(*List))
+						key := ListToString(tuple.Elements[0].(*List))
+						val := ListToString(tuple.Elements[1].(*List))
 						w.Header().Set(key, val)
 					}
 				}
@@ -626,7 +635,7 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 		// Write body
 		if bodyObj := respRec.Get("body"); bodyObj != nil {
 			if bodyList, ok := bodyObj.(*List); ok {
-				_, _ = w.Write([]byte(listToString(bodyList)))
+				_, _ = w.Write([]byte(ListToString(bodyList)))
 			}
 		}
 	})
@@ -716,6 +725,7 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 		Constructor: typesystem.TCon{Name: "List"},
 		Args:        []typesystem.Type{typesystem.Char},
 	}
+	stringOrBytes := typesystem.StringOrBytes
 
 	// (String, String) - header tuple
 	headerTuple := typesystem.TTuple{
@@ -737,10 +747,10 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 		},
 	}
 
-	// Result<HttpResponse, String>
+	// Result<String, HttpResponse>
 	resultResponse := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{responseType, stringType},
+		Args:        []typesystem.Type{stringType, responseType},
 	}
 
 	// HttpRequest type for server
@@ -760,21 +770,21 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 		ReturnType: responseType,
 	}
 
-	// Result<Nil, String>
+	// Result<String, Nil>
 	resultNil := typesystem.TApp{
 		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.Nil, stringType},
+		Args:        []typesystem.Type{stringType, typesystem.Nil},
 	}
 
 	types := map[string]typesystem.Type{
 		"httpGet":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
-		"httpPost":     typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultResponse},
+		"httpPost":     typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultResponse},
 		"httpPostJson": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.TVar{Name: "A"}}, ReturnType: resultResponse},
-		"httpPut":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultResponse},
+		"httpPut":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultResponse},
 		"httpDelete":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
 		// httpRequest has 2 default params: body="" and timeout=0
 		"httpRequest": typesystem.TFunc{
-			Params:       []typesystem.Type{stringType, stringType, headersType, stringType, typesystem.Int},
+			Params:       []typesystem.Type{stringType, stringType, headersType, stringOrBytes, typesystem.Int},
 			ReturnType:   resultResponse,
 			DefaultCount: 2, // body and timeout have defaults
 		},

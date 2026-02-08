@@ -320,7 +320,7 @@ func registerDefaultInstances(e *Evaluator) {
 	reg("List", newList([]Object{}))
 	reg("String", newList([]Object{})) // Empty string
 	reg("Map", NewMap())
-	reg("Option", makeZero()) // None
+	reg("Option", makeNone()) // None
 	// Result default? Usually not defined, or Error?
 	// Maybe Default is not implemented for Result generally unless E has default?
 	// Skip Result for now.

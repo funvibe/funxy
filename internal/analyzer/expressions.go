@@ -48,7 +48,9 @@ func (w *walker) VisitOperatorAsFunction(expr *ast.OperatorAsFunction) {
 }
 
 func (w *walker) VisitPostfixExpression(expr *ast.PostfixExpression) {
-	expr.Left.Accept(w)
+	if expr.Left != nil {
+		expr.Left.Accept(w)
+	}
 }
 
 func (w *walker) VisitCallExpression(expr *ast.CallExpression) {
@@ -64,22 +66,32 @@ func (w *walker) VisitCallExpression(expr *ast.CallExpression) {
 }
 
 func (w *walker) VisitMemberExpression(n *ast.MemberExpression) {
-	n.Left.Accept(w)
+	if n.Left != nil {
+		n.Left.Accept(w)
+	}
 }
 
 func (w *walker) VisitIndexExpression(n *ast.IndexExpression) {
-	n.Left.Accept(w)
-	n.Index.Accept(w)
+	if n.Left != nil {
+		n.Left.Accept(w)
+	}
+	if n.Index != nil {
+		n.Index.Accept(w)
+	}
 }
 
 func (w *walker) VisitAnnotatedExpression(expr *ast.AnnotatedExpression) {
 	// Validating type annotations would happen during inference
-	expr.Expression.Accept(w)
+	if expr.Expression != nil {
+		expr.Expression.Accept(w)
+	}
 }
 
 func (w *walker) VisitTypeApplicationExpression(n *ast.TypeApplicationExpression) {
 	// Analyze the base expression (e.g., the identifier/function being applied)
-	n.Expression.Accept(w)
+	if n.Expression != nil {
+		n.Expression.Accept(w)
+	}
 
 	// Validate Type Arguments
 	for _, t := range n.TypeArguments {
@@ -160,11 +172,18 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	prevInFn := w.inFunctionBody
 	w.inFunctionBody = true
 
-	n.Body.Accept(w)
+	w.pushReturnType(declaredRet)
+	defer w.popReturnType()
+
+	if n.Body != nil {
+		n.Body.Accept(w)
+	}
 
 	w.inFunctionBody = prevInFn
 
-	w.markTailCalls(n.Body) // Mark tail calls in lambda body
+	if n.Body != nil {
+		w.markTailCalls(n.Body) // Mark tail calls in lambda body
+	}
 	w.inLoop = prevInLoop
 
 	// Check return type if explicit
@@ -216,7 +235,9 @@ func (w *walker) VisitStringLiteral(n *ast.StringLiteral)             {}
 func (w *walker) VisitFormatStringLiteral(n *ast.FormatStringLiteral) {}
 func (w *walker) VisitInterpolatedString(n *ast.InterpolatedString) {
 	for _, part := range n.Parts {
-		part.Accept(w)
+		if part != nil {
+			part.Accept(w)
+		}
 	}
 }
 func (w *walker) VisitCharLiteral(n *ast.CharLiteral) {}
@@ -227,13 +248,20 @@ func (w *walker) VisitBitsLiteral(n *ast.BitsLiteral) {}
 
 func (w *walker) VisitTupleLiteral(lit *ast.TupleLiteral) {
 	for _, el := range lit.Elements {
-		el.Accept(w)
+		if el != nil {
+			el.Accept(w)
+		}
 	}
 }
 
 func (w *walker) VisitListLiteral(n *ast.ListLiteral) {
+	if n == nil {
+		return
+	}
 	for _, el := range n.Elements {
-		el.Accept(w)
+		if el != nil {
+			el.Accept(w)
+		}
 	}
 }
 
@@ -250,14 +278,20 @@ func (w *walker) VisitRecordLiteral(n *ast.RecordLiteral) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		n.Fields[k].Accept(w)
+		if n.Fields[k] != nil {
+			n.Fields[k].Accept(w)
+		}
 	}
 }
 
 func (w *walker) VisitMapLiteral(n *ast.MapLiteral) {
 	for _, pair := range n.Pairs {
-		pair.Key.Accept(w)
-		pair.Value.Accept(w)
+		if pair.Key != nil {
+			pair.Key.Accept(w)
+		}
+		if pair.Value != nil {
+			pair.Value.Accept(w)
+		}
 	}
 }
 
@@ -271,37 +305,36 @@ func (w *walker) VisitListComprehension(n *ast.ListComprehension) {
 	for _, clause := range n.Clauses {
 		switch c := clause.(type) {
 		case *ast.CompGenerator:
-			// First, infer the iterable type
-			iterType, _, err := InferWithContext(w.inferCtx, c.Iterable, w.symbolTable)
-			if err != nil {
-				w.appendError(c.Iterable, err)
-				continue
+			// Visit iterable expression to traverse nested nodes.
+			if c.Iterable != nil {
+				c.Iterable.Accept(w)
 			}
 
-			// Extract element type from List<T>
-			var elemType typesystem.Type = w.freshVar()
-			if app, ok := iterType.(typesystem.TApp); ok {
-				if con, ok := app.Constructor.(typesystem.TCon); ok && con.Name == "List" && len(app.Args) > 0 {
-					elemType = app.Args[0]
-				}
-			}
-
-			// Bind the pattern variable(s) with the element type
-			w.bindPatternVariables(c.Pattern, elemType, c.Token)
+			// Bind pattern variables without inferring iterable types here.
+			// Full type validation happens in inferListComprehension during inference.
+			w.bindPatternVariablesLoose(c.Pattern, c.Token)
 		case *ast.CompFilter:
 			// Filters use variables from generators
-			c.Condition.Accept(w)
+			if c.Condition != nil {
+				c.Condition.Accept(w)
+			}
 		}
 	}
 
 	// Visit the output expression (uses all bound variables)
-	n.Output.Accept(w)
+	if n.Output != nil {
+		n.Output.Accept(w)
+	}
 }
 
 func (w *walker) VisitRangeExpression(n *ast.RangeExpression) {
-	n.Start.Accept(w)
+	if n.Start != nil {
+		n.Start.Accept(w)
+	}
 	if n.Next != nil {
 		n.Next.Accept(w)
 	}
-	n.End.Accept(w)
+	if n.End != nil {
+		n.End.Accept(w)
+	}
 }

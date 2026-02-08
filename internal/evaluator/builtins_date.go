@@ -488,7 +488,7 @@ func builtinDateParse(e *Evaluator, args ...Object) Object {
 
 	t, err := time.ParseInLocation(goFormat, str, time.Local)
 	if err != nil {
-		return makeZero()
+		return makeNone()
 	}
 
 	return makeSome(makeDate(t))

@@ -104,6 +104,93 @@ func (ctx *InferenceContext) SolveConstraints(table *symbols.SymbolTable) []erro
 						continue
 					}
 
+					// Functional Dependencies Logic
+					if deps, ok := table.GetTraitFunctionalDependencies(c.Trait); ok && len(deps) > 0 {
+						typeParamNames, _ := table.GetTraitTypeParams(c.Trait)
+						paramIndices := make(map[string]int)
+						for i, name := range typeParamNames {
+							paramIndices[name] = i
+						}
+
+						for _, dep := range deps {
+							// Check if all "From" arguments are resolved (not variables)
+							canResolve := true
+							for _, fromVar := range dep.From {
+								idx, ok := paramIndices[fromVar]
+								if !ok || idx >= len(concreteArgs) {
+									canResolve = false
+									break
+								}
+								// Apply current subst to ensure we see latest state
+								arg := concreteArgs[idx].Apply(ctx.GlobalSubst)
+								if isVar(arg) {
+									canResolve = false
+									break
+								}
+							}
+
+							if canResolve {
+								allImpls := table.GetAllImplementations()[c.Trait]
+								for _, implDef := range allImpls {
+									if len(implDef.TargetTypes) != len(concreteArgs) {
+										continue
+									}
+
+									// Check unification of "From" args
+									match := true
+									subst := make(typesystem.Subst)
+
+									for _, fromVar := range dep.From {
+										idx := paramIndices[fromVar]
+
+										// Rename instance vars unique to this attempt
+										instArg := symbols.RenameTypeVars(implDef.TargetTypes[idx], "inst")
+
+										// Unify concrete (known) with instance (generic)
+										s, err := typesystem.Unify(concreteArgs[idx], instArg)
+										if err != nil {
+											match = false
+											break
+										}
+										subst = subst.Compose(s)
+									}
+
+									if match {
+										// Found a match based on functional dependency inputs.
+										// Enforce outputs.
+										for _, toVar := range dep.To {
+											idx := paramIndices[toVar]
+
+											instArg := symbols.RenameTypeVars(implDef.TargetTypes[idx], "inst")
+											expectedType := instArg.Apply(subst)
+
+											// Unify the inferred type with the constraint argument
+											// This fixes the type variable in the constraint!
+											s, err := typesystem.Unify(concreteArgs[idx], expectedType)
+											if err == nil && len(s) > 0 {
+												ctx.GlobalSubst = s.Compose(ctx.GlobalSubst)
+												changed = true
+
+												// Update local args for immediate consistency in this loop
+												concreteArgs[idx] = concreteArgs[idx].Apply(s)
+												c.Args[idx] = c.Args[idx].Apply(s)
+											}
+										}
+										// We found the determining instance. Stop searching.
+										// (Consistency check ensures uniqueness)
+										break
+									}
+								}
+							}
+						}
+
+						// If we resolved something using FunDeps, we continue.
+						// Should we skip the heuristic? Yes, FunDeps are stricter.
+						if changed {
+							continue
+						}
+					}
+
 					// Attempt to find instance even with unresolved variables if it's uniquely determined
 					// (Functional Dependency heuristic: if partial match is unique, assume it)
 					// Filter concrete args: keep resolved ones

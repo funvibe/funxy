@@ -1,2 +1,2 @@
 Processing failed with errors:
-- error at 9:19 [A004]: redefinition of symbol: 'overlapping instances for trait Printable: Int and Int'
+- error at 9:10 [A004]: redefinition of symbol: 'overlapping instances for trait Printable: Int and Int'

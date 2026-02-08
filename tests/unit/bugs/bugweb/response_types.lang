@@ -8,7 +8,7 @@ type ResponseBody =
     | BodyJson Json
     | BodyEmpty
 
-type Response = {
+type alias Response = {
     status: Int,
     headers: List<(String, String)>,
     body: ResponseBody

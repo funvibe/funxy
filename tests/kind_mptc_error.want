@@ -1,2 +1,2 @@
 Processing failed with errors:
-- error at 10:25 [A003]: type error: type MyInt has kind *, but trait Transform requires kind (* -> *) for parameter f (type constructor)
+- error at 10:20 [A003]: type error: type MyInt has kind *, but trait Transform requires kind (* -> *) for parameter f (type constructor)

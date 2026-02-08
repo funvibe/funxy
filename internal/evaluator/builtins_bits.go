@@ -3,9 +3,9 @@ package evaluator
 import (
 	"encoding/hex"
 	"fmt"
-	"math"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"math"
 	"unsafe"
 )
 
@@ -230,7 +230,16 @@ func builtinBitsSlice(e *Evaluator, args ...Object) Object {
 	if !ok {
 		return newError("bitsSlice expects Int as third argument, got %s", args[2].Type())
 	}
-	return bits.slice(int(start.Value), int(end.Value))
+
+	from := int(start.Value)
+	to := int(end.Value)
+	length := bits.Len()
+
+	if from < 0 || to > length || from > to {
+		return makeFailStr(fmt.Sprintf("bitsSlice: indices [%d, %d) out of bounds for bits of length %d", from, to, length))
+	}
+
+	return makeOk(bits.slice(from, to))
 }
 
 func builtinBitsGet(e *Evaluator, args ...Object) Object {
@@ -247,7 +256,7 @@ func builtinBitsGet(e *Evaluator, args ...Object) Object {
 	}
 	bit := bits.Get(int(idx.Value))
 	if bit < 0 {
-		return makeZero()
+		return makeNone()
 	}
 	return makeSome(&Integer{Value: int64(bit)})
 }

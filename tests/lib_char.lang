@@ -97,4 +97,11 @@ code = charToCode(c)
 back = charFromCode(code)
 print(c == back)  // true
 
+print("=== Unicode Literals ===")
+print('\u0041') // 'A'
+print('\u00ff') // 'ÿ'
+print('\u042F') // 'Я'
+print('\U0000042F') // 'Я'
+print('\U0001F600') // '😀'
+
 print("=== lib/char tests passed! ===")

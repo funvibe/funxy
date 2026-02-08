@@ -2,9 +2,9 @@ package vm
 
 import (
 	"fmt"
+	"github.com/funvibe/funxy/internal/evaluator"
 	"io"
 	"os"
-	"github.com/funvibe/funxy/internal/evaluator"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -462,7 +462,7 @@ func (d *Debugger) GetGlobals(vm *VM) map[string]evaluator.Object {
 			}
 			globals[name] = val
 		case *evaluator.DataInstance:
-			// Skip built-in nullary constructors (like Zero, JNull)
+			// Skip built-in nullary constructors (like None, JNull)
 			if isBuiltinConstructor(name) {
 				return true
 			}
@@ -510,7 +510,7 @@ func isBuiltinType(name string) bool {
 // isBuiltinConstructor checks if a constructor name is built-in
 func isBuiltinConstructor(name string) bool {
 	builtinConstructors := map[string]bool{
-		"Some": true, "Zero": true, "Ok": true, "Fail": true,
+		"Some": true, "None": true, "Ok": true, "Fail": true,
 		"JNull": true, "JBool": true, "JNum": true, "JStr": true,
 		"JArr": true, "JObj": true, "Nil": true,
 		// Note: MkEmail is not a built-in, it's user-defined in the test file
@@ -542,8 +542,8 @@ func isLikelyBuiltin(name string) bool {
 		"sin": true, "cos": true, "tan": true, "asin": true, "acos": true, "atan": true,
 		"log": true, "log2": true, "log10": true, "exp": true, "floor": true, "ceil": true,
 		"round": true, "trunc": true, "sign": true, "pi": true, "e": true,
-		"intToFloat": true, "floatToInt": true, "sprintf": true, "read": true, "write": true,
-		"getType": true, "typeOf": true, "id": true, "const": true, "flip": true,
+		"intToFloat": true, "floatToInt": true, "format": true, "read": true, "write": true,
+		"getType": true, "typeOf": true, "id": true, "constant": true, "flip": true,
 		"pure": true, "fmap": true, "mempty": true, "show": true,
 	}
 	return builtinFuncs[name]

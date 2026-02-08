@@ -4,7 +4,7 @@ package source (*)
 type Data = Con1(Int) | Con2(String) | Con3
 
 // Record type
-type Config = {
+type alias Config = {
     id: Int,
     enabled: Bool
 }

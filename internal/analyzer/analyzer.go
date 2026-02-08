@@ -17,6 +17,7 @@ type Analyzer struct {
 	loader        ModuleLoader
 	BaseDir       string
 	TypeMap       map[ast.Node]typesystem.Type      // Stores inferred types
+	ResolutionMap map[ast.Node]symbols.Symbol       // Stores resolved symbols
 	inferCtx      *InferenceContext                 // Shared inference context for consistent TVar naming
 	TraitDefaults map[string]*ast.FunctionStatement // "TraitName.methodName" -> FunctionStatement
 }
@@ -94,12 +95,14 @@ type walker struct {
 	loader            ModuleLoader
 	BaseDir           string
 	TypeMap           map[ast.Node]typesystem.Type
+	ResolutionMap     map[ast.Node]symbols.Symbol
 	inferCtx          *InferenceContext // Context for type inference
 	mode              AnalysisMode
 	TraitDefaults     map[string]*ast.FunctionStatement // "TraitName.methodName" -> FunctionStatement
 	currentModuleName string                            // Name of the module being analyzed (for OriginModule tracking)
 	currentFile       string                            // Current file being analyzed (for error reporting)
 	inFunctionBody    bool                              // Track if we are inside a function body (to skip redundant expression inference)
+	returnTypeStack   []typesystem.Type                 // Stack of expected return types for nested functions
 	Program           *ast.Program                      // Reference to the program being analyzed (for AST injection)
 	importedModules   map[string]bool                   // Track imported modules by absolute path to detect duplicates
 	injectedStmts     []ast.Statement                   // Statements queued for injection (e.g. dictionaries)
@@ -180,7 +183,14 @@ func (a *Analyzer) AnalyzeHeaders(node ast.Node) []*diagnostics.DiagnosticError 
 	if a.inferCtx == nil {
 		a.inferCtx = NewInferenceContextWithLoader(a.loader)
 	}
+	// Save previous state to restore after analysis
+	prevTypeMap := a.inferCtx.TypeMap
 	a.inferCtx.TypeMap = typeMap
+
+	// Restore state on exit
+	defer func() {
+		a.inferCtx.TypeMap = prevTypeMap
+	}()
 
 	w := &walker{
 		symbolTable:     a.symbolTable,
@@ -219,7 +229,14 @@ func (a *Analyzer) AnalyzeInstances(node ast.Node) []*diagnostics.DiagnosticErro
 	if a.inferCtx == nil {
 		a.inferCtx = NewInferenceContextWithLoader(a.loader)
 	}
+	// Save previous state to restore after analysis
+	prevTypeMap := a.inferCtx.TypeMap
 	a.inferCtx.TypeMap = a.TypeMap
+
+	// Restore state on exit
+	defer func() {
+		a.inferCtx.TypeMap = prevTypeMap
+	}()
 
 	w := &walker{
 		symbolTable:   a.symbolTable,
@@ -269,11 +286,28 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
 		a.TypeMap = make(map[ast.Node]typesystem.Type)
 	}
 
+	// Ensure ResolutionMap is initialized
+	if a.ResolutionMap == nil {
+		a.ResolutionMap = make(map[ast.Node]symbols.Symbol)
+	}
+
 	// Reuse shared InferenceContext (counter continues from Headers pass)
 	if a.inferCtx == nil {
 		a.inferCtx = NewInferenceContextWithLoader(a.loader)
 	}
+	// Save previous state to restore after analysis (for recursive calls)
+	// This is critical because inferCtx is shared between parent and imported modules.
+	prevTypeMap := a.inferCtx.TypeMap
+	prevResolutionMap := a.inferCtx.ResolutionMap
+
 	a.inferCtx.TypeMap = a.TypeMap
+	a.inferCtx.ResolutionMap = a.ResolutionMap
+
+	// Restore state on exit
+	defer func() {
+		a.inferCtx.TypeMap = prevTypeMap
+		a.inferCtx.ResolutionMap = prevResolutionMap
+	}()
 
 	// Pass 2: Main analysis with expected types available
 	// Ensure expected return types are propagated to TypeMap if possible,
@@ -287,6 +321,7 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
 		loader:          a.loader,
 		BaseDir:         a.BaseDir,
 		TypeMap:         a.TypeMap,
+		ResolutionMap:   a.ResolutionMap,
 		inferCtx:        a.inferCtx, // Use shared context
 		mode:            ModeBodies,
 		TraitDefaults:   a.TraitDefaults,
@@ -312,7 +347,7 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
 
 	// Resolve Pending Witnesses (global pass)
 	ResolvePendingWitnesses(a.inferCtx, nil, a.symbolTable, func(n ast.Node, err error) {
-		w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), "GLOBAL RESOLVE: "+err.Error()))
+		w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), err.Error()))
 	})
 
 	// Solve Deferred Constraints
@@ -324,7 +359,43 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
 		w.appendError(nil, err)
 	}
 
+	ResolvePendingReturnContexts(a.inferCtx, func(n ast.Node, err error) {
+		w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), err.Error()))
+	})
+
 	return w.getErrors()
+}
+
+// ResolvePendingReturnContexts validates return-dispatch calls after inference.
+func ResolvePendingReturnContexts(ctx *InferenceContext, errorHandler func(ast.Node, error)) {
+	var remaining []PendingReturnContext
+	for _, pr := range ctx.PendingReturnContexts {
+		if pr.Node == nil || ctx.TypeMap == nil {
+			continue
+		}
+		t, ok := ctx.TypeMap[pr.Node]
+		if !ok || t == nil {
+			remaining = append(remaining, pr)
+			continue
+		}
+		resolved := t.Apply(ctx.GlobalSubst)
+		if !hasReturnDispatchContext(resolved) {
+			errorHandler(pr.Node, fmt.Errorf("cannot infer %s: return type context required (add annotation or use in context)", pr.Method))
+		}
+	}
+	ctx.PendingReturnContexts = remaining
+}
+
+func hasReturnDispatchContext(t typesystem.Type) bool {
+	switch typ := t.(type) {
+	case typesystem.TApp:
+		if _, ok := typ.Constructor.(typesystem.TCon); ok {
+			return true
+		}
+	case typesystem.TCon:
+		return true
+	}
+	return false
 }
 
 // ResolvePendingWitnesses resolves deferred type class constraints
@@ -371,7 +442,6 @@ func ResolvePendingWitnesses(ctx *InferenceContext, subst typesystem.Subst, tabl
 		}
 
 		isGenericWitness := false
-		debugLog := ""
 
 		if hasVar {
 			// If it's a TVar, check if it has the required constraint in the current context.
@@ -388,8 +458,6 @@ func ResolvePendingWitnesses(ctx *InferenceContext, subst typesystem.Subst, tabl
 					if subst != nil {
 						left = left.Apply(subst)
 					}
-
-					debugLog += fmt.Sprintf("[%s vs %s] ", left, concreteType)
 
 					// Check if variable matches
 					if tv, ok := left.(typesystem.TVar); ok {
@@ -466,33 +534,13 @@ func ResolvePendingWitnesses(ctx *InferenceContext, subst typesystem.Subst, tabl
 			// It basically replaces the old check table.IsImplementationExists(pw.Trait, unwrappedArgs)
 			// because if evidence exists, implementation exists.
 
-			// However, SolveWitness might fail if evidence is not found.
-			// IsImplementationExists checked the *list* of implementations.
-			// SolveWitness checks the *EvidenceTable* (map key -> name).
-			// They should be in sync if declarations_instances.go registers both.
-
 			witnessExpr, err := ctx.SolveWitness(pw.Node, pw.Trait, resolvedArgs, table)
 			if err != nil {
-				// Fallback to IsImplementationExists check for error reporting?
-				// If SolveWitness failed, it means we don't have a way to construct it.
-				// But IsImplementationExists might say "yes" (e.g. builtins not fully migrated).
-				// If so, we shouldn't fail hard if we are in transition?
-				// But Architect says we need to fix the gap.
-
 				// If SolveWitness fails, it is a legitimate error.
-				debugConstraints := ""
-				for _, c := range ctx.Constraints {
-					l := c.Left.Apply(ctx.GlobalSubst)
-					if subst != nil {
-						l = l.Apply(subst)
-					}
-					debugConstraints += fmt.Sprintf("[%s %s: %s] ", c.Kind, l.String(), c.Trait)
-				}
-
 				if len(unwrappedArgs) == 1 {
-					errorHandler(pw.Node, fmt.Errorf("evidence for class %s for type %s not found (SolveWitness failed): %v [Constraints: %s]", pw.Trait, unwrappedArgs[0], err, debugConstraints))
+					errorHandler(pw.Node, fmt.Errorf("type %s does not implement trait %s", unwrappedArgs[0], pw.Trait))
 				} else {
-					errorHandler(pw.Node, fmt.Errorf("evidence for class %s for types %v not found (SolveWitness failed): %v [Constraints: %s]", pw.Trait, unwrappedArgs, err, debugConstraints))
+					errorHandler(pw.Node, fmt.Errorf("types %v do not implement trait %s", unwrappedArgs, pw.Trait))
 				}
 				continue
 			}
@@ -512,14 +560,6 @@ func ResolvePendingWitnesses(ctx *InferenceContext, subst typesystem.Subst, tabl
 				pw.Node.Witnesses = newSlice
 			}
 			pw.Node.Witnesses[pw.Index] = witnessExpr
-		}
-
-		// Store witness in AST (Legacy map support - keep for now)
-		if pw.Node.Witness == nil {
-			pw.Node.Witness = make(map[string][]typesystem.Type)
-		}
-		if witnesses, ok := pw.Node.Witness.(map[string][]typesystem.Type); ok {
-			witnesses[pw.Trait] = resolvedArgs
 		}
 	}
 	ctx.PendingWitnesses = remaining
@@ -550,6 +590,7 @@ func (a *Analyzer) Analyze(node ast.Node) []*diagnostics.DiagnosticError {
 
 	// Fallback for partial nodes (Expressions, etc.) - ModeFull
 	typeMap := make(map[ast.Node]typesystem.Type)
+	resolutionMap := make(map[ast.Node]symbols.Symbol)
 	w := &walker{
 		symbolTable:     a.symbolTable,
 		errorSet:        make(map[string]*diagnostics.DiagnosticError),
@@ -558,14 +599,19 @@ func (a *Analyzer) Analyze(node ast.Node) []*diagnostics.DiagnosticError {
 		loader:          a.loader,
 		BaseDir:         a.BaseDir,
 		TypeMap:         typeMap,
+		ResolutionMap:   resolutionMap,
 		inferCtx:        NewInferenceContextWithTypeMap(typeMap),
 		mode:            ModeFull,
 		TraitDefaults:   a.TraitDefaults,
 		importedModules: make(map[string]bool),
 	}
+	// Share ResolutionMap with InferenceContext
+	w.inferCtx.ResolutionMap = resolutionMap
+
 	node.Accept(w)
 
 	a.TypeMap = w.TypeMap
+	a.ResolutionMap = w.ResolutionMap
 
 	// Validate exports after processing the whole program
 	if prog, ok := node.(*ast.Program); ok {

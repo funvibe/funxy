@@ -1,5 +1,5 @@
 package helpers
 
-fun format(s: String) -> String {
+fun pretty(s: String) -> String {
     s
 }

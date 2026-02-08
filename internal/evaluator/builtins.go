@@ -236,7 +236,7 @@ var Builtins = map[string]*Builtin{
 		},
 		Fn: func(e *Evaluator, args ...Object) Object {
 			if len(args) != 2 {
-				return newError("wrong number of arguments to const. got=%d, want=2", len(args))
+				return newError("wrong number of arguments to constant. got=%d, want=2", len(args))
 			}
 			return args[0]
 		},
@@ -259,7 +259,7 @@ var Builtins = map[string]*Builtin{
 			if str == "" && args[0] != nil {
 				if list, ok := args[0].(*List); ok && list.len() > 0 {
 					// Non-empty list that's not a string
-					return makeZero()
+					return makeNone()
 				}
 			}
 
@@ -307,8 +307,8 @@ var Builtins = map[string]*Builtin{
 			return &Integer{Value: int64(f.Value)}
 		},
 	},
-	"sprintf": {
-		Name: "sprintf",
+	"format": {
+		Name: "format",
 		TypeInfo: typesystem.TFunc{
 			Params: []typesystem.Type{
 				typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}},
@@ -319,11 +319,21 @@ var Builtins = map[string]*Builtin{
 		},
 		Fn: func(e *Evaluator, args ...Object) Object {
 			if len(args) < 1 {
-				return newError("sprintf expects at least 1 argument (format string)")
+				return newError("format expects at least 1 argument (format string)")
 			}
 
 			// 1. Get format string
 			fmtStr := listToString(args[0])
+
+			// Validate format string and argument count
+			expectedArgs, err := CountFormatVerbs(fmtStr)
+			if err != nil {
+				return newError("invalid format string: %s", err.Error())
+			}
+			// args[0] is fmtStr, args[1:] are arguments
+			if len(args)-1 != expectedArgs {
+				return newError("format string expects %d arguments, got %d", expectedArgs, len(args)-1)
+			}
 
 			// 2. Unwrap values
 			var goArgs []interface{}
@@ -667,7 +677,7 @@ func getDefaultValue(t typesystem.Type) Object {
 			case config.OptionTypeName:
 				return &DataInstance{
 					TypeName: config.OptionTypeName,
-					Name:     config.ZeroCtorName,
+					Name:     config.NoneCtorName,
 					Fields:   []Object{},
 				}
 			}
@@ -823,7 +833,7 @@ func GetBuiltinsList() map[string]Object {
 		env.Set(name, builtin)
 	}
 
-	// Add option builtins (isSome, isZero, unwrap, unwrapOr, etc.)
+	// Add option builtins (isSome, isNone, unwrap, unwrapOr, etc.)
 	for name, builtin := range OptionBuiltins() {
 		env.Set(name, builtin)
 	}
@@ -835,6 +845,16 @@ func GetBuiltinsList() map[string]Object {
 
 	// Add flag builtins
 	for name, builtin := range FlagBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Add grpc builtins
+	for name, builtin := range GrpcBuiltins() {
+		env.Set(name, builtin)
+	}
+
+	// Add proto builtins
+	for name, builtin := range ProtoBuiltins() {
 		env.Set(name, builtin)
 	}
 
@@ -924,8 +944,8 @@ func RegisterBuiltins(env *Environment) {
 	// Option
 	env.Set(config.OptionTypeName, &TypeObject{TypeVal: typesystem.TCon{Name: config.OptionTypeName}})
 	env.Set(config.SomeCtorName, &Constructor{Name: config.SomeCtorName, TypeName: config.OptionTypeName, Arity: 1})
-	// Zero is a nullary constructor (constant), not a function
-	env.Set(config.ZeroCtorName, &DataInstance{Name: config.ZeroCtorName, Fields: []Object{}, TypeName: config.OptionTypeName})
+	// None is a nullary constructor (constant), not a function
+	env.Set(config.NoneCtorName, &DataInstance{Name: config.NoneCtorName, Fields: []Object{}, TypeName: config.OptionTypeName})
 
 	// Json ADT
 	env.Set("Json", &TypeObject{TypeVal: typesystem.TCon{Name: "Json"}})
@@ -1161,6 +1181,14 @@ func RegisterBuiltins(env *Environment) {
 	for name, builtin := range Builtins {
 		env.Set(name, builtin)
 	}
+
+	// Register Option/Result helpers in prelude (tree-walk runtime)
+	for name, builtin := range OptionBuiltins() {
+		env.Set(name, builtin)
+	}
+	for name, builtin := range ResultBuiltins() {
+		env.Set(name, builtin)
+	}
 }
 
 // listToString extracts a Go string from a List<Char> object
@@ -1185,10 +1213,48 @@ func ListToString(list *List) string {
 	return result
 }
 
-// makeZero creates an Option Zero (None) value
-func makeZero() Object {
+// isZeroValue is a helper function to check if an object represents a "zero" or "empty" value
+// This is used for Option and Result types, and also for general truthiness checks.
+func isZeroValue(obj Object) bool {
+	if obj == nil {
+		return true
+	}
+
+	switch obj := obj.(type) {
+	case *Boolean:
+		return !obj.Value
+	case *Integer:
+		return obj.Value == 0
+	case *Float:
+		return obj.Value == 0.0
+	case *List:
+		return obj.Len() == 0
+	case *Map:
+		return obj.Len() == 0
+	case *DataInstance:
+		// For ADTs like Option and Result, check if it's the "empty" constructor
+		return obj.Name == config.NoneCtorName || obj.Name == config.FailCtorName
+	case *Nil:
+		return true
+	case *BigInt:
+		return obj.Value.Cmp(big.NewInt(0)) == 0
+	case *Rational:
+		return obj.Value.Cmp(big.NewRat(0, 1)) == 0
+	case *Bytes:
+		return obj.Len() == 0
+	case *Bits:
+		return obj.Len() == 0
+	case *Char:
+		return obj.Value == 0
+	default:
+		return false
+	}
+}
+
+// makeNone creates an Option None (None) value
+func makeNone() Object {
 	return &DataInstance{
-		Name:     config.ZeroCtorName,
+		Name:     config.NoneCtorName,
 		Fields:   []Object{},
 		TypeName: config.OptionTypeName,
 	}
@@ -1231,7 +1297,7 @@ func makeFailStr(errMsg string) Object {
 }
 
 // parseStringToType parses a string into a value of the specified type
-// Returns Some(value) on success, Zero on failure
+// Returns Some(value) on success, None on failure
 func parseStringToType(s string, t typesystem.Type) Object {
 	switch ty := t.(type) {
 	case typesystem.TCon:
@@ -1240,14 +1306,14 @@ func parseStringToType(s string, t typesystem.Type) Object {
 			// Strict parsing - must be a valid integer with no extra characters
 			val, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 			if err != nil {
-				return makeZero()
+				return makeNone()
 			}
 			return makeSome(&Integer{Value: val})
 		case "Float":
 			// Strict parsing
 			val, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 			if err != nil {
-				return makeZero()
+				return makeNone()
 			}
 			return makeSome(&Float{Value: val})
 		case "Bool":
@@ -1257,30 +1323,30 @@ func parseStringToType(s string, t typesystem.Type) Object {
 			case "false":
 				return makeSome(&Boolean{Value: false})
 			default:
-				return makeZero()
+				return makeNone()
 			}
 		case "BigInt":
 			val := new(big.Int)
 			_, ok := val.SetString(strings.TrimSpace(s), 10)
 			if !ok {
-				return makeZero()
+				return makeNone()
 			}
 			return makeSome(&BigInt{Value: val})
 		case "Rational":
 			val := new(big.Rat)
 			_, ok := val.SetString(strings.TrimSpace(s))
 			if !ok {
-				return makeZero()
+				return makeNone()
 			}
 			return makeSome(&Rational{Value: val})
 		case "Char":
 			runes := []rune(s)
 			if len(runes) != 1 {
-				return makeZero()
+				return makeNone()
 			}
 			return makeSome(&Char{Value: int64(runes[0])})
 		default:
-			return makeZero()
+			return makeNone()
 		}
 	case typesystem.TApp:
 		// Handle String = List<Char>
@@ -1292,9 +1358,9 @@ func parseStringToType(s string, t typesystem.Type) Object {
 				}
 			}
 		}
-		return makeZero()
+		return makeNone()
 	default:
-		return makeZero()
+		return makeNone()
 	}
 }
 
@@ -1330,8 +1396,12 @@ func builtinRunResultT(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("runResultT expects 1 argument")
 	}
-	if di, ok := args[0].(*DataInstance); ok && di.TypeName == "ResultT" && len(di.Fields) == 1 {
-		return di.Fields[0]
+	if di, ok := args[0].(*DataInstance); ok {
+		if di.TypeName == "ResultT" && len(di.Fields) == 1 {
+			return di.Fields[0]
+		}
+		// If check failed, inspect why
+		return newError("runResultT expects ResultT. Got: Name=%s, TypeName=%s, Fields=%d", di.Name, di.TypeName, len(di.Fields))
 	}
-	return newError("runResultT expects ResultT")
+	return newError("runResultT expects ResultT. Got: %s (Type: %s)", args[0].Inspect(), args[0].Type())
 }

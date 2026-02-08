@@ -17,7 +17,7 @@ testRun("Type Aliases", \ -> {
 })
 
 // Record Type
-type Point = { x: Int, y: Int }
+type alias Point = { x: Int, y: Int }
 
 fun (p: Point) distSq() -> Int {
     p.x * p.x + p.y * p.y

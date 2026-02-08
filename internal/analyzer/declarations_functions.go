@@ -8,6 +8,13 @@ import (
 )
 
 func inferKindFromFunction(n *ast.FunctionStatement, tpName string, table *symbols.SymbolTable) typesystem.Kind {
+	// 0. Check for explicit kind annotation in AST
+	for _, tp := range n.TypeParams {
+		if tp.Value == tpName && tp.Kind != nil {
+			return tp.Kind
+		}
+	}
+
 	maxArgs := 0
 	for _, p := range n.Parameters {
 		if p.Type != nil {
@@ -265,6 +272,30 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		))
 	}
 
+	// Wrap in TForall if generics exist
+	var finalFnType typesystem.Type = fnType
+	if len(n.TypeParams) > 0 {
+		var vars []typesystem.TVar
+		for _, tp := range n.TypeParams {
+			// Retrieve TVar from sigScope to ensure we use the same variables
+			if sym, ok := sigScope.Find(tp.Value); ok {
+				if tv, ok := sym.Type.(typesystem.TVar); ok {
+					vars = append(vars, tv)
+				}
+			}
+		}
+
+		// TFunc constraints represent runtime witness parameters (dictionaries).
+		// TForall constraints represent logical bounds. Currently, we map all constraints
+		// to TFunc witness parameters to support dictionary passing.
+		// Future: Explicit bounded quantification in TForall.
+
+		finalFnType = typesystem.TForall{
+			Vars: vars,
+			Type: fnType,
+		}
+	}
+
 	// Define in Symbol Table
 	// In ModeHeaders: We are defining top-level functions.
 	// In ModeBodies: We are defining nested functions (since top-level uses analyzeFunctionBody).
@@ -314,7 +345,7 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 				"invalid receiver type for extension method",
 			))
 		} else {
-			w.symbolTable.RegisterExtensionMethod(typeName, n.Name.Value, fnType)
+			w.symbolTable.RegisterExtensionMethod(typeName, n.Name.Value, finalFnType)
 		}
 	} else {
 		// Functions are immutable by default
@@ -323,11 +354,13 @@ func (w *walker) VisitFunctionStatement(n *ast.FunctionStatement) {
 		if w.mode == ModeBodies {
 			module = "" // Nested functions don't belong to module exports usually?
 		}
-		w.symbolTable.DefineConstant(n.Name.Value, fnType, module)
+		w.symbolTable.DefineConstant(n.Name.Value, finalFnType, module)
+		w.symbolTable.SetDefinitionNode(n.Name.Value, n.Name)
 	}
 
 	// Store Function Type in TypeMap
-	w.TypeMap[n] = fnType
+	w.TypeMap[n] = finalFnType
+	w.TypeMap[n.Name] = finalFnType // Also map the identifier for hover on definition
 
 	// Analyze Body
 	// If ModeHeaders: Skip body.
