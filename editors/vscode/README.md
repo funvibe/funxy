@@ -19,7 +19,11 @@ This extension requires the **Funxy Language Server** (`funxy-lsp`) to be instal
 1. Go to the [Releases page](https://github.com/funvibe/funxy/releases).
 2. Download the `funxy-lsp` binary for your OS.
 3. Rename it to `funxy-lsp` (or `funxy-lsp.exe` on Windows).
-4. Place it in a folder included in your system's `PATH`.
+4. On macOS/Linux, you may need to make it executable:
+   ```bash
+   chmod +x funxy-lsp
+   ```
+5. Place it in a folder included in your system's `PATH`.
 
 ### Step 2: Install the Extension
 

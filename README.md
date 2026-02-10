@@ -36,7 +36,14 @@ Each release also includes a `-tree` variant (e.g., `funxy-darwin-arm64-tree`) w
 
 ```bash
 mv funxy-darwin-arm64 funxy
+chmod +x funxy
 ./funxy hello.lang
+```
+
+If you downloaded the binary on macOS/Linux and see a permission error, mark it executable:
+
+```bash
+chmod +x funxy
 ```
 
 ### Build from Source
@@ -355,6 +362,10 @@ To use the new Language Server Protocol features:
         *   macOS: `funxy-lsp-darwin-amd64` (rename to `funxy-lsp`)
         *   Linux: `funxy-lsp-linux-amd64` (rename to `funxy-lsp`)
         *   Windows: `funxy-lsp-windows-amd64.exe` (rename to `funxy-lsp.exe`)
+    *   On macOS/Linux, you may need to make the binary executable:
+        ```bash
+        chmod +x funxy-lsp
+        ```
     *   Place the binary in a directory included in your system's `PATH`.
     *   Install the updated extension from `editors/vscode`.
     *   It will automatically try to find `funxy-lsp` in your PATH.
