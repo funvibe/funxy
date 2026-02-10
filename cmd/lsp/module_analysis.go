@@ -33,11 +33,23 @@ func (s *LanguageServer) analyzeModuleDocument(content string, uri string) (*pip
 	moduleDir := utils.GetModuleDir(ctx.FilePath)
 	openDocs := s.collectOpenDocuments(uri, content)
 
-	modInterface, err := loader.GetModule(moduleDir)
+	// Check if this is a standalone script (no package declaration)
+	isScript := !hasPackageDeclaration(content)
+
+	var mod *modules.Module
+	var err error
+
+	if !isScript {
+		var modInterface interface{}
+		modInterface, err = loader.GetModule(moduleDir)
+		if m, ok := modInterface.(*modules.Module); ok {
+			mod = m
+		}
+	}
+
 	var targetProgram *ast.Program
-	mod, _ := modInterface.(*modules.Module)
-	if err != nil || mod == nil {
-		if isMultiplePackagesError(err) {
+	if isScript || err != nil || mod == nil {
+		if !isScript && isMultiplePackagesError(err) {
 			return nil, false
 		}
 		var parseErrors []*diagnostics.DiagnosticError

@@ -70,6 +70,11 @@ func NewFromData(data []byte) *Generator {
 	}
 }
 
+// Intn exposes the random source's Intn method for embedded structs.
+func (g *Generator) Intn(n int) int {
+	return g.src.Intn(n)
+}
+
 // Src returns the random source of the generator.
 func (g *Generator) Src() RandomSource {
 	return g.src

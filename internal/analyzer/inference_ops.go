@@ -92,6 +92,7 @@ func getTraitForOp(op string) string {
 }
 
 func inferPrefixExpression(ctx *InferenceContext, n *ast.PrefixExpression, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
+	resolver := &ResolverWrapper{Table: table, Ctx: ctx}
 	right, s1, err := inferFn(n.Right, table)
 	if err != nil {
 		return nil, nil, err
@@ -101,30 +102,30 @@ func inferPrefixExpression(ctx *InferenceContext, n *ast.PrefixExpression, table
 
 	switch n.Operator {
 	case "-":
-		if subst, err := typesystem.Unify(right, typesystem.Int); err == nil {
+		if subst, err := typesystem.UnifyWithResolver(right, typesystem.Int, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			return typesystem.Int, totalSubst, nil
-		} else if subst, err := typesystem.Unify(right, typesystem.Float); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(right, typesystem.Float, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			return typesystem.Float, totalSubst, nil
-		} else if subst, err := typesystem.Unify(right, typesystem.BigInt); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(right, typesystem.BigInt, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			return typesystem.BigInt, totalSubst, nil
-		} else if subst, err := typesystem.Unify(right, typesystem.Rational); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(right, typesystem.Rational, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			return typesystem.Rational, totalSubst, nil
 		} else {
 			return nil, nil, inferErrorf(n, "operator '-' expects Int, Float, BigInt or Rational, got %s", right)
 		}
 	case "!":
-		subst, err := typesystem.Unify(right, typesystem.Bool)
+		subst, err := typesystem.UnifyWithResolver(right, typesystem.Bool, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n, "operator '!' expects Bool, got %s", right)
 		}
 		totalSubst = subst.Compose(totalSubst)
 		return typesystem.Bool, totalSubst, nil
 	case "~":
-		subst, err := typesystem.Unify(right, typesystem.Int)
+		subst, err := typesystem.UnifyWithResolver(right, typesystem.Int, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n, "operator '~' expects Int, got %s", right)
 		}
@@ -136,6 +137,7 @@ func inferPrefixExpression(ctx *InferenceContext, n *ast.PrefixExpression, table
 }
 
 func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
+	resolver := &ResolverWrapper{Table: table, Ctx: ctx}
 	l, s1, err := inferFn(n.Left, table)
 	if err != nil {
 		return nil, nil, err
@@ -199,7 +201,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		if traitName, ok := table.GetTraitForOperator(n.Operator); ok {
 			if eitherHasConstraint(ctx, table, l, r, traitName) {
 				// Both operands should have the same type
-				subst, err := typesystem.Unify(l, r)
+				subst, err := typesystem.UnifyWithResolver(l, r, resolver)
 				if err != nil {
 					// Implicit conversion check
 					isLInt := false
@@ -232,21 +234,21 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		}
 
 		// Fallback to built-in numeric types
-		if subst, err := typesystem.Unify(l, typesystem.Int); err == nil {
+		if subst, err := typesystem.UnifyWithResolver(l, typesystem.Int, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			// Apply to r
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.Int); err == nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, typesystem.Int, resolver); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 				return typesystem.Int, totalSubst, nil
-			} else if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
+			} else if subst2, err := typesystem.UnifyWithResolver(r, typesystem.Float, resolver); err == nil {
 				// Int + Float -> Float
 				totalSubst = subst2.Compose(totalSubst)
 				return typesystem.Float, totalSubst, nil
 			} else {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Int or Float, got %s", n.Operator, r)
 			}
-		} else if subst, err := typesystem.Unify(l, typesystem.Float); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(l, typesystem.Float, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
 			if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
@@ -259,19 +261,19 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			} else {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Float or Int, got %s", n.Operator, r)
 			}
-		} else if subst, err := typesystem.Unify(l, typesystem.BigInt); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(l, typesystem.BigInt, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.BigInt); err == nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, typesystem.BigInt, resolver); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 				return typesystem.BigInt, totalSubst, nil
 			} else {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be BigInt, got %s", n.Operator, r)
 			}
-		} else if subst, err := typesystem.Unify(l, typesystem.Rational); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(l, typesystem.Rational, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.Rational); err == nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, typesystem.Rational, resolver); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 				return typesystem.Rational, totalSubst, nil
 			} else {
@@ -286,7 +288,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		if traitName, ok := table.GetTraitForOperator(n.Operator); ok {
 			if eitherHasConstraint(ctx, table, l, r, traitName) {
 				// Both operands should have the same type
-				subst, err := typesystem.Unify(l, r)
+				subst, err := typesystem.UnifyWithResolver(l, r, resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(n, "type mismatch in %s: %s vs %s", n.Operator, l, r)
 				}
@@ -296,14 +298,14 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		}
 
 		// Fallback to built-in Int operations
-		subst, err := typesystem.Unify(l, typesystem.Int)
+		subst, err := typesystem.UnifyWithResolver(l, typesystem.Int, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Left, "left operand of %s must be Int, got %s", n.Operator, l)
 		}
 		totalSubst = subst.Compose(totalSubst)
 		r = r.Apply(totalSubst)
 
-		subst2, err := typesystem.Unify(r, typesystem.Int)
+		subst2, err := typesystem.UnifyWithResolver(r, typesystem.Int, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Right, "right operand of %s must be Int, got %s", n.Operator, r)
 		}
@@ -317,7 +319,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			// Check if EITHER type has implementation OR constraint (for lambdas where fresh TVar unifies with constrained type)
 			if eitherHasConstraint(ctx, table, l, r, traitName) {
 				// Both operands should have the same type
-				subst, err := typesystem.Unify(l, r)
+				subst, err := typesystem.UnifyWithResolver(l, r, resolver)
 				if err != nil {
 					// Implicit conversion check for comparison
 					isLInt := false
@@ -349,17 +351,17 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		}
 
 		// Fallback to built-in comparison for numeric types
-		if subst, err := typesystem.Unify(l, typesystem.Int); err == nil {
+		if subst, err := typesystem.UnifyWithResolver(l, typesystem.Int, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.Int); err == nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, typesystem.Int, resolver); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
-			} else if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
+			} else if subst2, err := typesystem.UnifyWithResolver(r, typesystem.Float, resolver); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 			} else {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Int or Float, got %s", n.Operator, r)
 			}
-		} else if subst, err := typesystem.Unify(l, typesystem.Float); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(l, typesystem.Float, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
 			if subst2, err := typesystem.Unify(r, typesystem.Float); err == nil {
@@ -369,27 +371,27 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			} else {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Float or Int, got %s", n.Operator, r)
 			}
-		} else if subst, err := typesystem.Unify(l, typesystem.BigInt); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(l, typesystem.BigInt, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.BigInt); err != nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, typesystem.BigInt, resolver); err != nil {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be BigInt, got %s", n.Operator, r)
 			} else {
 				totalSubst = subst2.Compose(totalSubst)
 			}
-		} else if subst, err := typesystem.Unify(l, typesystem.Rational); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(l, typesystem.Rational, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.Rational); err != nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, typesystem.Rational, resolver); err != nil {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Rational, got %s", n.Operator, r)
 			} else {
 				totalSubst = subst2.Compose(totalSubst)
 			}
-		} else if subst, err := typesystem.Unify(l, typesystem.TCon{Name: config.BytesTypeName}); err == nil {
+		} else if subst, err := typesystem.UnifyWithResolver(l, typesystem.TCon{Name: config.BytesTypeName}, resolver); err == nil {
 			// Bytes comparison (lexicographic)
 			totalSubst = subst.Compose(totalSubst)
 			r = r.Apply(totalSubst)
-			if subst2, err := typesystem.Unify(r, typesystem.TCon{Name: config.BytesTypeName}); err != nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, typesystem.TCon{Name: config.BytesTypeName}, resolver); err != nil {
 				return nil, nil, inferErrorf(n.Right, "right operand of %s must be Bytes, got %s", n.Operator, r)
 			} else {
 				totalSubst = subst2.Compose(totalSubst)
@@ -412,7 +414,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		if traitName, ok := table.GetTraitForOperator(n.Operator); ok {
 			if eitherHasConstraint(ctx, table, l, r, traitName) {
 				// Both operands should have the same type
-				subst, err := typesystem.Unify(l, r)
+				subst, err := typesystem.UnifyWithResolver(l, r, resolver)
 				if err != nil {
 					// Implicit conversion check for equality
 					isLInt := false
@@ -475,13 +477,13 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 
 	case "&&", "||":
 		// Logical AND/OR - both operands must be Bool
-		subst, err := typesystem.Unify(l, typesystem.Bool)
+		subst, err := typesystem.UnifyWithResolver(l, typesystem.Bool, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Left, "left operand of %s must be Bool, got %s", n.Operator, l)
 		}
 		totalSubst = subst.Compose(totalSubst)
 
-		subst2, err := typesystem.Unify(r, typesystem.Bool)
+		subst2, err := typesystem.UnifyWithResolver(r, typesystem.Bool, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Right, "right operand of %s must be Bool, got %s", n.Operator, r)
 		}
@@ -496,7 +498,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			nonNil, hasNil := splitNilUnion(union)
 			if hasNil && len(nonNil) == 1 {
 				baseType := nonNil[0]
-				subst, err := typesystem.Unify(r, baseType)
+				subst, err := typesystem.UnifyWithResolver(r, baseType, resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(n.Right, "fallback value must be %s, got %s", baseType, r)
 				}
@@ -513,7 +515,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		if !ok {
 			return nil, nil, inferErrorf(n.Left, "left operand of ?? must be a type constructor F<A>, got %s", l)
 		}
-		subst, err := typesystem.Unify(r, innerType)
+		subst, err := typesystem.UnifyWithResolver(r, innerType, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Right, "fallback value must be %s, got %s", innerType, r)
 		}
@@ -539,10 +541,10 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 
 		// Check for Bytes concatenation
 		bytesType := typesystem.TCon{Name: config.BytesTypeName}
-		if subst, err := typesystem.Unify(l, bytesType); err == nil {
+		if subst, err := typesystem.UnifyWithResolver(l, bytesType, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			// Right must also be Bytes
-			if subst2, err := typesystem.Unify(r, bytesType); err == nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, bytesType, resolver); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 				return bytesType, totalSubst, nil
 			}
@@ -551,10 +553,10 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 
 		// Check for Bits concatenation
 		bitsType := typesystem.TCon{Name: config.BitsTypeName}
-		if subst, err := typesystem.Unify(l, bitsType); err == nil {
+		if subst, err := typesystem.UnifyWithResolver(l, bitsType, resolver); err == nil {
 			totalSubst = subst.Compose(totalSubst)
 			// Right must also be Bits
-			if subst2, err := typesystem.Unify(r, bitsType); err == nil {
+			if subst2, err := typesystem.UnifyWithResolver(r, bitsType, resolver); err == nil {
 				totalSubst = subst2.Compose(totalSubst)
 				return bitsType, totalSubst, nil
 			}
@@ -569,7 +571,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			Args:        []typesystem.Type{elemVar},
 		}
 
-		subst, err := typesystem.Unify(l, listType)
+		subst, err := typesystem.UnifyWithResolver(l, listType, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Left, "left operand of ++ must be List, Bytes, or implement Concat, got %s", l)
 		}
@@ -579,7 +581,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		expectedRight := listType.Apply(totalSubst)
 		r = r.Apply(totalSubst)
 
-		subst2, err := typesystem.Unify(r, expectedRight)
+		subst2, err := typesystem.UnifyWithResolver(r, expectedRight, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Right, "right operand of ++ must be %s, got %s", expectedRight, r)
 		}
@@ -597,7 +599,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		}
 
 		// Left is the element
-		subst, err := typesystem.Unify(l, elemVar)
+		subst, err := typesystem.UnifyWithResolver(l, elemVar, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Left, "cons (::) element type mismatch")
 		}
@@ -607,7 +609,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		expectedList := listType.Apply(totalSubst)
 		r = r.Apply(totalSubst)
 
-		subst2, err := typesystem.Unify(r, expectedList)
+		subst2, err := typesystem.UnifyWithResolver(r, expectedList, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Right, "right operand of :: must be List<%s>, got %s", l.Apply(totalSubst), r)
 		}
@@ -623,7 +625,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		if fnType, ok := l.(typesystem.TFunc); ok {
 			if len(fnType.Params) >= 1 {
 				// Unify right operand with first parameter
-				subst, err := typesystem.Unify(r, fnType.Params[0])
+				subst, err := typesystem.UnifyWithResolver(r, fnType.Params[0], resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(n.Right, "cannot apply function expecting %s to %s", fnType.Params[0], r)
 				}
@@ -655,7 +657,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			ReturnType: resultVar,
 		}
 
-		subst, err := typesystem.Unify(l, expectedFnType)
+		subst, err := typesystem.UnifyWithResolver(l, expectedFnType, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Left, "left operand of $ must be a function, got %s", l)
 		}
@@ -677,7 +679,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			Params:     []typesystem.Type{aVar},
 			ReturnType: bVar,
 		}
-		subst1, err := typesystem.Unify(r, gType)
+		subst1, err := typesystem.UnifyWithResolver(r, gType, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Right, "right operand of ,, must be a function, got %s", r)
 		}
@@ -688,7 +690,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 			Params:     []typesystem.Type{bVar.Apply(totalSubst)},
 			ReturnType: cVar,
 		}
-		subst2, err := typesystem.Unify(l.Apply(totalSubst), fType)
+		subst2, err := typesystem.UnifyWithResolver(l.Apply(totalSubst), fType, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n.Left, "left operand of ,, must be a function, got %s", l)
 		}
@@ -717,7 +719,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 
 			// Non-HKT trait: both operands should have the same type
 			if eitherHasConstraint(ctx, table, l, r, traitName) {
-				subst, err := typesystem.Unify(l, r)
+				subst, err := typesystem.UnifyWithResolver(l, r, resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(n, "type mismatch in %s: %s vs %s", n.Operator, l, r)
 				}
@@ -736,6 +738,7 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 // like <*> (Applicative) and >>= (Monad) where operand types are different.
 // For example: <*> : F<(A -> B)> -> F<A> -> F<B>
 func inferHKTOperator(ctx *InferenceContext, n *ast.InfixExpression, l, r typesystem.Type, traitName string, table *symbols.SymbolTable, totalSubst typesystem.Subst) (typesystem.Type, typesystem.Subst, error) {
+	resolver := &ResolverWrapper{Table: table, Ctx: ctx}
 	// Get the operator's method name (e.g., "(<*>)" for <*>)
 	methodName := "(" + n.Operator + ")"
 
@@ -761,7 +764,7 @@ func inferHKTOperator(ctx *InferenceContext, n *ast.InfixExpression, l, r typesy
 
 	// Unify left operand with first parameter
 	// e.g., Option<(Int) -> Int> with F<(A -> B)>
-	subst1, err := typesystem.Unify(freshMethodType.Params[0], l)
+	subst1, err := typesystem.UnifyWithResolver(freshMethodType.Params[0], l, resolver)
 	if err != nil {
 		return nil, nil, inferErrorf(n, "left operand type %s does not match expected %s for %s", l, freshMethodType.Params[0], n.Operator)
 	}
@@ -772,7 +775,7 @@ func inferHKTOperator(ctx *InferenceContext, n *ast.InfixExpression, l, r typesy
 
 	// Unify right operand with second parameter (after applying subst from first unification)
 	// e.g., Option<Int> with F<A> where F=Option from previous step
-	subst2, err := typesystem.Unify(expectedRight, r)
+	subst2, err := typesystem.UnifyWithResolver(expectedRight, r, resolver)
 	if err != nil {
 		return nil, nil, inferErrorf(n, "right operand type %s does not match expected %s for %s", r, expectedRight, n.Operator)
 	}

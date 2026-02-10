@@ -19,7 +19,8 @@ func (ctx *InferenceContext) SolveConstraints(table *symbols.SymbolTable) []erro
 			if c.Kind == ConstraintUnify {
 				left := c.Left.Apply(ctx.GlobalSubst)
 				right := c.Right.Apply(ctx.GlobalSubst)
-				subst, err := typesystem.UnifyAllowExtraWithResolver(left, right, table)
+				resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+				subst, err := typesystem.UnifyAllowExtraWithResolver(left, right, resolver)
 				if err == nil && len(subst) > 0 {
 					prevLen := len(ctx.GlobalSubst)
 					ctx.GlobalSubst = subst.Compose(ctx.GlobalSubst)
@@ -43,7 +44,8 @@ func (ctx *InferenceContext) SolveConstraints(table *symbols.SymbolTable) []erro
 			// Ideally we should re-verify them here.
 			left := c.Left.Apply(ctx.GlobalSubst)
 			right := c.Right.Apply(ctx.GlobalSubst)
-			_, err := typesystem.UnifyAllowExtraWithResolver(left, right, table)
+			resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+			_, err := typesystem.UnifyAllowExtraWithResolver(left, right, resolver)
 			if err != nil {
 				errors = append(errors, inferErrorf(c.Node, "type mismatch: %v", err))
 			}

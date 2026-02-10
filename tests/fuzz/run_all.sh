@@ -132,7 +132,7 @@ run_batch "Batch 1: Parser & Type Checking" --procs=2 \
 
 # Run FuzzCompiler separately with a lower worker cap for stability.
 run_batch "Batch 1b: Compiler" --procs=2 \
-    FuzzCompiler
+    FuzzCompiler FuzzRowPolymorphism
 
 # ── Batch 2: Lightweight tests with larger corpus ──
 run_batch "Batch 2: Formatting & Mutation" \

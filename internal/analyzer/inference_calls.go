@@ -76,7 +76,8 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 				// Resolve target alias just for unification check (UnifyWithResolver does this)
 				// But we want to keep targetType as result.
 
-				subst, err := typesystem.UnifyAllowExtraWithResolver(targetType, valArgs[0], table)
+				resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+				subst, err := typesystem.UnifyAllowExtraWithResolver(targetType, valArgs[0], resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(n, "constructor type mismatch: expected %s, got %s", targetType, valArgs[0])
 				}
@@ -87,7 +88,8 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 				// e.g. Point(1, 2) vs Point={x:Int, y:Int} ? No, Point is Record.
 				// Point(1, 2) only works if Point is Tuple alias.
 				tupleArg := typesystem.TTuple{Elements: valArgs}
-				subst, err := typesystem.UnifyWithResolver(targetType, tupleArg, table)
+				resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+				subst, err := typesystem.UnifyWithResolver(targetType, tupleArg, resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(n, "constructor arguments mismatch: %s vs %s", targetType, tupleArg)
 				}
@@ -120,7 +122,8 @@ func inferCallExpression(ctx *InferenceContext, n *ast.CallExpression, table *sy
 			ReturnType: resultVar,
 		}
 
-		subst, err := typesystem.UnifyWithResolver(tVar, expectedFnType, table)
+		resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+		subst, err := typesystem.UnifyWithResolver(tVar, expectedFnType, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(n, "cannot call %s as a function with arguments %v", fnType, paramTypes)
 		}
@@ -254,7 +257,8 @@ func inferCallWithFuncType(
 							if isIsolated {
 								// Skip unification
 							} else {
-								subst, err := typesystem.UnifyAllowExtraWithResolver(varType, elType, table)
+								resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+								subst, err := typesystem.UnifyAllowExtraWithResolver(varType, elType, resolver)
 								if err != nil {
 									return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, elType)
 								}
@@ -265,7 +269,8 @@ func inferCallWithFuncType(
 						}
 					} else {
 						paramType := tFunc.Params[paramIdx].Apply(totalSubst)
-						subst, err := typesystem.UnifyAllowExtraWithResolver(paramType, elType, table)
+						resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+						subst, err := typesystem.UnifyAllowExtraWithResolver(paramType, elType, resolver)
 						if err != nil {
 							return nil, nil, inferErrorf(arg, "argument %d type mismatch: %s vs %s", paramIdx+1, paramType, elType)
 						}
@@ -284,7 +289,8 @@ func inferCallWithFuncType(
 				listElemType := getListElementType(argType)
 				varType := tFunc.Params[len(tFunc.Params)-1].Apply(totalSubst)
 
-				subst, err := typesystem.UnifyAllowExtraWithResolver(varType, listElemType, table)
+				resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+				subst, err := typesystem.UnifyAllowExtraWithResolver(varType, listElemType, resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(arg, "spread argument element type mismatch: %s vs %s", varType, listElemType)
 				}
@@ -355,7 +361,8 @@ func inferCallWithFuncType(
 						// But we should verify constraints if any?
 						// For now, simple skipping.
 					} else {
-						subst, err := typesystem.UnifyAllowExtraWithResolver(varType, argType, table)
+						resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+						subst, err := typesystem.UnifyAllowExtraWithResolver(varType, argType, resolver)
 						if err != nil {
 							return nil, nil, inferErrorf(arg, "argument type mismatch (variadic): %s vs %s", varType, argType)
 						}
@@ -370,7 +377,8 @@ func inferCallWithFuncType(
 				// This handles cases where parameter is a type alias (e.g., pkg.Handler)
 				paramType = table.ResolveTypeAlias(paramType)
 
-				subst, err := typesystem.UnifyAllowExtraWithResolver(paramType, argType, table)
+				resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+				subst, err := typesystem.UnifyAllowExtraWithResolver(paramType, argType, resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(arg, "argument %d type mismatch: (%s) vs %s", paramIdx+1, paramType, argType)
 				}
@@ -441,7 +449,8 @@ func inferCallWithFuncType(
 	// If we have an expected return type from look-ahead pass, unify with it
 	// This helps with trait methods like pure() where the return type depends on context
 	if hasExpectedReturn {
-		subst, err := typesystem.UnifyAllowExtraWithResolver(expectedReturnType, resultType, table)
+		resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+		subst, err := typesystem.UnifyAllowExtraWithResolver(expectedReturnType, resultType, resolver)
 		if err == nil {
 			// Successfully unified - use expected type
 			totalSubst = subst.Compose(totalSubst)

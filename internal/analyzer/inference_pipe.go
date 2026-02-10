@@ -81,7 +81,8 @@ func inferPipeExpression(ctx *InferenceContext, n *ast.InfixExpression, table *s
 					break // Variadic args
 				}
 				param := tFunc.Params[i].Apply(totalSubst)
-				subst, err := typesystem.UnifyWithResolver(argType, param, table)
+				resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+				subst, err := typesystem.UnifyWithResolver(argType, param, resolver)
 				if err != nil {
 					return nil, nil, inferErrorf(n, "argument %d type mismatch: %s vs %s", i+1, argType, param)
 				}
@@ -98,7 +99,8 @@ func inferPipeExpression(ctx *InferenceContext, n *ast.InfixExpression, table *s
 			ReturnType: resultVar,
 		}
 
-		subst, err := typesystem.UnifyWithResolver(fnType, expectedFnType, table)
+		resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+		subst, err := typesystem.UnifyWithResolver(fnType, expectedFnType, resolver)
 		if err != nil {
 			return nil, nil, inferErrorf(callExpr.Function, "expected function, got %s", fnType)
 		}
@@ -121,7 +123,8 @@ func inferPipeExpression(ctx *InferenceContext, n *ast.InfixExpression, table *s
 	if fnType, ok := r.(typesystem.TFunc); ok {
 		if len(fnType.Params) >= 1 {
 			// Unify left operand with first parameter
-			subst, err := typesystem.UnifyWithResolver(l, fnType.Params[0], table)
+			resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+			subst, err := typesystem.UnifyWithResolver(l, fnType.Params[0], resolver)
 			if err != nil {
 				return nil, nil, inferErrorf(n.Left, "cannot pipe %s to function expecting %s", l, fnType.Params[0])
 			}
@@ -137,7 +140,8 @@ func inferPipeExpression(ctx *InferenceContext, n *ast.InfixExpression, table *s
 		ReturnType: resultVar,
 	}
 
-	subst, err := typesystem.UnifyWithResolver(r, expectedFnType, table)
+	resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+	subst, err := typesystem.UnifyWithResolver(r, expectedFnType, resolver)
 	if err != nil {
 		return nil, nil, inferErrorf(n.Right, "right operand of |> must be a function (T) -> R, got %s", r)
 	}

@@ -590,6 +590,7 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 					n.Member.Value: newFieldType,
 				},
 				IsOpen: true,
+				Row:    ctx.FreshVar(),
 			}
 
 			// Substitute tv with openRecord

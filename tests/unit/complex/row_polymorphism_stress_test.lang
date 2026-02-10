@@ -1,0 +1,117 @@
+import "lib/test" (testRun, assertEquals)
+import "lib/list" (map, filter, length)
+
+// --- Scenario 1: Deep Record Unification ---
+
+type alias DeepRec = {
+    meta: { id: Int, tags: List<String> },
+    data: { value: Float }
+}
+
+fun processDeep(items) {
+    items
+    |> map(\x -> {
+        // Access nested field -> infers { meta: { id: Int | r1 } | r2 }
+        metaId = x.meta.id
+        x
+    })
+    |> map(\x -> {
+        // Access another nested field -> infers { meta: { tags: List<String> | r3 } | r4 }
+        tags = x.meta.tags
+        x
+    })
+    |> map(\x -> {
+        // Access top level data -> infers { data: { value: Float | r5 } | r6 }
+        v = x.data.value
+        x
+    })
+}
+
+testRun("Deep Nested Record Unification", \ -> {
+    input = [
+        {
+            meta: { id: 1, tags: ["a"], extra: "hidden" },
+            data: { value: 1.5, other: true },
+            topExtra: 100
+        }
+    ]
+
+    res = processDeep(input)
+
+    item = res[0]
+    assertEquals(1, item.meta.id, "id check")
+    assertEquals(1.5, item.data.value, "value check")
+})
+
+// --- Scenario 2: Hybrid Record Creation (Greedy Inference) ---
+
+fun mergeRequirements(items) {
+    items
+    |> filter(\x -> x.isUser == true)  // Requires { isUser: Bool | r1 }
+    |> map(\x -> {
+        if x.hasProduct {              // Requires { hasProduct: Bool | r2 }
+            x.productPrice             // Requires { productPrice: Float | r3 }
+        } else {
+            0.0
+        }
+        x
+    })
+}
+
+testRun("Greedy Hybrid Type Creation", \ -> {
+    input = [
+        { isUser: true, hasProduct: true, productPrice: 10.0, name: "Alice" },
+        { isUser: false, hasProduct: false, productPrice: 0.0, name: "Bob" }
+    ]
+
+    res = mergeRequirements(input)
+    assertEquals(1, length(res), "length check")
+})
+
+// --- Scenario 3: Recursive / Cyclic Reference Stress ---
+
+type alias Node = { val: Int, next: Option<Node> }
+
+fun traverse(node) {
+    match node.next {
+        Some(n) -> node.val + traverse(n)
+        None -> node.val
+    }
+}
+
+testRun("Recursive Record Structure", \ -> {
+    n3 = { val: 3, next: None }
+    n2 = { val: 2, next: Some(n3) }
+    n1 = { val: 1, next: Some(n2) }
+
+    sum = traverse(n1)
+    assertEquals(6, sum, "recursive sum")
+})
+
+// --- Scenario 5: Mutual Row Extension in Chain ---
+// This reproduces the original bug pattern where two pipe steps infer disjoint open records.
+
+fun processChain(items) {
+    items
+        |> map(\x -> {
+            _ = x.extra1 // Infers { extra1: T | r1 }
+            x
+        })
+        |> map(\x -> {
+            _ = x.extra2 // Infers { extra2: U | r2 }
+            x
+        })
+}
+
+testRun("Mutual Row Extension Chain", \ -> {
+    input = [
+        { extra1: "a", extra2: 10, common: true },
+        { extra1: "b", extra2: 20, common: false }
+    ]
+
+    // Unification: { extra1 | r1 } ~ { extra2 | r2 }
+    // Should succeed and produce { extra1, extra2 | r_new }
+    res = processChain(input)
+
+    assertEquals(2, length(res), "chain length")
+})

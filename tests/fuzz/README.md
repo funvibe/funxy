@@ -85,6 +85,14 @@ To test the kind checker with complex type and trait declarations, including hig
 go test -fuzz=FuzzKindChecker ./tests/fuzz/targets
 ```
 
+### Row Polymorphism Fuzzing
+
+To test the row polymorphism implementation (record unification, extension, and subtyping) against chained operations, recursive structures, and conflicting types:
+
+```bash
+go test -fuzz=FuzzRowPolymorphism ./tests/fuzz/targets
+```
+
 ### Mutation-based Fuzzing
 
 To test the parser and printer robustness against mutated (potentially invalid) ASTs. This uses a custom mutator to modify valid programs from the corpus.
@@ -168,6 +176,7 @@ total worker count stays close to available CPU cores. This prevents:
 go test -fuzz=FuzzParser -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzTypeChecker -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzCompiler -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzRowPolymorphism -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzKindChecker -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzDifferential -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzRoundTrip -fuzztime=180s ./tests/fuzz/targets &
@@ -197,7 +206,7 @@ wait
 If you're working on a particular component, focus on the relevant fuzz target:
 
 - **Parser changes**: Use `FuzzParser` and `FuzzRoundTrip`
-- **Type system changes**: Use `FuzzTypeChecker` and `FuzzKindChecker`
+- **Type system changes**: Use `FuzzTypeChecker`, `FuzzKindChecker`, and `FuzzRowPolymorphism`
 - **Backend changes**: Use `FuzzDifferential`, `FuzzCompiler`, and `FuzzVM`
 - **Performance changes**: Use `FuzzStress`
 

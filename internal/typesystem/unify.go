@@ -15,6 +15,12 @@ type Resolver interface {
 	IsStrictMode() bool
 }
 
+// VariableGenerator interface allows Unify to generate fresh type variables
+// needed for advanced unification scenarios like Row Polymorphism (merging two open records).
+type VariableGenerator interface {
+	FreshTVar() TVar
+}
+
 // Unify attempts to find a substitution that makes t1 and t2 equal.
 // It enforces strict equality (invariant).
 func Unify(t1, t2 Type) (Subst, error) {
@@ -481,6 +487,51 @@ func unifyInternal(t1, t2 Type, allowExtra bool, visited []typePair, resolver Re
 			// 3. Handle Row variables
 			// If t1 has row variable r1, it must absorb extra2.
 			// If t2 has row variable r2, it must absorb extra1.
+
+			// Special Case: Mutual Row Extension (Both records are open and have unique extra fields)
+			// t1 = { common, extra1 | r1 }
+			// t2 = { common, extra2 | r2 }
+			// We need to introduce a fresh variable r3 such that:
+			// r1 ~ { extra2 | r3 }
+			// r2 ~ { extra1 | r3 }
+			if len(extra1) > 0 && len(extra2) > 0 && t1.Row != nil && t2.Row != nil {
+				var generator VariableGenerator
+				if resolver != nil {
+					if g, ok := resolver.(VariableGenerator); ok {
+						generator = g
+					}
+				}
+
+				if generator != nil {
+					r3 := generator.FreshTVar()
+
+					// Bind r1 ~ { extra2 | r3 }
+					// Apply current subst to r1 (t1.Row)
+					row1 := t1.Row.Apply(s1)
+					tailForR1 := TRecord{Fields: extra2, Row: r3, IsOpen: true}
+					s2, err := unifyInternal(row1, tailForR1, allowExtra, visited, resolver)
+					if err != nil {
+						return nil, errUnifyContext("record mutual row extension (left)", err)
+					}
+					s1 = s1.Compose(s2)
+
+					// Bind r2 ~ { extra1 | r3 }
+					// Apply current subst to r2 (t2.Row) and extra1 fields
+					row2 := t2.Row.Apply(s1)
+					extra1Updated := make(map[string]Type)
+					for k, v := range extra1 {
+						extra1Updated[k] = v.Apply(s1) // Apply s2 (contained in s1)
+					}
+					tailForR2 := TRecord{Fields: extra1Updated, Row: r3, IsOpen: true}
+					s3, err := unifyInternal(row2, tailForR2, allowExtra, visited, resolver)
+					if err != nil {
+						return nil, errUnifyContext("record mutual row extension (right)", err)
+					}
+					s1 = s1.Compose(s3)
+
+					return s1, nil
+				}
+			}
 
 			// Check t1 row
 			if len(extra2) > 0 {
