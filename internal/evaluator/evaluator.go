@@ -91,6 +91,9 @@ type Evaluator struct {
 
 	// Fork creates a thread-safe copy of the evaluator for background execution
 	Fork func() *Evaluator
+
+	// evalDepth tracks the current nesting depth of Eval calls to prevent stack overflow
+	evalDepth int
 }
 
 // ModuleLoader interface (same as in Analyzer, should probably be in a common package)
@@ -228,11 +231,23 @@ func (e *Evaluator) Clone() *Evaluator {
 	}
 }
 
+// maxEvalDepth is the maximum nesting depth of Eval calls.
+// Prevents stack overflow from infinite recursion in user programs.
+const maxEvalDepth = 10000
+
 func (e *Evaluator) Eval(node ast.Node, env *Environment) Object {
+	// Check recursion depth to prevent Go stack overflow
+	e.evalDepth++
+	if e.evalDepth > maxEvalDepth {
+		e.evalDepth--
+		return newError("maximum recursion depth exceeded")
+	}
+
 	// Check for cancellation
 	if e.Context != nil {
 		select {
 		case <-e.Context.Done():
+			e.evalDepth--
 			return newError("execution cancelled: %v", e.Context.Err())
 		default:
 		}
@@ -242,7 +257,10 @@ func (e *Evaluator) Eval(node ast.Node, env *Environment) Object {
 	oldEnv := e.CurrentEnv
 	e.CurrentEnv = env
 	// Restore on return (defer is slightly expensive but necessary for correctness here)
-	defer func() { e.CurrentEnv = oldEnv }()
+	defer func() {
+		e.CurrentEnv = oldEnv
+		e.evalDepth--
+	}()
 
 	obj := e.evalCore(node, env)
 	if err, ok := obj.(*Error); ok {

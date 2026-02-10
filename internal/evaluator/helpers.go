@@ -89,23 +89,37 @@ func (e *Evaluator) PopCall() {
 	}
 }
 
+// maxStackTraceFrames limits the number of frames captured in error stack traces.
+const maxStackTraceFrames = 50
+
+// captureStackTrace copies the current call stack into a StackFrame slice,
+// capped at maxStackTraceFrames to avoid enormous error messages from deep recursion.
+func (e *Evaluator) captureStackTrace() []StackFrame {
+	n := len(e.CallStack)
+	if n == 0 {
+		return nil
+	}
+	if n > maxStackTraceFrames {
+		n = maxStackTraceFrames
+	}
+	// Take the most recent (deepest) frames
+	start := len(e.CallStack) - n
+	frames := make([]StackFrame, n)
+	for i, frame := range e.CallStack[start:] {
+		frames[i] = StackFrame{
+			Name:   frame.Name,
+			File:   frame.File,
+			Line:   frame.Line,
+			Column: frame.Column,
+		}
+	}
+	return frames
+}
+
 // newErrorWithStack creates an error with the current stack trace
 func (e *Evaluator) newErrorWithStack(format string, a ...interface{}) *Error {
 	err := &Error{Message: fmt.Sprintf(format, a...)}
-
-	// Copy stack trace
-	if len(e.CallStack) > 0 {
-		err.StackTrace = make([]StackFrame, len(e.CallStack))
-		for i, frame := range e.CallStack {
-			err.StackTrace[i] = StackFrame{
-				Name:   frame.Name,
-				File:   frame.File,
-				Line:   frame.Line,
-				Column: frame.Column,
-			}
-		}
-	}
-
+	err.StackTrace = e.captureStackTrace()
 	return err
 }
 

@@ -262,16 +262,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 			// Error: capture stack trace
 			if err, ok := result.(*Error); ok {
 				restoreStack()
-				if len(err.StackTrace) == 0 && len(e.CallStack) > 0 {
-					err.StackTrace = make([]StackFrame, len(e.CallStack))
-					for i, frame := range e.CallStack {
-						err.StackTrace[i] = StackFrame{
-							Name:   frame.Name,
-							File:   frame.File,
-							Line:   frame.Line,
-							Column: frame.Column,
-						}
-					}
+				if len(err.StackTrace) == 0 {
+					err.StackTrace = e.captureStackTrace()
 				}
 				return result
 			}
@@ -398,16 +390,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 							err.Line = tc.Line
 							err.Column = tc.Column
 						}
-						if len(err.StackTrace) == 0 && len(e.CallStack) > 0 {
-							err.StackTrace = make([]StackFrame, len(e.CallStack))
-							for i, frame := range e.CallStack {
-								err.StackTrace[i] = StackFrame{
-									Name:   frame.Name,
-									File:   frame.File,
-									Line:   frame.Line,
-									Column: frame.Column,
-								}
-							}
+						if len(err.StackTrace) == 0 {
+							err.StackTrace = e.captureStackTrace()
 						}
 					}
 					// Pop the tail call frame before returning

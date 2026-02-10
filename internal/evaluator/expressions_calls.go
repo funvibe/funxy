@@ -195,16 +195,8 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 
 	// Add stack trace to errors if not already present
 	if err, ok := result.(*Error); ok {
-		if len(err.StackTrace) == 0 && len(e.CallStack) > 0 {
-			err.StackTrace = make([]StackFrame, len(e.CallStack))
-			for i, frame := range e.CallStack {
-				err.StackTrace[i] = StackFrame{
-					Name:   frame.Name,
-					File:   frame.File,
-					Line:   frame.Line,
-					Column: frame.Column,
-				}
-			}
+		if len(err.StackTrace) == 0 {
+			err.StackTrace = e.captureStackTrace()
 		}
 	}
 

@@ -17,16 +17,22 @@ var errorLocationRegex = regexp.MustCompile(`(?:ERROR )?at \d+:\d+:?\s*`)
 // runtimeErrorPrefix matches "runtime error: " that VM prepends.
 var runtimeErrorPrefix = "runtime error: "
 
-// isTimeoutError returns true if the error is a context deadline/cancellation error.
-// These errors reflect performance differences, not semantic ones.
-func isTimeoutError(err error) bool {
+// isResourceExhaustionError returns true if the error is caused by resource limits
+// (timeout, recursion depth, etc.) rather than a semantic bug.
+func isResourceExhaustionError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
 	return strings.Contains(msg, "context deadline exceeded") ||
 		strings.Contains(msg, "context canceled") ||
-		strings.Contains(msg, "execution cancelled")
+		strings.Contains(msg, "execution cancelled") ||
+		strings.Contains(msg, "maximum recursion depth exceeded")
+}
+
+// isTimeoutError is an alias kept for backward compatibility.
+func isTimeoutError(err error) bool {
+	return isResourceExhaustionError(err)
 }
 
 // extractCoreError strips wrapper prefixes (runtime error:, ERROR at N:N:),

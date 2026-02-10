@@ -82,7 +82,7 @@ func (p *CodePrinter) writeIndent() {
 // countPipeSteps counts the number of |> operators in a chain (left-associative)
 func countPipeSteps(expr ast.Expression) int {
 	infix, ok := expr.(*ast.InfixExpression)
-	if !ok || infix.Operator != "|>" {
+	if !ok || infix == nil || infix.Operator != "|>" {
 		return 0
 	}
 	return 1 + countPipeSteps(infix.Left)
@@ -151,7 +151,7 @@ func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
 			break
 		}
 		infix, ok := current.(*ast.InfixExpression)
-		if !ok || infix.Operator != "|>" {
+		if !ok || infix == nil || infix.Operator != "|>" {
 			// This is the leftmost (source) expression
 			steps = append(steps, current)
 			break

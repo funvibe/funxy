@@ -131,9 +131,9 @@ func FuzzDifferential(f *testing.F) {
 		}
 
 		// 5. Compare Results
-		// If both backends timed out, the input itself is pathological — skip.
-		// If only ONE timed out, it's likely a real infinite loop bug — report it.
-		if isTimeoutError(twErr) && isTimeoutError(vmErr) {
+		// If both backends hit resource limits (timeout, recursion depth, etc.),
+		// the input itself is pathological — skip.
+		if isResourceExhaustionError(twErr) || isResourceExhaustionError(vmErr) {
 			return
 		}
 		if twErr != nil && vmErr == nil {

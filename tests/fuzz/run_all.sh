@@ -72,9 +72,17 @@ echo "Cache: $GOTMPDIR"
 run_batch() {
     local batch_name="$1"
     shift
+    local procs_override=""
+    if [[ "$1" == --procs=* ]]; then
+        procs_override="${1#--procs=}"
+        shift
+    fi
     local count=$#
     local procs=$(( NCPU / count ))
     [ "$procs" -lt 1 ] && procs=1
+    if [ -n "$procs_override" ]; then
+        procs="$procs_override"
+    fi
 
     echo ""
     echo "━━━ $batch_name ($count tests, GOMAXPROCS=$procs) ━━━"
@@ -119,8 +127,12 @@ run_batch() {
 }
 
 # ── Batch 1: Lightweight CPU-bound tests (no subprocesses, no timeouts) ──
-run_batch "Batch 1: Parser & Type Checking" \
-    FuzzParser FuzzTypeChecker FuzzCompiler FuzzKindChecker
+run_batch "Batch 1: Parser & Type Checking" --procs=2 \
+    FuzzParser FuzzTypeChecker FuzzKindChecker
+
+# Run FuzzCompiler separately with a lower worker cap for stability.
+run_batch "Batch 1b: Compiler" --procs=2 \
+    FuzzCompiler
 
 # ── Batch 2: Lightweight tests with larger corpus ──
 run_batch "Batch 2: Formatting & Mutation" \

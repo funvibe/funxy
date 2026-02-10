@@ -17,6 +17,8 @@ import (
 
 // FuzzCompiler is the entry point for fuzzing the compiler (or tree-walk interpreter).
 func FuzzCompiler(f *testing.F) {
+	capFuzzProcs()
+
 	// Add seed corpus
 	f.Add([]byte("fun main() { print(\"Hello\") }"))
 	f.Add([]byte("x = 1 + 2"))
