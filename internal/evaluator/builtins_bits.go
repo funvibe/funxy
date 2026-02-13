@@ -3,9 +3,9 @@ package evaluator
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
-	"math"
 	"unsafe"
 )
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -305,6 +306,48 @@ print(stringToLower("WORLD"))
 
 		if !strings.Contains(stderr.String(), "error") && !strings.Contains(stderr.String(), "Error") {
 			t.Errorf("Expected error message about missing file, got: %s", stderr.String())
+		}
+	})
+
+	// #36: --embed nonexistent path → exit 1, stderr contains "Error"
+	t.Run("embed nonexistent path", func(t *testing.T) {
+		script := filepath.Join(tmpDir, "embed_nonexist.lang")
+		writeFile(t, script, `print("ok")`)
+
+		cmd := exec.Command(binaryPath, "build", script, "--embed", "/no/such/path", "-o", filepath.Join(tmpDir, "out"))
+		cmd.Dir = projectRoot
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			t.Error("Expected build to fail with nonexistent embed path")
+		}
+		if !strings.Contains(stderr.String(), "Error") && !strings.Contains(stderr.String(), "error") {
+			t.Errorf("Expected Error in stderr, got: %s", stderr.String())
+		}
+	})
+
+	// #37: --embed glob without matches → binary builds, stderr contains "Warning"
+	t.Run("embed glob no matches", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_nomatch")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "app.lang"), `print("ok")`)
+
+		cmd := exec.Command(binaryPath, "build", filepath.Join(dir, "app.lang"), "--embed", filepath.Join(dir, "*.xyz"), "-o", filepath.Join(tmpDir, "nomatch_bin"))
+		cmd.Dir = projectRoot
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil {
+			t.Fatalf("Build should succeed (glob no matches): %v\n%s", err, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "Warning") && !strings.Contains(stderr.String(), "matched no files") {
+			t.Errorf("Expected Warning in stderr for glob no matches, got: %s", stderr.String())
+		}
+		got := runCmd(t, filepath.Join(tmpDir, "nomatch_bin"), tmpDir, nil)
+		if got != "ok" {
+			t.Errorf("Binary should run: got %q", got)
 		}
 	})
 
@@ -1181,6 +1224,302 @@ print(len(lst))
 	})
 
 	// ==========================================
+	// Level 4: Embed edge cases (spec 75-89)
+	// ==========================================
+
+	// 76: Empty file
+	t.Run("embed empty file", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_empty")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "empty.txt"), "")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead)
+content = fileRead("empty.txt") |>> \x -> x
+print(len(content))
+print(content == "")
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "empty.txt"),
+			"-o", filepath.Join(tmpDir, "embed_empty_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_empty_bin"), tmpDir, nil)
+		if got != "0\ntrue" {
+			t.Errorf("empty file: got %q", got)
+		}
+	})
+
+	// 78: Nested directories
+	t.Run("embed nested directories", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_nested")
+		os.MkdirAll(filepath.Join(dir, "assets", "css"), 0755)
+		os.MkdirAll(filepath.Join(dir, "assets", "js"), 0755)
+		writeFile(t, filepath.Join(dir, "assets", "css", "style.css"), "body{}")
+		writeFile(t, filepath.Join(dir, "assets", "js", "app.js"), "run()")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead)
+css = fileRead("assets/css/style.css") |>> \x -> x
+js = fileRead("assets/js/app.js") |>> \x -> x
+print(css)
+print(js)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "assets"),
+			"-o", filepath.Join(tmpDir, "embed_nested_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_nested_bin"), tmpDir, nil)
+		if got != "body{}\nrun()" {
+			t.Errorf("nested dirs: got %q", got)
+		}
+	})
+
+	// 79: Resource with spaces in name
+	t.Run("embed filename with spaces", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_spaces")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "my file.txt"), "content with spaces")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead)
+content = fileRead("my file.txt") |>> \x -> x
+print(content)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "my file.txt"),
+			"-o", filepath.Join(tmpDir, "embed_spaces_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_spaces_bin"), tmpDir, nil)
+		if got != "content with spaces" {
+			t.Errorf("spaces in filename: got %q", got)
+		}
+	})
+
+	// 81: fileRead fallback — a.txt from embed, b.txt from disk
+	t.Run("embed fallback to disk", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_fallback")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "a.txt"), "from embed")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead)
+a = fileRead("a.txt") |>> \x -> x
+b = fileRead("b.txt") |>> \x -> x
+print(a)
+print(b)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "a.txt"),
+			"-o", filepath.Join(tmpDir, "embed_fallback_bin"))
+
+		// b.txt only on disk (in run dir)
+		runDir := filepath.Join(tmpDir, "embed_fallback_run")
+		os.MkdirAll(runDir, 0755)
+		writeFile(t, filepath.Join(runDir, "b.txt"), "from disk")
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_fallback_bin"), runDir, nil)
+		if got != "from embed\nfrom disk" {
+			t.Errorf("fallback: got %q", got)
+		}
+	})
+
+	// 85: Multi-command — one script uses resource, other doesn't
+	t.Run("multi-command one uses embed", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "multi_one_embed")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "config.json"), `{"x":1}`)
+		writeFile(t, filepath.Join(dir, "api.lang"), `
+import "lib/io" (fileRead)
+print(fileRead("config.json") |>> \x -> x)
+`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"--embed", filepath.Join(dir, "config.json"),
+			"-o", filepath.Join(tmpDir, "multi_one_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "multi_one_bin"), tmpDir, nil, "api")
+		if !strings.Contains(got, "x") {
+			t.Errorf("api should read config: %q", got)
+		}
+		got = runCmd(t, filepath.Join(tmpDir, "multi_one_bin"), tmpDir, nil, "worker")
+		if got != "worker" {
+			t.Errorf("worker: got %q", got)
+		}
+	})
+
+	// 86: Multi-command fileExists on embed
+	t.Run("multi-command fileExists embed", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "multi_fileexists")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "shared.txt"), "data")
+		writeFile(t, filepath.Join(dir, "api.lang"), `
+import "lib/io" (fileExists)
+print(fileExists("shared.txt"))
+`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"--embed", filepath.Join(dir, "shared.txt"),
+			"-o", filepath.Join(tmpDir, "multi_fileexists_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "multi_fileexists_bin"), tmpDir, nil, "api")
+		if got != "true" {
+			t.Errorf("fileExists(shared.txt): got %q", got)
+		}
+	})
+
+	// 87: Embed + run from different CWD
+	t.Run("embed from different CWD", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_cwd")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "config.txt"), "ok")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead)
+print(fileRead("config.txt") |>> \x -> x)
+`)
+
+		binPath := filepath.Join(tmpDir, "embed_cwd_bin")
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "config.txt"),
+			"-o", binPath)
+
+		// Run from /tmp or other dir — resource should still be found
+		otherDir := filepath.Join(tmpDir, "other_cwd")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, binPath, otherDir, nil)
+		if got != "ok" {
+			t.Errorf("embed from different CWD: got %q", got)
+		}
+	})
+
+	// #77: Large file (1+ MB)
+	t.Run("embed large file", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_large")
+		os.MkdirAll(dir, 0755)
+		// ~1.5 MB
+		largeContent := make([]byte, 1536000)
+		for i := range largeContent {
+			largeContent[i] = byte(i % 256)
+		}
+		os.WriteFile(filepath.Join(dir, "big.bin"), largeContent, 0644)
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileReadBytes)
+bytes = fileReadBytes("big.bin") |>> \x -> x
+print(len(bytes))
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "big.bin"),
+			"-o", filepath.Join(tmpDir, "embed_large_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_large_bin"), tmpDir, nil)
+		if got != "1536000" {
+			t.Errorf("large file len: got %q, want 1536000", got)
+		}
+	})
+
+	// #80: fileWrite to embed path → writes to disk, embed unchanged
+	t.Run("fileWrite to embed writes disk", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_write")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "data.txt"), "from-embed")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead, fileWrite)
+content1 = fileRead("data.txt") |>> \x -> x
+fileWrite("data.txt", "from-disk")
+content2 = fileRead("data.txt") |>> \x -> x
+print(content1)
+print(content2)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "data.txt"),
+			"-o", filepath.Join(tmpDir, "embed_write_bin"))
+
+		runDir := filepath.Join(tmpDir, "embed_write_run")
+		os.MkdirAll(runDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_write_bin"), runDir, nil)
+		// content1 = from embed. content2 = could be from-disk (if write succeeded) or from-embed (if embed wins on read)
+		// Spec: fileWrite writes to disk. Next fileRead: embed takes priority, so content2 might still be from-embed.
+		// Or: fileWrite creates data.txt on disk, fileRead checks embed first - data.txt in embed, returns from-embed.
+		// So content2 = from-embed (embed priority). content1 = from-embed. Both from-embed.
+		// The spec says "embed-версия при следующем fileRead всё ещё возвращает старое содержимое" - so embed is unchanged.
+		// So content2 should still be from-embed (old content). content1 = from-embed.
+		if got != "from-embed\nfrom-embed" {
+			t.Errorf("embed unchanged after fileWrite: got %q", got)
+		}
+	})
+
+	// #83: Path with ../
+	t.Run("embed path with parent ref", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_parent")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "data.txt"), "in-embed")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead)
+r = fileRead("../secret.txt")
+match r {
+    Ok(x) -> print("got: " ++ x)
+    Fail(e) -> print("fail: " ++ e)
+}
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "data.txt"),
+			"-o", filepath.Join(tmpDir, "embed_parent_bin"))
+
+		// No secret.txt on disk - should Fail (or fallback to disk which doesn't have it)
+		runDir := filepath.Join(tmpDir, "embed_parent_run")
+		os.MkdirAll(runDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_parent_bin"), runDir, nil)
+		if !strings.Contains(got, "fail:") {
+			t.Errorf("../secret.txt should not leak from embed, got: %q", got)
+		}
+	})
+
+	// #89: Overlapping embed paths
+	t.Run("embed overlapping paths", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_overlap")
+		os.MkdirAll(filepath.Join(dir, "static", "sub"), 0755)
+		writeFile(t, filepath.Join(dir, "static", "root.txt"), "root")
+		writeFile(t, filepath.Join(dir, "static", "sub", "nested.txt"), "nested")
+		writeFile(t, filepath.Join(dir, "app.lang"), `
+import "lib/io" (fileRead, fileExists)
+r = fileExists("static/root.txt")
+s = fileExists("static/sub/nested.txt")
+print(r)
+print(s)
+a = fileRead("static/root.txt") |>> \x -> x
+b = fileRead("static/sub/nested.txt") |>> \x -> x
+print(a)
+print(b)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "app.lang"),
+			"--embed", filepath.Join(dir, "static"),
+			"--embed", filepath.Join(dir, "static", "sub"),
+			"-o", filepath.Join(tmpDir, "embed_overlap_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_overlap_bin"), tmpDir, nil)
+		// Document behavior: both paths work (may duplicate or not)
+		if got != "true\ntrue\nroot\nnested" {
+			t.Errorf("overlapping embed: got %q", got)
+		}
+	})
+
+	// ==========================================
 	// Portability: binary runs from any directory
 	// These tests build from a "project root" and run from a different dir.
 	// This catches bugs where bundle keys depend on CWD.
@@ -1582,6 +1921,543 @@ print(stringToUpper("hello"))`)
 		got := runCmd(t, dualBin, tmpDir, nil, "$HOME")
 		if got != "embedded mode" {
 			t.Errorf("Expected %q, got %q", "embedded mode", got)
+		}
+	})
+}
+
+// TestBuildMultiCommand tests multi-command binaries (Level 2.2, 3.2, 3.3, 3.4).
+func TestBuildMultiCommand(t *testing.T) {
+	projectRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("Failed to get project root: %v", err)
+	}
+
+	binaryPath := filepath.Join(projectRoot, "funxy-multicmd-test-binary")
+	defer os.Remove(binaryPath)
+
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/funxy")
+	cmd.Dir = projectRoot
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to build binary: %v\n%s", err, output)
+	}
+
+	tmpDir := t.TempDir()
+
+	// 2.2.43 Two scripts → binary created, stdout contains "2 commands"
+	t.Run("two scripts", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "two_scripts")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		var stdout, stderr bytes.Buffer
+		buildCmd := exec.Command(binaryPath, "build", filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"), "-o", filepath.Join(tmpDir, "server"))
+		buildCmd.Dir = projectRoot
+		buildCmd.Stdout = &stdout
+		buildCmd.Stderr = &stderr
+		if err := buildCmd.Run(); err != nil {
+			t.Fatalf("Build failed: %v\n%s%s", err, stderr.String(), stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "2 commands") {
+			t.Errorf("Expected '2 commands' in output, got: %s", stdout.String())
+		}
+
+		got := runCmd(t, filepath.Join(tmpDir, "server"), tmpDir, nil, "api")
+		if got != "api" {
+			t.Errorf("./server api: got %q, want api", got)
+		}
+		got = runCmd(t, filepath.Join(tmpDir, "server"), tmpDir, nil, "worker")
+		if got != "worker" {
+			t.Errorf("./server worker: got %q, want worker", got)
+		}
+	})
+
+	// 2.2.44 Three+ scripts
+	t.Run("three scripts", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "three_scripts")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+		writeFile(t, filepath.Join(dir, "cron.lang"), `print("cron")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"), filepath.Join(dir, "cron.lang"),
+			"-o", filepath.Join(tmpDir, "server3"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "server3"), tmpDir, nil, "cron")
+		if got != "cron" {
+			t.Errorf("./server3 cron: got %q", got)
+		}
+	})
+
+	// #45: Multi-command without -o → creates file named after first script (api)
+	t.Run("multi-command without -o", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "multi_no_o")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build", filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"))
+
+		apiBin := filepath.Join(dir, "api")
+		if runtime.GOOS == "windows" {
+			apiBin = filepath.Join(dir, "api.exe")
+		}
+		if _, err := os.Stat(apiBin); err != nil {
+			t.Fatalf("Expected binary api (or api.exe) to be created: %v", err)
+		}
+		got := runCmd(t, apiBin, dir, nil, "api")
+		if got != "api" {
+			t.Errorf("./api api: got %q", got)
+		}
+	})
+
+	// #48: One script with compilation error in multi-build → exit 1, stderr names the file
+	t.Run("multi-build one script broken", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "multi_broken")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "broken.lang"), `syntax error @#$`)
+
+		cmd := exec.Command(binaryPath, "build", filepath.Join(dir, "api.lang"), filepath.Join(dir, "broken.lang"), "-o", filepath.Join(tmpDir, "broken_bin"))
+		cmd.Dir = projectRoot
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			t.Error("Expected build to fail")
+		}
+		if !strings.Contains(stderr.String(), "broken.lang") {
+			t.Errorf("Expected stderr to mention broken.lang, got: %s", stderr.String())
+		}
+	})
+
+	// #49: Scripts from different directories
+	t.Run("scripts from different dirs", func(t *testing.T) {
+		root := filepath.Join(tmpDir, "diff_dirs")
+		os.MkdirAll(filepath.Join(root, "scripts"), 0755)
+		os.MkdirAll(filepath.Join(root, "tools"), 0755)
+		writeFile(t, filepath.Join(root, "scripts", "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(root, "tools", "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(root, "scripts", "api.lang"), filepath.Join(root, "tools", "worker.lang"),
+			"-o", filepath.Join(tmpDir, "diff_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "diff_bin"), tmpDir, nil, "api")
+		if got != "api" {
+			t.Errorf("./diff_bin api: got %q", got)
+		}
+		got = runCmd(t, filepath.Join(tmpDir, "diff_bin"), tmpDir, nil, "worker")
+		if got != "worker" {
+			t.Errorf("./diff_bin worker: got %q", got)
+		}
+	})
+
+	// #51: Embed + scripts from different dirs → resource key correct (relative from common parent)
+	t.Run("embed with scripts from different dirs", func(t *testing.T) {
+		root := filepath.Join(tmpDir, "embed_diff_dirs")
+		os.MkdirAll(filepath.Join(root, "dir1"), 0755)
+		os.MkdirAll(filepath.Join(root, "dir2"), 0755)
+		os.MkdirAll(filepath.Join(root, "dir1", "static"), 0755)
+		writeFile(t, filepath.Join(root, "dir1", "static", "config.txt"), "shared-config")
+		// Resource key is relative to common parent (root): dir1/static/config.txt
+		writeFile(t, filepath.Join(root, "dir1", "api.lang"), `
+import "lib/io" (fileRead)
+print(fileRead("dir1/static/config.txt") |>> \x -> x)
+`)
+		writeFile(t, filepath.Join(root, "dir2", "worker.lang"), `
+import "lib/io" (fileRead)
+print(fileRead("dir1/static/config.txt") |>> \x -> x)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(root, "dir1", "api.lang"), filepath.Join(root, "dir2", "worker.lang"),
+			"--embed", filepath.Join(root, "dir1", "static"),
+			"-o", filepath.Join(tmpDir, "embed_diff_bin"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_diff_bin"), tmpDir, nil, "api")
+		if got != "shared-config" {
+			t.Errorf("api should see config: got %q", got)
+		}
+		got = runCmd(t, filepath.Join(tmpDir, "embed_diff_bin"), tmpDir, nil, "worker")
+		if got != "shared-config" {
+			t.Errorf("worker should see config: got %q", got)
+		}
+	})
+
+	// 2.2.47 Duplicate names → exit 1, "duplicate command name"
+	t.Run("duplicate command names", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "dup_names")
+		os.MkdirAll(dir, 0755)
+		os.MkdirAll(filepath.Join(dir, "dir1"), 0755)
+		os.MkdirAll(filepath.Join(dir, "dir2"), 0755)
+		writeFile(t, filepath.Join(dir, "dir1", "api.lang"), `print("api1")`)
+		writeFile(t, filepath.Join(dir, "dir2", "api.lang"), `print("api2")`)
+
+		buildCmd := exec.Command(binaryPath, "build",
+			filepath.Join(dir, "dir1", "api.lang"), filepath.Join(dir, "dir2", "api.lang"),
+			"-o", filepath.Join(tmpDir, "dup_bin"))
+		buildCmd.Dir = projectRoot
+		var stderr bytes.Buffer
+		buildCmd.Stderr = &stderr
+		err := buildCmd.Run()
+		if err == nil {
+			t.Error("Expected build to fail with duplicate command name")
+		}
+		if !strings.Contains(stderr.String(), "duplicate") {
+			t.Errorf("Expected 'duplicate' in stderr, got: %s", stderr.String())
+		}
+	})
+
+	// 2.2.50 --embed shared across commands
+	t.Run("embed shared across commands", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_shared")
+		os.MkdirAll(filepath.Join(dir, "static"), 0755)
+		writeFile(t, filepath.Join(dir, "static", "config.json"), `{"port":8080}`)
+		writeFile(t, filepath.Join(dir, "api.lang"), `
+import "lib/io" (fileRead)
+print(fileRead("static/config.json") |>> \x -> x)
+`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `
+import "lib/io" (fileRead)
+print(fileRead("static/config.json") |>> \x -> x)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"--embed", filepath.Join(dir, "static"),
+			"-o", filepath.Join(tmpDir, "embed_server"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "embed_server"), tmpDir, nil, "api")
+		if !strings.Contains(got, "8080") {
+			t.Errorf("api should see config: %q", got)
+		}
+		got = runCmd(t, filepath.Join(tmpDir, "embed_server"), tmpDir, nil, "worker")
+		if !strings.Contains(got, "8080") {
+			t.Errorf("worker should see config: %q", got)
+		}
+	})
+
+	// 3.2.58 ./server api, 3.2.59 ./server worker
+	t.Run("subcommand dispatch", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "dispatch")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", filepath.Join(tmpDir, "dispatch_server"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "dispatch_server"), tmpDir, nil, "api")
+		if got != "api" {
+			t.Errorf("./server api: got %q", got)
+		}
+		got = runCmd(t, filepath.Join(tmpDir, "dispatch_server"), tmpDir, nil, "worker")
+		if got != "worker" {
+			t.Errorf("./server worker: got %q", got)
+		}
+	})
+
+	// 3.2.60 sysArgs does NOT contain command name (multi-command: ./server api --port 8080)
+	t.Run("sysArgs without command name", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "sysargs_cmd")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `import "lib/sys" (sysArgs)
+args = sysArgs()
+for a in args { print(a) }
+`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", filepath.Join(tmpDir, "sysargs_server"))
+
+		// ./sysargs_server api --port 8080 → api script runs, sysArgs = [binaryPath, "--port", "8080"], NOT "api"
+		got := runCmd(t, filepath.Join(tmpDir, "sysargs_server"), tmpDir, nil, "api", "--port", "8080")
+		lines := strings.Split(got, "\n")
+		hasPort := false
+		hasApi := false
+		for _, l := range lines {
+			if l == "--port" || l == "8080" {
+				hasPort = true
+			}
+			if l == "api" {
+				hasApi = true
+			}
+		}
+		if !hasPort {
+			t.Errorf("sysArgs should contain --port 8080, got: %s", got)
+		}
+		if hasApi {
+			t.Errorf("sysArgs should NOT contain 'api' (command name), got: %s", got)
+		}
+	})
+
+	// #64: ./server --help → exit 1, usage, NOT "Unknown command"
+	t.Run("help flag shows usage not unknown command", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "help_flag")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", filepath.Join(tmpDir, "help_server"))
+
+		cmd := exec.Command(filepath.Join(tmpDir, "help_server"), "--help")
+		cmd.Dir = tmpDir
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			t.Error("Expected exit 1 for --help (no command)")
+		}
+		if !strings.Contains(stderr.String(), "Usage:") {
+			t.Errorf("Expected Usage in stderr, got: %s", stderr.String())
+		}
+		if strings.Contains(stderr.String(), "Unknown command") {
+			t.Errorf("Should NOT contain 'Unknown command' for --help flag, got: %s", stderr.String())
+		}
+	})
+
+	// 3.2.62 ./server (no args) → exit 1, usage
+	t.Run("no args shows usage", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "usage")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", filepath.Join(tmpDir, "usage_server"))
+
+		usageCmd := exec.Command(filepath.Join(tmpDir, "usage_server"))
+		usageCmd.Dir = tmpDir
+		var stderr bytes.Buffer
+		usageCmd.Stderr = &stderr
+		err := usageCmd.Run()
+		if err == nil {
+			t.Error("Expected exit 1 when no args")
+		}
+		if !strings.Contains(stderr.String(), "Usage:") && !strings.Contains(stderr.String(), "command") {
+			t.Errorf("Expected usage message, got: %s", stderr.String())
+		}
+	})
+
+	// 3.2.63 ./server blah → "Unknown command: blah"
+	t.Run("unknown command", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "unknown")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", filepath.Join(tmpDir, "multi_cmd"))
+
+		unknownCmd := exec.Command(filepath.Join(tmpDir, "multi_cmd"), "blah")
+		unknownCmd.Dir = tmpDir
+		var stderr bytes.Buffer
+		unknownCmd.Stderr = &stderr
+		err := unknownCmd.Run()
+		if err == nil {
+			t.Error("Expected exit 1 for unknown command")
+		}
+		if !strings.Contains(stderr.String(), "Unknown") && !strings.Contains(stderr.String(), "blah") {
+			t.Errorf("Expected 'Unknown command' or 'blah', got: %s", stderr.String())
+		}
+	})
+
+	// 3.2.65 $ escape-hatch, 3.2.66 $ -e
+	t.Run("dollar escape hatch", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "dollar_multi")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"),
+			"-o", filepath.Join(tmpDir, "dollar_server"))
+
+		got := runCmd(t, filepath.Join(tmpDir, "dollar_server"), tmpDir, nil, "$", "-e", "print(42)")
+		if got != "42" {
+			t.Errorf("$ -e 'print(42)': got %q", got)
+		}
+	})
+
+	// 3.3.67-68 Symlink dispatch: ln -s server api; ./api runs api command (argv[0] basename = "api")
+	t.Run("symlink dispatch", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "symlink")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		serverPath := filepath.Join(dir, "server")
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", serverPath)
+
+		// Symlinks must be named "api" and "worker" to match command names (argv[0] basename)
+		apiLink := filepath.Join(dir, "api")
+		workerLink := filepath.Join(dir, "worker")
+		if err := os.Symlink(serverPath, apiLink); err != nil {
+			t.Skipf("Symlink not supported: %v", err)
+		}
+		if err := os.Symlink(serverPath, workerLink); err != nil {
+			t.Skipf("Symlink not supported: %v", err)
+		}
+
+		got := runCmd(t, apiLink, dir, nil)
+		if got != "api" {
+			t.Errorf("./api (symlink): got %q, want api", got)
+		}
+		got = runCmd(t, workerLink, dir, nil)
+		if got != "worker" {
+			t.Errorf("./worker (symlink): got %q, want worker", got)
+		}
+	})
+
+	// #69: Symlink + args → sysArgs = [apiPath, "--port", "8080"] (multi-command)
+	t.Run("symlink sysArgs", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "symlink_args")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `import "lib/sys" (sysArgs)
+args = sysArgs()
+for a in args { print(a) }
+`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build", filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"), "-o", filepath.Join(dir, "server"))
+
+		apiLink := filepath.Join(dir, "api")
+		if err := os.Symlink(filepath.Join(dir, "server"), apiLink); err != nil {
+			t.Skipf("Symlink not supported: %v", err)
+		}
+
+		got := runCmd(t, apiLink, dir, nil, "--port", "8080")
+		lines := strings.Split(got, "\n")
+		if len(lines) < 3 {
+			t.Fatalf("Expected 3+ lines (path + --port + 8080), got: %s", got)
+		}
+		if !strings.Contains(lines[0], "api") {
+			t.Errorf("sysArgs[0] should contain api path, got: %s", lines[0])
+		}
+		hasPort := false
+		for _, l := range lines {
+			if l == "--port" || l == "8080" {
+				hasPort = true
+				break
+			}
+		}
+		if !hasPort {
+			t.Errorf("sysArgs should contain --port 8080, got: %s", got)
+		}
+	})
+
+	// #70: Symlink with unknown name (foo) → usage
+	t.Run("symlink unknown name", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "symlink_unknown")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", filepath.Join(dir, "server"))
+
+		fooLink := filepath.Join(dir, "foo")
+		if err := os.Symlink(filepath.Join(dir, "server"), fooLink); err != nil {
+			t.Skipf("Symlink not supported: %v", err)
+		}
+
+		cmd := exec.Command(fooLink)
+		cmd.Dir = dir
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			t.Error("Expected exit 1 for ./foo (unknown argv[0])")
+		}
+		if !strings.Contains(stderr.String(), "Usage:") && !strings.Contains(stderr.String(), "command") {
+			t.Errorf("Expected usage, got: %s", stderr.String())
+		}
+	})
+
+	// #71: Symlink api + arg worker → runs api, worker in sysArgs (NOT worker command)
+	t.Run("symlink api with worker arg", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "symlink_api_worker")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `import "lib/sys" (sysArgs)
+args = sysArgs()
+for a in args { print(a) }
+`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker-cmd")`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", filepath.Join(dir, "server"))
+
+		apiLink := filepath.Join(dir, "api")
+		if err := os.Symlink(filepath.Join(dir, "server"), apiLink); err != nil {
+			t.Skipf("Symlink not supported: %v", err)
+		}
+
+		// ./api worker → argv[0]=api, runs api; "worker" is arg (NOT worker command)
+		got := runCmd(t, apiLink, dir, nil, "worker")
+		if !strings.Contains(got, "worker") {
+			t.Errorf("api should receive 'worker' in sysArgs, got: %s", got)
+		}
+		if strings.Contains(got, "worker-cmd") {
+			t.Error("Should NOT run worker command, should run api with 'worker' as arg")
+		}
+	})
+
+	// #72: Binary named api (-o api) → ./api runs api via symlink dispatch
+	t.Run("binary name equals command", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "bin_name_cmd")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
+
+		apiBin := filepath.Join(dir, "api")
+		if runtime.GOOS == "windows" {
+			apiBin = filepath.Join(dir, "api.exe")
+		}
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", apiBin)
+
+		got := runCmd(t, apiBin, dir, nil)
+		if got != "api" {
+			t.Errorf("./api (binary named api): got %q, want api", got)
+		}
+	})
+
+	// #73: ./api worker → runs api, "worker" is arg (NOT worker command)
+	t.Run("binary name api with worker arg", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "bin_api_worker_arg")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `import "lib/sys" (sysArgs)
+args = sysArgs()
+for a in args { print(a) }
+`)
+		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker-cmd")`)
+
+		apiBin := filepath.Join(dir, "api")
+		if runtime.GOOS == "windows" {
+			apiBin = filepath.Join(dir, "api.exe")
+		}
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
+			"-o", apiBin)
+
+		got := runCmd(t, apiBin, dir, nil, "worker")
+		if !strings.Contains(got, "worker") {
+			t.Errorf("api should receive 'worker' as arg, got: %s", got)
+		}
+		if strings.Contains(got, "worker-cmd") {
+			t.Error("Should NOT run worker command, should run api with 'worker' as arg")
 		}
 	})
 }

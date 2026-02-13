@@ -1,0 +1,24 @@
+--- Input ---
+if true { 1 }
+else
+{ 2 }
+
+--- AST Tree ---
+Program
+If
+    Cond: BooleanLiteral(true)
+    Then: Block
+      IntegerLiteral(1)
+
+
+    Else: Block
+      IntegerLiteral(2)
+
+
+
+--- Source Code ---
+if true {
+    1
+} else {
+    2
+}

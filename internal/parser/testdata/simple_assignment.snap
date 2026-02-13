@@ -1,3 +1,6 @@
+--- Input ---
+a = 5
+
 --- AST Tree ---
 Program
   Assign

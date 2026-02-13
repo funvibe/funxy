@@ -70,6 +70,63 @@ html = fileRead("templates/index.html") |>> \x -> x
 
 Paths are stored relative to the source file directory.
 
+### Multi-Command Binaries
+
+Bundle multiple scripts into a single binary. Each script becomes a named command, dispatched by the first argument or by `argv[0]` (symlink):
+
+```bash
+# Build a multi-command binary
+funxy build api.lang worker.lang cron.lang -o myserver
+
+# Run commands
+./myserver api --port 8080      # runs api.lang
+./myserver worker               # runs worker.lang
+./myserver cron                 # runs cron.lang
+./myserver                      # prints usage with available commands
+```
+
+Command names are derived from filenames: `api.lang` → `api`, `worker.lang` → `worker`. Duplicate names are an error.
+
+#### Symlink Dispatch
+
+If the binary's `argv[0]` basename matches a command name, that command runs directly — no subcommand argument needed:
+
+```bash
+ln -s myserver api
+ln -s myserver worker
+
+./api --port 8080    # runs api.lang (dispatched by argv[0])
+./worker             # runs worker.lang
+```
+
+This is the BusyBox pattern: one binary, multiple symlinks, each behaves as a standalone tool.
+
+#### Shared Embedded Resources
+
+`--embed` resources are shared across all commands:
+
+```bash
+funxy build api.lang worker.lang --embed static --embed config.json -o myserver
+```
+
+Both `api` and `worker` can call `fileRead("static/index.html")` or `fileRead("config.json")` — they see the same embedded files.
+
+#### sysArgs() in Multi-Command Mode
+
+`sysArgs()` does **not** include the command name. A script behaves the same whether it runs standalone or as a subcommand:
+
+```bash
+# Standalone:      ./api --port 8080  → sysArgs() = ["./api", "--port", "8080"]
+# Subcommand:      ./myserver api --port 8080  → sysArgs() = ["./myserver", "--port", "8080"]
+# Symlink:         ./api --port 8080  → sysArgs() = ["./api", "--port", "8080"]
+```
+
+The `$` escape hatch works with multi-command binaries too:
+
+```bash
+./myserver $ -e 'print(42)'   # interpreter mode
+```
+
 ### Cross-Compilation (`--host`)
 
 To build for a different OS or architecture, provide a pre-built Funxy binary for the target platform via `--host`:
@@ -92,17 +149,18 @@ The bytecode is platform-independent — only the host binary determines the tar
 
 ### How it works
 
-1. Your script and all user module dependencies are compiled to bytecode
+1. Your script(s) and all user module dependencies are compiled to bytecode
 2. The bytecode is serialized into a Bundle (v2 format), including any `--embed` resources
-3. The Bundle is appended to the host binary (own executable or `--host`)
-4. On startup, the binary detects the embedded bundle and executes it
+3. For multi-command: each script becomes a named sub-bundle inside a parent Bundle
+4. The Bundle is appended to the host binary (own executable or `--host`)
+5. On startup, the binary detects the embedded bundle and executes it (or dispatches to a sub-command)
 
 The resulting binary includes:
 - The full Funxy VM runtime
-- Your script's bytecode
+- Your script's bytecode (or multiple scripts' bytecodes for multi-command)
 - All user module dependencies (pre-compiled)
 - Pre-compiled trait default methods
-- Embedded static files (if `--embed` was used)
+- Embedded static files (if `--embed` was used), shared across all commands
 
 Virtual modules (`lib/*`) are resolved at runtime from the built-in standard library.
 
@@ -125,9 +183,14 @@ The v2 bundle format replaces the legacy single-chunk v1 format:
 - **Magic**: `FXYB` (4 bytes)
 - **Version**: `0x02` (1 byte)
 - **Payload**: Gob-encoded `Bundle` struct containing:
-  - `MainChunk`: compiled bytecode for the entry script
+  - `MainChunk`: compiled bytecode for the entry script (single-command mode)
   - `Modules`: map of absolute path → pre-compiled `BundledModule`
   - `TraitDefaults`: pre-compiled trait default methods
+  - `Resources`: embedded static files (`--embed`)
+  - `Commands`: map of command name → sub-`Bundle` (multi-command mode)
+
+**Single-command mode**: `MainChunk` is set, `Commands` is empty.
+**Multi-command mode**: `MainChunk` is nil, `Commands` maps names to sub-bundles. Each sub-bundle has its own `MainChunk`, `Modules`, and `TraitDefaults`. `Resources` are shared from the parent.
 
 Each `BundledModule` contains:
 - `Chunk`: compiled bytecode

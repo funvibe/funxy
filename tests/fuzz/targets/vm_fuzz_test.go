@@ -2,8 +2,8 @@ package targets
 
 import (
 	"context"
-	"github.com/funvibe/funxy/internal/vm"
 	"github.com/funvibe/funxy/tests/fuzz/generators"
+	"github.com/funvibe/funxy/internal/vm"
 	"runtime/debug"
 	"testing"
 	"time"

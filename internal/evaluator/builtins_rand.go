@@ -1,8 +1,8 @@
 package evaluator
 
 import (
-	"github.com/funvibe/funxy/internal/typesystem"
 	"math/rand"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"sync"
 	"time"
 )

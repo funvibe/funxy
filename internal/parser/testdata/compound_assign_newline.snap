@@ -1,0 +1,15 @@
+--- Input ---
+x +=
+    10
+
+--- AST Tree ---
+Program
+  Assign
+    Left: Identifier(x)
+    Value: Infix(+)
+      Left: Identifier(x)
+      Right: IntegerLiteral(10)
+
+
+--- Source Code ---
+x = x + 10

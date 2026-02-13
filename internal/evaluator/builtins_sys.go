@@ -2,9 +2,9 @@ package evaluator
 
 import (
 	"bytes"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"os"
 	"os/exec"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"path/filepath"
 )
 

@@ -2,11 +2,11 @@ package evaluator
 
 import (
 	"context"
+	"io"
+	"os"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/typesystem"
-	"io"
-	"os"
 	"reflect"
 	"strings"
 )

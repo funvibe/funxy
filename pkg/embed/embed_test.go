@@ -2,9 +2,9 @@ package funxy_test
 
 import (
 	"fmt"
-	funxy "github.com/funvibe/funxy/pkg/embed"
 	"io/ioutil"
 	"os"
+	funxy "github.com/funvibe/funxy/pkg/embed"
 	"path/filepath"
 	"strings"
 	"testing"

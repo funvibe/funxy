@@ -1,0 +1,28 @@
+--- Input ---
+for x in
+    [1, 2, 3] {
+    print(x)
+}
+
+--- AST Tree ---
+Program
+For
+    IterItem: x
+    Iterable: List
+      IntegerLiteral(1)
+      IntegerLiteral(2)
+      IntegerLiteral(3)
+
+    Body: Block
+      Call
+        Function: Identifier(print)
+        Arguments:
+          Identifier(x)
+
+
+
+
+--- Source Code ---
+for x in [1, 2, 3] {
+    print(x)
+}

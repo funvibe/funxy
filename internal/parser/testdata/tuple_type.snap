@@ -1,3 +1,6 @@
+--- Input ---
+type alias Pair = (Int, Bool)
+
 --- AST Tree ---
 Program
   TypeDeclaration (Alias)

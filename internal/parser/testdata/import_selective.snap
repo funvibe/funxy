@@ -1,3 +1,6 @@
+--- Input ---
+import "lib/json" (jsonEncode, jsonDecode)
+
 --- AST Tree ---
 Program
   Import: lib/json

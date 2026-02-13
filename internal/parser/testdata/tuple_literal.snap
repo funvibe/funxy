@@ -1,3 +1,6 @@
+--- Input ---
+x = (1, true, a)
+
 --- AST Tree ---
 Program
   Assign

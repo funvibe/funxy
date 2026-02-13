@@ -2,12 +2,12 @@ package backend
 
 import (
 	"fmt"
+	"os"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/vm"
-	"os"
 	"path/filepath"
 )
 

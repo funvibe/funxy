@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"io"
 	"net/http"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +15,9 @@ import (
 
 // HTTP client timeout (default 30 seconds)
 var httpTimeout = 30 * time.Second
+
+// When true, HTTP client does not follow redirects (3xx responses returned as-is)
+var httpNoRedirect = false
 
 // Default server stop timeout
 const DefaultServerStopTimeoutMs = 5000
@@ -29,16 +32,17 @@ var (
 // HttpBuiltins returns built-in functions for lib/http virtual package
 func HttpBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
-		"httpGet":        {Fn: builtinHttpGet, Name: "httpGet"},
-		"httpPost":       {Fn: builtinHttpPost, Name: "httpPost"},
-		"httpPostJson":   {Fn: builtinHttpPostJson, Name: "httpPostJson"},
-		"httpPut":        {Fn: builtinHttpPut, Name: "httpPut"},
-		"httpDelete":     {Fn: builtinHttpDelete, Name: "httpDelete"},
-		"httpRequest":    {Fn: builtinHttpRequest, Name: "httpRequest"},
-		"httpSetTimeout": {Fn: builtinHttpSetTimeout, Name: "httpSetTimeout"},
-		"httpServe":      {Fn: builtinHttpServe, Name: "httpServe"},
-		"httpServeAsync": {Fn: builtinHttpServeAsync, Name: "httpServeAsync"},
-		"httpServerStop": {Fn: builtinHttpServerStop, Name: "httpServerStop"},
+		"httpGet":           {Fn: builtinHttpGet, Name: "httpGet"},
+		"httpPost":          {Fn: builtinHttpPost, Name: "httpPost"},
+		"httpPostJson":      {Fn: builtinHttpPostJson, Name: "httpPostJson"},
+		"httpPut":           {Fn: builtinHttpPut, Name: "httpPut"},
+		"httpDelete":        {Fn: builtinHttpDelete, Name: "httpDelete"},
+		"httpRequest":       {Fn: builtinHttpRequest, Name: "httpRequest"},
+		"httpSetTimeout":    {Fn: builtinHttpSetTimeout, Name: "httpSetTimeout"},
+		"httpSetNoRedirect": {Fn: builtinHttpSetNoRedirect, Name: "httpSetNoRedirect"},
+		"httpServe":         {Fn: builtinHttpServe, Name: "httpServe"},
+		"httpServeAsync":    {Fn: builtinHttpServeAsync, Name: "httpServeAsync"},
+		"httpServerStop":    {Fn: builtinHttpServerStop, Name: "httpServerStop"},
 	}
 }
 
@@ -225,6 +229,22 @@ func builtinHttpSetTimeout(e *Evaluator, args ...Object) Object {
 	return &Nil{}
 }
 
+// httpSetNoRedirect: (Bool) -> Nil
+// When set to true, HTTP client returns 3xx responses as-is without following redirects.
+func builtinHttpSetNoRedirect(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("httpSetNoRedirect expects 1 argument, got %d", len(args))
+	}
+
+	boolVal, ok := args[0].(*Boolean)
+	if !ok {
+		return newError("httpSetNoRedirect expects a Bool, got %s", args[0].Type())
+	}
+
+	httpNoRedirect = boolVal.Value
+	return &Nil{}
+}
+
 // doHttpRequest performs the actual HTTP request with global timeout
 func doHttpRequest(method, url string, headers [][2]string, body io.Reader) Object {
 	return doHttpRequestWithTimeout(method, url, headers, body, httpTimeout)
@@ -253,6 +273,11 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 	// Make real HTTP request
 	client := &http.Client{
 		Timeout: timeout,
+	}
+	if httpNoRedirect {
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
 	}
 
 	req, err := http.NewRequest(method, url, body)
@@ -788,9 +813,10 @@ func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
 			ReturnType:   resultResponse,
 			DefaultCount: 2, // body and timeout have defaults
 		},
-		"httpSetTimeout": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"httpServe":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
-		"httpServeAsync": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: typesystem.Int},
+		"httpSetTimeout":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+		"httpSetNoRedirect": typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool}, ReturnType: typesystem.Nil},
+		"httpServe":         typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
+		"httpServeAsync":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: typesystem.Int},
 		"httpServerStop": typesystem.TFunc{
 			Params:       []typesystem.Type{typesystem.Int, typesystem.Int},
 			ReturnType:   typesystem.Nil,

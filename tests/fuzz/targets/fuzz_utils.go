@@ -1,8 +1,8 @@
 package targets
 
 import (
-	"github.com/funvibe/funxy/internal/evaluator"
 	"os"
+	"github.com/funvibe/funxy/internal/evaluator"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -103,6 +103,8 @@ func getErrorType(err error) string {
 	case strings.Contains(msg, "name not found"), strings.Contains(msg, "not defined"),
 		strings.Contains(msg, "identifier not found"), strings.Contains(msg, "undefined variable"):
 		return "NameError"
+	case strings.Contains(msg, "not iterable"), strings.Contains(msg, "iterable must be"):
+		return "IterError"
 	case strings.Contains(msg, "stack overflow"):
 		return "StackOverflow"
 	case strings.Contains(msg, "runtime error"):

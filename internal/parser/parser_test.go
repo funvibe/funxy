@@ -39,6 +39,19 @@ func TestParser(t *testing.T) {
 		{"import_alias", `import "lib/json" as json`},
 		{"import_all", `import "lib/json" (*)`},
 		{"import_exclude", `import "lib/json" !(jsonParse)`},
+		{"match_newline_after_arrow", "match x {\n    Ok(v) ->\n        v + 1\n    Fail(e) ->\n        0\n}"},
+		{"match_guard_newline_after_arrow", "match x {\n    Ok(v) if v > 0 ->\n        v\n    _ ->\n        0\n}"},
+		{"assign_newline_after_eq", "x =\n    5 + 3"},
+		{"compound_assign_newline", "x +=\n    10"},
+		{"if_else_newline", "if true { 1 }\nelse\n{ 2 }"},
+		{"if_else_if_newline", "if true { 1 }\nelse\nif false { 2 } else { 3 }"},
+		{"for_in_newline", "for x in\n    [1, 2, 3] {\n    print(x)\n}"},
+		{"fun_arrow_newline", "f = fun(x: Int) ->\n    x + 1"},
+		{"index_newline", "x[\n    0\n]"},
+		{"tuple_pattern_newline", "match x {\n    (a,\n     b) -> a\n}"},
+		{"list_pattern_newline", "match x {\n    [\n     a, b\n    ] -> a\n}"},
+		{"constructor_pattern_newline", "match x {\n    Ok(a,\n       b) -> a\n    _ -> 0\n}"},
+		{"lambda_newline_after_arrow", "(\\x ->\n    x + 1)"},
 	}
 
 	for _, tc := range testCases {
@@ -72,8 +85,8 @@ func TestParser(t *testing.T) {
 			ctx.AstRoot.Accept(codePrinter)
 			codeOutput := codePrinter.String()
 
-			// Combine outputs
-			actual := "--- AST Tree ---\n" + treeOutput + "\n--- Source Code ---\n" + codeOutput
+			// Combine outputs — include original input so snapshots show what was parsed
+			actual := "--- Input ---\n" + tc.input + "\n\n--- AST Tree ---\n" + treeOutput + "\n--- Source Code ---\n" + codeOutput
 
 			// Snapshot testing
 			snapshotFile := filepath.Join("testdata", tc.name+".snap")

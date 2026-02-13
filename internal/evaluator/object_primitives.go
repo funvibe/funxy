@@ -2,9 +2,9 @@ package evaluator
 
 import (
 	"fmt"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"math"
 	"math/big"
+	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // Boolean

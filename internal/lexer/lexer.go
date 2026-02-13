@@ -2,8 +2,8 @@ package lexer
 
 import (
 	"fmt"
-	"github.com/funvibe/funxy/internal/token"
 	"math/big"
+	"github.com/funvibe/funxy/internal/token"
 	"strconv"
 	"unicode"
 	"unicode/utf8"

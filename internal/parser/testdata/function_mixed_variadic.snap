@@ -1,3 +1,6 @@
+--- Input ---
+fun process(id: Int, ...args) { 0 }
+
 --- AST Tree ---
 Program
   FunctionStatement

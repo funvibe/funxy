@@ -3,11 +3,11 @@ package vm
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"math/big"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/utils"
-	"math"
-	"math/big"
 )
 
 // binaryOp performs binary arithmetic operations

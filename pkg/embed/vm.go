@@ -2,6 +2,7 @@ package funxy
 
 import (
 	"fmt"
+	"io/ioutil"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/diagnostics"
@@ -13,7 +14,6 @@ import (
 	"github.com/funvibe/funxy/internal/token"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"github.com/funvibe/funxy/internal/vm"
-	"io/ioutil"
 	"path/filepath"
 	"reflect"
 )

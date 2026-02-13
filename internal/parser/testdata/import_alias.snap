@@ -1,3 +1,6 @@
+--- Input ---
+import "lib/json" as json
+
 --- AST Tree ---
 Program
   Import: lib/json as json

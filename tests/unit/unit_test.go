@@ -3,6 +3,7 @@ package unit
 import (
 	"flag"
 	"fmt"
+	"os"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/backend"
 	"github.com/funvibe/funxy/internal/config"
@@ -11,7 +12,6 @@ import (
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"

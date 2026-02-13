@@ -180,7 +180,7 @@ func (p *Parser) parseRecordLiteralOrBlock() ast.Expression {
 							if tt == token.COMMA {
 								break // End of record field
 							}
-							if tt == token.ASSIGN {
+							if tt == token.ASSIGN || tt == token.COLON_MINUS {
 								hasAssign = true
 								break
 							}

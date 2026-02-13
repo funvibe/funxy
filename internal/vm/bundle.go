@@ -16,12 +16,18 @@ func init() {
 	gob.Register(&BundledModule{})
 	gob.Register(map[string]*BundledModule{})
 	gob.Register(map[string]*CompiledFunction{})
+	gob.Register(map[string]*Bundle{})
 }
 
 // Bundle represents a complete compiled program with all user module dependencies.
 // This is the v2 bytecode format that replaces the single-Chunk v1 format.
+//
+// Single-command mode: MainChunk is set, Commands is nil/empty.
+// Multi-command mode:  MainChunk is nil, Commands maps command names to sub-bundles.
+//
+//	Resources are shared across all commands.
 type Bundle struct {
-	// MainChunk is the compiled bytecode for the entry script
+	// MainChunk is the compiled bytecode for the entry script (single-command mode)
 	MainChunk *Chunk
 
 	// Modules maps absolute path -> pre-compiled module
@@ -39,6 +45,11 @@ type Bundle struct {
 	// Key is the relative path from the source file directory, value is file contents.
 	// Populated by --embed flag during build.
 	Resources map[string][]byte
+
+	// Commands maps command name -> sub-bundle for multi-command binaries.
+	// When set, MainChunk should be nil. Each sub-bundle has its own
+	// MainChunk, Modules, and TraitDefaults; Resources are shared from the parent.
+	Commands map[string]*Bundle
 }
 
 // BundledModule represents a single pre-compiled user module in the bundle.
@@ -152,6 +163,9 @@ func DeserializeAny(data []byte) (*Bundle, error) {
 		if bundle.Resources == nil {
 			bundle.Resources = make(map[string][]byte)
 		}
+		if bundle.Commands == nil {
+			bundle.Commands = make(map[string]*Bundle)
+		}
 		return &bundle, nil
 
 	default:
@@ -216,26 +230,64 @@ func ExtractEmbeddedBundle(binaryData []byte) (*Bundle, error) {
 
 // GetHostBinarySize returns the size of the host binary portion of a self-contained
 // binary (i.e., the size WITHOUT the appended bundle data and footer).
+// Strips all layers of appended bundles (handles double-pack scenarios).
 // Returns the full file size if no embedded bundle is detected.
 func GetHostBinarySize(binaryData []byte) int64 {
 	size := int64(len(binaryData))
-	if size < selfContainedFooterSize {
-		return size
+
+	for size >= selfContainedFooterSize {
+		footerStart := size - selfContainedFooterSize
+		magic := binaryData[footerStart+8:]
+		if magic[0] != selfContainedMagic[0] || magic[1] != selfContainedMagic[1] ||
+			magic[2] != selfContainedMagic[2] || magic[3] != selfContainedMagic[3] {
+			break // No magic — reached the real host binary
+		}
+
+		bundleSize := int64(binary.LittleEndian.Uint64(binaryData[footerStart : footerStart+8]))
+		if bundleSize == 0 || bundleSize > footerStart {
+			break // Invalid size — stop stripping
+		}
+
+		size = footerStart - bundleSize
 	}
 
-	footerStart := size - selfContainedFooterSize
-	magic := binaryData[footerStart+8:]
-	if magic[0] != selfContainedMagic[0] || magic[1] != selfContainedMagic[1] ||
-		magic[2] != selfContainedMagic[2] || magic[3] != selfContainedMagic[3] {
-		return size // No magic
-	}
+	return size
+}
 
-	bundleSize := int64(binary.LittleEndian.Uint64(binaryData[footerStart : footerStart+8]))
-	if bundleSize == 0 || bundleSize > footerStart {
-		return size
-	}
+// IsMultiCommand returns true if this bundle contains multiple named commands.
+func (b *Bundle) IsMultiCommand() bool {
+	return len(b.Commands) > 0
+}
 
-	return footerStart - bundleSize
+// CommandNames returns sorted list of available command names.
+func (b *Bundle) CommandNames() []string {
+	names := make([]string, 0, len(b.Commands))
+	for name := range b.Commands {
+		names = append(names, name)
+	}
+	// Sort for stable output
+	for i := 0; i < len(names); i++ {
+		for j := i + 1; j < len(names); j++ {
+			if names[i] > names[j] {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
+	}
+	return names
+}
+
+// ResolveCommand finds the sub-bundle for a given command name.
+// It also inherits shared Resources from the parent bundle.
+func (b *Bundle) ResolveCommand(name string) *Bundle {
+	cmd, ok := b.Commands[name]
+	if !ok {
+		return nil
+	}
+	// Inherit shared resources from parent (sub-bundles don't have their own)
+	if len(cmd.Resources) == 0 && len(b.Resources) > 0 {
+		cmd.Resources = b.Resources
+	}
+	return cmd
 }
 
 // --- Helper: run a bundle on a fresh VM ---

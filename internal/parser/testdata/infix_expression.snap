@@ -1,3 +1,6 @@
+--- Input ---
+a = 5 + 2 * 10
+
 --- AST Tree ---
 Program
   Assign

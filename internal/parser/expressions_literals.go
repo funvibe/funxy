@@ -1,10 +1,10 @@
 package parser
 
 import (
+	"math/big"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/lexer"
 	"github.com/funvibe/funxy/internal/token"
-	"math/big"
 )
 
 func (p *Parser) parseIntegerLiteral() ast.Expression {

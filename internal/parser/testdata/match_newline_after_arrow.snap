@@ -1,0 +1,23 @@
+--- Input ---
+match x {
+    Ok(v) ->
+        v + 1
+    Fail(e) ->
+        0
+}
+
+--- AST Tree ---
+Program
+Match
+    Identifier(x)
+    Arm: Con(Identifier(Ok) Var(v)) -> Infix(+)
+      Left: Identifier(v)
+      Right: IntegerLiteral(1)
+    Arm: Con(Identifier(Fail) Var(e)) -> IntegerLiteral(0)
+
+
+--- Source Code ---
+match x {
+    Ok(v)   -> v + 1
+    Fail(e) -> 0
+}

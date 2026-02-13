@@ -2,8 +2,8 @@ package evaluator
 
 import (
 	"fmt"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"os"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"strconv"
 	"strings"
 )

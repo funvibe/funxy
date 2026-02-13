@@ -1,3 +1,6 @@
+--- Input ---
+fun sum(...nums) Int { 0 }
+
 --- AST Tree ---
 Program
   FunctionStatement

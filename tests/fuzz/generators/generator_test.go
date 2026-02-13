@@ -2,10 +2,10 @@ package generators
 
 import (
 	"flag"
+	"os"
 	"github.com/funvibe/funxy/internal/lexer"
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"

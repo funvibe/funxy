@@ -1,0 +1,21 @@
+--- Input ---
+match x {
+    [
+     a, b
+    ] -> a
+}
+
+--- AST Tree ---
+Program
+Match
+    Identifier(x)
+    Arm: ListPattern
+      Var(a)
+      Var(b)
+ -> Identifier(a)
+
+
+--- Source Code ---
+match x {
+    [a, b] -> a
+}

@@ -1026,16 +1026,17 @@ func initRegexDocs() {
 
 func initHttpDocs() {
 	meta := map[string]*DocMeta{
-		"httpGet":        {Description: "HTTP GET request", Category: "Client"},
-		"httpPost":       {Description: "HTTP POST with body (String or Bytes)", Category: "Client"},
-		"httpPostJson":   {Description: "HTTP POST with JSON body (auto-encodes)", Category: "Client"},
-		"httpPut":        {Description: "HTTP PUT with body (String or Bytes)", Category: "Client"},
-		"httpDelete":     {Description: "HTTP DELETE request", Category: "Client"},
-		"httpRequest":    {Description: "Full control HTTP request (body: String or Bytes, defaults: body=\"\", timeout=0)", Category: "Client"},
-		"httpSetTimeout": {Description: "Set request timeout (milliseconds)", Category: "Config"},
-		"httpServe":      {Description: "Start HTTP server (blocking)", Category: "Server"},
-		"httpServeAsync": {Description: "Start HTTP server (non-blocking, returns server ID)", Category: "Server"},
-		"httpServerStop": {Description: "Stop a running server by ID (timeout? default 5000ms)", Category: "Server"},
+		"httpGet":           {Description: "HTTP GET request", Category: "Client"},
+		"httpPost":          {Description: "HTTP POST with body (String or Bytes)", Category: "Client"},
+		"httpPostJson":      {Description: "HTTP POST with JSON body (auto-encodes)", Category: "Client"},
+		"httpPut":           {Description: "HTTP PUT with body (String or Bytes)", Category: "Client"},
+		"httpDelete":        {Description: "HTTP DELETE request", Category: "Client"},
+		"httpRequest":       {Description: "Full control HTTP request (body: String or Bytes, defaults: body=\"\", timeout=0)", Category: "Client"},
+		"httpSetTimeout":    {Description: "Set request timeout (milliseconds)", Category: "Config"},
+		"httpSetNoRedirect": {Description: "When true, return 3xx responses without following redirects", Category: "Config"},
+		"httpServe":         {Description: "Start HTTP server (blocking)", Category: "Server"},
+		"httpServeAsync":    {Description: "Start HTTP server (non-blocking, returns server ID)", Category: "Server"},
+		"httpServerStop":    {Description: "Stop a running server by ID (timeout? default 5000ms)", Category: "Server"},
 	}
 	types := []*DocEntry{
 		{Name: "HttpResponse", Signature: "{ status: Int, body: String, headers: List<(String, String)> }", Description: "HTTP response type"},

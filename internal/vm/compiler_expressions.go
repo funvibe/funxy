@@ -2,10 +2,10 @@ package vm
 
 import (
 	"fmt"
+	"hash/fnv"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
-	"hash/fnv"
 	"sort"
 	"strings"
 )

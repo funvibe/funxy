@@ -103,6 +103,13 @@ func initHttpPackage() {
 				ReturnType: typesystem.Nil,
 			},
 
+			// httpSetNoRedirect: (Bool) -> Nil
+			// When true, 3xx responses are returned as-is without following redirects
+			"httpSetNoRedirect": typesystem.TFunc{
+				Params:     []typesystem.Type{typesystem.Bool},
+				ReturnType: typesystem.Nil,
+			},
+
 			// ========== Server functions ==========
 
 			// httpServe: (Int, (HttpRequest) -> HttpResponse) -> Result<String, Nil>

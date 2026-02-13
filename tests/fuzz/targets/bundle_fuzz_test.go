@@ -3,15 +3,15 @@ package targets
 import (
 	"bytes"
 	"context"
+	"io"
+	"os"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/lexer"
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/symbols"
-	"github.com/funvibe/funxy/internal/vm"
 	"github.com/funvibe/funxy/tests/fuzz/generators"
-	"io"
-	"os"
+	"github.com/funvibe/funxy/internal/vm"
 	"testing"
 	"time"
 )

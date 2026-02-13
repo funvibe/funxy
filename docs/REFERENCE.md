@@ -22,7 +22,7 @@
 18. [Embedding Funxy in Go](#18-embedding-funxy-in-go)
 19. [Tools and Debugging](#19-tools-and-debugging)
 20. [Functional Programming](#20-functional-programming)
-21. [Bytecode Compilation (Experimental)](#21-bytecode-compilation-experimental)
+21. [Compilation and Distribution](#21-compilation-and-distribution)
 22. [Summary Tables](#22-summary-tables)
 
 ---
@@ -2319,6 +2319,51 @@ html = fileRead("templates/index.html") |>> \x -> x
 
 This works identically whether running interpreted (`funxy app.lang`) or as a self-contained binary (`./app`). The binary checks embedded resources first, then falls back to the filesystem.
 
+#### Multi-Command Binaries
+
+Bundle multiple scripts into a single binary. Each script becomes a named command:
+
+```bash
+# Build multi-command binary
+funxy build api.lang worker.lang cron.lang -o myserver
+
+# Dispatch by subcommand
+./myserver api --port 8080      # runs api.lang
+./myserver worker               # runs worker.lang
+./myserver cron                 # runs cron.lang
+./myserver                      # prints usage with available commands
+./myserver unknown              # "Unknown command: unknown" + usage
+```
+
+Command names are derived from filenames (`api.lang` → `api`). Duplicate names cause a build error.
+
+**Symlink dispatch** — `argv[0]` basename is checked first:
+
+```bash
+ln -s myserver api
+ln -s myserver worker
+
+./api --port 8080    # argv[0]="api" → runs api.lang directly
+./worker             # argv[0]="worker" → runs worker.lang
+```
+
+**Shared embedded resources** — `--embed` files are available to all commands:
+
+```bash
+funxy build api.lang worker.lang --embed static --embed config.json -o myserver
+```
+
+Both `api` and `worker` can call `fileRead("config.json")` — they share the same embedded files.
+
+**sysArgs()** does not include the command name. A script behaves identically whether run standalone or as a subcommand:
+
+```bash
+./myserver api --port 8080   # sysArgs() = ["./myserver", "--port", "8080"]
+./api --port 8080            # sysArgs() = ["./api", "--port", "8080"]
+```
+
+The `$` escape hatch works the same: `./myserver $ -e 'print(42)'`.
+
 #### Cross-Compilation (`--host`)
 
 To build a binary for a different OS or architecture, use the `--host` flag to specify a pre-built Funxy binary for the target platform:
@@ -2340,10 +2385,11 @@ funxy build script.lang --host release-bin/funxy-freebsd-amd64 -o myapp-bsd
 The bytecode is platform-independent — only the host binary determines the target platform. The `--host` flag requires an explicit path; there are no default targets.
 
 **How it works:**
-1. The script and all its user module dependencies are compiled to bytecode
+1. The script(s) and all user module dependencies are compiled to bytecode
 2. The bytecode is serialized into a Bundle (v2 format), including any `--embed` resources
-3. The Bundle is appended to the host binary (own executable or `--host`) with a footer marker
-4. On startup, the binary detects the embedded bundle and executes it directly
+3. For multi-command: each script becomes a named sub-bundle inside a parent Bundle
+4. The Bundle is appended to the host binary (own executable or `--host`) with a footer marker
+5. On startup, the binary detects the embedded bundle and executes it (or dispatches to a sub-command)
 
 ### Bytecode Compilation (`-c` / `-r`)
 
@@ -2363,7 +2409,7 @@ funxy -r script.fbc
 - **Magic**: `FXYB` header
 - **Version**: `0x01` (single chunk, legacy) or `0x02` (full bundle with modules)
 - **Encoding**: Gob-encoded Bundle with main chunk + module chunks
-- **Features**: Bundles all user module dependencies, pre-compiled trait defaults
+- **Features**: Bundles all user module dependencies, pre-compiled trait defaults, embedded resources, multi-command support (`Commands` map)
 
 ### Compilation Process
 

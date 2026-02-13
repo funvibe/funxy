@@ -48,6 +48,11 @@ func (p *Parser) parseIfExpression() ast.Expression {
 		if p.peekTokenIs(token.ELSE) {
 			p.nextToken()
 
+			// Skip newlines after 'else' — allows: } else\n if / } else\n {
+			for p.peekTokenIs(token.NEWLINE) {
+				p.nextToken()
+			}
+
 			if p.peekTokenIs(token.IF) {
 				p.nextToken()
 				ifExpr := p.parseIfExpression()
@@ -82,6 +87,10 @@ func (p *Parser) parseForExpression() ast.Expression {
 		expr.ItemName = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
 		p.nextToken() // consume ident
 		p.nextToken() // consume in
+		// Skip newlines after 'in' — allows: for x in\n    list
+		for p.curTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
 
 		prev := p.disallowTrailingLambda
 		p.disallowTrailingLambda = true

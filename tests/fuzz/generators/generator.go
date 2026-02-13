@@ -114,6 +114,16 @@ func (g *Generator) GenerateNoise() string {
 	return sb.String()
 }
 
+// MaybeNewline returns "\n" with ~30% probability, otherwise " ".
+// Use this at syntactic boundaries where newlines should be legal
+// (after ->, after commas in lists, after {, before }, etc.)
+func (g *Generator) MaybeNewline() string {
+	if g.src.Intn(3) == 0 {
+		return "\n"
+	}
+	return " "
+}
+
 func (g *Generator) GenerateTopLevelStatement() string {
 	if g.depth > MaxDepth {
 		return "print(\"limit\")"
@@ -313,29 +323,34 @@ func (g *Generator) GenerateTypeWithGenerics(gens []string) string {
 
 func (g *Generator) GenerateBlock() string {
 	var sb strings.Builder
-	sb.WriteString("{\n")
+	sb.WriteString("{" + g.MaybeNewline())
 	count := g.src.Intn(3) + 1
 	for i := 0; i < count; i++ {
 		sb.WriteString(g.GenerateBlockStatement())
 		sb.WriteString("\n")
 		sb.WriteString(g.GenerateNoise())
 	}
-	sb.WriteString("}")
+	sb.WriteString(g.MaybeNewline() + "}")
 	return sb.String()
 }
 
 func (g *Generator) GenerateLoop() string {
-	// for condition { body }
-	cond := g.GenerateExpression()
 	body := g.GenerateBlock()
-	return fmt.Sprintf("for %s %s", cond, body)
+	// 50% for-in, 50% for-condition
+	if g.src.Intn(2) == 0 {
+		iter := g.GenerateIdentifier()
+		list := g.GenerateExpression()
+		return fmt.Sprintf("for %s in %s%s%s", iter, list, g.MaybeNewline(), body)
+	}
+	cond := g.GenerateExpression()
+	return fmt.Sprintf("for %s%s%s", cond, g.MaybeNewline(), body)
 }
 
 func (g *Generator) GenerateIfExpression() string {
 	cond := g.GenerateBooleanExpression()
 	cons := g.GenerateBlock()
 	alt := g.GenerateBlock()
-	return fmt.Sprintf("if %s %s else %s", cond, cons, alt)
+	return fmt.Sprintf("if %s %s%selse %s", cond, cons, g.MaybeNewline(), alt)
 }
 
 func (g *Generator) GenerateMatchExpression() string {
@@ -349,15 +364,23 @@ func (g *Generator) GenerateMatchExpression() string {
 		sb.WriteString("\n")
 	}
 	// Always add a wildcard arm to ensure exhaustiveness
-	sb.WriteString("_ -> " + g.GenerateExpression() + "\n")
+	sb.WriteString("_ ->" + g.MaybeNewline() + g.GenerateExpression() + "\n")
 	sb.WriteString("}")
 	return sb.String()
 }
 
 func (g *Generator) GenerateMatchArm() string {
 	pattern := g.GeneratePattern()
+
+	// 25% chance to add a guard
+	guard := ""
+	if g.src.Intn(4) == 0 {
+		guard = " if " + g.GenerateBooleanExpression()
+	}
+
 	expr := g.GenerateExpression()
-	return fmt.Sprintf("%s -> (%s)", pattern, expr)
+	// Randomly put newline after -> to stress-test parser
+	return fmt.Sprintf("%s%s ->%s(%s)", pattern, guard, g.MaybeNewline(), expr)
 }
 
 func (g *Generator) GeneratePattern() string {
@@ -496,7 +519,7 @@ func (g *Generator) GenerateExpression() string {
 	g.depth++
 	defer func() { g.depth-- }()
 
-	switch g.src.Intn(16) {
+	switch g.src.Intn(18) {
 	case 0, 1, 2:
 		return g.GenerateLiteral()
 	case 3:
@@ -525,9 +548,30 @@ func (g *Generator) GenerateExpression() string {
 		return g.GenerateBytesLiteral()
 	case 15:
 		return g.GenerateCharLiteral()
+	case 16:
+		return g.GenerateLambda()
+	case 17:
+		return g.GeneratePipeExpression()
 	default:
 		return g.GenerateLiteral()
 	}
+}
+
+func (g *Generator) GenerateLambda() string {
+	paramCount := g.src.Intn(3) + 1
+	var params []string
+	for i := 0; i < paramCount; i++ {
+		params = append(params, fmt.Sprintf("p%d", i))
+	}
+	body := g.GenerateExpression()
+	return fmt.Sprintf("(\\%s ->%s%s)", strings.Join(params, ", "), g.MaybeNewline(), body)
+}
+
+func (g *Generator) GeneratePipeExpression() string {
+	left := g.GenerateExpression()
+	right := g.GenerateIdentifier()
+	op := []string{"|>", "|>>"}[g.src.Intn(2)]
+	return fmt.Sprintf("(%s%s%s %s)", left, g.MaybeNewline(), op, right)
 }
 
 func (g *Generator) GenerateBinaryExpression() string {
@@ -550,7 +594,9 @@ func (g *Generator) GenerateCallExpression() string {
 	for i := 0; i < argCount; i++ {
 		args = append(args, g.GenerateExpression())
 	}
-	return fmt.Sprintf("%s(%s)", name, strings.Join(args, ", "))
+	// Use newlines between args sometimes
+	sep := "," + g.MaybeNewline()
+	return fmt.Sprintf("%s(%s)", name, strings.Join(args, sep))
 }
 
 func (g *Generator) GenerateListLiteral() string {
@@ -559,7 +605,8 @@ func (g *Generator) GenerateListLiteral() string {
 	for i := 0; i < count; i++ {
 		elements = append(elements, g.GenerateExpression())
 	}
-	return fmt.Sprintf("[%s]", strings.Join(elements, ", "))
+	sep := "," + g.MaybeNewline()
+	return fmt.Sprintf("[%s]", strings.Join(elements, sep))
 }
 
 func (g *Generator) GenerateRecordLiteral() string {

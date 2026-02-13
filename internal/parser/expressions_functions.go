@@ -118,68 +118,33 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 	if p.peekTokenIs(token.ARROW) {
 		p.nextToken() // consume '->'
 		p.nextToken() // start of expression
-
-		// If body starts with { and it's a block (not a record literal),
-		// parse as block to enable IIFE: fun(x) -> { body }(args)
-		// Record literal: { key: value, ... } - has IDENT followed by COLON
-		// Block: { statements } - has statement or expression
-		isBlock := false
-		if p.curTokenIs(token.LBRACE) {
-			// Look ahead to distinguish block from record, skipping newlines
-			// Lookahead: peekToken, then stream.Peek(n) for tokens after peekToken
-			lookahead := p.stream.Peek(10) // get enough tokens to skip newlines
-
-			// Find first non-newline token after {
-			firstTokenType := p.peekToken.Type
-			firstIdx := -1 // index in lookahead for second token
-
-			if firstTokenType == token.NEWLINE {
-				// Skip newlines in peekToken position
-				for i, t := range lookahead {
-					if t.Type != token.NEWLINE {
-						firstTokenType = t.Type
-						firstIdx = i + 1 // second token is at firstIdx in lookahead
-						break
-					}
-				}
-			} else {
-				firstIdx = 0 // second token is at index 0 in lookahead
-			}
-
-			// Find second token (after first non-newline), skipping newlines
-			secondTokenType := token.EOF
-			if firstIdx >= 0 && firstIdx < len(lookahead) {
-				for i := firstIdx; i < len(lookahead); i++ {
-					if lookahead[i].Type != token.NEWLINE {
-						secondTokenType = lookahead[i].Type
-						break
-					}
-				}
-			}
-
-			// If { is followed by IDENT_LOWER and then COLON, it's a record
-			// If { is followed by ELLIPSIS, it's a spread record
-			// If { is followed by }, it could be empty block or empty record
-			// Otherwise it's a block
-			if firstTokenType == token.IDENT_LOWER && secondTokenType == token.COLON {
-				isBlock = false // record literal { key: value }
-			} else if firstTokenType == token.ELLIPSIS {
-				isBlock = false // spread record { ...x, key: value }
-			} else if firstTokenType == token.RBRACE {
-				isBlock = true // empty block {}
-			} else {
-				isBlock = true // block with statements
-			}
+		// Skip newlines after '->' — allows: fun(x) ->\n    expr
+		for p.curTokenIs(token.NEWLINE) {
+			p.nextToken()
 		}
 
-		if isBlock && p.curTokenIs(token.LBRACE) {
+		// Disambiguate { as block vs record for function body.
+		// Empty {} is always a block in function context.
+		if p.curTokenIs(token.LBRACE) && p.isEmptyBraces() {
 			lit.Body = p.parseBlockStatement()
+		} else if p.curTokenIs(token.LBRACE) {
+			result := p.parseRecordLiteralOrBlock()
+			if block, ok := result.(*ast.BlockStatement); ok {
+				lit.Body = block
+			} else if result != nil {
+				lit.Body = &ast.BlockStatement{
+					Token:      lit.Token,
+					Statements: []ast.Statement{&ast.ExpressionStatement{Token: result.GetToken(), Expression: result}},
+				}
+			} else {
+				return nil
+			}
 		} else {
+			// Expression body: fun(x) -> x + 1
 			bodyExpr := p.parseExpression(LOWEST)
 			if bodyExpr == nil {
 				return nil
 			}
-			// Wrap expression in BlockStatement
 			lit.Body = &ast.BlockStatement{
 				Token:      lit.Token,
 				Statements: []ast.Statement{&ast.ExpressionStatement{Token: bodyExpr.GetToken(), Expression: bodyExpr}},
@@ -342,8 +307,22 @@ func (p *Parser) parseLambdaExpression() ast.Expression {
 	}
 
 	// Body: Block or Expression
-	if p.curTokenIs(token.LBRACE) {
+	// Disambiguate { as block vs record for lambda body.
+	// Empty {} is always a block in lambda context.
+	if p.curTokenIs(token.LBRACE) && p.isEmptyBraces() {
 		lit.Body = p.parseBlockStatement()
+	} else if p.curTokenIs(token.LBRACE) {
+		result := p.parseRecordLiteralOrBlock()
+		if block, ok := result.(*ast.BlockStatement); ok {
+			lit.Body = block
+		} else if result != nil {
+			lit.Body = &ast.BlockStatement{
+				Token:      lit.Token,
+				Statements: []ast.Statement{&ast.ExpressionStatement{Token: result.GetToken(), Expression: result}},
+			}
+		} else {
+			return nil
+		}
 	} else {
 		bodyExpr := p.parseExpression(LOWEST)
 		if bodyExpr == nil {
@@ -356,6 +335,27 @@ func (p *Parser) parseLambdaExpression() ast.Expression {
 	}
 
 	return lit
+}
+
+// isEmptyBraces checks if curToken is '{' followed only by newlines and then '}'.
+// Used in function/lambda body parsing: empty {} should be a block, not a record.
+func (p *Parser) isEmptyBraces() bool {
+	if p.peekTokenIs(token.RBRACE) {
+		return true
+	}
+	if !p.peekTokenIs(token.NEWLINE) {
+		return false
+	}
+	peekTokens := p.stream.Peek(50)
+	for _, t := range peekTokens {
+		if t.Type == token.RBRACE {
+			return true
+		}
+		if t.Type != token.NEWLINE {
+			return false
+		}
+	}
+	return false
 }
 
 func (p *Parser) parsePrefixSpreadExpression() ast.Expression {

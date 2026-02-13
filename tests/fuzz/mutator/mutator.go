@@ -1,8 +1,8 @@
 package mutator
 
 import (
-	"github.com/funvibe/funxy/internal/ast"
 	"math/rand"
+	"github.com/funvibe/funxy/internal/ast"
 )
 
 // ASTMutator applies random mutations to an AST.

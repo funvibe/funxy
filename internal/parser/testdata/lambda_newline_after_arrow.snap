@@ -1,0 +1,21 @@
+--- Input ---
+(\x ->
+    x + 1)
+
+--- AST Tree ---
+Program
+FunctionLiteral
+    Params:
+      x: 
+    Body:
+Block
+        Infix(+)
+          Left: Identifier(x)
+          Right: IntegerLiteral(1)
+
+
+
+--- Source Code ---
+fun(x) {
+    x + 1
+}

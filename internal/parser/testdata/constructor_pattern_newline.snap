@@ -1,0 +1,20 @@
+--- Input ---
+match x {
+    Ok(a,
+       b) -> a
+    _ -> 0
+}
+
+--- AST Tree ---
+Program
+Match
+    Identifier(x)
+    Arm: Con(Identifier(Ok) Var(a) Var(b)) -> Identifier(a)
+    Arm: _ -> IntegerLiteral(0)
+
+
+--- Source Code ---
+match x {
+    Ok(a, b) -> a
+    _        -> 0
+}

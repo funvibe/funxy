@@ -1,3 +1,8 @@
+--- Input ---
+import "lib/term" (red, green,
+    bold, table,
+    spinnerStart)
+
 --- AST Tree ---
 Program
   Import: lib/term

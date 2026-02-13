@@ -2,9 +2,9 @@ package vm
 
 import (
 	"fmt"
+	"math"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
-	"math"
 )
 
 // ValueType identifies the type of value stored in the Value struct

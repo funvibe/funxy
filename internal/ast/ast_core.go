@@ -1,9 +1,9 @@
 package ast
 
 import (
+	"math/big"
 	"github.com/funvibe/funxy/internal/token"
 	"github.com/funvibe/funxy/internal/typesystem"
-	"math/big"
 )
 
 // TokenProvider is an interface for any AST node that can provide its primary token.

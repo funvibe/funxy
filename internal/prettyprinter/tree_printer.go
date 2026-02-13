@@ -651,6 +651,10 @@ func (p *TreePrinter) VisitMatchExpression(n *ast.MatchExpression) {
 		p.writeIndent()
 		p.write("Arm: ")
 		arm.Pattern.Accept(p)
+		if arm.Guard != nil {
+			p.write(" if ")
+			arm.Guard.Accept(p)
+		}
 		p.write(" -> ")
 		arm.Expression.Accept(p)
 		p.write("\n")

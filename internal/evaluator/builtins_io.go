@@ -2,9 +2,9 @@ package evaluator
 
 import (
 	"bufio"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"io"
 	"os"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"sync"
 )
 

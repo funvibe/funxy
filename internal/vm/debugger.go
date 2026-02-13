@@ -2,9 +2,9 @@ package vm
 
 import (
 	"fmt"
-	"github.com/funvibe/funxy/internal/evaluator"
 	"io"
 	"os"
+	"github.com/funvibe/funxy/internal/evaluator"
 	"path/filepath"
 	"sort"
 	"strings"

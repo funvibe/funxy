@@ -1213,7 +1213,7 @@ func (p *CodePrinter) VisitMatchExpression(n *ast.MatchExpression) {
 	p.write(" {\n")
 	p.indent++
 
-	// Calculate max pattern width for alignment
+	// Calculate max pattern+guard width for alignment
 	maxPatLen := 0
 	patStrings := make([]string, len(n.Arms))
 	for i, arm := range n.Arms {
@@ -1223,6 +1223,11 @@ func (p *CodePrinter) VisitMatchExpression(n *ast.MatchExpression) {
 			arm.Pattern.Accept(temp)
 		} else {
 			temp.write("<???>")
+		}
+		// Include guard in the pattern string for alignment
+		if arm.Guard != nil {
+			temp.write(" if ")
+			arm.Guard.Accept(temp)
 		}
 		patStrings[i] = temp.String()
 		if len(patStrings[i]) > maxPatLen {
@@ -1395,12 +1400,12 @@ func (p *CodePrinter) VisitSpreadExpression(n *ast.SpreadExpression) {
 		p.write("nil")
 		return
 	}
+	p.write("...")
 	if n.Expression != nil {
 		n.Expression.Accept(p)
 	} else {
 		p.write("<???>")
 	}
-	p.write("...")
 }
 
 func (p *CodePrinter) VisitSpreadPattern(n *ast.SpreadPattern) {

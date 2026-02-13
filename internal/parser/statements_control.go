@@ -50,6 +50,10 @@ func (p *Parser) parseConstantDeclaration(name *ast.Identifier) *ast.ConstantDec
 	}
 
 	p.nextToken() // Consume :-
+	// Skip newlines after ':-' — allows: X :-\n    expr
+	for p.curTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
 	stmt.Value = p.parseExpression(LOWEST)
 
 	return stmt

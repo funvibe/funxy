@@ -9,8 +9,16 @@ func (p *Parser) parseIndexExpression(left ast.Expression) ast.Expression {
 	exp := &ast.IndexExpression{Token: p.curToken, Left: left}
 
 	p.nextToken()
+	// Skip newlines after '[' — allows: arr[\n    idx]
+	for p.curTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
 	exp.Index = p.parseExpression(LOWEST)
 
+	// Skip newlines before ']'
+	for p.peekTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
 	if !p.expectPeek(token.RBRACKET) {
 		return nil
 	}

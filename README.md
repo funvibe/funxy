@@ -44,10 +44,26 @@ funxy build app.lang --embed templates,static -o app      # with embedded resour
 funxy build app.lang --host bin/funxy-linux-amd64 -o app  # cross-compile
 ```
 
+Bundle multiple scripts into one binary (BusyBox-style). Each becomes a subcommand:
+
+```bash
+funxy build api.lang worker.lang cron.lang -o myserver
+
+./myserver api --port 8080    # runs api.lang
+./myserver worker             # runs worker.lang
+./myserver                    # prints available commands
+```
+
+Symlink dispatch — create links, each acts as a standalone tool:
+
+```bash
+ln -s myserver api && ./api --port 8080   # dispatched by argv[0]
+```
+
 Built binaries are also full Funxy interpreters — pass `$` to switch:
 
 ```bash
-./myserver                    # runs embedded app
+./myserver                    # runs embedded app (or shows commands)
 ./myserver --port 8080        # flags go to your app via sysArgs
 ./myserver $ script.lang      # interpreter mode
 ./myserver $ -pe '1 + 2'     # eval mode

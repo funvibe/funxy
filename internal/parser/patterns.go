@@ -27,6 +27,12 @@ func (p *Parser) parseMatchArm() *ast.MatchArm {
 	}
 
 	p.nextToken() // consume '->'
+	// Skip newlines after '->' — allows multi-line match arms:
+	//   Ok(resp) if resp.status == 200 ->
+	//       print("ok")
+	for p.curTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
 	expr := p.parseExpression(LOWEST)
 	if expr == nil {
 		return nil
@@ -180,10 +186,18 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 		if p.peekTokenIs(token.COMMA) {
 			elements := []ast.Pattern{pat}
 			for p.peekTokenIs(token.COMMA) {
-				p.nextToken()
+				p.nextToken() // consume ','
+				// Skip newlines after comma in tuple pattern
+				for p.peekTokenIs(token.NEWLINE) {
+					p.nextToken()
+				}
 				p.nextToken()
 				nextPat := p.parsePattern()
 				elements = append(elements, nextPat)
+			}
+			// Skip newlines before ')'
+			for p.peekTokenIs(token.NEWLINE) {
+				p.nextToken()
 			}
 			if !p.expectPeek(token.RPAREN) {
 				return nil
@@ -204,6 +218,11 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 			return &ast.ListPattern{Token: startToken, Elements: []ast.Pattern{}}
 		}
 
+		// Skip newlines after '['
+		for p.curTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
+
 		// List pattern elements
 		elements := []ast.Pattern{}
 		for {
@@ -211,13 +230,21 @@ func (p *Parser) parseAtomicPattern() ast.Pattern {
 			elements = append(elements, pat)
 
 			if p.peekTokenIs(token.COMMA) {
-				p.nextToken()
+				p.nextToken() // consume ','
+				// Skip newlines after comma in list pattern
+				for p.peekTokenIs(token.NEWLINE) {
+					p.nextToken()
+				}
 				p.nextToken()
 			} else {
 				break
 			}
 		}
 
+		// Skip newlines before ']'
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
 		if !p.expectPeek(token.RBRACKET) {
 			return nil
 		}
@@ -265,12 +292,20 @@ func (p *Parser) parseConstructorPattern() ast.Pattern {
 		cp.Elements = append(cp.Elements, pat)
 
 		for p.peekTokenIs(token.COMMA) {
-			p.nextToken() // consume comma. curToken is comma.
+			p.nextToken() // consume comma
+			// Skip newlines after comma in constructor pattern
+			for p.peekTokenIs(token.NEWLINE) {
+				p.nextToken()
+			}
 			p.nextToken() // move to start of next pattern
 			pat = p.parsePattern()
 			cp.Elements = append(cp.Elements, pat)
 		}
 
+		// Skip newlines before ')'
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
 		if !p.expectPeek(token.RPAREN) {
 			return nil
 		}

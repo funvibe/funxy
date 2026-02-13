@@ -1,0 +1,13 @@
+--- Input ---
+x[
+    0
+]
+
+--- AST Tree ---
+Program
+Index
+    Target: Identifier(x)
+    Idx: IntegerLiteral(0)
+
+--- Source Code ---
+x[0]

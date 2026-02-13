@@ -1,3 +1,6 @@
+--- Input ---
+a = (b + c) * -d
+
 --- AST Tree ---
 Program
   Assign

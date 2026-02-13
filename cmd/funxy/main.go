@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/backend"
@@ -16,9 +19,6 @@ import (
 	"github.com/funvibe/funxy/internal/token"
 	"github.com/funvibe/funxy/internal/utils"
 	"github.com/funvibe/funxy/internal/vm"
-	"io"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -739,8 +739,9 @@ func handleRunCompiled() bool {
 	return true
 }
 
-// handleBuild compiles a source file into a self-contained native binary.
-// Usage: funxy build <source> [-o <output>] [--host <binary>]
+// handleBuild compiles source file(s) into a self-contained native binary.
+// Single command:  funxy build <source> [-o <output>] [--host <binary>] [--embed <path>]
+// Multi-command:   funxy build <src1> <src2> ... [-o <output>] [--host <binary>] [--embed <path>]
 func handleBuild() bool {
 	if len(os.Args) < 3 {
 		return false
@@ -750,60 +751,111 @@ func handleBuild() bool {
 		return false
 	}
 
-	sourcePath := os.Args[2]
-
-	// Parse flags
+	// Parse arguments: collect source files and flags
+	var sourcePaths []string
 	outputPath := ""
 	hostBinaryPath := ""
 	var embedPaths []string
-	for i := 3; i < len(os.Args)-1; i++ {
+	for i := 2; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "-o":
-			outputPath = os.Args[i+1]
-			i++
-		case "--host":
-			hostBinaryPath = os.Args[i+1]
-			i++
-		case "--embed":
-			// Support comma-separated: --embed static,config,data.json
-			// But respect brace expansion: --embed "*.{js,html}" stays as one pattern
-			for _, p := range splitEmbedArg(os.Args[i+1]) {
-				if p != "" {
-					embedPaths = append(embedPaths, p)
-				}
+			if i+1 < len(os.Args) {
+				outputPath = os.Args[i+1]
+				i++
 			}
-			i++
+		case "--host":
+			if i+1 < len(os.Args) {
+				hostBinaryPath = os.Args[i+1]
+				i++
+			}
+		case "--embed":
+			if i+1 < len(os.Args) {
+				for _, p := range splitEmbedArg(os.Args[i+1]) {
+					if p != "" {
+						embedPaths = append(embedPaths, p)
+					}
+				}
+				i++
+			}
+		default:
+			// Non-flag argument = source file
+			if !strings.HasPrefix(os.Args[i], "-") {
+				sourcePaths = append(sourcePaths, os.Args[i])
+			}
 		}
 	}
 
-	// Default output path: strip extension from source
+	if len(sourcePaths) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: no source files specified\nUsage: funxy build <source> [<source2> ...] [-o <output>]\n")
+		os.Exit(1)
+	}
+
+	// Default output path: strip extension from first source
 	if outputPath == "" {
-		outputPath = strings.TrimSuffix(sourcePath, filepath.Ext(sourcePath))
+		outputPath = strings.TrimSuffix(sourcePaths[0], filepath.Ext(sourcePaths[0]))
 		if runtime.GOOS == "windows" || strings.Contains(hostBinaryPath, "windows") {
 			outputPath += ".exe"
 		}
 	}
 
-	fmt.Printf("Compiling %s...\n", sourcePath)
+	// Step 1: Compile source(s) to bundle
+	var bundle *vm.Bundle
 
-	// Step 1: Compile to bundle
-	bundle, err := compileToBundle(sourcePath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Compilation error: %s\n", err)
-		os.Exit(1)
+	if len(sourcePaths) == 1 {
+		// Single-command mode (backward compatible)
+		fmt.Printf("Compiling %s...\n", sourcePaths[0])
+		var err error
+		bundle, err = compileToBundle(sourcePaths[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Compilation error: %s\n", err)
+			os.Exit(1)
+		}
+	} else {
+		// Multi-command mode
+		bundle = &vm.Bundle{
+			Commands:  make(map[string]*vm.Bundle),
+			Modules:   make(map[string]*vm.BundledModule),
+			Resources: make(map[string][]byte),
+		}
+		for _, src := range sourcePaths {
+			cmdName := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
+			if _, exists := bundle.Commands[cmdName]; exists {
+				fmt.Fprintf(os.Stderr, "Error: duplicate command name %q (from %s)\n", cmdName, src)
+				os.Exit(1)
+			}
+			fmt.Printf("Compiling %s → command %q\n", src, cmdName)
+			sub, err := compileToBundle(src)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Compilation error (%s): %s\n", src, err)
+				os.Exit(1)
+			}
+			bundle.Commands[cmdName] = sub
+		}
+		fmt.Printf("Multi-command binary: %d commands (%s)\n",
+			len(bundle.Commands), strings.Join(bundle.CommandNames(), ", "))
 	}
 
 	// Step 1.5: Collect embedded resources
 	if len(embedPaths) > 0 {
 		resources := make(map[string][]byte)
-		sourceDir := filepath.Dir(sourcePath)
+		// Use source directory as base for relative resource keys.
+		// For multi-command, use common parent of all source files.
+		sourceDir := filepath.Dir(sourcePaths[0])
+		if len(sourcePaths) > 1 {
+			// Find common directory among all source paths
+			for _, sp := range sourcePaths[1:] {
+				d := filepath.Dir(sp)
+				for !strings.HasPrefix(d, sourceDir) && !strings.HasPrefix(sourceDir, d) {
+					sourceDir = filepath.Dir(sourceDir)
+					d = filepath.Dir(d)
+				}
+				if len(d) < len(sourceDir) {
+					sourceDir = d
+				}
+			}
+		}
 		for _, embedPath := range embedPaths {
-			// Embed paths are relative to CWD (not source directory).
-			// sourceDir is only used for computing relative resource keys.
-
-			// Check if path contains glob characters (including brace expansion)
 			if strings.ContainsAny(embedPath, "*?[{") {
-				// Expand brace patterns like *.{js,html} into [*.js, *.html]
 				expandedPatterns := expandBraces(embedPath)
 				var allMatches []string
 				for _, pattern := range expandedPatterns {
@@ -824,12 +876,9 @@ func handleBuild() bool {
 					}
 				}
 			} else {
-				// For plain paths, resolve relative to source directory for backwards compat
 				absEmbed := embedPath
 				if !filepath.IsAbs(absEmbed) {
-					// First check if path exists as-is (relative to CWD)
 					if _, err := os.Stat(absEmbed); err != nil {
-						// Try relative to source directory
 						absEmbed = filepath.Join(sourceDir, absEmbed)
 					}
 				}
@@ -850,7 +899,6 @@ func handleBuild() bool {
 	// Step 2: Determine host binary
 	var hostBinary []byte
 	if hostBinaryPath != "" {
-		// Cross-compilation: use explicitly provided host binary
 		hostData, err := os.ReadFile(hostBinaryPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Cannot read host binary %s: %s\n", hostBinaryPath, err)
@@ -859,7 +907,6 @@ func handleBuild() bool {
 		hostSize := vm.GetHostBinarySize(hostData)
 		hostBinary = hostData[:hostSize]
 	} else {
-		// Default: use own executable as host
 		selfPath, err := os.Executable()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Cannot find own executable: %s\n", err)
@@ -899,12 +946,17 @@ func handleBuild() bool {
 		resignBinary(outputPath)
 	}
 
-	modCount := len(bundle.Modules)
-	fmt.Printf("Built: %s (%.1f MB", outputPath, float64(len(outputData))/(1024*1024))
-	if modCount > 0 {
-		fmt.Printf(", %d modules", modCount)
+	sizeStr := fmt.Sprintf("%.1f MB", float64(len(outputData))/(1024*1024))
+	if bundle.IsMultiCommand() {
+		fmt.Printf("Built: %s (%s, %d commands)\n", outputPath, sizeStr, len(bundle.Commands))
+	} else {
+		modCount := len(bundle.Modules)
+		fmt.Printf("Built: %s (%s", outputPath, sizeStr)
+		if modCount > 0 {
+			fmt.Printf(", %d modules", modCount)
+		}
+		fmt.Println(")")
 	}
-	fmt.Println(")")
 
 	return true
 }
@@ -1071,15 +1123,17 @@ func runEmbeddedBundle() bool {
 		return false // No embedded bundle
 	}
 
+	// Multi-command dispatch
+	if bundle.IsMultiCommand() {
+		runMultiCommand(bundle)
+		return true
+	}
+
+	// Single-command mode (backward compatible)
 	// Make sysArgs() consistent with interpreter mode:
-	// In interpreter: os.Args = ["funxy", "script.lang", ...user args...]
-	//   → sysArgs() = ["script.lang", "--port", "8080"]
-	// In bundle:      os.Args = ["./myapp", ...user args...]
-	//   → without fix: sysArgs() = ["--port", "8080"]  (missing "script" path)
-	// Insert argv[0] at position 1 so sysArgs()[0] = binary name (as typed by user)
+	// Insert argv[0] at position 1 so sysArgs()[0] = binary name
 	os.Args = append([]string{os.Args[0], os.Args[0]}, os.Args[1:]...)
 
-	// Initialize virtual packages
 	modules.InitVirtualPackages()
 
 	_, err = vm.RunBundle(bundle)
@@ -1089,6 +1143,62 @@ func runEmbeddedBundle() bool {
 	}
 
 	return true
+}
+
+// runMultiCommand dispatches a multi-command binary to the appropriate sub-bundle.
+// Dispatch order:
+//  1. argv[0] basename matches a command name (symlink mode)
+//  2. First argument matches a command name (subcommand mode)
+//  3. No match → print usage
+func runMultiCommand(bundle *vm.Bundle) {
+	binaryName := filepath.Base(os.Args[0])
+
+	// 1. Check argv[0] — symlink dispatch
+	if cmd := bundle.ResolveCommand(binaryName); cmd != nil {
+		// sysArgs() sees: [binaryName, ...userArgs]
+		os.Args = append([]string{os.Args[0], os.Args[0]}, os.Args[1:]...)
+		modules.InitVirtualPackages()
+		if _, err := vm.RunBundle(cmd); err != nil {
+			fmt.Fprintf(os.Stderr, "Runtime error: %s\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// 2. Check first argument — subcommand dispatch
+	if len(os.Args) >= 2 {
+		cmdName := os.Args[1]
+		if cmd := bundle.ResolveCommand(cmdName); cmd != nil {
+			// sysArgs() sees: [binaryName, ...argsAfterCommand]
+			// Strip command name from args so script doesn't see it
+			os.Args = append([]string{os.Args[0], os.Args[0]}, os.Args[2:]...)
+			modules.InitVirtualPackages()
+			if _, err := vm.RunBundle(cmd); err != nil {
+				fmt.Fprintf(os.Stderr, "Runtime error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+
+		// Unknown command
+		if !strings.HasPrefix(cmdName, "-") {
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", cmdName)
+		}
+	}
+
+	// 3. No match — print usage
+	printMultiCommandUsage(binaryName, bundle)
+	os.Exit(1)
+}
+
+// printMultiCommandUsage prints available commands for a multi-command binary.
+func printMultiCommandUsage(binaryName string, bundle *vm.Bundle) {
+	fmt.Fprintf(os.Stderr, "Usage: %s <command> [args...]\n\n", binaryName)
+	fmt.Fprintf(os.Stderr, "Available commands:\n")
+	for _, name := range bundle.CommandNames() {
+		fmt.Fprintf(os.Stderr, "  %s\n", name)
+	}
+	fmt.Fprintf(os.Stderr, "\nRun '%s <command> --help' for more information.\n", binaryName)
 }
 
 // isTreeWalkMode returns true if the backend is configured to use Tree-Walk interpreter.

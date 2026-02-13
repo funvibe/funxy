@@ -2,10 +2,10 @@ package vm
 
 import (
 	"fmt"
+	"math/big"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
-	"math/big"
 	"strings"
 )
 

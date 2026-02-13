@@ -1,3 +1,9 @@
+--- Input ---
+import "lib/term" (
+    red, green,
+    bold
+)
+
 --- AST Tree ---
 Program
   Import: lib/term

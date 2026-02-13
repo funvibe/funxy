@@ -14,6 +14,10 @@ func (p *Parser) parseAssignExpression(left ast.Expression) ast.Expression {
 
 	tok := p.curToken
 	p.nextToken() // consume '='
+	// Skip newlines after '=' — allows: x =\n    expr
+	for p.curTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
 	value := p.parseExpression(LOWEST)
 	if value == nil {
 		return nil
@@ -87,6 +91,10 @@ func (p *Parser) parseCompoundAssignExpression(left ast.Expression) ast.Expressi
 	}
 
 	p.nextToken() // consume the compound assignment operator
+	// Skip newlines after compound assignment — allows: x +=\n    expr
+	for p.curTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
 	right := p.parseExpression(LOWEST)
 
 	// Create the infix expression: left OP right

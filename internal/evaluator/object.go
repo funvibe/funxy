@@ -1,8 +1,8 @@
 package evaluator
 
 import (
-	"github.com/funvibe/funxy/internal/typesystem"
 	"hash/fnv"
+	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 type ObjectType string

@@ -8,8 +8,8 @@ import (
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/symbols"
-	"github.com/funvibe/funxy/internal/vm"
 	"github.com/funvibe/funxy/tests/fuzz/generators"
+	"github.com/funvibe/funxy/internal/vm"
 	"testing"
 	"time"
 )
