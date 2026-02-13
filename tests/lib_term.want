@@ -1,0 +1,54 @@
+=== stripAnsi ===
+hello world
+styled
+plain text
+
+=== Composition ===
+ERROR
+ok
+=== cprint ===
+hello world
+one
+plain
+=== termSize ===
+true
+true
+=== termColors ===
+true
+=== termIsTTY ===
+true
+=== Table ===
+┌───┬───┐
+│ A │ B │
+├───┼───┤
+│ 1 │ 2 │
+│ 3 │ 4 │
+└───┴───┘
+=== rgb/hex ===
+red-text
+green-bg
+hex-red
+hex-green
+=== Table Unicode ===
+┌──────┬────────┐
+│ Name │ Status │
+├──────┼────────┤
+│ api  │ ●      │
+│ db   │ ✓      │
+└──────┴────────┘
+=== Table ANSI ===
+┌─────────┬─────┐
+│ Service │ OK  │
+├─────────┼─────┤
+│ ●       │ yes │
+│ ✗       │ no  │
+└─────────┴─────┘
+=== Table CJK ===
+┌────────┬────────┐
+│ 名前   │ 値     │
+├────────┼────────┤
+│ 日本語 │ テスト │
+└────────┴────────┘
+=== cprint output ===
+hello world
+single

@@ -56,6 +56,34 @@ func IsVirtualPackage(path string) bool {
 	return ok
 }
 
+// GetAllVirtualPackages returns all registered virtual packages
+func GetAllVirtualPackages() map[string]*VirtualPackage {
+	return virtualPackages
+}
+
+// BuildFunctionToModuleIndex builds a reverse index: function_name -> "lib/module_name"
+// Used by -e mode for smart auto-import
+func BuildFunctionToModuleIndex() map[string]string {
+	index := make(map[string]string)
+	for path, pkg := range virtualPackages {
+		// Skip meta-packages (e.g., "lib" which aggregates all lib/* symbols)
+		if path == "lib" {
+			continue
+		}
+		for name := range pkg.Symbols {
+			index[name] = path
+		}
+		// Also index types and constructors
+		for name := range pkg.Types {
+			index[name] = path
+		}
+		for name := range pkg.Constructors {
+			index[name] = path
+		}
+	}
+	return index
+}
+
 // CreateVirtualModule creates a Module from a VirtualPackage
 func (vp *VirtualPackage) CreateVirtualModule() *Module {
 	mod := &Module{

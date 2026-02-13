@@ -531,7 +531,7 @@ func (g *Generator) GenerateExpression() string {
 }
 
 func (g *Generator) GenerateBinaryExpression() string {
-	op := []string{"+", "-", "*", "/", "==", "!=", "<", ">", "&&", "||"}[g.src.Intn(10)]
+	op := []string{"+", "-", "*", "/", "==", "!=", "<", ">", "&&", "||", "|>", "|>>"}[g.src.Intn(12)]
 	return fmt.Sprintf("(%s %s %s)", g.GenerateExpression(), op, g.GenerateExpression())
 }
 

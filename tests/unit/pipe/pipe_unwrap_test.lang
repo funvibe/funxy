@@ -1,0 +1,168 @@
+import "lib/test" (*)
+import "lib/json" (jsonDecode, jsonEncode)
+
+// ============================================================================
+// |>> operator: Pipe + Unwrap
+// Semantics: x |>> f  ≡  unwrap(f(x))
+//   Ok(v)   -> v
+//   Some(v) -> v
+//   Fail(e) -> panic
+//   None    -> panic
+//   other   -> pass through
+// ============================================================================
+
+// --- Helper functions ---
+
+fun safeDiv(x: Int, y: Int) -> Result<String, Int> {
+    if y == 0 {
+        Fail("division by zero")
+    } else {
+        Ok(x / y)
+    }
+}
+
+fun findPositive(x: Int) -> Option<Int> {
+    if x > 0 { Some(x) } else { None }
+}
+
+fun double(x: Int) -> Int { x * 2 }
+fun inc(x: Int) -> Int { x + 1 }
+fun wrapOk(x: Int) -> Result<String, Int> { Ok(x) }
+fun wrapSome(x: Int) -> Option<Int> { Some(x) }
+fun addOneResult(x: Int) -> Result<String, Int> { Ok(x + 1) }
+fun maybeDouble(x: Int) -> Option<Int> { Some(x * 2) }
+
+// ============================================================================
+// Basic |>> with Result (Ok path)
+// ============================================================================
+
+testRun("|>> unwraps Ok result from safeDiv", fun() -> {
+    result = 10 |>> safeDiv(_, 2)
+    assertEquals(result, 5)
+})
+
+testRun("|>> unwraps Ok with simple wrapper", fun() -> {
+    fun wrapMul(x: Int) -> Result<String, Int> { Ok(x * 3) }
+    result = 7 |>> wrapMul
+    assertEquals(result, 21)
+})
+
+// ============================================================================
+// Basic |>> with Option (Some path)
+// ============================================================================
+
+testRun("|>> unwraps Some option", fun() -> {
+    result = 42 |>> findPositive
+    assertEquals(result, 42)
+})
+
+testRun("|>> unwraps Some from maybeDouble", fun() -> {
+    result = 5 |>> maybeDouble
+    assertEquals(result, 10)
+})
+
+// ============================================================================
+// Chaining |>> with |>
+// ============================================================================
+
+testRun("|>> chains with |> correctly", fun() -> {
+    result = 20 |>> safeDiv(_, 4) |> double
+    assertEquals(result, 10)
+})
+
+testRun("|>> at end of pipe chain", fun() -> {
+    result = 3 |> double |> inc |>> wrapOk
+    assertEquals(result, 7)
+})
+
+testRun("multiple |>> in chain", fun() -> {
+    result = 1 |>> addOneResult |>> addOneResult |>> addOneResult
+    assertEquals(result, 4)
+})
+
+testRun("|>> then |> then |>>", fun() -> {
+    result = 10 |>> safeDiv(_, 2) |> double |>> wrapOk
+    assertEquals(result, 10)
+})
+
+// ============================================================================
+// |>> with jsonDecode
+// ============================================================================
+
+testRun("|>> with jsonDecode on number", fun() -> {
+    jsonStr = jsonEncode(42)
+    result = jsonStr |>> jsonDecode
+    assertEquals(result, 42)
+})
+
+testRun("|>> with jsonDecode on boolean", fun() -> {
+    jsonStr = jsonEncode(true)
+    result = jsonStr |>> jsonDecode
+    assertEquals(result, true)
+})
+
+// ============================================================================
+// |>> with placeholder syntax
+// ============================================================================
+
+testRun("|>> with _ on left of safeDiv", fun() -> {
+    result = 100 |>> safeDiv(_, 10)
+    assertEquals(result, 10)
+})
+
+testRun("|>> with _ on right of safeDiv", fun() -> {
+    result = 2 |>> safeDiv(100, _)
+    assertEquals(result, 50)
+})
+
+// ============================================================================
+// |>> pass-through for non-Result/non-Option
+// ============================================================================
+
+testRun("|>> pass-through for Int", fun() -> {
+    result = 5 |>> double
+    assertEquals(result, 10)
+})
+
+testRun("|>> pass-through for String", fun() -> {
+    fun greet(name: String) -> String { "Hello, " ++ name }
+    result = "World" |>> greet
+    assertEquals(result, "Hello, World")
+})
+
+// ============================================================================
+// |>> multiline usage
+// ============================================================================
+
+testRun("|>> works across multiple lines", fun() -> {
+    result = 10
+        |>> wrapOk
+        |> double
+        |> inc
+    assertEquals(result, 21)
+})
+
+testRun("|>> multiline with mixed operators", fun() -> {
+    result = 100
+        |>> safeDiv(_, 5)
+        |> double
+        |>> wrapOk
+        |> inc
+    assertEquals(result, 41)
+})
+
+// ============================================================================
+// Section 3: |>> panic paths (Fail/None)
+// ============================================================================
+
+testExpectFail("|>> panics on Fail result", fun() -> {
+    fun alwaysFail(x: Int) -> Result<String, Int> { Fail("oops") }
+    result = 1 |>> alwaysFail
+    assert(false, "should not reach here")
+})
+
+testExpectFail("|>> panics on None", fun() -> {
+    fun findNeg(x: Int) -> Option<Int> { if x < 0 { Some(x) } else { None } }
+    result = 5 |>> findNeg
+    assert(false, "should not reach here")
+})

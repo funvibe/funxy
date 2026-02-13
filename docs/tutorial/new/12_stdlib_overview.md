@@ -48,8 +48,9 @@
 | `lib/regex` | Regular expressions | `regexMatch`, `regexFind` |
 | `lib/sql` | SQLite interface | `sqlOpen`, `sqlQuery`, `sqlExec` |
 | `lib/string` | String manipulation | `stringSplit`, `stringJoin`, `stringToUpper` |
-| `lib/sys` | System interaction | `sysArgs`, `sysEnv`, `sysExec` |
+| `lib/sys` | System interaction | `sysArgs`, `sysEnv`, `sysExec`, `sysExePath`, `sysScriptDir` |
 | `lib/task` | Async tasks | `async`, `await` |
+| `lib/term` | Terminal UI | `red`, `bold`, `confirm`, `select`, `table`, `spinnerStart` |
 | `lib/test` | Testing framework | `assert`, `testRun` |
 | `lib/time` | Time and duration | `timeNow`, `sleep` |
 | `lib/tuple` | Tuple helpers | `fst`, `snd`, `tupleSwap` |

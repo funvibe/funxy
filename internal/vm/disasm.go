@@ -174,6 +174,8 @@ func disassembleInstruction(sb *strings.Builder, chunk *Chunk, offset int) int {
 		return simpleInstruction(sb, "GET_INDEX", offset)
 	case OP_OPTIONAL_CHAIN_FIELD:
 		return constantInstruction(sb, "OPTIONAL_CHAIN_FIELD", chunk, offset)
+	case OP_UNWRAP_OR_PANIC:
+		return simpleInstruction(sb, "UNWRAP_OR_PANIC", offset)
 	case OP_CHECK_TYPE:
 		return constantInstruction(sb, "CHECK_TYPE", chunk, offset)
 	case OP_SET_FIELD:

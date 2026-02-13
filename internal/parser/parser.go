@@ -65,6 +65,7 @@ const (
 var precedences = map[token.TokenType]int{
 	token.USER_OP_APP:     USER_OP_APP_PREC, // $ (lowest, function application)
 	token.PIPE_GT:         PIPE_PREC,
+	token.PIPE_GT_UNWRAP:  PIPE_PREC,
 	token.OR:              LOGIC_OR,
 	token.NULL_COALESCE:   LOGIC_OR, // ?? same precedence as ||
 	token.AND:             LOGIC_AND,
@@ -184,6 +185,7 @@ func New(stream pipeline.TokenStream, ctx *pipeline.PipelineContext) *Parser {
 	p.registerInfix(token.OR, p.parseInfixExpression)
 	p.registerInfix(token.NULL_COALESCE, p.parseInfixExpression)
 	p.registerInfix(token.PIPE_GT, p.parseInfixExpression)
+	p.registerInfix(token.PIPE_GT_UNWRAP, p.parseInfixExpression)
 	p.registerInfix(token.USER_OP_APP, p.parseRightAssocInfixExpression) // $ right-associative
 	p.registerInfix(token.CONCAT, p.parseInfixExpression)
 	p.registerInfix(token.CONS, p.parseRightAssocInfixExpression)    // Right-associative

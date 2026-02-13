@@ -1,18 +1,12 @@
 package playground
 import "lib/http" (httpServe)
-import "lib/sys" (sysExec, sysArgs)
+import "lib/sys" (sysExec, sysExePath, sysScriptDir)
 import "lib/io" (fileWrite, fileDelete, fileRead)
 import "lib/json" (jsonEncode, jsonDecode)
 import "lib/uuid" (uuidNew, uuidToString)
-import "lib/path" (pathJoin, pathTemp, pathDir)
-import "lib/list" (head)
-import "lib/string" (stringIndexOf)
+import "lib/path" (pathJoin, pathTemp)
 
-// Get directory of this script
-scriptDir = match sysArgs() {
-    [path, ..._] -> pathDir(path)
-    _ -> "."
-}
+scriptDir = sysScriptDir()
 
 fun runCode(code: String) -> { output: String, error: String } {
     tmpFile = pathJoin([pathTemp(), "funxy_" ++ uuidToString(uuidNew()) ++ ".lang"])
@@ -20,18 +14,8 @@ fun runCode(code: String) -> { output: String, error: String } {
     match fileWrite(tmpFile, code) {
         Fail(e) -> { output: "", error: "Failed to write: " ++ e }
         Ok(_) -> {
-            // Try ./funxy first, then fallback to funxy in PATH
-            result = sysExec("./funxy", [tmpFile])
-
-            finalResult = if result.code == -1 {
-                 // If ./funxy failed to execute (likely not found), try 'funxy' from PATH
-                 match stringIndexOf(result.stderr, "no such file") {
-                     Some(_) -> sysExec("funxy", [tmpFile])
-                     _ -> result
-                 }
-            } else {
-                 result
-            }
+            // Use own executable as interpreter ($ switches self-contained binaries to interpreter mode)
+            finalResult = sysExec(sysExePath(), ["$", tmpFile])
 
             fileDelete(tmpFile)
 

@@ -284,6 +284,64 @@ func (c *Compiler) Compile(program *ast.Program) (*Chunk, error) {
 	return chunk, nil
 }
 
+// CompileModule compiles a module (multiple files) into a single Chunk.
+// Unlike Compile, this handles multiple source files concatenated into one chunk.
+// The resulting Chunk includes PendingImports from all files.
+func (c *Compiler) CompileModule(files []*ast.Program) (*Chunk, error) {
+	for _, file := range files {
+		if err := c.compileProgram(file); err != nil {
+			return nil, err
+		}
+	}
+
+	c.emit(OP_HALT, 0)
+	c.function.LocalCount = c.localCount
+
+	chunk := c.currentChunk()
+	chunk.PendingImports = c.pendingImports
+
+	return chunk, nil
+}
+
+// CompileTraitDefault pre-compiles a single trait default method into a
+// CompiledFunction suitable for bundling. At runtime the VM wraps it in a
+// closure when the default is first needed.
+func CompileTraitDefault(fn *ast.FunctionStatement) (*CompiledFunction, error) {
+	compiler := &Compiler{
+		function: &CompiledFunction{
+			Chunk: NewChunk(),
+			Name:  fn.Name.Value,
+			Arity: len(fn.Parameters),
+		},
+		funcType:         TYPE_FUNCTION,
+		locals:           make([]Local, 256),
+		upvalues:         make([]Upvalue, 256),
+		typeAliases:      make(map[string]typesystem.Type),
+		functionRegistry: make(map[string]*ast.FunctionStatement),
+		subst:            make(typesystem.Subst),
+		scopeDepth:       1, // Function body starts at depth 1
+	}
+
+	// Add parameters as locals at depth 1
+	for i, param := range fn.Parameters {
+		compiler.locals[i] = Local{Name: param.Name.Value, Depth: 1, Slot: i}
+	}
+	compiler.localCount = len(fn.Parameters)
+	compiler.slotCount = len(fn.Parameters)
+
+	// Compile the function body
+	if err := compiler.compileFunctionBody(fn.Body); err != nil {
+		return nil, fmt.Errorf("compiling trait default %s: %w", fn.Name.Value, err)
+	}
+
+	compiledFn := compiler.function
+	compiledFn.LocalCount = compiler.localCount
+	compiledFn.UpvalueCount = compiler.upvalueCount
+	compiledFn.RequiredArity = len(fn.Parameters)
+
+	return compiledFn, nil
+}
+
 // compileProgram compiles a program's statements without emitting HALT
 // Used for compiling module files that are then combined
 func (c *Compiler) compileProgram(program *ast.Program) error {
@@ -960,6 +1018,7 @@ func (c *Compiler) compileFunctionLiteral(lit *ast.FunctionLiteral) error {
 				if constVal != nil {
 					constIdx := funcCompiler.function.Chunk.AddConstant(constVal)
 					funcCompiler.function.Defaults[defaultIdx] = constIdx
+					funcCompiler.function.DefaultChunks[defaultIdx] = NewChunk() // empty (gob needs non-nil)
 				} else {
 					funcCompiler.function.Defaults[defaultIdx] = -1
 					defaultCompiler := newFunctionCompiler(c, "<default>", 0)

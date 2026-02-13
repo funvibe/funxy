@@ -36,6 +36,7 @@ Funxy is a general-purpose scripting language with static typing and type infere
 - **Backend services**: `lib/http`, `lib/ws`, `lib/grpc`, `lib/sql`, `lib/json`, `lib/log`, `lib/task`
 - **ML/DevOps data pipelines**: `lib/io`, `lib/path`, `lib/regex`, `lib/csv`, `lib/json`, `lib/bytes`, `lib/uuid`, `lib/time`
 - **Scripting/automation**: `lib/sys`, `lib/flag`, `lib/io`, `lib/path`, `lib/date`, `lib/log`
+- **CLI tools**: `lib/term`, `lib/flag`, `lib/sys`, `lib/io`
 
 ### Where to Go Deeper
 
@@ -349,6 +350,7 @@ a :: b   // Cons (prepend element, right-associative)
 ```rust
 x |> f              // Pipe: f(x)
 x |> f |> g         // Chain: g(f(x))
+x |>> f             // Pipe + unwrap: unwrap(f(x)), panics on Fail/None
 f ,, g              // Composition: f(g(x)) (right-to-left)
 
 // Pipe Placeholders
@@ -390,6 +392,15 @@ sum = foldl((+), 0, [1, 2, 3])  // 6
 ### Error Propagation Operator
 ```rust
 value = result?  // Unwraps Ok/Some, propagates Fail/None
+```
+
+### Pipe Unwrap Operator
+```rust
+x |>> f   // Pipe x into f, then unwrap Result/Option (panics on Fail/None)
+
+// Ok(v) |>> -> v,  Fail(e) |>> -> panic
+// Some(v) |>> -> v, None |>> -> panic
+// other |>> -> passthrough (same as |>)
 ```
 
 ---
@@ -1023,6 +1034,21 @@ fun copyFile(src: String, dst: String) -> Result<String, Int> {
 }
 ```
 
+### Pipe Unwrap (|>>)
+
+The `|>>` operator pipes a value into a function and unwraps the result. Unlike `?`, it **panics** on failure instead of propagating:
+
+```rust
+import "lib/json" (jsonDecode)
+
+// Pipe + unwrap: panics if jsonDecode returns Fail
+data = jsonStr |>> jsonDecode
+print(data.name)
+
+// Chain with regular pipes
+result = jsonStr |>> jsonDecode |> filter(\x -> x.active) |> map(\x -> x.name)
+```
+
 ### Option Type
 ```rust
 type Option<t> = Some t | None
@@ -1468,7 +1494,7 @@ For full APIs, see `docs/BUILTINS.md` or `./funxy -help lib/<name>`.
 | `lib/task` | Async tasks and concurrency |
 | `lib/io` | File and stream I/O |
 | `lib/path` | Path manipulation |
-| `lib/sys` | System interaction (args, env, exec) |
+| `lib/sys` | System interaction (args, env, exec, exePath, scriptDir) |
 | `lib/date` | Date and time with timezone offset |
 | `lib/time` | Timers and sleep |
 | `lib/uuid` | UUID generation |
@@ -1479,6 +1505,7 @@ For full APIs, see `docs/BUILTINS.md` or `./funxy -help lib/<name>`.
 | `lib/list` | List utilities |
 | `lib/string` | String utilities |
 | `lib/flag` | CLI flag parsing |
+| `lib/term` | Terminal UI: colors, styles, prompts, spinners, progress bars, tables |
 | `lib/test` | Testing framework |
 | `lib/math` | Mathematical functions |
 | `lib/tuple` | Tuple utilities |
@@ -1628,6 +1655,8 @@ regexSplit(pattern, str)              // List<String>
 import "lib/io" (*)
 
 readLine()                          // Option<String>
+readAll()                           // String (all of stdin)
+readAllBytes()                      // Bytes (all of stdin as bytes)
 fileRead("path.txt")               // Result<String, String>
 fileReadBytes("path.bin")          // Result<String, Bytes>
 fileWrite("path.txt", "content")   // Result<String, Int> (String or Bytes)
@@ -1655,6 +1684,8 @@ import "lib/sys" (*)
 args = sysArgs()
 val = sysEnv("HOME")
 // sysExec("ls", ["-la"])  // Execute external command
+exe = sysExePath()         // Absolute path to current executable
+dir = sysScriptDir()       // Directory of the running script
 ```
 
 #### lib/log
@@ -1686,6 +1717,31 @@ port = flagGet("port")
 if flagGet("verbose") {
     print("Starting server on :" ++ show(port))
 }
+```
+
+#### lib/term
+
+Terminal UI: ANSI colors, styles, prompts, spinners, progress bars, and tables.
+Colors auto-disable when stdout is not a TTY or `$NO_COLOR` is set.
+
+```rust
+import "lib/term" (red, green, bold, confirm, select, table,
+                   spinnerStart, spinnerStop, stripAnsi)
+
+// Colors compose via pipe
+"ERROR" |> red |> bold |> print
+"Success" |> green |> print
+
+// Interactive prompts
+if confirm("Deploy?") {
+    env = select("Environment", ["dev", "staging", "prod"])
+    s = spinnerStart("Deploying to " ++ env ++ "...")
+    // ... work ...
+    spinnerStop(s, green("✓") ++ " Deployed!")
+}
+
+// Tables
+table(["Name", "Role"], [["Alice", "Admin"], ["Bob", "User"]])
 ```
 
 ### Security and Identifiers
@@ -1842,11 +1898,12 @@ Async allows multiple operations to run concurrently without blocking the main t
 # Run a Funxy program
 funxy program.lang
 
-# Compile to bytecode
-funxy -c program.lang -o output.fbc
+# Build self-contained binary
+funxy build program.lang -o myapp
 
-# Run bytecode
-funxy -r output.fbc
+# Or compile to bytecode
+funxy -c program.lang   # creates program.fbc
+funxy -r program.fbc    # run compiled bytecode
 
 # Run tests
 funxy test .
@@ -1855,6 +1912,38 @@ funxy test ./tests/my_test.lang
 # Show help
 funxy --help
 ```
+
+### One-Liner Mode (`-e`)
+
+The `-e` flag evaluates an expression directly, without a source file. Combined with `-p` (auto-print) and `-l` (line mode), it enables powerful bash-style one-liners.
+
+```bash
+# Evaluate expression
+funxy -e 'print(1 + 2)'
+
+# Auto-print result (-p wraps expression in print())
+funxy -pe '1 + 2 * 3'    # prints: 7
+
+# Pipe data from stdin
+echo '{"name":"Alice"}' | funxy -pe 'stdin |>> jsonDecode |> \x -> x.name'
+# prints: Alice
+
+# Process each line separately (-l)
+cat data.txt | funxy -ple 'stdin |> stringToUpper'
+
+# Full pipeline: curl → JSON decode → filter → extract
+curl -s api.com/users | funxy -pe 'stdin |>> jsonDecode |> filter(\x -> x.active) |> map(\x -> x.name)'
+```
+
+**Flags:**
+- `-e <expr>` — evaluate expression (required)
+- `-p` — auto-print: wraps expression in `print()`
+- `-l` — line mode: runs expression once per input line, `stdin` = current line
+
+**Built-in variable:**
+- `stdin` — contains piped input data as a `String` (entire stdin in normal mode, current line in `-l` mode)
+
+**Auto-imports:** In `-e` mode, stdlib functions are automatically imported. No need to write `import "lib/json" (jsonDecode)` — just use `jsonDecode` directly.
 
 ### CLI in Code
 
@@ -2054,6 +2143,22 @@ result = 10
     |> div(_, 2)     // div(10, 2) = 5
 ```
 
+### Pipe Unwrap (`|>>`)
+
+Combine piping with automatic unwrapping of `Result`/`Option`:
+
+```rust
+import "lib/json" (jsonDecode)
+import "lib/list" (filter, map)
+
+// |>> pipes into jsonDecode then unwraps the Result
+// Panics if jsonDecode returns Fail
+result = jsonStr
+    |>> jsonDecode
+    |> filter(fun(x) -> x.active)
+    |> map(fun(x) -> x.name)
+```
+
 ### Higher-Order Functions
 
 Functions that take or return other functions:
@@ -2129,47 +2234,151 @@ result = do {
 
 ---
 
-## 21. Bytecode Compilation (Experimental)
+## 21. Compilation and Distribution
 
-Funxy supports compilation to bytecode for improved performance and distribution.
+Funxy supports compilation to bytecode and building self-contained native binaries for distribution.
 
-### Command Line Usage
+### Self-Contained Binaries (`funxy build`)
+
+The `build` command creates a single executable file containing your script's bytecode and all dependencies bundled with the Funxy runtime. No installation of Funxy is required to run the resulting binary.
 
 ```bash
-# Compile source to bytecode
-funxy -c source.lang -o output.fbc
+# Build a self-contained binary
+funxy build script.lang           # creates ./script (or ./script.exe on Windows)
+funxy build script.lang -o myapp  # custom output name
+
+# Run the binary — no Funxy needed!
+./myapp
+scp myapp user@server:~/  # distribute to any machine with the same OS/arch
+```
+
+**Dual-mode operation:** Self-contained binaries also work as full Funxy interpreters. Pass `$` as the first argument to switch to interpreter mode — the `$` is stripped and the rest of the arguments are processed normally:
+
+```bash
+./myapp                    # runs embedded bundle
+./myapp --port 8080        # runs embedded bundle (flags go to your app via sysArgs)
+./myapp $ other.lang       # acts as Funxy interpreter
+./myapp $ -e 'print(42)'  # eval mode
+./myapp $ -pe '1 + 2'     # eval with auto-print
+./myapp $ --help           # shows help
+./myapp $ build x.lang     # build command
+```
+
+This is especially useful for tools like the Playground that need to invoke themselves to execute user code. Use `sysExePath()` from `lib/sys` to get the path to the current executable, and `sysScriptDir()` to resolve paths relative to the script:
+
+```funxy
+import "lib/sys" (sysExePath, sysExec, sysScriptDir)
+
+result = sysExec(sysExePath(), ["$", scriptFile])  // invoke self as interpreter
+dir = sysScriptDir()                               // like Python's os.path.dirname(__file__)
+```
+
+#### Embedding Static Files (`--embed`)
+
+Use `--embed` to bundle static files (HTML templates, configs, images, etc.) into the binary. Embedded files are available through the standard `fileRead`, `fileReadBytes`, `fileExists`, and `fileSize` functions — no code changes needed.
+
+```bash
+# Embed a directory of templates
+funxy build server.lang --embed templates -o server
+
+# Embed multiple directories
+funxy build app.lang --embed static --embed config -o app
+
+# Comma-separated (equivalent to multiple --embed flags)
+funxy build app.lang --embed static,config,data.json -o app
+
+# Glob patterns
+funxy build app.lang --embed "templates/*.html" -o app
+funxy build app.lang --embed "assets/*.png,config/*.toml" -o app
+
+# Embed a single file
+funxy build tool.lang --embed data/schema.json -o tool
+```
+
+Glob patterns follow standard shell glob syntax (`*`, `?`, `[...]`). Multiple paths can be comma-separated within a single `--embed` flag, and you can use multiple `--embed` flags — all forms can be combined freely.
+
+Paths are stored **relative to the source file directory**. For example, if your project looks like:
+
+```
+myapp/
+  app.lang
+  templates/
+    index.html
+    about.html
+  config/
+    settings.toml
+```
+
+Then `funxy build myapp/app.lang --embed myapp/templates --embed myapp/config` stores files as `templates/index.html`, `templates/about.html`, `config/settings.toml`. Your code reads them the same way:
+
+```funxy
+import "lib/io" (fileRead)
+
+html = fileRead("templates/index.html") |>> \x -> x
+```
+
+This works identically whether running interpreted (`funxy app.lang`) or as a self-contained binary (`./app`). The binary checks embedded resources first, then falls back to the filesystem.
+
+#### Cross-Compilation (`--host`)
+
+To build a binary for a different OS or architecture, use the `--host` flag to specify a pre-built Funxy binary for the target platform:
+
+```bash
+# Build for Linux (from macOS or any other OS)
+funxy build script.lang --host release-bin/funxy-linux-amd64 -o myapp
+
+# Build for Windows
+funxy build script.lang --host release-bin/funxy-windows-amd64.exe -o myapp.exe
+
+# Build for macOS Intel (from macOS ARM)
+funxy build script.lang --host release-bin/funxy-darwin-amd64 -o myapp-intel
+
+# Build for FreeBSD
+funxy build script.lang --host release-bin/funxy-freebsd-amd64 -o myapp-bsd
+```
+
+The bytecode is platform-independent — only the host binary determines the target platform. The `--host` flag requires an explicit path; there are no default targets.
+
+**How it works:**
+1. The script and all its user module dependencies are compiled to bytecode
+2. The bytecode is serialized into a Bundle (v2 format), including any `--embed` resources
+3. The Bundle is appended to the host binary (own executable or `--host`) with a footer marker
+4. On startup, the binary detects the embedded bundle and executes it directly
+
+### Bytecode Compilation (`-c` / `-r`)
+
+For cases where you want to pre-compile without creating a full binary:
+
+```bash
+# Compile to bytecode bundle (.fbc)
+funxy -c script.lang              # creates script.fbc
 
 # Run compiled bytecode
-funxy -r output.fbc
-
-# Compile and run in one step
-funxy source.lang
+funxy -r script.fbc
 ```
 
 ### Bytecode Format
 
 - **Extension**: `.fbc` (Funxy Bytecode)
-- **Magic**: `FXYB` header with version
-- **Encoding**: Gob-encoded chunks with metadata
-- **Features**: Preserves imports, operator functions, and complex data structures
+- **Magic**: `FXYB` header
+- **Version**: `0x01` (single chunk, legacy) or `0x02` (full bundle with modules)
+- **Encoding**: Gob-encoded Bundle with main chunk + module chunks
+- **Features**: Bundles all user module dependencies, pre-compiled trait defaults
 
 ### Compilation Process
 
 1. **Parse**: Source code → AST
-2. **Analyze**: Type checking and inference
+2. **Analyze**: Type checking, inference, and module resolution
 3. **Compile**: AST → Bytecode instructions
-4. **Serialize**: Bytecode → Binary format
-
-### Limitations
-
-- Bytecode compilation works only for a single source file (no packages)
-- Import resolution happens at runtime
+4. **Bundle**: Main chunk + all user module chunks → Bundle
+5. **Serialize**: Bundle → Binary format (.fbc or embedded in binary)
 
 ### Performance Benefits
 
 - Faster startup (no parsing/analysis)
 - Optimized instruction dispatch
 - Reduced memory usage for repeated execution
+- Self-contained binaries for zero-dependency distribution
 
 ---
 
@@ -2177,7 +2386,7 @@ funxy source.lang
 
 ### Operators Precedence
 1. Function application (`$`) - Lowest
-2. Pipe (`|>`) - Low
+2. Pipe (`|>`, `|>>`) - Low
 3. Logical (`&&`, `||`) - Low
 4. Comparison (`==`, `!=`, `<`, `>`, `<=`, `>=`) - Medium
 5. Range (`..`) - Medium
@@ -2201,6 +2410,7 @@ funxy source.lang
 | `Result<e, a>` | ADT | `Ok(value)` | `Fail(error)` | Recoverable errors |
 | `Option<t>` | ADT | `Some(value)` | `None` | Absent values |
 | `T?` | Union | `value` | `nil` | Nullable values |
+| `\|>>` | Operator | Unwraps value | Panics | Pipeline unwrapping |
 
 ---
 

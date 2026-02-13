@@ -187,18 +187,49 @@ func PrintHelp() string {
 	sb.WriteString("=========================================\n\n")
 	sb.WriteString("Usage:\n")
 	sb.WriteString("  funxy <file>                Run a program\n")
+	sb.WriteString("  funxy -e '<expr>'           Evaluate expression\n")
+	sb.WriteString("  funxy -pe '<expr>'          Evaluate and print result\n")
+	sb.WriteString("  funxy -lpe '<expr>'         Process stdin line-by-line\n")
 	sb.WriteString("  funxy -help                 Show this help\n")
 	sb.WriteString("  funxy -help packages        Show lib packages\n")
 	sb.WriteString("  funxy -help <package>       Show package documentation\n")
 	sb.WriteString("  funxy -help search <term>   Search documentation\n")
 	sb.WriteString("  funxy -help precedence      Show operator precedence\n")
 	sb.WriteString("\n")
-	// sb.WriteString("File extensions: .lang, .funxy, .fx\n")
-	sb.WriteString("Experimental:\n")
-	sb.WriteString("  funxy -c <file>             Compile to bytecode (.fbc)\n")
-	sb.WriteString("  funxy -r <file>             Run compiled bytecode (.fbc)\n")
-	sb.WriteString("Note: Bytecode compilation (-c) works for single-file programs.\n")
-	sb.WriteString("      Module imports are not yet supported in compiled bytecode.\n")
+	sb.WriteString("One-liner flags (combinable: -pe, -lpe, -elp, etc.):\n")
+	sb.WriteString("  -e '<expr>'   Execute expression (auto-imports lib/* functions)\n")
+	sb.WriteString("  -p            Auto-print result of expression\n")
+	sb.WriteString("  -l            Line mode: run expression for each stdin line\n")
+	sb.WriteString("  stdin         In -e mode, holds stdin content as String\n")
+	sb.WriteString("\n")
+	sb.WriteString("Examples:\n")
+	sb.WriteString("  funxy -pe '1 + 2 * 3'\n")
+	sb.WriteString("  echo 'hello' | funxy -pe 'stringToUpper(stdin)'\n")
+	sb.WriteString("  cat data.json | funxy -pe 'stdin |>> jsonDecode |> \\x -> x.name'\n")
+	sb.WriteString("  cat file.txt | funxy -lpe 'stringToUpper(stdin)'\n")
+	sb.WriteString("\n")
+	sb.WriteString("Build & Distribution:\n")
+	sb.WriteString("  funxy build <file> [-o out] [--host bin] [--embed path]  Build self-contained binary\n")
+	sb.WriteString("  funxy -c <file>                           Compile to bytecode bundle (.fbc)\n")
+	sb.WriteString("  funxy -r <file>                           Run compiled bytecode (.fbc)\n")
+	sb.WriteString("\n")
+	sb.WriteString("Build examples:\n")
+	sb.WriteString("  funxy build script.lang                    # creates ./script binary\n")
+	sb.WriteString("  funxy build script.lang -o myapp           # custom output name\n")
+	sb.WriteString("  funxy build script.lang --embed templates  # embed static files\n")
+	sb.WriteString("  funxy build app.lang --embed static,config # comma-separated\n")
+	sb.WriteString("  funxy build app.lang --embed '*.html'      # glob patterns\n")
+	sb.WriteString("  funxy build script.lang --host release-bin/funxy-linux-amd64 -o myapp\n")
+	sb.WriteString("                                             # cross-compile for Linux\n")
+	sb.WriteString("  funxy -c script.lang && funxy -r script.fbc  # compile + run\n")
+	sb.WriteString("\n")
+	sb.WriteString("Dual-mode: pass $ as first argument to switch to interpreter mode:\n")
+	sb.WriteString("  ./myapp                                    # runs embedded bundle\n")
+	sb.WriteString("  ./myapp --port 8080                        # runs embedded bundle (flags go to app)\n")
+	sb.WriteString("  ./myapp $ other.lang                       # acts as Funxy interpreter\n")
+	sb.WriteString("  ./myapp $ -e 'print(42)'                   # eval mode\n")
+	sb.WriteString("  ./myapp $ -pe '1 + 2'                      # eval with auto-print\n")
+	sb.WriteString("  ./myapp $ --help                           # shows help\n")
 	return sb.String()
 }
 
@@ -304,6 +335,7 @@ func InitDocumentation() {
 	initTaskDocs()
 	initCsvDocs()
 	initFlagDocs()
+	initTermDocs()
 	initGrpcDocs()
 	initProtoDocs()
 
@@ -773,7 +805,9 @@ func initTimeDocs() {
 func initIODocs() {
 	meta := map[string]*DocMeta{
 		// Stdin
-		"readLine": {Description: "Read line from stdin (None on EOF)", Category: "Stdin"},
+		"readLine":     {Description: "Read line from stdin (None on EOF)", Category: "Stdin"},
+		"readAll":      {Description: "Read all remaining stdin as String", Category: "Stdin"},
+		"readAllBytes": {Description: "Read all remaining stdin as Bytes", Category: "Stdin"},
 
 		// File operations
 		"fileRead":        {Description: "Read entire file as String", Category: "File Read"},
@@ -808,12 +842,14 @@ func initIODocs() {
 
 func initSysDocs() {
 	meta := map[string]*DocMeta{
-		"sysArgs": {Description: "Command line arguments"},
-		"sysEnv":  {Description: "Get environment variable"},
-		"sysExit": {Description: "Exit with status code"},
-		"sysExec": {Description: "Execute external command"},
+		"sysArgs":      {Description: "Command line arguments"},
+		"sysEnv":       {Description: "Get environment variable"},
+		"sysExit":      {Description: "Exit with status code"},
+		"sysExec":      {Description: "Execute external command"},
+		"sysExePath":   {Description: "Absolute path to current executable"},
+		"sysScriptDir": {Description: "Directory of the currently running script"},
 	}
-	pkg := generatePackageDocs("lib/sys", "System interaction (sysArgs, sysEnv, sysExit, sysExec)", meta, nil)
+	pkg := generatePackageDocs("lib/sys", "System interaction (sysArgs, sysEnv, sysExit, sysExec, sysExePath, sysScriptDir)", meta, nil)
 	RegisterDocPackage(pkg)
 }
 
@@ -1446,5 +1482,72 @@ func initFlagDocs() {
 		"flagUsage": {Description: "Print usage information", Category: "Help"},
 	}
 	pkg := generatePackageDocs("lib/flag", "Command line flag parsing. Supports both -flag=value and -flag value formats.", meta, nil)
+	RegisterDocPackage(pkg)
+}
+
+func initTermDocs() {
+	meta := map[string]*DocMeta{
+		// Styles
+		"bold":          {Description: "Make text bold", Category: "Styles"},
+		"dim":           {Description: "Make text dim/faint", Category: "Styles"},
+		"italic":        {Description: "Make text italic", Category: "Styles"},
+		"underline":     {Description: "Underline text", Category: "Styles"},
+		"strikethrough": {Description: "Strikethrough text", Category: "Styles"},
+		// Foreground colors
+		"red":     {Description: "Red foreground color", Category: "Colors"},
+		"green":   {Description: "Green foreground color", Category: "Colors"},
+		"yellow":  {Description: "Yellow foreground color", Category: "Colors"},
+		"blue":    {Description: "Blue foreground color", Category: "Colors"},
+		"magenta": {Description: "Magenta foreground color", Category: "Colors"},
+		"cyan":    {Description: "Cyan foreground color", Category: "Colors"},
+		"white":   {Description: "White foreground color", Category: "Colors"},
+		"gray":    {Description: "Gray foreground color", Category: "Colors"},
+		// Background colors
+		"bgRed":     {Description: "Red background color", Category: "Background"},
+		"bgGreen":   {Description: "Green background color", Category: "Background"},
+		"bgYellow":  {Description: "Yellow background color", Category: "Background"},
+		"bgBlue":    {Description: "Blue background color", Category: "Background"},
+		"bgCyan":    {Description: "Cyan background color", Category: "Background"},
+		"bgMagenta": {Description: "Magenta background color", Category: "Background"},
+		// Extended colors
+		"rgb":   {Description: "RGB foreground color (r, g, b, text). Requires truecolor support", Category: "Extended Colors"},
+		"bgRgb": {Description: "RGB background color (r, g, b, text). Requires truecolor support", Category: "Extended Colors"},
+		"hex":   {Description: "Hex foreground color (\"#FF8000\", text). Requires truecolor support", Category: "Extended Colors"},
+		"bgHex": {Description: "Hex background color (\"#FF8000\", text). Requires truecolor support", Category: "Extended Colors"},
+		// Utility
+		"stripAnsi":  {Description: "Remove all ANSI escape codes from a string", Category: "Utility"},
+		"termColors": {Description: "Detect color support: 0=none, 1=basic, 256=256-color, 16777216=truecolor", Category: "Utility"},
+		"cprint":     {Description: "Print with style: cprint(red, \"error\", \"message\")", Category: "Utility"},
+		// Terminal control
+		"termSize":      {Description: "Get terminal size as (cols, rows) tuple", Category: "Terminal"},
+		"termIsTTY":     {Description: "Check if stdout is a terminal (not piped/redirected)", Category: "Terminal"},
+		"termClear":     {Description: "Clear the terminal screen", Category: "Terminal"},
+		"termClearLine": {Description: "Clear the current line", Category: "Terminal"},
+		"cursorUp":      {Description: "Move cursor up by n lines", Category: "Cursor"},
+		"cursorDown":    {Description: "Move cursor down by n lines", Category: "Cursor"},
+		"cursorLeft":    {Description: "Move cursor left by n columns", Category: "Cursor"},
+		"cursorRight":   {Description: "Move cursor right by n columns", Category: "Cursor"},
+		"cursorTo":      {Description: "Move cursor to absolute position (col, row)", Category: "Cursor"},
+		"cursorHide":    {Description: "Hide the cursor", Category: "Cursor"},
+		"cursorShow":    {Description: "Show the cursor", Category: "Cursor"},
+		// Interactive prompts
+		"prompt":   {Description: "Prompt user for text input with optional default", Category: "Prompts"},
+		"confirm":  {Description: "Ask yes/no question, returns Bool. Default: true", Category: "Prompts"},
+		"password": {Description: "Prompt for password (hidden input)", Category: "Prompts"},
+		// Select
+		"select":      {Description: "Interactive single-choice menu (arrow keys + Enter)", Category: "Select"},
+		"multiSelect": {Description: "Interactive multi-choice menu (Space to toggle, Enter to confirm)", Category: "Select"},
+		// Spinner & Progress
+		"spinnerStart":  {Description: "Start a spinner animation with message. Returns Handle", Category: "Progress"},
+		"spinnerUpdate": {Description: "Update spinner message", Category: "Progress"},
+		"spinnerStop":   {Description: "Stop spinner and print final message", Category: "Progress"},
+		"progressNew":   {Description: "Create progress bar with total count and label. Returns Handle", Category: "Progress"},
+		"progressTick":  {Description: "Increment progress bar by 1", Category: "Progress"},
+		"progressSet":   {Description: "Set progress bar to specific value", Category: "Progress"},
+		"progressDone":  {Description: "Complete progress bar (sets to 100%)", Category: "Progress"},
+		// Table
+		"table": {Description: "Print formatted table with Unicode box-drawing. table(headers, rows)", Category: "Table"},
+	}
+	pkg := generatePackageDocs("lib/term", "Terminal UI: colors, styles, prompts, spinners, progress bars, tables. Auto-detects color support, respects $NO_COLOR.", meta, nil)
 	RegisterDocPackage(pkg)
 }

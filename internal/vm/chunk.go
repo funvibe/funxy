@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 
+	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
 )
@@ -53,10 +54,21 @@ func init() {
 	gob.Register(typesystem.TUnion{})
 	gob.Register(typesystem.TType{})
 	gob.Register(typesystem.Constraint{})
+	gob.Register(typesystem.TForall{})
+
+	// Register Kind interface implementations (used in TVar.KindVal, TCon.KindVal, TApp.KindVal)
+	gob.Register(typesystem.KStar{})
+	gob.Register(typesystem.KArrow{})
+	gob.Register(typesystem.KVar{})
+	gob.Register(typesystem.KWildcard{})
 
 	// Register stringConstant - it's defined in compiler_expressions.go
 	// but needs to be registered here for gob serialization
 	gob.Register(&stringConstant{})
+
+	// Register StringPatternParts and ast.StringPatternPart for pattern matching serialization
+	gob.Register(&StringPatternParts{})
+	gob.Register(ast.StringPatternPart{})
 }
 
 // Chunk represents a sequence of bytecode instructions

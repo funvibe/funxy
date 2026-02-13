@@ -1389,6 +1389,11 @@ func (c *Compiler) compileInfixExpression(expr *ast.InfixExpression) error {
 		return c.compilePipeOp(expr)
 	}
 
+	// Pipe + unwrap operator: x |>> f  compiles to unwrap(f(x))
+	if expr.Operator == "|>>" {
+		return c.compilePipeUnwrapOp(expr)
+	}
+
 	// Function application: f $ x compiles to f(x)
 	if expr.Operator == "$" {
 		return c.compileApplyOp(expr)
@@ -1590,6 +1595,26 @@ func (c *Compiler) compilePipeOp(expr *ast.InfixExpression) error {
 	c.slotCount--                         // call consumes fn+arg (2), pushes result (1). Delta -1
 
 	c.inTailPosition = wasTail
+	return nil
+}
+
+// compilePipeUnwrapOp compiles x |>> f as unwrap(f(x))
+// Reuses pipe compilation logic, then emits OP_UNWRAP_OR_PANIC
+func (c *Compiler) compilePipeUnwrapOp(expr *ast.InfixExpression) error {
+	// Disable tail position: the pipe call is NOT the final operation —
+	// we still need OP_UNWRAP_OR_PANIC after it. Without this, compilePipeOp
+	// emits OP_TAIL_CALL which returns immediately, skipping the unwrap.
+	savedTail := c.inTailPosition
+	c.inTailPosition = false
+
+	// Compile as normal pipe first
+	if err := c.compilePipeOp(expr); err != nil {
+		return err
+	}
+
+	c.inTailPosition = savedTail
+	// Then unwrap the result (panic on Fail/None, pass through otherwise)
+	c.emit(OP_UNWRAP_OR_PANIC, expr.Token.Line)
 	return nil
 }
 

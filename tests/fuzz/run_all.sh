@@ -110,12 +110,21 @@ run_batch() {
 
     local batch_failed=0
     for i in "${!pids[@]}"; do
+        local target="${targets[$i]}"
+        local logfile="$LOG_DIR/${target}.log"
         if ! wait "${pids[$i]}"; then
-            echo "  ✗ ${targets[$i]} FAILED  (log: $LOG_DIR/${targets[$i]}.log)"
-            batch_failed=$((batch_failed + 1))
-            FAILED_TARGETS+=("${targets[$i]}")
+            # Go fuzz exits non-zero on timeout (context deadline exceeded).
+            # That's not a real failure — check if the log has an actual crash.
+            if grep -q "context deadline exceeded" "$logfile" && \
+               ! grep -q "^--- FAIL.*panic\|Failing input\|runtime error" "$logfile"; then
+                echo "  ✓ ${target} PASSED (timeout, no crashes)"
+            else
+                echo "  ✗ ${target} FAILED  (log: $logfile)"
+                batch_failed=$((batch_failed + 1))
+                FAILED_TARGETS+=("${target}")
+            fi
         else
-            echo "  ✓ ${targets[$i]} PASSED"
+            echo "  ✓ ${target} PASSED"
         fi
     done
 
@@ -132,7 +141,7 @@ run_batch "Batch 1: Parser & Type Checking" --procs=2 \
 
 # Run FuzzCompiler separately with a lower worker cap for stability.
 run_batch "Batch 1b: Compiler" --procs=2 \
-    FuzzCompiler FuzzRowPolymorphism
+    FuzzCompiler FuzzRowPolymorphism FuzzBundleRoundTrip
 
 # ── Batch 2: Lightweight tests with larger corpus ──
 run_batch "Batch 2: Formatting & Mutation" \

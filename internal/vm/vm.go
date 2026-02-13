@@ -30,10 +30,8 @@ func formatFilePath(file string) string {
 		}
 	}
 
-	// Remove .lang extension for display
-	if strings.HasSuffix(file, ".lang") {
-		file = file[:len(file)-5]
-	}
+	// Remove source extension for display
+	file = config.TrimSourceExt(file)
 
 	return file
 }
@@ -107,8 +105,15 @@ type VM struct {
 	// Type aliases for default() support
 	typeAliases *PersistentMap
 
-	// Trait default implementations for fallback
+	// Trait default implementations for fallback (AST-based, for source execution)
 	traitDefaults map[string]*ast.FunctionStatement
+
+	// Pre-compiled trait defaults (bytecode-based, for bundle execution)
+	compiledTraitDefaults map[string]*CompiledFunction
+
+	// Embedded resources from bundle (static files: HTML, images, configs, etc.)
+	// Key is relative path, value is file contents.
+	resources map[string][]byte
 
 	// Evaluator for builtin Go functions only (not for Funxy code!)
 	eval *evaluator.Evaluator
@@ -119,6 +124,9 @@ type VM struct {
 	currentFile    string          // Current file name for error messages
 	moduleCache    *PersistentMap  // Cache of compiled/executed modules
 	loadingModules map[string]bool // Modules currently being loaded (for cyclic detection)
+
+	// Bundle for self-contained bytecode execution (nil when running from source)
+	bundle *Bundle
 
 	// Type context stack for ClassMethod dispatch
 	typeContextStack []string
@@ -188,6 +196,21 @@ func (vm *VM) SetTypeAliases(aliases map[string]typesystem.Type) {
 // SetTraitDefaults sets the trait default implementations from analyzer
 func (vm *VM) SetTraitDefaults(defaults map[string]*ast.FunctionStatement) {
 	vm.traitDefaults = defaults
+}
+
+// SetBundle sets the bytecode bundle for self-contained execution.
+// When set, the VM resolves user module imports from the bundle
+// instead of loading from disk.
+func (vm *VM) SetBundle(b *Bundle) {
+	vm.bundle = b
+	if b != nil && b.Resources != nil {
+		vm.resources = b.Resources
+		// If evaluator was already created (e.g. by RegisterFPTraits),
+		// sync resources to it now.
+		if vm.eval != nil {
+			vm.eval.EmbeddedResources = vm.resources
+		}
+	}
 }
 
 // SetLoader sets the module loader for resolving imports
@@ -521,6 +544,8 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 		vm.eval.TraitDefaults = vm.traitDefaults
 		// Pass type map for type-based dispatch
 		vm.eval.TypeMap = vm.typeMap
+		// Pass embedded resources for file I/O builtins
+		vm.eval.EmbeddedResources = vm.resources
 
 		// Set Fork function for thread-safe isolation (e.g. for taskMap)
 		vm.eval.Fork = func() *evaluator.Evaluator {
@@ -1377,10 +1402,8 @@ func (vm *VM) formatError(err error) error {
 		if file == "" {
 			file = "<script>"
 		}
-		// Remove .lang extension for stack trace display
-		if strings.HasSuffix(file, ".lang") {
-			file = file[:len(file)-5]
-		}
+		// Remove source extension for stack trace display
+		file = config.TrimSourceExt(file)
 		// Get line for this frame
 		frameLine := 0
 		if frame.ip > 0 && frame.ip-1 < len(frame.chunk.Lines) {
@@ -1536,6 +1559,9 @@ func (vm *VM) ForkVM() *VM {
 	newVM.builtinTraitMethods = vm.builtinTraitMethods // PersistentMap is safe to share
 	newVM.extensionMethods = vm.extensionMethods       // PersistentMap is safe to share
 	newVM.traitDefaults = vm.traitDefaults
+	newVM.compiledTraitDefaults = vm.compiledTraitDefaults // Read-only at runtime
+	newVM.bundle = vm.bundle                               // Shared bundle ref
+	newVM.resources = vm.resources                         // Shared resources ref
 	newVM.moduleCache = vm.moduleCache
 	newVM.currentFile = vm.currentFile
 
@@ -1580,11 +1606,13 @@ func (vm *VM) asyncHandler(fn evaluator.Object, args []evaluator.Object) evaluat
 
 	// Create safe copies of mutable maps for async execution
 	// This prevents data races when JIT compilation writes to these maps
-	newVM.traitMethods = vm.traitMethods               // PersistentMap is safe to share
-	newVM.builtinTraitMethods = vm.builtinTraitMethods // PersistentMap is safe to share
-	newVM.extensionMethods = vm.extensionMethods       // PersistentMap is safe to share
-	newVM.traitDefaults = vm.traitDefaults             // Read-only at runtime
-	newVM.moduleCache = vm.moduleCache                 // Shared persistent map cache
+	newVM.traitMethods = vm.traitMethods                   // PersistentMap is safe to share
+	newVM.builtinTraitMethods = vm.builtinTraitMethods     // PersistentMap is safe to share
+	newVM.extensionMethods = vm.extensionMethods           // PersistentMap is safe to share
+	newVM.traitDefaults = vm.traitDefaults                 // Read-only at runtime
+	newVM.compiledTraitDefaults = vm.compiledTraitDefaults // Read-only at runtime
+	newVM.bundle = vm.bundle                               // Shared bundle ref
+	newVM.moduleCache = vm.moduleCache                     // Shared persistent map cache
 	newVM.currentFile = vm.currentFile
 
 	// Reset stack and frames for new VM

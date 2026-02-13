@@ -6,9 +6,22 @@ It uses Go's native fuzzing support (available in Go 1.18+).
 ## Directory Structure
 
 - `targets/`: Contains the fuzz targets (entry points for the fuzzer).
-  - `parser_fuzz.go`: Fuzzes the Parser.
-  - `typechecker_fuzz.go`: Fuzzes the Type Checker (Analyzer).
-  - `compiler_fuzz.go`: Fuzzes the Compiler.
+  - `parser_fuzz_test.go`: Fuzzes the Parser.
+  - `typechecker_fuzz_test.go`: Fuzzes the Type Checker (Analyzer).
+  - `compiler_fuzz_test.go`: Fuzzes the Compiler.
+  - `differential_fuzz_test.go`: Differential testing (VM vs TreeWalk).
+  - `bundle_fuzz_test.go`: Serialization roundtrip (compile → serialize → deserialize → run).
+  - `roundtrip_fuzz_test.go`: Parse → print → re-parse idempotency.
+  - `vm_fuzz_test.go`: Random bytecode execution.
+  - `stress_fuzz_test.go`: Resource exhaustion (deep nesting, large structures).
+  - `kind_checker_fuzz_test.go`: Higher-kinded types and traits.
+  - `row_poly_fuzz_test.go`: Row polymorphism / record unification.
+  - `mutation_fuzz_test.go`: AST mutation-based fuzzing.
+  - `stdlib_fuzz_test.go`: Standard library calls.
+  - `modules_fuzz_test.go`: Module system with random import trees.
+  - `formatter_fuzz_test.go`: Pretty printer idempotency.
+  - `lsp_fuzz_test.go`: LSP server with random JSON-RPC.
+  - `async_fuzz_test.go`: Async/await and task scheduling.
 - `generators/`: Contains logic for generating random Funxy code (for structure-aware fuzzing).
 - `mutator/`: Contains logic for mutating ASTs (for mutation-based fuzzing).
 - `corpus/`: Directory where the fuzzer stores interesting inputs (automatically managed).
@@ -144,6 +157,12 @@ To stress test the async/await machinery, task scheduling, and concurrency primi
 go test -fuzz=FuzzAsync ./tests/fuzz/targets
 ```
 
+### Bundle Roundtrip Fuzzing (Serialization)
+To test the bytecode serialization roundtrip: compile → serialize (Bundle) → deserialize → run, comparing output with direct execution. Catches missing `gob.Register` calls, unexported fields, nil elements in slices, and output divergence after serialization.
+```bash
+go test -fuzz=FuzzBundleRoundTrip ./tests/fuzz/targets
+```
+
 ## Finding Edge Cases
 
 To effectively find edge cases in the Funxy compiler, use these strategies:
@@ -172,7 +191,7 @@ total worker count stays close to available CPU cores. This prevents:
 **⚠️ Do NOT run all fuzz tests as bare background jobs:**
 
 ```bash
-# BAD: 14 tests × GOMAXPROCS workers = massive CPU contention
+# BAD: 16 tests × GOMAXPROCS workers = massive CPU contention
 go test -fuzz=FuzzParser -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzTypeChecker -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzCompiler -fuzztime=180s ./tests/fuzz/targets &
@@ -188,6 +207,7 @@ go test -fuzz=FuzzFormatter -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzVM -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzAsync -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzLSP -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzBundleRoundTrip -fuzztime=180s ./tests/fuzz/targets &
 wait
 ```
 
@@ -208,7 +228,10 @@ If you're working on a particular component, focus on the relevant fuzz target:
 - **Parser changes**: Use `FuzzParser` and `FuzzRoundTrip`
 - **Type system changes**: Use `FuzzTypeChecker`, `FuzzKindChecker`, and `FuzzRowPolymorphism`
 - **Backend changes**: Use `FuzzDifferential`, `FuzzCompiler`, and `FuzzVM`
+- **Build / serialization changes**: Use `FuzzBundleRoundTrip`
 - **Performance changes**: Use `FuzzStress`
+- **Pipe operators (`|>`, `|>>`)**: Use `FuzzParser`, `FuzzCompiler`, and `FuzzDifferential`
+- **One-liner mode (`-e`, `-pe`, `-lpe`)**: Tested separately via `go test ./evaluator/ -run TestEvalMode`
 
 ### 3. Use Extended Fuzzing Sessions
 

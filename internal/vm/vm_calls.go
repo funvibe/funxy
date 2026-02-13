@@ -213,7 +213,7 @@ func (vm *VM) callClosure(closure *ObjClosure, argCount int) error {
 					if constIdx >= 0 {
 						vm.push(ObjectToValue(closure.Function.Chunk.Constants[constIdx]))
 						argCount++
-					} else if fn.DefaultChunks != nil && defaultIdx < len(fn.DefaultChunks) && fn.DefaultChunks[defaultIdx] != nil {
+					} else if fn.DefaultChunks != nil && defaultIdx < len(fn.DefaultChunks) && fn.DefaultChunks[defaultIdx] != nil && len(fn.DefaultChunks[defaultIdx].Code) > 0 {
 						defaultChunk := fn.DefaultChunks[defaultIdx]
 						defaultVal, err := vm.executeDefaultChunk(defaultChunk, closure)
 						if err != nil {
@@ -843,7 +843,7 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 			}
 		}
 
-		// Check defaults
+		// Check defaults (AST-based or pre-compiled)
 		if method == nil {
 			defaultKey := cm.ClassName + "." + cm.Name
 			if defaultFn, ok := vm.traitDefaults[defaultKey]; ok {
@@ -857,6 +857,12 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 						resolvedType = ctx
 					}
 				}
+			} else if compiledFn, ok := vm.compiledTraitDefaults[defaultKey]; ok && ctx != "" {
+				// Bundle mode: use pre-compiled trait default
+				closure := &ObjClosure{Function: compiledFn, Upvalues: make([]*ObjUpvalue, 0)}
+				vm.RegisterTraitMethod(cm.ClassName, ctx, cm.Name, closure)
+				method = closure
+				resolvedType = ctx
 			}
 		}
 
@@ -955,6 +961,12 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 				method = closure
 				resolvedType = argTypeName
 			}
+		} else if compiledFn, ok := vm.compiledTraitDefaults[defaultKey]; ok && argTypeName != "" {
+			// Bundle mode: use pre-compiled trait default
+			closure := &ObjClosure{Function: compiledFn, Upvalues: make([]*ObjUpvalue, 0)}
+			vm.RegisterTraitMethod(cm.ClassName, argTypeName, cm.Name, closure)
+			method = closure
+			resolvedType = argTypeName
 		}
 	}
 
@@ -998,6 +1010,12 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 				method = closure
 				resolvedType = ctx
 			}
+		} else if compiledFn, ok := vm.compiledTraitDefaults[defaultKey]; ok {
+			// Bundle mode: use pre-compiled trait default
+			closure := &ObjClosure{Function: compiledFn, Upvalues: make([]*ObjUpvalue, 0)}
+			vm.RegisterTraitMethod(cm.ClassName, ctx, cm.Name, closure)
+			method = closure
+			resolvedType = ctx
 		}
 	}
 

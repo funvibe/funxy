@@ -110,6 +110,42 @@ print(getType(echoResult.stdout))  // String
 print(getType(echoResult.stderr))  // String
 ```
 
+### sysExePath
+
+```rust
+sysExePath() -> String
+```
+
+Returns the absolute path to the currently running executable. Useful for self-contained binaries that need to invoke themselves as interpreters.
+
+```rust
+import "lib/sys" (sysExePath, sysExec)
+
+// A built binary can call itself to run user scripts
+result = sysExec(sysExePath(), ["user_script.lang"])
+print(result.stdout)
+```
+
+### sysScriptDir
+
+```rust
+sysScriptDir() -> String
+```
+
+Returns the directory of the currently running script. In interpreted mode this is the directory of the `.lang` file; in a built binary it's the directory of the executable.
+
+This is the equivalent of Python's `os.path.dirname(__file__)` or Node.js `__dirname`.
+
+```rust
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+import "lib/io" (fileRead)
+
+// Resolve a data file relative to the script
+configPath = pathJoin([sysScriptDir(), "config.json"])
+config = fileRead(configPath)
+```
+
 ## Practical Examples
 
 ### CLI with Arguments
@@ -209,3 +245,5 @@ if length(arguments) < 3 {
 | `sysEnv` | `(String) -> Option<String>` | Environment variable |
 | `sysExit` | `(Int) -> Nil` | Terminate program |
 | `sysExec` | `(String, List<String>) -> { code: Int, stdout: String, stderr: String }` | Execute command |
+| `sysExePath` | `() -> String` | Absolute path to current executable |
+| `sysScriptDir` | `() -> String` | Directory of the running script |

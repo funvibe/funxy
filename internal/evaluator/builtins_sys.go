@@ -5,15 +5,18 @@ import (
 	"github.com/funvibe/funxy/internal/typesystem"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // SysBuiltins returns built-in functions for lib/sys virtual package
 func SysBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
-		"sysArgs": {Fn: builtinArgs, Name: "sysArgs"},
-		"sysEnv":  {Fn: builtinEnv, Name: "sysEnv"},
-		"sysExit": {Fn: builtinExit, Name: "sysExit"},
-		"sysExec": {Fn: builtinExec, Name: "sysExec"},
+		"sysArgs":      {Fn: builtinArgs, Name: "sysArgs"},
+		"sysEnv":       {Fn: builtinEnv, Name: "sysEnv"},
+		"sysExit":      {Fn: builtinExit, Name: "sysExit"},
+		"sysExec":      {Fn: builtinExec, Name: "sysExec"},
+		"sysExePath":   {Fn: builtinSysExePath, Name: "sysExePath"},
+		"sysScriptDir": {Fn: builtinSysScriptDir, Name: "sysScriptDir"},
 	}
 }
 
@@ -134,6 +137,58 @@ func builtinExec(e *Evaluator, args ...Object) Object {
 	})
 }
 
+// sysExePath: () -> String
+// Returns the absolute path of the current executable.
+// Useful for self-contained binaries that need to invoke themselves as interpreters.
+func builtinSysExePath(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("sysExePath expects 0 arguments, got %d", len(args))
+	}
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return newError("sysExePath: %s", err)
+	}
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return newError("sysExePath: %s", err)
+	}
+
+	return stringToList(exePath)
+}
+
+// sysScriptDir: () -> String
+// Returns the directory of the currently running script.
+// In interpreted mode: directory of the .lang file being executed.
+// In built binary mode: directory of the executable.
+func builtinSysScriptDir(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("sysScriptDir expects 0 arguments, got %d", len(args))
+	}
+
+	// Try to get the script path from sysArgs (first arg is the script path)
+	osArgs := os.Args
+	if len(osArgs) > 1 {
+		scriptPath := osArgs[1]
+		absPath, err := filepath.Abs(scriptPath)
+		if err == nil {
+			return stringToList(filepath.Dir(absPath))
+		}
+	}
+
+	// Fallback: directory of the executable itself
+	exePath, err := os.Executable()
+	if err != nil {
+		return newError("sysScriptDir: %s", err)
+	}
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return newError("sysScriptDir: %s", err)
+	}
+
+	return stringToList(filepath.Dir(exePath))
+}
+
 // SetSysBuiltinTypes sets type info for sys builtins
 func SetSysBuiltinTypes(builtins map[string]*Builtin) {
 	// String = List<Char>
@@ -161,10 +216,12 @@ func SetSysBuiltinTypes(builtins map[string]*Builtin) {
 	}
 
 	types := map[string]typesystem.Type{
-		"sysArgs": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: listString},
-		"sysEnv":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: optionString},
-		"sysExit": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"sysExec": typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: execResultType},
+		"sysArgs":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: listString},
+		"sysEnv":       typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: optionString},
+		"sysExit":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+		"sysExec":      typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: execResultType},
+		"sysExePath":   typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
+		"sysScriptDir": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
 	}
 
 	for name, typ := range types {

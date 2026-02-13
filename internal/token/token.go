@@ -52,12 +52,13 @@ const (
 
 	ELLIPSIS       TokenType = "..."
 	QUESTION       TokenType = "?"
-	NULL_COALESCE  TokenType = "??" // Optional null coalescing
-	OPTIONAL_CHAIN TokenType = "?." // Optional chaining
-	CONCAT         TokenType = "++" // List/String concatenation
-	CONS           TokenType = "::" // Cons (prepend to list)
-	PIPE_GT        TokenType = "|>" // Pipe operator
-	COMPOSE        TokenType = ",," // Function composition (right-to-left)
+	NULL_COALESCE  TokenType = "??"  // Optional null coalescing
+	OPTIONAL_CHAIN TokenType = "?."  // Optional chaining
+	CONCAT         TokenType = "++"  // List/String concatenation
+	CONS           TokenType = "::"  // Cons (prepend to list)
+	PIPE_GT        TokenType = "|>"  // Pipe operator
+	PIPE_GT_UNWRAP TokenType = "|>>" // Pipe + unwrap operator
+	COMPOSE        TokenType = ",,"  // Function composition (right-to-left)
 
 	// User-definable operators (fixed slots)
 	USER_OP_COMBINE   TokenType = "<>"  // UserOpCombine trait

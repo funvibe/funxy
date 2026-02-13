@@ -10,47 +10,79 @@ import (
 
 // --- Code Printer (Output looks like source code) ---
 
-// Operator precedence (higher = binds tighter)
+// Operator precedence — must match parser/parser.go exactly.
+// Values correspond to the parser's iota constants:
+//
+//	0=LOWEST, 1=$, 2=|>, 3=||, 4=&&, 5===, 6=><, 7=|^, 8=&, 9=.., 10=<<>>, 11=+-, 12=*/%, 13=**
 var operatorPrecedence = map[string]int{
-	"||":  1,
-	"&&":  2,
-	"==":  3,
-	"!=":  3,
-	"<":   4,
-	">":   4,
-	"<=":  4,
-	">=":  4,
-	"<>":  5, // Semigroup
-	"++":  5, // Concatenation
-	"|":   5, // Bitwise OR (used for list comp separator precedence)
-	"|>":  6, // Pipe
-	"<|":  6,
-	"+":   7,
-	"-":   7,
-	"*":   8,
-	"/":   8,
-	"%":   8,
-	"**":  9, // Power (right-assoc)
-	",,":  9, // Composition
-	">>=": 2, // Monad bind
-	"<*>": 5, // Applicative
-	"::":  6, // Cons
-	"$":   0, // Application (lowest)
+	// 1: $ (lowest user operator)
+	"$": 1,
+	// 2: Pipe and pipe-level user operators
+	"|>":  2,
+	"|>>": 2,
+	"<>":  2, // Semigroup (PrecLow → PIPE_PREC)
+	">>=": 2, // Monad bind (PrecLow)
+	"??":  2, // Null coalesce (PrecLow)
+	"<|>": 2, // User choice (PrecLow)
+	"=>":  2, // User imply (PrecLow)
+	"<|":  2, // Pipe left (PrecLow)
+	// 3: Logical OR
+	"||": 3,
+	// 4: Logical AND
+	"&&": 4,
+	// 5: Equality
+	"==": 5,
+	"!=": 5,
+	// 6: Comparison
+	"<":  6,
+	">":  6,
+	"<=": 6,
+	">=": 6,
+	// 7: Bitwise OR/XOR
+	"|": 7,
+	"^": 7,
+	// 8: Bitwise AND
+	"&": 8,
+	// 9: Range
+	"..": 9,
+	// 10: Shift
+	"<<": 10,
+	">>": 10,
+	// 11: Additive (sum, concat, cons)
+	"+":   11,
+	"-":   11,
+	"++":  11,
+	"::":  11,
+	"<*>": 11, // Applicative (PrecMedium → SUM)
+	"<:>": 11, // User cons (PrecMedium)
+	"<~>": 11, // User swap (PrecMedium)
+	// 12: Multiplicative
+	"*":   12,
+	"/":   12,
+	"%":   12,
+	"<$>": 12, // User map (PrecHigh → PRODUCT)
+	// 13: Power / composition
+	"**": 13,
+	",,": 13,
 }
 
 func getPrecedence(op string) int {
 	if p, ok := operatorPrecedence[op]; ok {
 		return p
 	}
-	return 10 // Default high precedence for unknown ops
+	return 15 // Default high precedence for unknown ops
 }
 
 // Right-associative operators
 var rightAssoc = map[string]bool{
-	"**": true,
-	"$":  true,
-	"::": true,
-	",,": true,
+	"**":  true,
+	"$":   true,
+	"::":  true,
+	",,":  true,
+	"<>":  true,
+	"<:>": true,
+	"=>":  true,
+	"<|":  true,
 }
 
 type CodePrinter struct {
@@ -79,10 +111,10 @@ func (p *CodePrinter) writeIndent() {
 	p.column = p.indent * 4
 }
 
-// countPipeSteps counts the number of |> operators in a chain (left-associative)
+// countPipeSteps counts the number of |> / |>> operators in a chain (left-associative)
 func countPipeSteps(expr ast.Expression) int {
 	infix, ok := expr.(*ast.InfixExpression)
-	if !ok || infix == nil || infix.Operator != "|>" {
+	if !ok || infix == nil || (infix.Operator != "|>" && infix.Operator != "|>>") {
 		return 0
 	}
 	return 1 + countPipeSteps(infix.Left)
@@ -115,7 +147,7 @@ func (p *CodePrinter) printExpr(expr ast.Expression, parentPrec int, isRight boo
 		}
 
 		// Special handling for pipe chains
-		if e.Operator == "|>" && countPipeSteps(e) >= 2 && parentPrec == 0 {
+		if (e.Operator == "|>" || e.Operator == "|>>") && countPipeSteps(e) >= 2 && parentPrec == 0 {
 			p.printPipeChain(e)
 		} else {
 			p.printExpr(e.Left, prec, false)
@@ -143,24 +175,28 @@ func (p *CodePrinter) printExpr(expr ast.Expression, parentPrec int, isRight boo
 // printPipeChain prints a |> chain with each step on a new line
 // Pipe is left-associative: a |> b |> c parses as ((a |> b) |> c)
 func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
-	// Collect all steps by traversing left
-	var steps []ast.Expression
+	// Collect all steps by traversing left, tracking which operator each step uses
+	type pipeStep struct {
+		expr ast.Expression
+		op   string // "|>" or "|>>"
+	}
+	var steps []pipeStep
 	current := ast.Expression(expr)
 	for {
 		if current == nil {
 			break
 		}
 		infix, ok := current.(*ast.InfixExpression)
-		if !ok || infix == nil || infix.Operator != "|>" {
+		if !ok || infix == nil || (infix.Operator != "|>" && infix.Operator != "|>>") {
 			// This is the leftmost (source) expression
-			steps = append(steps, current)
+			steps = append(steps, pipeStep{expr: current, op: ""})
 			break
 		}
 		// Prepend the right side (the function being piped to)
 		if infix.Right != nil {
-			steps = append(steps, infix.Right)
+			steps = append(steps, pipeStep{expr: infix.Right, op: infix.Operator})
 		} else {
-			steps = append(steps, nil)
+			steps = append(steps, pipeStep{expr: nil, op: infix.Operator})
 		}
 		current = infix.Left
 	}
@@ -175,9 +211,11 @@ func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
 		steps[i], steps[j] = steps[j], steps[i]
 	}
 
-	// Print first step (source)
-	if steps[0] != nil {
-		steps[0].Accept(p)
+	pipePrec := getPrecedence("|>")
+
+	// Print first step (source) — parenthesize if it has lower-precedence ops
+	if steps[0].expr != nil {
+		p.printExpr(steps[0].expr, pipePrec, false)
 	} else {
 		p.write("<?>")
 	}
@@ -187,9 +225,15 @@ func (p *CodePrinter) printPipeChain(expr *ast.InfixExpression) {
 	for i := 1; i < len(steps); i++ {
 		p.writeln()
 		p.writeIndent()
-		p.write("|> ")
-		if steps[i] != nil {
-			steps[i].Accept(p)
+		op := steps[i].op
+		if op == "" {
+			op = "|>"
+		}
+		p.write(op + " ")
+		if steps[i].expr != nil {
+			// Use printExpr with isRight=true so that same-precedence left-assoc
+			// pipe expressions on the right side get parenthesized (e.g. a |> (b |> c))
+			p.printExpr(steps[i].expr, pipePrec, true)
 		} else {
 			p.write("<?>")
 		}
@@ -1513,12 +1557,13 @@ func (p *CodePrinter) VisitMapLiteral(n *ast.MapLiteral) {
 	}
 	if len(n.Pairs) > 3 {
 		// Multiline with key alignment
+		mapKeyPrec := getPrecedence("|>") + 1
 		maxKeyLen := 0
 		keyStrings := make([]string, len(n.Pairs))
 		for i, pair := range n.Pairs {
 			temp := &CodePrinter{indent: 0, lineWidth: 0}
 			if pair.Key != nil {
-				pair.Key.Accept(temp)
+				temp.printExpr(pair.Key, mapKeyPrec, false)
 			}
 			keyStrings[i] = temp.String()
 			if len(keyStrings[i]) > maxKeyLen {
@@ -1537,7 +1582,7 @@ func (p *CodePrinter) VisitMapLiteral(n *ast.MapLiteral) {
 			}
 			p.write(" => ")
 			if pair.Value != nil {
-				pair.Value.Accept(p)
+				p.printExpr(pair.Value, mapKeyPrec, false)
 			} else {
 				p.write("<???>")
 			}
@@ -1556,13 +1601,15 @@ func (p *CodePrinter) VisitMapLiteral(n *ast.MapLiteral) {
 				p.write(", ")
 			}
 			if pair.Key != nil {
-				pair.Key.Accept(p)
+				// Map keys must be parenthesized if they contain pipe-level operators
+				// because the parser uses PIPE_PREC as stop precedence before =>
+				p.printExpr(pair.Key, getPrecedence("|>")+1, false)
 			} else {
 				p.write("<???>")
 			}
 			p.write(" => ")
 			if pair.Value != nil {
-				pair.Value.Accept(p)
+				p.printExpr(pair.Value, getPrecedence("|>")+1, false)
 			} else {
 				p.write("<???>")
 			}

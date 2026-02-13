@@ -259,7 +259,12 @@ func (l *Lexer) NextToken() token.Token {
 			tok = token.Token{Type: token.OR, Lexeme: literal, Literal: literal, Line: l.line, Column: l.column}
 		} else if l.peekChar() == '>' {
 			l.readChar()
-			tok = token.Token{Type: token.PIPE_GT, Lexeme: "|>", Literal: "|>", Line: l.line, Column: l.column}
+			if l.peekChar() == '>' {
+				l.readChar()
+				tok = token.Token{Type: token.PIPE_GT_UNWRAP, Lexeme: "|>>", Literal: "|>>", Line: l.line, Column: l.column}
+			} else {
+				tok = token.Token{Type: token.PIPE_GT, Lexeme: "|>", Literal: "|>", Line: l.line, Column: l.column}
+			}
 		} else {
 			tok = newToken(token.PIPE, l.ch, l.line, l.column)
 		}

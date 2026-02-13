@@ -100,6 +100,11 @@ func (b *VMBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, error)
 		machine.SetCurrentFile(ctx.FilePath)
 	}
 
+	// Inject stdin variable for -e mode
+	if ctx.IsEvalMode && ctx.StdinData != nil {
+		machine.SetGlobal("stdin", evaluator.StringToList(*ctx.StdinData))
+	}
+
 	// Process imports collected during compilation
 	pendingImports := compiler.GetPendingImports()
 	if err := machine.ProcessImports(pendingImports); err != nil {

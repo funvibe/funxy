@@ -69,6 +69,7 @@ func InitVirtualPackages() {
 		initFlagPackage()
 		initGrpcPackage()
 		initProtoPackage()
+		initTermPackage()
 
 		// Register "lib" meta-package (import "lib" imports all lib/*)
 		initLibMetaPackage()

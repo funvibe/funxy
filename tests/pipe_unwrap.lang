@@ -1,0 +1,63 @@
+// Test: Pipe-unwrap operator |>>
+// x |>> f  ≡  unwrap(f(x))
+// Unwraps Result<E,T> → T and Option<T> → T
+// Panics on Fail/None
+
+import "lib/json" (jsonDecode, jsonEncode)
+
+// === Result unwrapping ===
+
+fun safeDiv(x: Int, y: Int) -> Result<String, Int> {
+    if y == 0 { Fail("division by zero") } else { Ok(x / y) }
+}
+
+// Ok path: unwraps the value
+result1 = 10 |>> safeDiv(_, 2)
+print(result1)  // 5
+
+// Chain |>> with |>
+fun double(x: Int) -> Int { x * 2 }
+result2 = 20 |>> safeDiv(_, 4) |> double
+print(result2)  // 10
+
+// Multiple |>> in chain
+fun addOneResult(x: Int) -> Result<String, Int> { Ok(x + 1) }
+result3 = 0 |>> addOneResult |>> addOneResult |>> addOneResult
+print(result3)  // 3
+
+// === Option unwrapping ===
+
+fun findPositive(x: Int) -> Option<Int> {
+    if x > 0 { Some(x) } else { None }
+}
+
+result4 = 42 |>> findPositive
+print(result4)  // 42
+
+// === JSON decode (real-world) ===
+
+jsonStr = jsonEncode({ name: "Bob", active: true })
+data = jsonStr |>> jsonDecode
+print(data.name)    // Bob
+print(data.active)  // true
+
+// === Pass-through for non-Result/non-Option ===
+
+fun triple(x: Int) -> Int { x * 3 }
+result5 = 5 |>> triple
+print(result5)  // 15
+
+// === Placeholder syntax ===
+
+result6 = 3 |>> safeDiv(30, _)
+print(result6)  // 10
+
+// === Multiline chain ===
+
+result7 = 100
+    |>> safeDiv(_, 5)
+    |> double
+    |> fun(x) { x + 1 }
+print(result7)  // 41
+
+print("pipe_unwrap tests passed!")

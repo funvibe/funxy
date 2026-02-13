@@ -746,3 +746,81 @@ func initFlagPackage() {
 
 	RegisterVirtualPackage("lib/flag", pkg)
 }
+
+// initTermPackage registers the lib/term virtual package
+func initTermPackage() {
+	// String = List<Char>
+	stringType := typesystem.TApp{
+		Constructor: ListCon,
+		Args:        []typesystem.Type{typesystem.Char},
+	}
+	// List<String>
+	listString := typesystem.TApp{
+		Constructor: ListCon,
+		Args:        []typesystem.Type{stringType},
+	}
+	// List<List<String>>
+	listListString := typesystem.TApp{
+		Constructor: ListCon,
+		Args:        []typesystem.Type{listString},
+	}
+	// (Int, Int) tuple
+	tupleIntInt := typesystem.TTuple{Elements: []typesystem.Type{typesystem.Int, typesystem.Int}}
+
+	handleType := typesystem.TCon{Name: "Handle"}
+	styleFn := typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType}
+
+	pkg := &VirtualPackage{
+		Name: "term",
+		Symbols: map[string]typesystem.Type{
+			// Styles
+			"bold": styleFn, "dim": styleFn, "italic": styleFn,
+			"underline": styleFn, "strikethrough": styleFn,
+			// Foreground colors
+			"red": styleFn, "green": styleFn, "yellow": styleFn, "blue": styleFn,
+			"magenta": styleFn, "cyan": styleFn, "white": styleFn, "gray": styleFn,
+			// Background colors
+			"bgRed": styleFn, "bgGreen": styleFn, "bgYellow": styleFn, "bgBlue": styleFn,
+			"bgCyan": styleFn, "bgMagenta": styleFn,
+			// RGB/Hex colors
+			"rgb":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int, typesystem.Int, stringType}, ReturnType: stringType},
+			"bgRgb": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int, typesystem.Int, stringType}, ReturnType: stringType},
+			"hex":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
+			"bgHex": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
+			// Utility
+			"stripAnsi":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
+			"termColors": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
+			"cprint":     typesystem.TFunc{Params: []typesystem.Type{styleFn, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
+			// Terminal control
+			"termSize":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: tupleIntInt},
+			"termIsTTY":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bool},
+			"termClear":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"termClearLine": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"cursorUp":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorDown":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorLeft":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorRight":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorTo":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorHide":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"cursorShow":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			// Interactive prompts
+			"prompt":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType, DefaultCount: 1},
+			"confirm":  typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Bool}, ReturnType: typesystem.Bool, DefaultCount: 1},
+			"password": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
+			// Select
+			"select":      typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: stringType},
+			"multiSelect": typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: listString},
+			// Spinner & Progress
+			"spinnerStart":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: handleType},
+			"spinnerUpdate": typesystem.TFunc{Params: []typesystem.Type{handleType, stringType}, ReturnType: typesystem.Nil},
+			"spinnerStop":   typesystem.TFunc{Params: []typesystem.Type{handleType, stringType}, ReturnType: typesystem.Nil},
+			"progressNew":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, stringType}, ReturnType: handleType},
+			"progressTick":  typesystem.TFunc{Params: []typesystem.Type{handleType}, ReturnType: typesystem.Nil},
+			"progressSet":   typesystem.TFunc{Params: []typesystem.Type{handleType, typesystem.Int}, ReturnType: typesystem.Nil},
+			"progressDone":  typesystem.TFunc{Params: []typesystem.Type{handleType}, ReturnType: typesystem.Nil},
+			// Table
+			"table": typesystem.TFunc{Params: []typesystem.Type{listString, listListString}, ReturnType: typesystem.Nil},
+		},
+	}
+	RegisterVirtualPackage("lib/term", pkg)
+}

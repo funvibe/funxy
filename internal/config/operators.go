@@ -94,6 +94,7 @@ var AllOperators = []OperatorInfo{
 
 	// Function (built-in)
 	{Symbol: "|>", Signature: "(A, (A) -> B) -> B", Description: "Pipe (forward application)", Trait: "", Precedence: PrecPipe, Assoc: AssocLeft, CanOverride: false, Category: "Function"},
+	{Symbol: "|>>", Signature: "(A, (A) -> F<B>) -> B", Description: "Pipe + unwrap (unwraps Result/Option)", Trait: "", Precedence: PrecPipe, Assoc: AssocLeft, CanOverride: false, Category: "Function"},
 	{Symbol: ",,", Signature: "((B)->C, (A)->B) -> (A)->C", Description: "Composition (right-to-left)", Trait: "", Precedence: PrecPower, Assoc: AssocRight, CanOverride: false, Category: "Function"},
 
 	// Error handling (built-in)
