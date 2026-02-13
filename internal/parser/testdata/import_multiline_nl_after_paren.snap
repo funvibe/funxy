@@ -1,0 +1,7 @@
+--- AST Tree ---
+Program
+  Import: lib/term
+
+--- Source Code ---
+import "lib/term"
+

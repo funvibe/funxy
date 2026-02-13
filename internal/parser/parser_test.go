@@ -32,6 +32,13 @@ func TestParser(t *testing.T) {
 		{"function_basic", "fun add(x: Int, y: Int) Int { x + y }"},
 		{"function_variadic", "fun sum(...nums) Int { 0 }"},
 		{"function_mixed_variadic", "fun process(id: Int, ...args) { 0 }"},
+		{"import_simple", `import "lib/json"`},
+		{"import_selective", `import "lib/json" (jsonEncode, jsonDecode)`},
+		{"import_multiline", "import \"lib/term\" (red, green,\n    bold, table,\n    spinnerStart)"},
+		{"import_multiline_nl_after_paren", "import \"lib/term\" (\n    red, green,\n    bold\n)"},
+		{"import_alias", `import "lib/json" as json`},
+		{"import_all", `import "lib/json" (*)`},
+		{"import_exclude", `import "lib/json" !(jsonParse)`},
 	}
 
 	for _, tc := range testCases {

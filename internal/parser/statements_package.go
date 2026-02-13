@@ -181,6 +181,10 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 		}
 		is.Exclude = p.parseIdentifierList()
 		// Note: ImportAll is NOT set here - the presence of Exclude implies import all except excluded
+		// Skip newlines before closing ')'
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
 		if !p.expectPeek(token.RPAREN) {
 			return nil
 		}
@@ -204,7 +208,12 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 			}
 		} else {
 			// Parse specific symbols: (a, b, c)
+			// Supports multi-line: (a, b,\n  c, d)
 			is.Symbols = p.parseIdentifierList()
+			// Skip newlines before closing ')'
+			for p.peekTokenIs(token.NEWLINE) {
+				p.nextToken()
+			}
 			if !p.expectPeek(token.RPAREN) {
 				return nil
 			}
@@ -218,6 +227,13 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 // Used for import specifications like (a, b, c)
 func (p *Parser) parseIdentifierList() []*ast.Identifier {
 	var identifiers []*ast.Identifier
+
+	// Skip newlines after opening '(' — allows:
+	//   import "lib/x" (
+	//       foo, bar)
+	for p.peekTokenIs(token.NEWLINE) {
+		p.nextToken()
+	}
 
 	// Handle empty list
 	if p.peekTokenIs(token.RPAREN) {
@@ -234,6 +250,12 @@ func (p *Parser) parseIdentifierList() []*ast.Identifier {
 	// Subsequent identifiers
 	for p.peekTokenIs(token.COMMA) {
 		p.nextToken() // consume ','
+		// Skip newlines after comma — allows multi-line imports:
+		//   import "lib/term" (red, green,
+		//                      spinnerStart, spinnerStop)
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
 		p.nextToken() // move to next identifier
 		if p.curToken.Type != token.IDENT_LOWER && p.curToken.Type != token.IDENT_UPPER {
 			return nil

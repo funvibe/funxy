@@ -100,7 +100,7 @@ func (g *ModuleGenerator) generateModuleContent(pkgName string, isMain bool) str
 					if !strings.HasPrefix(rel, ".") {
 						rel = "./" + rel
 					}
-					sb.WriteString(fmt.Sprintf("import \"%s\"\n", rel))
+					sb.WriteString(g.generateImport(rel))
 				}
 			}
 		}
@@ -112,4 +112,49 @@ func (g *ModuleGenerator) generateModuleContent(pkgName string, isMain bool) str
 	sb.WriteString(gen.GenerateProgram())
 
 	return sb.String()
+}
+
+// generateImport generates an import statement with random formatting variants:
+//   - plain:      import "path"
+//   - selective:  import "path" (a, b, c)
+//   - multiline:  import "path" (a,\n  b,\n  c)
+//   - nl-paren:   import "path" (\n  a, b\n)
+//   - wildcard:   import "path" (*)
+//   - alias:      import "path" as foo
+func (g *ModuleGenerator) generateImport(path string) string {
+	symbols := []string{"foo", "bar", "baz", "qux", "quux", "corge", "grault"}
+
+	variant := g.src.Intn(6)
+	switch variant {
+	case 0: // plain
+		return fmt.Sprintf("import \"%s\"\n", path)
+	case 1: // selective, single line
+		n := g.src.Intn(4) + 1
+		syms := symbols[:n]
+		return fmt.Sprintf("import \"%s\" (%s)\n", path, strings.Join(syms, ", "))
+	case 2: // multiline: each symbol on its own line after comma
+		n := g.src.Intn(4) + 2
+		syms := symbols[:n]
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("import \"%s\" (%s,\n", path, syms[0]))
+		for i := 1; i < len(syms)-1; i++ {
+			sb.WriteString(fmt.Sprintf("    %s,\n", syms[i]))
+		}
+		sb.WriteString(fmt.Sprintf("    %s)\n", syms[len(syms)-1]))
+		return sb.String()
+	case 3: // newline after opening paren
+		n := g.src.Intn(3) + 2
+		syms := symbols[:n]
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("import \"%s\" (\n", path))
+		sb.WriteString(fmt.Sprintf("    %s\n)\n", strings.Join(syms, ", ")))
+		return sb.String()
+	case 4: // wildcard
+		return fmt.Sprintf("import \"%s\" (*)\n", path)
+	case 5: // alias
+		alias := fmt.Sprintf("m%d", g.src.Intn(100))
+		return fmt.Sprintf("import \"%s\" as %s\n", path, alias)
+	default:
+		return fmt.Sprintf("import \"%s\"\n", path)
+	}
 }

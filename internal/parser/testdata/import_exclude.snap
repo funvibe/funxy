@@ -1,0 +1,7 @@
+--- AST Tree ---
+Program
+  Import: lib/json
+
+--- Source Code ---
+import "lib/json"
+
