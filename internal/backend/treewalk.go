@@ -72,6 +72,11 @@ func (b *TreeWalkBackend) Run(ctx *pipeline.PipelineContext) (evaluator.Object, 
 	eval.RegisterExtensionMethods()
 	eval.GlobalEnv = env
 
+	// Inject stdin variable for -e mode
+	if ctx.IsEvalMode && ctx.StdinData != nil {
+		env.Set("stdin", evaluator.StringToList(*ctx.StdinData))
+	}
+
 	// Push initial stack frame for the script/program to match VM behavior
 	programName := "<main>"
 	var programFile string

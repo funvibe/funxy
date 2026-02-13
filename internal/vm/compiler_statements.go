@@ -136,6 +136,7 @@ func (c *Compiler) compileFunctionStatement(stmt *ast.FunctionStatement) error {
 				if constVal != nil {
 					constIdx := funcCompiler.function.Chunk.AddConstant(constVal)
 					funcCompiler.function.Defaults[defaultIdx] = constIdx
+					funcCompiler.function.DefaultChunks[defaultIdx] = NewChunk() // empty (gob needs non-nil)
 				} else {
 					funcCompiler.function.Defaults[defaultIdx] = -1
 					defaultCompiler := newFunctionCompiler(c, "<default>", 0)

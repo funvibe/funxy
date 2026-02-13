@@ -316,6 +316,9 @@ func GetVirtualModuleBuiltins(name string) map[string]Object {
 		builtins = GrpcBuiltins()
 	case "proto":
 		builtins = ProtoBuiltins()
+	case "term":
+		builtins = TermBuiltins()
+		SetTermBuiltinTypes(builtins)
 	default:
 		return nil
 	}

@@ -2,6 +2,7 @@ package vm
 
 import (
 	"fmt"
+	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/symbols"
@@ -24,6 +25,19 @@ func (vm *VM) processOneImport(imp PendingImport) error {
 	// Check if it's a virtual module (lib/*)
 	if isVirtualModule(imp.Path) {
 		return vm.importVirtualModule(imp)
+	}
+
+	// Check bundle first (self-contained bytecode mode)
+	// Bundle keys are project-relative paths (e.g. "kit/web", not absolute).
+	if vm.bundle != nil {
+		bundleKey := imp.Path
+		if len(bundleKey) > 0 && bundleKey[0] == '.' {
+			// Relative import: resolve against current module's directory
+			bundleKey = filepath.Clean(filepath.Join(vm.baseDir, bundleKey))
+		}
+		if bm, ok := vm.bundle.Modules[bundleKey]; ok {
+			return vm.importBundledModule(imp, bm, bundleKey)
+		}
 	}
 
 	// User module - need loader
@@ -249,6 +263,261 @@ func (vm *VM) CompileAndExecuteModule(mod *modules.Module) (*evaluator.RecordIns
 	}
 
 	return evaluator.NewRecord(exports), nil
+}
+
+// importBundledModule imports a module from the bundle (pre-compiled bytecode).
+func (vm *VM) importBundledModule(imp PendingImport, bm *BundledModule, absPath string) error {
+	// Check cache first
+	if cachedObj := vm.moduleCache.Get(absPath); cachedObj != nil {
+		if cached, ok := cachedObj.(*evaluator.RecordInstance); ok {
+			return vm.applyModuleImportNoLoader(imp, cached)
+		}
+	}
+
+	// Check cyclic loading
+	if vm.loadingModules == nil {
+		vm.loadingModules = make(map[string]bool)
+	}
+	if vm.loadingModules[absPath] {
+		placeholder := evaluator.NewRecord(nil)
+		vm.moduleCache = vm.moduleCache.Put(absPath, placeholder)
+		return vm.applyModuleImportNoLoader(imp, placeholder)
+	}
+	vm.loadingModules[absPath] = true
+
+	var modObj *evaluator.RecordInstance
+	var err error
+
+	if bm.IsPackageGroup {
+		modObj, err = vm.executeBundledPackageGroup(bm)
+	} else {
+		modObj, err = vm.executeBundledModule(bm)
+	}
+
+	if err != nil {
+		delete(vm.loadingModules, absPath)
+		return fmt.Errorf("failed to execute bundled module %s: %v", imp.Path, err)
+	}
+
+	// Update cache
+	if placeholderObj := vm.moduleCache.Get(absPath); placeholderObj != nil {
+		if placeholder, ok := placeholderObj.(*evaluator.RecordInstance); ok {
+			placeholder.Fields = make([]evaluator.RecordField, len(modObj.Fields))
+			copy(placeholder.Fields, modObj.Fields)
+		}
+	}
+	vm.moduleCache = vm.moduleCache.Put(absPath, modObj)
+	delete(vm.loadingModules, absPath)
+
+	return vm.applyModuleImportNoLoader(imp, modObj)
+}
+
+// executeBundledModule runs a single bundled module and returns its exports.
+func (vm *VM) executeBundledModule(bm *BundledModule) (*evaluator.RecordInstance, error) {
+	modVM := New()
+	modVM.bundle = vm.bundle // Share bundle
+	modVM.loader = vm.loader // Share loader (for fallback)
+	modVM.baseDir = bm.Dir
+	modVM.moduleCache = vm.moduleCache
+	modVM.loadingModules = vm.loadingModules
+	modVM.RegisterBuiltins()
+
+	// Set pre-compiled trait defaults
+	if bm.TraitDefaults != nil {
+		modVM.compiledTraitDefaults = bm.TraitDefaults
+	}
+
+	// Process this module's imports (recursive — checks bundle first)
+	if err := modVM.ProcessImports(bm.PendingImports); err != nil {
+		return nil, fmt.Errorf("import error: %v", err)
+	}
+
+	// Execute
+	_, err := modVM.Run(bm.Chunk)
+	if err != nil {
+		return nil, fmt.Errorf("runtime error: %v", err)
+	}
+
+	// Collect exports
+	exports := make(map[string]evaluator.Object)
+	for _, name := range bm.Exports {
+		if val := modVM.globals.Globals.Get(name); val != nil {
+			exports[name] = val
+		}
+	}
+
+	// Attach globals to exported closures
+	for _, val := range exports {
+		if closure, ok := val.(*ObjClosure); ok {
+			closure.Globals = modVM.globals
+		}
+	}
+
+	// Copy trait methods from module VM to parent VM
+	modVM.traitMethods.Range(func(traitName string, typeMapObj evaluator.Object) bool {
+		modTypeMap := typeMapObj.(*PersistentMap)
+		var parentTypeMap *PersistentMap
+		if val := vm.traitMethods.Get(traitName); val != nil {
+			parentTypeMap = val.(*PersistentMap)
+		} else {
+			parentTypeMap = EmptyMap()
+		}
+		modTypeMap.Range(func(typeName string, methodMapObj evaluator.Object) bool {
+			modMethodMap := methodMapObj.(*PersistentMap)
+			var parentMethodMap *PersistentMap
+			if val := parentTypeMap.Get(typeName); val != nil {
+				parentMethodMap = val.(*PersistentMap)
+			} else {
+				parentMethodMap = EmptyMap()
+			}
+			modMethodMap.Range(func(methodName string, closureObj evaluator.Object) bool {
+				closure := closureObj.(*ObjClosure)
+				closure.Globals = modVM.globals
+				parentMethodMap = parentMethodMap.Put(methodName, closure)
+				return true
+			})
+			parentTypeMap = parentTypeMap.Put(typeName, parentMethodMap)
+			return true
+		})
+		vm.traitMethods = vm.traitMethods.Put(traitName, parentTypeMap)
+		return true
+	})
+
+	// Copy extension methods from module VM to parent VM
+	modVM.extensionMethods.Range(func(typeName string, methodMapObj evaluator.Object) bool {
+		modMethodMap := methodMapObj.(*PersistentMap)
+		var parentMethodMap *PersistentMap
+		if val := vm.extensionMethods.Get(typeName); val != nil {
+			parentMethodMap = val.(*PersistentMap)
+		} else {
+			parentMethodMap = EmptyMap()
+		}
+		modMethodMap.Range(func(methodName string, closureObj evaluator.Object) bool {
+			closure := closureObj.(*ObjClosure)
+			closure.Globals = modVM.globals
+			parentMethodMap = parentMethodMap.Put(methodName, closure)
+			return true
+		})
+		vm.extensionMethods = vm.extensionMethods.Put(typeName, parentMethodMap)
+		return true
+	})
+
+	// Copy trait defaults from module VM to parent VM
+	for key, fn := range modVM.traitDefaults {
+		if vm.traitDefaults == nil {
+			vm.traitDefaults = make(map[string]*ast.FunctionStatement)
+		}
+		vm.traitDefaults[key] = fn
+	}
+	for key, fn := range modVM.compiledTraitDefaults {
+		if vm.compiledTraitDefaults == nil {
+			vm.compiledTraitDefaults = make(map[string]*CompiledFunction)
+		}
+		vm.compiledTraitDefaults[key] = fn
+	}
+
+	return evaluator.NewRecord(exports), nil
+}
+
+// executeBundledPackageGroup executes a package group from the bundle.
+func (vm *VM) executeBundledPackageGroup(bm *BundledModule) (*evaluator.RecordInstance, error) {
+	exports := make(map[string]evaluator.Object)
+
+	for _, subPath := range bm.SubModulePaths {
+		subBM, ok := vm.bundle.Modules[subPath]
+		if !ok {
+			return nil, fmt.Errorf("sub-module %s not found in bundle", subPath)
+		}
+		subObj, err := vm.executeBundledModule(subBM)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute sub-package: %v", err)
+		}
+		for _, field := range subObj.Fields {
+			exports[field.Key] = field.Value
+		}
+	}
+
+	return evaluator.NewRecord(exports), nil
+}
+
+// applyModuleImportNoLoader applies import without needing the module loader
+// (used for bundle mode where we don't have the Module struct for trait checking).
+func (vm *VM) applyModuleImportNoLoader(imp PendingImport, modObj *evaluator.RecordInstance) error {
+	if imp.Alias != "" {
+		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, modObj)
+	} else if imp.ImportAll {
+		excluded := make(map[string]bool)
+		for _, sym := range imp.ExcludeSymbols {
+			excluded[sym] = true
+		}
+		for _, field := range modObj.Fields {
+			if !excluded[field.Key] {
+				vm.globals.Globals = vm.globals.Globals.Put(field.Key, field.Value)
+			}
+		}
+	} else if len(imp.ExcludeSymbols) > 0 {
+		excluded := make(map[string]bool)
+		for _, sym := range imp.ExcludeSymbols {
+			excluded[sym] = true
+		}
+		for _, field := range modObj.Fields {
+			if !excluded[field.Key] {
+				vm.globals.Globals = vm.globals.Globals.Put(field.Key, field.Value)
+			}
+		}
+	} else if len(imp.Symbols) > 0 {
+		for _, sym := range imp.Symbols {
+			if val := modObj.Get(sym); val != nil {
+				vm.globals.Globals = vm.globals.Globals.Put(sym, val)
+
+				// Auto-import ADT constructors if it's a TypeObject
+				if typeObj, ok := val.(*evaluator.TypeObject); ok {
+					typeName := ""
+					if tCon, ok := typeObj.TypeVal.(typesystem.TCon); ok {
+						typeName = tCon.Name
+					} else if tApp, ok := typeObj.TypeVal.(typesystem.TApp); ok {
+						if tCon, ok := tApp.Constructor.(typesystem.TCon); ok {
+							typeName = tCon.Name
+						}
+					}
+					if typeName != "" {
+						for _, field := range modObj.Fields {
+							if isConstructorForType(field.Value, typeName) {
+								vm.globals.Globals = vm.globals.Globals.Put(field.Key, field.Value)
+							}
+						}
+					}
+				}
+			} else {
+				// Check if it's a trait in the bundle
+				if vm.bundle != nil {
+					bundleKey := imp.Path
+					if len(bundleKey) > 0 && bundleKey[0] == '.' {
+						bundleKey = filepath.Clean(filepath.Join(vm.baseDir, bundleKey))
+					}
+					if bm, ok := vm.bundle.Modules[bundleKey]; ok && bm.Traits != nil {
+						if methods, isTrait := bm.Traits[sym]; isTrait {
+							// Trait found — import all its methods from the module
+							for _, methodName := range methods {
+								if methodVal := modObj.Get(methodName); methodVal != nil {
+									vm.globals.Globals = vm.globals.Globals.Put(methodName, methodVal)
+								}
+							}
+							continue
+						}
+					}
+				}
+				return fmt.Errorf("symbol '%s' not found in module", sym)
+			}
+		}
+	} else {
+		modName := filepath.Base(imp.Path)
+		if ext := filepath.Ext(modName); ext != "" {
+			modName = modName[:len(modName)-len(ext)]
+		}
+		vm.globals.Globals = vm.globals.Globals.Put(modName, modObj)
+	}
+	return nil
 }
 
 // Helper to check if a value is a constructor for a type

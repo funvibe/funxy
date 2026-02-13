@@ -92,6 +92,7 @@ const (
 	OP_GET_FIELD            // Get record field
 	OP_GET_INDEX            // Get list/map element
 	OP_OPTIONAL_CHAIN_FIELD // Optional chaining: obj?.field
+	OP_UNWRAP_OR_PANIC      // Unwrap Option/Result or panic (for |>> operator)
 
 	// Pattern matching (Phase 7)
 	OP_CHECK_TAG          // Check DataInstance.Name == constant, push bool
@@ -214,6 +215,7 @@ var OpcodeNames = map[Opcode]string{
 	OP_GET_FIELD:            "GET_FIELD",
 	OP_GET_INDEX:            "GET_INDEX",
 	OP_OPTIONAL_CHAIN_FIELD: "OPTIONAL_CHAIN_FIELD",
+	OP_UNWRAP_OR_PANIC:      "UNWRAP_OR_PANIC",
 
 	OP_CHECK_TAG:          "CHECK_TAG",
 	OP_GET_DATA_FIELD:     "GET_DATA_FIELD",

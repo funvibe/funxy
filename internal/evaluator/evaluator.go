@@ -92,6 +92,11 @@ type Evaluator struct {
 	// Fork creates a thread-safe copy of the evaluator for background execution
 	Fork func() *Evaluator
 
+	// EmbeddedResources holds static files embedded via --embed during build.
+	// File I/O builtins check this map before falling back to the filesystem.
+	// Key is relative path from source directory, value is file contents.
+	EmbeddedResources map[string][]byte
+
 	// evalDepth tracks the current nesting depth of Eval calls to prevent stack overflow
 	evalDepth int
 }
@@ -228,6 +233,7 @@ func (e *Evaluator) Clone() *Evaluator {
 		CaptureHandler:       e.CaptureHandler,                        // shared
 		HostCallHandler:      e.HostCallHandler,                       // shared
 		HostToValueHandler:   e.HostToValueHandler,                    // shared
+		EmbeddedResources:    e.EmbeddedResources,                     // shared, read-only
 	}
 }
 
@@ -501,6 +507,75 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			result := e.ApplyFunction(fn, []Object{left})
 			e.PopCall()
 			return result
+		}
+
+		// Pipe + unwrap operator: x |>> f  is equivalent to unwrap(f(x))
+		// For Result: panics on Fail, returns Ok value
+		// For Option: panics on None, returns Some value
+		// For other types: pass through (acts like |>)
+		if node.Operator == "|>>" {
+			left := e.Eval(node.Left, env)
+			if isError(left) {
+				return left
+			}
+
+			var result Object
+
+			// Check if right side is a call expression for special handling
+			if callExpr, ok := node.Right.(*ast.CallExpression); ok {
+				fn := e.Eval(callExpr.Function, env)
+				if isError(fn) {
+					return fn
+				}
+
+				args := make([]Object, 0, len(callExpr.Arguments)+1)
+				placeholderFound := false
+
+				for _, argExpr := range callExpr.Arguments {
+					if ident, ok := argExpr.(*ast.Identifier); ok && ident.Value == "_" {
+						if !placeholderFound {
+							args = append(args, left)
+							placeholderFound = true
+							continue
+						} else {
+							return newError("multiple placeholders in pipe expression not supported")
+						}
+					}
+
+					val := e.Eval(argExpr, env)
+					if isError(val) {
+						return val
+					}
+					args = append(args, val)
+				}
+
+				if !placeholderFound {
+					args = append(args, left)
+				}
+
+				funcName := getFunctionName(fn)
+				tok := callExpr.GetToken()
+				e.PushCall(funcName, e.CurrentFile, tok.Line, tok.Column)
+				result = e.ApplyFunction(fn, args)
+				e.PopCall()
+			} else {
+				fn := e.Eval(node.Right, env)
+				if isError(fn) {
+					return fn
+				}
+				funcName := getFunctionName(fn)
+				tok := node.GetToken()
+				e.PushCall(funcName, e.CurrentFile, tok.Line, tok.Column)
+				result = e.ApplyFunction(fn, []Object{left})
+				e.PopCall()
+			}
+
+			if isError(result) {
+				return result
+			}
+
+			// Unwrap Result/Option
+			return pipeUnwrap(result)
 		}
 
 		// Composition operator: f ,, g creates a new function (x) -> f(g(x))

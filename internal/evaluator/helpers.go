@@ -130,6 +130,34 @@ func isError(obj Object) bool {
 	return false
 }
 
+// pipeUnwrap unwraps Result/Option values for the |>> operator.
+// Ok(v) -> v, Fail(e) -> panic, Some(v) -> v, None -> panic, other -> pass through
+func pipeUnwrap(obj Object) Object {
+	if di, ok := obj.(*DataInstance); ok {
+		switch di.Name {
+		case config.OkCtorName:
+			if len(di.Fields) > 0 {
+				return di.Fields[0]
+			}
+			return &Nil{}
+		case config.FailCtorName:
+			if len(di.Fields) > 0 {
+				return newError("|>> unwrap failed: Fail(%s)", di.Fields[0].Inspect())
+			}
+			return newError("|>> unwrap failed: Fail")
+		case config.SomeCtorName:
+			if len(di.Fields) > 0 {
+				return di.Fields[0]
+			}
+			return &Nil{}
+		case config.NoneCtorName:
+			return newError("|>> unwrap failed: None")
+		}
+	}
+	// Not Result/Option — pass through
+	return obj
+}
+
 func unwrapReturnValue(obj Object) Object {
 	if returnValue, ok := obj.(*ReturnValue); ok {
 		return returnValue.Value

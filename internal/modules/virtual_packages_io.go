@@ -74,8 +74,10 @@ func initIOPackage() {
 	pkg := &VirtualPackage{
 		Name: "io",
 		Symbols: map[string]typesystem.Type{
-			// Console
-			"readLine": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optionString},
+			// Stdin operations
+			"readLine":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optionString},
+			"readAll":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
+			"readAllBytes": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: bytesType},
 			// File reading
 			"fileRead":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultString},
 			"fileReadBytes":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytes},
@@ -140,6 +142,10 @@ func initSysPackage() {
 			"sysExit": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
 			// Execute command: exec(cmd: String, args: List<String>) -> { code: Int, stdout: String, stderr: String }
 			"sysExec": typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: execResultType},
+			// Path to current executable
+			"sysExePath": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
+			// Directory of the currently running script
+			"sysScriptDir": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
 		},
 	}
 	RegisterVirtualPackage("lib/sys", pkg)

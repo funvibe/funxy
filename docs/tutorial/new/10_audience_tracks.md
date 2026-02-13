@@ -304,6 +304,18 @@ fun process() -> Result<String, String> {
 }
 ```
 
+**Pipe Unwrap (`|>>`)**
+```rust
+import "lib/json" (jsonDecode)
+
+// |>> pipes + unwraps: panics on Fail/None
+data = "{\"name\": \"Alice\"}" |>> jsonDecode
+print(data.name)  // Alice
+
+// Chain with |> for filtering/mapping
+"[1, 2, 3]" |>> jsonDecode |> filter(\x -> x > 1) |> print
+```
+
 **Optional Chaining**
 ```rust
 type alias Addr = { city: String }
@@ -395,6 +407,24 @@ import "lib/list"              // As module object
 | `lib/task` | Async/await |
 | `lib/regex` | Regular expressions |
 | `lib/crypto` | Hashing, encoding |
+| `lib/term` | Terminal UI: colors, prompts, spinners, tables |
+
+### One-Liner Mode (`-e`)
+
+Funxy supports bash-friendly one-liners with smart auto-imports:
+
+```bash
+# Parse JSON, filter, transform
+curl api.com | funxy -pe 'stdin |>> jsonDecode |> filter(\x -> x.active) |> map(\x -> x.name)'
+
+# Process each line
+cat names.txt | funxy -ple 'stdin |> stringToUpper'
+
+# Quick data transformation
+echo '{"name":"Alice"}' | funxy -pe 'stdin |>> jsonDecode |> \x -> x.name'
+```
+
+Flags: `-e` (expression), `-p` (auto-print result), `-l` (line-by-line mode). `stdin` is a built-in variable containing piped input.
 
 ### Go Embedding
 
@@ -423,8 +453,8 @@ result, _ := vm.Eval(`"Hello, " ++ user.Name`)
 | `{"a": 1}` | `%{ "a" => 1 }` (Map) or `{ a: 1 }` (Record) |
 | `None` | `nil` |
 | `Optional[int]` | `Int?` or `Option<Int>` |
-| `try/except` | `Result` + `match` or `?` operator |
-| `f(g(h(x)))` | `x |> h |> g |> f` |
+| `try/except` | `Result` + `match`, `?`, or `\|>>` pipe unwrap |
+| `f(g(h(x)))` | `x \|> h \|> g \|> f` |
 
 **Naming:** Unlike Python where `UPPER_CASE` for constants is just a convention, Funxy enforces casing at syntax level:
 ```rust
@@ -441,6 +471,7 @@ type alias User = { name: String }  // OK
 - String interpolation: `"Hello, ${name}!"`
 - Pipelines `|>` for readable data transformations
 - Negative indexing works the same way
+- Built-in `lib/term` for colored output, progress bars, and interactive menus (no `pip install` needed)
 
 **What's Different:**
 - **Immutable collections**: Lists and Maps cannot be modified in place
@@ -519,6 +550,7 @@ fun processUsers(users) {
 *   **Immutability:** Lists and Maps are immutable (use `update` or `mapPut`). Records are mutable (like JS objects).
 *   **Pipelines:** Use `|>` for chaining instead of method chaining.
 *   **Result Type:** No `try/catch` for logic flow, use `Result<E, T>`.
+*   **Built-in TUI:** `lib/term` has colors, prompts, and spinners — no `npm install chalk inquirer ora` needed.
 
 ---
 
@@ -664,4 +696,24 @@ fun handler(req) {
 }
 
 // httpServe(8080, handler)
+```
+
+**CLI Tool with TUI:**
+
+```rust
+import "lib/term" (bold, green, red, confirm, select, table,
+                   spinnerStart, spinnerStop)
+import "lib/sys" (sysExec)
+
+env = select("Deploy to", ["dev", "staging", "prod"])
+
+if confirm("Deploy to " ++ bold(env) ++ "?") {
+    s = spinnerStart("Deploying...")
+    result = sysExec("deploy", ["--env", env])
+    if result.code == 0 {
+        spinnerStop(s, green("✓") ++ " Deployed!")
+    } else {
+        spinnerStop(s, red("✗") ++ " Failed: " ++ result.stderr)
+    }
+}
 ```

@@ -1,0 +1,196 @@
+import "lib/term" (*)
+import "lib/test" (*)
+
+// =============================================================================
+// Phase 1: Styles & Colors
+// =============================================================================
+
+testRun("bold returns a string containing the input", fun() -> {
+    result = bold("hello")
+    // stripAnsi should recover the original text
+    assertEquals(stripAnsi(result), "hello")
+})
+
+testRun("dim returns correct text", fun() -> {
+    assertEquals(stripAnsi(dim("test")), "test")
+})
+
+testRun("italic returns correct text", fun() -> {
+    assertEquals(stripAnsi(italic("test")), "test")
+})
+
+testRun("underline returns correct text", fun() -> {
+    assertEquals(stripAnsi(underline("test")), "test")
+})
+
+testRun("strikethrough returns correct text", fun() -> {
+    assertEquals(stripAnsi(strikethrough("test")), "test")
+})
+
+// --- Foreground colors ---
+
+testRun("red preserves text", fun() -> {
+    assertEquals(stripAnsi(red("error")), "error")
+})
+
+testRun("green preserves text", fun() -> {
+    assertEquals(stripAnsi(green("ok")), "ok")
+})
+
+testRun("yellow preserves text", fun() -> {
+    assertEquals(stripAnsi(yellow("warn")), "warn")
+})
+
+testRun("blue preserves text", fun() -> {
+    assertEquals(stripAnsi(blue("info")), "info")
+})
+
+testRun("cyan preserves text", fun() -> {
+    assertEquals(stripAnsi(cyan("link")), "link")
+})
+
+testRun("magenta preserves text", fun() -> {
+    assertEquals(stripAnsi(magenta("special")), "special")
+})
+
+testRun("white preserves text", fun() -> {
+    assertEquals(stripAnsi(white("text")), "text")
+})
+
+testRun("gray preserves text", fun() -> {
+    assertEquals(stripAnsi(gray("muted")), "muted")
+})
+
+// --- Background colors ---
+
+testRun("bgRed preserves text", fun() -> {
+    assertEquals(stripAnsi(bgRed("alert")), "alert")
+})
+
+testRun("bgGreen preserves text", fun() -> {
+    assertEquals(stripAnsi(bgGreen("success")), "success")
+})
+
+testRun("bgYellow preserves text", fun() -> {
+    assertEquals(stripAnsi(bgYellow("caution")), "caution")
+})
+
+testRun("bgBlue preserves text", fun() -> {
+    assertEquals(stripAnsi(bgBlue("info")), "info")
+})
+
+testRun("bgCyan preserves text", fun() -> {
+    assertEquals(stripAnsi(bgCyan("highlight")), "highlight")
+})
+
+testRun("bgMagenta preserves text", fun() -> {
+    assertEquals(stripAnsi(bgMagenta("special")), "special")
+})
+
+// --- Composition ---
+
+testRun("styles compose via pipe", fun() -> {
+    result = "ERROR" |> red |> bold
+    assertEquals(stripAnsi(result), "ERROR")
+})
+
+testRun("double style composition", fun() -> {
+    result = "OK" |> green |> underline
+    assertEquals(stripAnsi(result), "OK")
+})
+
+// --- stripAnsi ---
+
+testRun("stripAnsi removes all ANSI codes", fun() -> {
+    styled = bold(red("hello"))
+    plain = stripAnsi(styled)
+    assertEquals(plain, "hello")
+})
+
+testRun("stripAnsi on plain text is identity", fun() -> {
+    assertEquals(stripAnsi("hello"), "hello")
+})
+
+testRun("stripAnsi on empty string", fun() -> {
+    assertEquals(stripAnsi(""), "")
+})
+
+// --- termColors ---
+
+testRun("termColors returns a non-negative integer", fun() -> {
+    level = termColors()
+    assert(level >= 0)
+})
+
+// =============================================================================
+// Phase 2: Terminal control
+// =============================================================================
+
+testRun("termSize returns positive dimensions", fun() -> {
+    (cols, rows) = termSize()
+    assert(cols > 0)
+    assert(rows > 0)
+})
+
+testRun("termIsTTY returns Bool", fun() -> {
+    result = termIsTTY()
+    assert(result == true || result == false)
+})
+
+// NOTE: cursorUp, cursorDown, cursorLeft, cursorRight, cursorTo,
+// cursorHide, cursorShow, termClearLine emit real ANSI escape sequences
+// that move the cursor and corrupt terminal output when run in unit tests.
+// These are tested via Go unit tests (evaluator/builtins_term_test.go)
+// and the functional test (tests/lib_term.lang) instead.
+
+// NOTE: cprint and table tests that produce visible output are in the
+// functional test (tests/lib_term.lang) to avoid interleaving with ✓/✗ lines.
+
+// =============================================================================
+// rgb / bgRgb / hex / bgHex — text preservation
+// =============================================================================
+
+testRun("rgb preserves text", fun() -> {
+    assertEquals(stripAnsi(rgb(255, 0, 0, "hello")), "hello")
+})
+
+testRun("bgRgb preserves text", fun() -> {
+    assertEquals(stripAnsi(bgRgb(0, 255, 0, "hello")), "hello")
+})
+
+testRun("hex preserves text", fun() -> {
+    assertEquals(stripAnsi(hex("#FF0000", "hello")), "hello")
+})
+
+testRun("bgHex preserves text", fun() -> {
+    assertEquals(stripAnsi(bgHex("#00FF00", "hello")), "hello")
+})
+
+testRun("hex with short format preserves text", fun() -> {
+    assertEquals(stripAnsi(hex("#F00", "short")), "short")
+})
+
+// Table rendering tests are in tests/lib_term.lang (functional test)
+// to avoid stdout interleaving with test framework output.
+
+// =============================================================================
+// Additional edge cases
+// =============================================================================
+
+testRun("stripAnsi with nested ANSI codes", fun() -> {
+    nested = bold(red(underline("nested")))
+    assertEquals(stripAnsi(nested), "nested")
+})
+
+testRun("multiple styles via composition", fun() -> {
+    result = "text" |> red |> bold |> underline |> italic
+    assertEquals(stripAnsi(result), "text")
+})
+
+testRun("termColors returns valid level", fun() -> {
+    level = termColors()
+    // Valid levels: 0, 1, 256, 16777216
+    assert(level == 0 || level == 1 || level == 256 || level == 16777216)
+})
+
+// Table with many rows & CJK: covered in tests/lib_term.lang

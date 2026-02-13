@@ -293,6 +293,83 @@ print(getFirstPositive([-1, -2]))    // None
 | No error info needed | Need error details |
 | `find`, `head`, lookup | File I/O, parsing, network |
 
+## 5. Pipe Unwrap Operator (`|>>`)
+
+The `|>>` operator combines piping with automatic unwrapping of `Result` and `Option` values. It pipes a value into a function, then unwraps the result — extracting `Ok`/`Some` values or **panicking** on `Fail`/`None`.
+
+### Basic Usage
+
+```rust
+import "lib/json" (jsonDecode)
+
+// jsonDecode returns Result<String, t>
+// |>> pipes stdin into jsonDecode, then unwraps the Result
+data = "{\"name\": \"Alice\"}" |>> jsonDecode
+print(data.name)  // Alice
+```
+
+This is equivalent to:
+
+```rust
+import "lib/json" (jsonDecode)
+
+data = unwrapResult(jsonDecode("{\"name\": \"Alice\"}"))
+print(data.name)  // Alice
+```
+
+### How It Works
+
+| Input | `|>>` Result |
+|-------|-------------|
+| `Ok(value)` | Returns `value` |
+| `Fail(error)` | **Panics** with error message |
+| `Some(value)` | Returns `value` |
+| `None` | **Panics** with "None" |
+| Other value | Passes through unchanged (same as `|>`) |
+
+### Chaining with `|>`
+
+`|>>` can be freely mixed with `|>` in pipeline chains:
+
+```rust
+import "lib/json" (jsonDecode)
+import "lib/list" (filter, map)
+
+// Decode JSON, then filter and map with regular pipes
+result = "[{\"name\":\"Alice\",\"active\":true},{\"name\":\"Bob\",\"active\":false}]"
+    |>> jsonDecode
+    |> filter(\x -> x.active)
+    |> map(\x -> x.name)
+
+print(result)  // ["Alice"]
+```
+
+### Multiple `|>>` in a Chain
+
+```rust
+fun safeDiv(a: Int, b: Int) -> Result<String, Int> {
+    if b == 0 { Fail("division by zero") } else { Ok(a / b) }
+}
+
+fun maybeDouble(x: Int) -> Option<Int> {
+    if x > 0 { Some(x * 2) } else { None }
+}
+
+result = 10 |>> safeDiv(2) |>> maybeDouble  // 5 -> Some(10) -> 10
+print(result)  // 10
+```
+
+### `|>>` vs `?`
+
+| Feature | `?` | `|>>` |
+|---------|-----|-------|
+| On `Fail`/`None` | Early return from function | **Panic** (stops program) |
+| Requires return type | Must return `Result`/`Option` | Works anywhere |
+| Use case | Error propagation in functions | Quick unwrap in scripts/pipelines |
+| Pipeline friendly | No (postfix operator) | Yes (infix pipe operator) |
+
+**Use `?`** when you want graceful error propagation inside functions. **Use `|>>`** when you want a quick unwrap in scripts, one-liners, and pipelines where failure should be fatal.
+
 ## Practical Examples
 
 ### Example 1: Safe Division with Result
@@ -356,11 +433,12 @@ first = head([1, 2, 3])   // Some(1)
 | `Result<E, A>` | Expected failures | Yes (handle `Fail`) |
 | `Option<T>` | Absent values (explicit) | Yes (handle `None`) |
 | `T?` | Nullable values (lightweight) | Yes (handle `nil`) |
+| `\|>>` | Quick unwrap in pipelines | None (panics on failure) |
 
-| Type | Success | Failure | `?` on Success | `?` on Failure |
-|------|---------|---------|----------------|----------------|
-| `Result<E, A>` | `Ok(value)` | `Fail(error)` | Returns `value` | Returns `Fail(error)` |
-| `Option<T>` | `Some(value)` | `None` | Returns `value` | Returns `None` |
+| Type | Success | Failure | `?` on Success | `?` on Failure | `\|>>` on Success | `\|>>` on Failure |
+|------|---------|---------|----------------|----------------|-------------------|-------------------|
+| `Result<E, A>` | `Ok(value)` | `Fail(error)` | Returns `value` | Returns `Fail(error)` | Returns `value` | **Panics** |
+| `Option<T>` | `Some(value)` | `None` | Returns `value` | Returns `None` | Returns `value` | **Panics** |
 
 **Guidelines:**
 - Use `panic` for programming errors that should never happen
@@ -368,3 +446,4 @@ first = head([1, 2, 3])   // Some(1)
 - Use `Option<T>` when explicit optionality with ADT semantics is needed
 - Use `T?` for simple nullable values (lightweight syntax)
 - Use `?` to propagate errors cleanly without nested `match`
+- Use `|>>` for quick unwrap in scripts and one-liner pipelines

@@ -1672,6 +1672,45 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			return fmt.Errorf("? operator requires Option or Result, got %s", val.RuntimeType().String())
 		}
 
+	case OP_UNWRAP_OR_PANIC:
+		// Unwrap Option/Result or panic (for |>> operator)
+		// Ok(v) -> v, Some(v) -> v, Fail(e) -> error, None -> error, other -> pass through
+		val := vm.pop()
+		if val.IsObj() {
+			if data, ok := val.AsObject().(*evaluator.DataInstance); ok {
+				switch data.Name {
+				case config.OkCtorName:
+					if len(data.Fields) > 0 {
+						vm.push(ObjectToValue(data.Fields[0]))
+					} else {
+						vm.push(NilVal())
+					}
+				case config.FailCtorName:
+					if len(data.Fields) > 0 {
+						return fmt.Errorf("|>> unwrap failed: Fail(%s)", data.Fields[0].Inspect())
+					}
+					return fmt.Errorf("|>> unwrap failed: Fail")
+				case config.SomeCtorName:
+					if len(data.Fields) > 0 {
+						vm.push(ObjectToValue(data.Fields[0]))
+					} else {
+						vm.push(NilVal())
+					}
+				case config.NoneCtorName:
+					return fmt.Errorf("|>> unwrap failed: None")
+				default:
+					// Not Option/Result — pass through
+					vm.push(val)
+				}
+			} else {
+				// Not a DataInstance — pass through
+				vm.push(val)
+			}
+		} else {
+			// Primitive value — pass through
+			vm.push(val)
+		}
+
 	case OP_GET_TUPLE_ELEM:
 		// Get tuple element by index (also supports List for variadic args)
 		idxObj := vm.pop()

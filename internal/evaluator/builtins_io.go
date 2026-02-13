@@ -3,6 +3,7 @@ package evaluator
 import (
 	"bufio"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"io"
 	"os"
 	"sync"
 )
@@ -21,11 +22,21 @@ func getStdinReader() *bufio.Reader {
 	return stdinReader
 }
 
+// resetStdinReader resets the shared stdin reader. Used in tests when os.Stdin is swapped.
+func resetStdinReader() {
+	stdinReaderOnce = sync.Once{}
+	stdinReader = nil
+}
+
 // IOBuiltins returns built-in functions for lib/io virtual package
 func IOBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
+		// Stdin operations
+		"readLine":     {Fn: builtinReadLine, Name: "readLine"},
+		"readAll":      {Fn: builtinReadAll, Name: "readAll"},
+		"readAllBytes": {Fn: builtinReadAllBytes, Name: "readAllBytes"},
+
 		// File operations
-		"readLine":        {Fn: builtinReadLine, Name: "readLine"},
 		"fileRead":        {Fn: builtinReadFile, Name: "fileRead"},
 		"fileReadBytes":   {Fn: builtinReadFileBytes, Name: "fileReadBytes"},
 		"fileReadBytesAt": {Fn: builtinReadFileBytesAt, Name: "fileReadBytesAt"},
@@ -75,6 +86,38 @@ func builtinReadLine(e *Evaluator, args ...Object) Object {
 	return makeSome(stringToList(line))
 }
 
+// readAll: () -> String
+// Reads all remaining data from stdin as a UTF-8 string
+func builtinReadAll(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("readAll expects 0 arguments, got %d", len(args))
+	}
+
+	reader := getStdinReader()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return stringToList("")
+	}
+
+	return stringToList(string(data))
+}
+
+// readAllBytes: () -> Bytes
+// Reads all remaining data from stdin as raw bytes
+func builtinReadAllBytes(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("readAllBytes expects 0 arguments, got %d", len(args))
+	}
+
+	reader := getStdinReader()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return BytesFromSlice([]byte{})
+	}
+
+	return BytesFromSlice(data)
+}
+
 // readFile: (String) -> Result<String, String>
 func builtinReadFile(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
@@ -86,6 +129,13 @@ func builtinReadFile(e *Evaluator, args ...Object) Object {
 		return newError("readFile expects a string path, got %s", args[0].Type())
 	}
 	path := ListToString(pathList)
+
+	// Check embedded resources first (for self-contained binaries built with --embed)
+	if e != nil && e.EmbeddedResources != nil {
+		if data, found := e.EmbeddedResources[path]; found {
+			return makeOk(stringToList(string(data)))
+		}
+	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -126,6 +176,20 @@ func builtinReadFileAt(e *Evaluator, args ...Object) Object {
 		return makeFailStr("length cannot be negative")
 	}
 
+	// Check embedded resources first
+	if e != nil && e.EmbeddedResources != nil {
+		if data, found := e.EmbeddedResources[path]; found {
+			end := offset + length
+			if offset >= int64(len(data)) {
+				return makeOk(stringToList(""))
+			}
+			if end > int64(len(data)) {
+				end = int64(len(data))
+			}
+			return makeOk(stringToList(string(data[offset:end])))
+		}
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return makeFailStr(err.Error())
@@ -157,6 +221,13 @@ func builtinReadFileBytes(e *Evaluator, args ...Object) Object {
 		return newError("readFileBytes expects a string path, got %s", args[0].Type())
 	}
 	path := ListToString(pathList)
+
+	// Check embedded resources first (for self-contained binaries built with --embed)
+	if e != nil && e.EmbeddedResources != nil {
+		if data, found := e.EmbeddedResources[path]; found {
+			return makeOk(BytesFromSlice(data))
+		}
+	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -195,6 +266,20 @@ func builtinReadFileBytesAt(e *Evaluator, args ...Object) Object {
 	}
 	if length < 0 {
 		return makeFailStr("length cannot be negative")
+	}
+
+	// Check embedded resources first
+	if e != nil && e.EmbeddedResources != nil {
+		if data, found := e.EmbeddedResources[path]; found {
+			end := offset + length
+			if offset >= int64(len(data)) {
+				return makeOk(BytesFromSlice([]byte{}))
+			}
+			if end > int64(len(data)) {
+				end = int64(len(data))
+			}
+			return makeOk(BytesFromSlice(data[offset:end]))
+		}
 	}
 
 	file, err := os.Open(path)
@@ -285,6 +370,13 @@ func builtinFileExists(e *Evaluator, args ...Object) Object {
 	}
 	path := ListToString(pathList)
 
+	// Check embedded resources first
+	if e != nil && e.EmbeddedResources != nil {
+		if _, found := e.EmbeddedResources[path]; found {
+			return TRUE
+		}
+	}
+
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		return FALSE
@@ -303,6 +395,13 @@ func builtinFileSize(e *Evaluator, args ...Object) Object {
 		return newError("fileSize expects a string path, got %s", args[0].Type())
 	}
 	path := ListToString(pathList)
+
+	// Check embedded resources first
+	if e != nil && e.EmbeddedResources != nil {
+		if data, found := e.EmbeddedResources[path]; found {
+			return makeOk(&Integer{Value: int64(len(data))})
+		}
+	}
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -502,6 +601,13 @@ func builtinIsFile(e *Evaluator, args ...Object) Object {
 	}
 	path := ListToString(pathList)
 
+	// Embedded resources are always "files"
+	if e != nil && e.EmbeddedResources != nil {
+		if _, found := e.EmbeddedResources[path]; found {
+			return TRUE
+		}
+	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return FALSE
@@ -555,8 +661,12 @@ func SetIOBuiltinTypes(builtins map[string]*Builtin) {
 	}
 
 	types := map[string]typesystem.Type{
+		// Stdin operations
+		"readLine":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optionString},
+		"readAll":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
+		"readAllBytes": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bytes},
+
 		// File operations
-		"readLine":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optionString},
 		"fileRead":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultString},
 		"fileReadBytes":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytes},
 		"fileReadBytesAt": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Int}, ReturnType: resultBytes},

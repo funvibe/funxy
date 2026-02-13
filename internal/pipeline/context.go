@@ -41,6 +41,12 @@ type PipelineContext struct {
 
 	// IsTestMode indicates if we are running in test mode (enables test builtins)
 	IsTestMode bool
+
+	// IsEvalMode indicates -e flag: expression execution mode
+	IsEvalMode bool
+
+	// StdinData holds pre-read stdin data for -e mode (injected as `stdin` variable)
+	StdinData *string
 }
 
 // NewPipelineContext creates and initializes a new PipelineContext.

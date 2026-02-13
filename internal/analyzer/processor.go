@@ -9,6 +9,7 @@ import (
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/token"
+	"github.com/funvibe/funxy/internal/typesystem"
 	"github.com/funvibe/funxy/internal/utils"
 )
 
@@ -37,6 +38,11 @@ func (sap *SemanticAnalyzerProcessor) Process(ctx *pipeline.PipelineContext) *pi
 
 	// Register built-in functions (print, typeOf, panic)
 	RegisterBuiltins(ctx.SymbolTable)
+
+	// In -e mode, register stdin as a known String variable
+	if ctx.IsEvalMode {
+		ctx.SymbolTable.Define("stdin", typesystem.String, "eval")
+	}
 
 	analyzer := New(ctx.SymbolTable)
 	analyzer.SetLoader(loader)

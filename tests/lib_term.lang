@@ -1,0 +1,65 @@
+import "lib/term" (*)
+
+// === Colors (become identity when not TTY / NO_COLOR) ===
+print("=== stripAnsi ===")
+print(stripAnsi(bold(red("hello world"))))
+print(stripAnsi(green(underline("styled"))))
+print(stripAnsi("plain text"))
+print(stripAnsi(""))
+
+// === Composition via pipe ===
+print("=== Composition ===")
+result = "ERROR" |> red |> bold |> stripAnsi
+print(result)
+result = "ok" |> green |> italic |> stripAnsi
+print(result)
+
+// === cprint ===
+print("=== cprint ===")
+cprint(red, "hello", "world")
+cprint(bold, "one")
+cprint(\x -> x, "plain")
+
+// === termSize ===
+print("=== termSize ===")
+(cols, rows) = termSize()
+print(cols > 0)
+print(rows > 0)
+
+// === termColors ===
+print("=== termColors ===")
+level = termColors()
+print(level >= 0)
+
+// === termIsTTY ===
+print("=== termIsTTY ===")
+tty = termIsTTY()
+print(tty == true || tty == false)
+
+// === Table ===
+print("=== Table ===")
+table(["A", "B"], [["1", "2"], ["3", "4"]])
+
+// === rgb/hex (stripped since no TTY) ===
+print("=== rgb/hex ===")
+print(stripAnsi(rgb(255, 0, 0, "red-text")))
+print(stripAnsi(bgRgb(0, 255, 0, "green-bg")))
+print(stripAnsi(hex("#FF0000", "hex-red")))
+print(stripAnsi(bgHex("#00FF00", "hex-green")))
+
+// === Table with Unicode (regression bug #2) ===
+print("=== Table Unicode ===")
+table(["Name", "Status"], [["api", "●"], ["db", "✓"]])
+
+// === Table with ANSI in cells ===
+print("=== Table ANSI ===")
+table(["Service", "OK"], [[green("●"), "yes"], [red("✗"), "no"]])
+
+// === Table with CJK (fullwidth chars) ===
+print("=== Table CJK ===")
+table(["名前", "値"], [["日本語", "テスト"]])
+
+// === cprint output verification ===
+print("=== cprint output ===")
+cprint(\x -> x, "hello", "world")
+cprint(\x -> x, "single")

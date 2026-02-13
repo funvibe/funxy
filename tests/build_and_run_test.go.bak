@@ -1,0 +1,156 @@
+package tests
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+
+	"parser/config"
+)
+
+// TestBuildAndRun compiles each test .lang file to a binary, runs it, and verifies output.
+// 1) tests/*.lang with .want: compare output with .want
+// 2) tests/unit/**/*_test.lang: check pass/fail
+func TestBuildAndRun(t *testing.T) {
+	projectRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("Failed to get project root: %v", err)
+	}
+
+	var report []string
+	skipRoot := map[string]bool{"lib_log": true}
+
+	// 1) tests root: .lang files with .want
+	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if path == "unit" || strings.HasPrefix(path, "unit/") {
+				return filepath.SkipDir // skip unit for now
+			}
+			return nil
+		}
+		for _, ext := range config.SourceFileExtensions {
+			if strings.HasSuffix(path, ext) {
+				wantFile := strings.TrimSuffix(path, ext) + ".want"
+				if _, err := os.Stat(wantFile); err != nil {
+					return nil
+				}
+				name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+				if skipRoot[name] {
+					return nil
+				}
+				absPath, _ := filepath.Abs(path)
+				wantBytes, _ := os.ReadFile(wantFile)
+				want := strings.TrimSpace(string(wantBytes))
+
+				binPath := filepath.Join(projectRoot, "build_run_"+name)
+
+				// go run main.go build <file> -o <bin>
+				buildCmd := exec.Command("go", "run", "main.go", "build", absPath, "-o", binPath)
+				buildCmd.Dir = projectRoot
+				if out, err := buildCmd.CombinedOutput(); err != nil {
+					report = append(report, "ROOT BUILD FAIL: "+path+": "+string(out))
+					return nil
+				}
+
+				// run binary
+				runCmd := exec.Command(binPath)
+				runCmd.Dir = projectRoot
+				runCmd.Env = append(os.Environ(), "FUNXY_TEST_MODE=1")
+				var stdout, stderr bytes.Buffer
+				runCmd.Stdout = &stdout
+				runCmd.Stderr = &stderr
+				_ = runCmd.Run()
+
+				got := strings.TrimSpace(stdout.String())
+				stderrStr := strings.TrimSpace(stderr.String())
+				if stderrStr != "" {
+					got = got + "\n" + stderrStr
+				}
+				got = strings.TrimSpace(strings.ReplaceAll(got, "\r\n", "\n"))
+				want = strings.TrimSpace(strings.ReplaceAll(want, "\r\n", "\n"))
+
+				if got != want {
+					report = append(report, "ROOT MISMATCH: "+path+"\n  want: "+want+"\n  got:  "+got)
+				}
+				os.Remove(binPath)
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk error: %v", err)
+	}
+
+	// 2) tests/unit/**/*_test.lang
+	err = filepath.Walk("unit", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), "_test.lang") &&
+			!strings.HasSuffix(info.Name(), "_test.funxy") &&
+			!strings.HasSuffix(info.Name(), "_test.fx") {
+			return nil
+		}
+		name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		name = strings.TrimSuffix(name, "_test")
+		safeName := strings.ReplaceAll(path, "/", "_")
+		safeName = strings.ReplaceAll(safeName, string(filepath.Separator), "_")
+
+		absPath, _ := filepath.Abs(path)
+		binPath := filepath.Join(projectRoot, "build_run_unit_"+safeName)
+
+		buildCmd := exec.Command("go", "run", "main.go", "build", absPath, "-o", binPath)
+		buildCmd.Dir = projectRoot
+		if out, err := buildCmd.CombinedOutput(); err != nil {
+			report = append(report, "UNIT BUILD FAIL: "+path+": "+string(out))
+			return nil
+		}
+
+		runCmd := exec.Command(binPath)
+		runCmd.Dir = projectRoot
+		runCmd.Env = append(os.Environ(), "FUNXY_TEST_MODE=1")
+		var stdout, stderr bytes.Buffer
+		runCmd.Stdout = &stdout
+		runCmd.Stderr = &stderr
+		runErr := runCmd.Run()
+
+		combined := stdout.String() + stderr.String()
+		// Format: "N tests, X passed, Y failed, ..." - fail if Y > 0
+		hasFailed := regexp.MustCompile(`\d+ failed`).MatchString(combined)
+		failMatch := regexp.MustCompile(`(\d+) failed`).FindStringSubmatch(combined)
+		numFailed := 0
+		if len(failMatch) >= 2 {
+			fmt.Sscanf(failMatch[1], "%d", &numFailed)
+		}
+
+		if runErr != nil && numFailed == 0 {
+			report = append(report, "UNIT RUN FAIL: "+path+" exit: "+runErr.Error()+"\n"+combined)
+		} else if hasFailed && numFailed > 0 {
+			report = append(report, "UNIT TEST FAIL: "+path+"\n"+combined)
+		}
+		os.Remove(binPath)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk unit error: %v", err)
+	}
+
+	if len(report) > 0 {
+		t.Logf("\n=== BUILD AND RUN REPORT (%d failures) ===\n%s\n=== END REPORT ===", len(report), strings.Join(report, "\n\n"))
+		// Write report to file
+		os.WriteFile(filepath.Join(projectRoot, "BUILD_RUN_REPORT.txt"), []byte(strings.Join(report, "\n\n")), 0644)
+		t.Fatalf("%d build/run failures - see BUILD_RUN_REPORT.txt", len(report))
+	}
+}

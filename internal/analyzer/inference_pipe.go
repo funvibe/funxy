@@ -149,3 +149,51 @@ func inferPipeExpression(ctx *InferenceContext, n *ast.InfixExpression, table *s
 
 	return resultVar.Apply(totalSubst), totalSubst, nil
 }
+
+// inferPipeUnwrapExpression handles |>> (pipe + unwrap) operator
+// x |>> f  ≡  unwrapResult(f(x)) for Result, unwrap(f(x)) for Option
+// At the type level: if f returns Result<E,T>, the expression type is T
+//
+//	if f returns Option<T>, the expression type is T
+//	otherwise, behaves like normal pipe (pass-through)
+func inferPipeUnwrapExpression(ctx *InferenceContext, n *ast.InfixExpression, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
+	// First, infer as a normal pipe expression (reuse |> logic)
+	// We create a temporary node with |> operator to reuse inferPipeExpression
+	tmpNode := &ast.InfixExpression{
+		Token:    n.Token,
+		Left:     n.Left,
+		Operator: "|>",
+		Right:    n.Right,
+	}
+	resultType, subst, err := inferPipeExpression(ctx, tmpNode, table, inferFn)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Now unwrap the result type
+	unwrapped := unwrapResultOrOptionType(resultType)
+	return unwrapped, subst, nil
+}
+
+// unwrapResultOrOptionType extracts the inner type from Result<E,T> or Option<T>
+// If the type is not Result or Option, returns it as-is
+func unwrapResultOrOptionType(t typesystem.Type) typesystem.Type {
+	if app, ok := t.(typesystem.TApp); ok {
+		if con, ok := app.Constructor.(typesystem.TCon); ok {
+			switch con.Name {
+			case "Result":
+				// Result<E, T> -> T (second type arg)
+				if len(app.Args) == 2 {
+					return app.Args[1]
+				}
+			case "Option":
+				// Option<T> -> T (first type arg)
+				if len(app.Args) == 1 {
+					return app.Args[0]
+				}
+			}
+		}
+	}
+	// Not Result/Option — pass through
+	return t
+}

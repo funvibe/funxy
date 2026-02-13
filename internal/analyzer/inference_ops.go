@@ -186,6 +186,12 @@ func inferInfixExpression(ctx *InferenceContext, n *ast.InfixExpression, table *
 		return inferPipeExpression(ctx, n, table, inferFn)
 	}
 
+	if n.Operator == "|>>" {
+		// Pipe + unwrap: x |>> f  ≡  unwrap(f(x)) for Option, unwrapResult(f(x)) for Result
+		// Type-wise, we infer as a normal pipe, then unwrap the return type
+		return inferPipeUnwrapExpression(ctx, n, table, inferFn)
+	}
+
 	r, s2, err := inferFn(n.Right, table)
 	if err != nil {
 		return nil, nil, err

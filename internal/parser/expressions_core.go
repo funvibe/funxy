@@ -101,9 +101,10 @@ func (p *Parser) hasContinuationOperator() bool {
 func isContinuationOperator(t token.TokenType) bool {
 	switch t {
 	case token.PIPE_GT, // |>
-		token.CONCAT,      // ++
-		token.COMPOSE,     // ,,
-		token.USER_OP_APP: // $
+		token.PIPE_GT_UNWRAP, // |>>
+		token.CONCAT,         // ++
+		token.COMPOSE,        // ,,
+		token.USER_OP_APP:    // $
 		return true
 	}
 	return false

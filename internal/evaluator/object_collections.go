@@ -599,6 +599,18 @@ func (b *Bytes) Hash() uint32 {
 	return h.Sum32()
 }
 
+// GobEncode implements gob encoding for Bytes
+func (b *Bytes) GobEncode() ([]byte, error) {
+	return b.data, nil
+}
+
+// GobDecode implements gob decoding for Bytes
+func (b *Bytes) GobDecode(data []byte) error {
+	b.data = make([]byte, len(data))
+	copy(b.data, data)
+	return nil
+}
+
 // Bits represents an immutable sequence of bits.
 // Unlike Bytes, Bits can have any length (not necessarily multiple of 8).
 type Bits struct {
@@ -878,4 +890,30 @@ func (b *Bits) Hash() uint32 {
 	h.Write(b.data)
 	// Mix in length to distinguish 00 (2 bits) from 000 (3 bits) if packed in same byte
 	return h.Sum32() ^ uint32(b.length)
+}
+
+// GobEncode implements gob encoding for Bits
+func (b *Bits) GobEncode() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(b.data); err != nil {
+		return nil, err
+	}
+	if err := enc.Encode(b.length); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// GobDecode implements gob decoding for Bits
+func (b *Bits) GobDecode(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := gob.NewDecoder(buf)
+	if err := dec.Decode(&b.data); err != nil {
+		return err
+	}
+	if err := dec.Decode(&b.length); err != nil {
+		return err
+	}
+	return nil
 }

@@ -5,6 +5,27 @@ const SourceFileExt = ".lang"
 // SourceFileExtensions are all recognized source file extensions
 var SourceFileExtensions = []string{".lang", ".funxy", ".fx"}
 
+// TrimSourceExt removes any recognized source extension from a filename.
+// Returns the original string if no extension matches.
+func TrimSourceExt(name string) string {
+	for _, ext := range SourceFileExtensions {
+		if len(name) >= len(ext) && name[len(name)-len(ext):] == ext {
+			return name[:len(name)-len(ext)]
+		}
+	}
+	return name
+}
+
+// HasSourceExt returns true if the path ends with any recognized source extension.
+func HasSourceExt(path string) bool {
+	for _, ext := range SourceFileExtensions {
+		if len(path) >= len(ext) && path[len(path)-len(ext):] == ext {
+			return true
+		}
+	}
+	return false
+}
+
 // IsTestMode indicates if the program is running in test mode.
 // This is set once at startup in main.go when handling test command.
 var IsTestMode = false
