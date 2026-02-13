@@ -274,6 +274,60 @@ func TestEvalMode(t *testing.T) {
 		},
 	}
 
+	// ==========================================
+	// Script flags must NOT trigger eval mode
+	// ==========================================
+	// When a source file is present, ALL flags are script args — not eval flags.
+	t.Run("script with -verbose flag", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		script := filepath.Join(tmpDir, "test.lang")
+		os.WriteFile(script, []byte(`import "lib/sys" (sysArgs)
+for a in sysArgs() { print(a) }`), 0644)
+
+		cmd := exec.Command(binaryPath, script, "-verbose", "--port", "8080")
+		cmd.Dir = projectRoot
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Script with flags failed: %v\nstderr: %s", err, stderr.String())
+		}
+		got := strings.TrimSpace(stdout.String())
+		// sysArgs should contain the script path and all flags
+		if !strings.Contains(got, "-verbose") {
+			t.Errorf("Expected -verbose in output, got:\n%s", got)
+		}
+		if !strings.Contains(got, "--port") {
+			t.Errorf("Expected --port in output, got:\n%s", got)
+		}
+		if !strings.Contains(got, "8080") {
+			t.Errorf("Expected 8080 in output, got:\n%s", got)
+		}
+	})
+
+	t.Run("script with -e flag as argument", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		script := filepath.Join(tmpDir, "test.lang")
+		os.WriteFile(script, []byte(`import "lib/sys" (sysArgs)
+for a in sysArgs() { print(a) }`), 0644)
+
+		cmd := exec.Command(binaryPath, script, "-e", "not_an_expression")
+		cmd.Dir = projectRoot
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Script with -e arg failed: %v\nstderr: %s", err, stderr.String())
+		}
+		got := strings.TrimSpace(stdout.String())
+		if !strings.Contains(got, "-e") {
+			t.Errorf("Expected -e in script output, got:\n%s", got)
+		}
+		if !strings.Contains(got, "not_an_expression") {
+			t.Errorf("Expected not_an_expression in script output, got:\n%s", got)
+		}
+	})
+
 	// Special test: -pe without stdin must not hang.
 	// Use a pipe that never sends EOF (simulates sandbox/CI/chained commands).
 	t.Run("no hang without stdin", func(t *testing.T) {

@@ -1291,6 +1291,23 @@ func main() {
 // handleEval handles -e flag for expression execution mode
 // Supports combined flags: -pe, -le, -lpe, -ple, etc.
 func handleEval(debugMode bool) bool {
+	// If any argument is a source file, this is script execution, not eval mode.
+	// All flags after the file are user flags — don't parse them.
+	for _, arg := range os.Args[1:] {
+		if arg == "-debug" || arg == "--debug" {
+			continue
+		}
+		if !strings.HasPrefix(arg, "-") {
+			// Non-flag argument — check if it's a source file
+			if _, err := os.Stat(arg); err == nil {
+				return false
+			}
+			if config.HasSourceExt(arg) {
+				return false
+			}
+		}
+	}
+
 	// Find -e flag and expression
 	var expression string
 	flags := evalFlags{}
@@ -1300,9 +1317,21 @@ func handleEval(debugMode bool) bool {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
-		// Handle combined flags like -pe, -le, -lpe, -ple, etc.
+		// Handle combined flags like -pe, -le, -lpe, -ple, -e, -p, -l.
+		// Only treat as eval flags if ALL characters are from {e, p, l}.
+		// Otherwise it's a user flag (e.g. -verbose, -port) — don't touch it.
 		if strings.HasPrefix(arg, "-") && !strings.HasPrefix(arg, "--") && len(arg) > 1 {
 			flagChars := arg[1:]
+			isEvalFlag := true
+			for _, ch := range flagChars {
+				if ch != 'e' && ch != 'p' && ch != 'l' {
+					isEvalFlag = false
+					break
+				}
+			}
+			if !isEvalFlag {
+				continue
+			}
 			hasE := strings.ContainsRune(flagChars, 'e')
 			hasP := strings.ContainsRune(flagChars, 'p')
 			hasL := strings.ContainsRune(flagChars, 'l')
