@@ -34,8 +34,10 @@ This lets tools like the Playground invoke themselves to run user code. Use `sys
 import "lib/sys" (sysExePath, sysExec, sysScriptDir)
 
 result = sysExec(sysExePath(), ["$", userScript])  // invoke self as interpreter
-dir = sysScriptDir()                               // directory of the running script
+dir = sysScriptDir()                               // script dir (standalone) or "" (compiled binary)
 ```
+
+> **Note:** `sysScriptDir()` returns `""` in compiled binaries. Use `pathJoin([sysScriptDir(), "file"])` for portable code — in bundle mode `pathJoin(["", "file"])` gives `"file"` which matches the embed key.
 
 ### Embedding Static Files (`--embed`)
 
@@ -68,7 +70,20 @@ import "lib/io" (fileRead)
 html = fileRead("templates/index.html") |>> \x -> x
 ```
 
-Paths are stored relative to the source file directory.
+**Embed keys** are determined by the `--embed` argument itself — the argument IS the key prefix. `--embed templates` → keys start with `templates/`. Paths are normalized: `fileRead("./templates/index.html")` works.
+
+**`@alias@` syntax** (directories only) customizes the key prefix:
+
+```bash
+# Physical dir "assets/tpl", script sees "templates/..."
+funxy build app.lang --embed assets/tpl@templates@
+
+# Alias "." strips prefix — keys are just filenames
+funxy build app.lang --embed static/@.@
+
+# With glob filter — only .html files
+funxy build app.lang --embed static/@.@*.html
+```
 
 ### Multi-Command Binaries
 

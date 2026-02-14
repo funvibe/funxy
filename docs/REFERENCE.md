@@ -1685,8 +1685,10 @@ args = sysArgs()
 val = sysEnv("HOME")
 // sysExec("ls", ["-la"])  // Execute external command
 exe = sysExePath()         // Absolute path to current executable
-dir = sysScriptDir()       // Directory of the running script
+dir = sysScriptDir()       // Directory of the running script ("" in compiled binary)
 ```
+
+> **Note:** `sysScriptDir()` returns `""` (empty string) in compiled binaries — there is no script file on disk. Use `pathJoin([sysScriptDir(), "file"])` for portable code: in standalone mode it resolves to the script's directory, in bundle mode `pathJoin(["", "file"])` gives just `"file"` which matches the embed key.
 
 #### lib/log
 ```rust
@@ -2270,7 +2272,7 @@ This is especially useful for tools like the Playground that need to invoke them
 import "lib/sys" (sysExePath, sysExec, sysScriptDir)
 
 result = sysExec(sysExePath(), ["$", scriptFile])  // invoke self as interpreter
-dir = sysScriptDir()                               // like Python's os.path.dirname(__file__)
+dir = sysScriptDir()                               // script dir (standalone) or "" (compiled binary)
 ```
 
 #### Embedding Static Files (`--embed`)
@@ -2297,19 +2299,15 @@ funxy build tool.lang --embed data/schema.json -o tool
 
 Glob patterns follow standard shell glob syntax (`*`, `?`, `[...]`). Multiple paths can be comma-separated within a single `--embed` flag, and you can use multiple `--embed` flags — all forms can be combined freely.
 
-Paths are stored **relative to the source file directory**. For example, if your project looks like:
+**Embed keys** are determined by the `--embed` argument — the argument IS the key prefix. For example:
 
-```
-myapp/
-  app.lang
-  templates/
-    index.html
-    about.html
-  config/
-    settings.toml
+```bash
+funxy build app.lang --embed templates         # key: templates/index.html
+funxy build app.lang --embed config.json       # key: config.json
+funxy build app.lang --embed static,config     # keys: static/..., config/...
 ```
 
-Then `funxy build myapp/app.lang --embed myapp/templates --embed myapp/config` stores files as `templates/index.html`, `templates/about.html`, `config/settings.toml`. Your code reads them the same way:
+Your code reads files by their key:
 
 ```funxy
 import "lib/io" (fileRead)
@@ -2317,7 +2315,32 @@ import "lib/io" (fileRead)
 html = fileRead("templates/index.html") |>> \x -> x
 ```
 
-This works identically whether running interpreted (`funxy app.lang`) or as a self-contained binary (`./app`). The binary checks embedded resources first, then falls back to the filesystem.
+Paths are normalized: `fileRead("./templates/index.html")` and `fileRead("templates/index.html")` both match the same key.
+
+**`@alias@` syntax** (directories only) customizes the key prefix. Everything left of the first `@` is the physical path on disk, the text between `@@` is the alias (what the script sees):
+
+```bash
+# Physical dir "assets/templates", script sees "templates/..."
+funxy build app.lang --embed assets/templates@templates@
+
+# Alias "." strips the directory prefix — keys are just filenames
+funxy build app.lang --embed examples/playground/@.@
+
+# Alias with glob filter — only embed .html files, flat keys
+funxy build app.lang --embed static/@.@*.html
+
+# Absolute alias — script reads by absolute path
+funxy build app.lang --embed templates@/usr/share/myapp/templates@
+```
+
+Multiple aliases for the same directory are supported — specify the path multiple times with different aliases. Useful for multi-command binaries where different scripts use different paths:
+
+```bash
+funxy build api.lang worker.lang \
+  --embed shared@api_data@ --embed shared@worker_data@
+```
+
+The binary checks embedded resources first, then falls back to the filesystem. This works identically whether running interpreted (`funxy app.lang`) or as a self-contained binary (`./app`).
 
 #### Multi-Command Binaries
 

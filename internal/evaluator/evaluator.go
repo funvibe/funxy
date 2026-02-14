@@ -97,6 +97,10 @@ type Evaluator struct {
 	// Key is relative path from source directory, value is file contents.
 	EmbeddedResources map[string][]byte
 
+	// IsBundleMode is true when running from a compiled binary (bundle).
+	// Affects sysScriptDir() which returns "" in bundle mode (no script on disk).
+	IsBundleMode bool
+
 	// evalDepth tracks the current nesting depth of Eval calls to prevent stack overflow
 	evalDepth int
 }
@@ -234,6 +238,7 @@ func (e *Evaluator) Clone() *Evaluator {
 		HostCallHandler:      e.HostCallHandler,                       // shared
 		HostToValueHandler:   e.HostToValueHandler,                    // shared
 		EmbeddedResources:    e.EmbeddedResources,                     // shared, read-only
+		IsBundleMode:         e.IsBundleMode,                          // shared
 	}
 }
 

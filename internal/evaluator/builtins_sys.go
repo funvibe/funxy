@@ -160,10 +160,19 @@ func builtinSysExePath(e *Evaluator, args ...Object) Object {
 // sysScriptDir: () -> String
 // Returns the directory of the currently running script.
 // In interpreted mode: directory of the .lang file being executed.
-// In built binary mode: directory of the executable.
+// In compiled binary (bundle) mode: returns "" (empty string).
+//
+//	Resources are embedded — there is no script directory on disk.
+//	pathJoin(["", "file"]) gives "file", which matches embed keys.
 func builtinSysScriptDir(e *Evaluator, args ...Object) Object {
 	if len(args) != 0 {
 		return newError("sysScriptDir expects 0 arguments, got %d", len(args))
+	}
+
+	// In bundle mode, there is no script on disk — return empty string.
+	// pathJoin(["", "file.html"]) → "file.html" → matches embed key.
+	if e.IsBundleMode {
+		return stringToList("")
 	}
 
 	// Try to get the script path from sysArgs (first arg is the script path)

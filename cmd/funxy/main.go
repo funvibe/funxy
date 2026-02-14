@@ -769,8 +769,14 @@ func handleBuild() bool {
 				i++
 			}
 		case "--embed":
-			if i+1 < len(os.Args) {
-				for _, p := range splitEmbedArg(os.Args[i+1]) {
+			// Greedy: consume all following non-flag arguments until next flag (starts with -).
+			// Handles shell glob expansion: --embed *.{html,js} expands to multiple args.
+			for i+1 < len(os.Args) {
+				next := os.Args[i+1]
+				if strings.HasPrefix(next, "-") {
+					break
+				}
+				for _, p := range splitEmbedArg(next) {
 					if p != "" {
 						embedPaths = append(embedPaths, p)
 					}
@@ -778,9 +784,12 @@ func handleBuild() bool {
 				i++
 			}
 		default:
-			// Non-flag argument = source file
 			if !strings.HasPrefix(os.Args[i], "-") {
-				sourcePaths = append(sourcePaths, os.Args[i])
+				if isSourceFile(os.Args[i]) {
+					sourcePaths = append(sourcePaths, os.Args[i])
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: skipping %q — not a recognized source file (use --embed for resources)\n", os.Args[i])
+				}
 			}
 		}
 	}
@@ -836,27 +845,20 @@ func handleBuild() bool {
 	}
 
 	// Step 1.5: Collect embedded resources
+	// Key scheme: the --embed argument determines the key prefix.
+	//   --embed template          → keys: template/file.html
+	//   --embed template/@.@      → keys: file.html          (alias "." strips prefix)
+	//   --embed template@views@   → keys: views/file.html    (alias replaces prefix)
+	// No dependency on sourceDir — keys are 100% predictable from the build command.
 	if len(embedPaths) > 0 {
 		resources := make(map[string][]byte)
-		// Use source directory as base for relative resource keys.
-		// For multi-command, use common parent of all source files.
-		sourceDir := filepath.Dir(sourcePaths[0])
-		if len(sourcePaths) > 1 {
-			// Find common directory among all source paths
-			for _, sp := range sourcePaths[1:] {
-				d := filepath.Dir(sp)
-				for !strings.HasPrefix(d, sourceDir) && !strings.HasPrefix(sourceDir, d) {
-					sourceDir = filepath.Dir(sourceDir)
-					d = filepath.Dir(d)
-				}
-				if len(d) < len(sourceDir) {
-					sourceDir = d
-				}
-			}
-		}
 		for _, embedPath := range embedPaths {
-			if strings.ContainsAny(embedPath, "*?[{") {
-				expandedPatterns := expandBraces(embedPath)
+			spec := parseEmbedArg(embedPath)
+			physPath := cleanPhysicalPath(spec.PhysicalPath)
+
+			// Check if physical path contains glob characters
+			if strings.ContainsAny(physPath, "*?[{") {
+				expandedPatterns := expandBraces(physPath)
 				var allMatches []string
 				for _, pattern := range expandedPatterns {
 					matches, err := filepath.Glob(pattern)
@@ -870,21 +872,46 @@ func handleBuild() bool {
 					fmt.Fprintf(os.Stderr, "Warning: glob %s matched no files\n", embedPath)
 				}
 				for _, match := range allMatches {
-					if err := collectResources(match, sourceDir, resources); err != nil {
-						fmt.Fprintf(os.Stderr, "Error collecting embedded resource %s: %s\n", match, err)
+					info, err := os.Stat(match)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 						os.Exit(1)
+					}
+					if info.IsDir() {
+						alias := match
+						if spec.HasAlias {
+							alias = spec.Alias
+						}
+						if err := collectEmbedDir(match, alias, spec.GlobFilter, resources); err != nil {
+							fmt.Fprintf(os.Stderr, "Error collecting %s: %s\n", match, err)
+							os.Exit(1)
+						}
+					} else {
+						key := filepath.ToSlash(match)
+						if err := collectEmbedFile(match, key, resources); err != nil {
+							fmt.Fprintf(os.Stderr, "Error collecting %s: %s\n", match, err)
+							os.Exit(1)
+						}
 					}
 				}
 			} else {
-				absEmbed := embedPath
-				if !filepath.IsAbs(absEmbed) {
-					if _, err := os.Stat(absEmbed); err != nil {
-						absEmbed = filepath.Join(sourceDir, absEmbed)
-					}
-				}
-				if err := collectResources(absEmbed, sourceDir, resources); err != nil {
-					fmt.Fprintf(os.Stderr, "Error collecting embedded resource %s: %s\n", embedPath, err)
+				info, err := os.Stat(physPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: cannot stat %s: %s\n", physPath, err)
 					os.Exit(1)
+				}
+				if info.IsDir() {
+					if err := collectEmbedDir(physPath, spec.Alias, spec.GlobFilter, resources); err != nil {
+						fmt.Fprintf(os.Stderr, "Error collecting %s: %s\n", embedPath, err)
+						os.Exit(1)
+					}
+				} else {
+					// Single file — key is the physical path as given (no alias for files)
+					key := filepath.ToSlash(spec.PhysicalPath)
+					if err := collectEmbedFile(physPath, key, resources); err != nil {
+						fmt.Fprintf(os.Stderr, "Error collecting %s: %s\n", embedPath, err)
+						os.Exit(1)
+					}
 				}
 			}
 		}
@@ -959,52 +986,6 @@ func handleBuild() bool {
 	}
 
 	return true
-}
-
-// collectResources walks a file or directory and collects all files into resources map.
-// Keys are paths relative to baseDir.
-func collectResources(path string, baseDir string, resources map[string][]byte) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("cannot stat %s: %w", path, err)
-	}
-
-	if !info.IsDir() {
-		// Single file
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("cannot read %s: %w", path, err)
-		}
-		relPath, err := filepath.Rel(baseDir, path)
-		if err != nil {
-			relPath = filepath.Base(path)
-		}
-		// Normalize to forward slashes for cross-platform consistency
-		relPath = filepath.ToSlash(relPath)
-		resources[relPath] = data
-		return nil
-	}
-
-	// Directory: walk recursively
-	return filepath.Walk(path, func(filePath string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if fi.IsDir() {
-			return nil
-		}
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return fmt.Errorf("cannot read %s: %w", filePath, err)
-		}
-		relPath, err := filepath.Rel(baseDir, filePath)
-		if err != nil {
-			relPath = filepath.Base(filePath)
-		}
-		relPath = filepath.ToSlash(relPath)
-		resources[relPath] = data
-		return nil
-	})
 }
 
 // splitEmbedArg splits a --embed argument by commas, but respects brace expansion.

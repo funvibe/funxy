@@ -434,15 +434,18 @@ print(double(21))
 		writeFile(t, filepath.Join(dataDir, "greeting.txt"), "Hello from embedded file!")
 		writeFile(t, filepath.Join(dataDir, "app.lang"), `
 import "lib/io" (fileRead)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
 
-content = fileRead("greeting.txt") |>> \x -> x
+scriptDir = sysScriptDir()
+content = pathJoin([scriptDir, "greeting.txt"]) |>> fileRead
 print(content)
 `)
 
 		outputBin := filepath.Join(tmpDir, "embed_single_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dataDir, "app.lang"),
-			"--embed", filepath.Join(dataDir, "greeting.txt"),
+			"--embed", dataDir+"/@.@greeting.txt",
 			"-o", outputBin)
 
 		// Run from a DIFFERENT directory — the embedded file should still be found
@@ -467,12 +470,15 @@ print(content)
 
 		writeFile(t, filepath.Join(embedRoot, "app.lang"), `
 import "lib/io" (fileRead, fileExists)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
 
-headerExists = fileExists("templates/header.html")
+scriptDir = sysScriptDir()
+headerExists = pathJoin([scriptDir, "templates/header.html"]) |>> fileExists
 print(headerExists)
 
-header = fileRead("templates/header.html") |>> \x -> x
-footer = fileRead("templates/footer.html") |>> \x -> x
+header = pathJoin([scriptDir, "templates/header.html"]) |>> fileRead
+footer = pathJoin([scriptDir, "templates/footer.html"]) |>> fileRead
 print(header)
 print(footer)
 `)
@@ -480,7 +486,7 @@ print(footer)
 		outputBin := filepath.Join(tmpDir, "embed_dir_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "templates"),
+			"--embed", filepath.Join(embedRoot, "templates")+"@templates@",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_dir2")
@@ -511,7 +517,7 @@ print(size)
 		outputBin := filepath.Join(tmpDir, "embed_size_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "data.bin"),
+			"--embed", embedRoot+"/@.@data.bin",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_dir3")
@@ -536,9 +542,12 @@ print(size)
 
 		writeFile(t, filepath.Join(embedRoot, "app.lang"), `
 import "lib/io" (fileRead)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
 
-html = fileRead("static/index.html") |>> \x -> x
-conf = fileRead("config/app.toml") |>> \x -> x
+scriptDir = sysScriptDir()
+html = pathJoin([scriptDir, "static/index.html"]) |>> fileRead
+conf = pathJoin([scriptDir, "config/app.toml"]) |>> fileRead
 print(html)
 print(conf)
 `)
@@ -546,8 +555,8 @@ print(conf)
 		outputBin := filepath.Join(tmpDir, "embed_multi_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "static"),
-			"--embed", filepath.Join(embedRoot, "config"),
+			"--embed", filepath.Join(embedRoot, "static")+"@static@",
+			"--embed", filepath.Join(embedRoot, "config")+"@config@",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_dir4")
@@ -583,7 +592,7 @@ print(js)
 		// Use comma-separated paths in a single --embed
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "css")+","+filepath.Join(embedRoot, "js"),
+			"--embed", filepath.Join(embedRoot, "css")+"@css@,"+filepath.Join(embedRoot, "js")+"@js@",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_dir_comma")
@@ -625,7 +634,7 @@ print(b)
 		outputBin := filepath.Join(tmpDir, "embed_glob_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "*.txt"),
+			"--embed", embedRoot+"/@.@*.txt",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_dir_glob")
@@ -669,7 +678,7 @@ print(js)
 		// Use brace expansion: *.{css,js} should match style.css and app.js but NOT data.txt
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "*.{css,js}"),
+			"--embed", embedRoot+"/@.@*.{css,js}",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_dir_brace")
@@ -708,7 +717,7 @@ print(cfgOk)
 		// "*.{html,js}" matches index.html, app.js; "data" matches data/config.toml
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "*.{html,js}")+","+filepath.Join(embedRoot, "data"),
+			"--embed", embedRoot+"/@.@*.{html,js},"+filepath.Join(embedRoot, "data")+"@data@",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_dir_mix")
@@ -1076,7 +1085,7 @@ print(content)
 		outputBin := filepath.Join(tmpDir, "embed_readat_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "data.txt"),
+			"--embed", embedRoot+"/@.@data.txt",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "embed_readat_other")
@@ -1102,7 +1111,7 @@ print(len(bytes))
 		outputBin := filepath.Join(tmpDir, "embed_bytes_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "data.bin"),
+			"--embed", embedRoot+"/@.@data.bin",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "embed_bytes_other")
@@ -1128,7 +1137,7 @@ print(len(bytes))
 		outputBin := filepath.Join(tmpDir, "embed_bytesat_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "data.bin"),
+			"--embed", embedRoot+"/@.@data.bin",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "embed_bytesat_other")
@@ -1154,7 +1163,7 @@ print(isFile("nonexistent.txt"))
 		outputBin := filepath.Join(tmpDir, "embed_isfile_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "data.txt"),
+			"--embed", embedRoot+"/@.@data.txt",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "embed_isfile_other")
@@ -1182,7 +1191,7 @@ print(content)
 		outputBin := filepath.Join(tmpDir, "embed_priority_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", dataPath,
+			"--embed", embedRoot+"/@.@data.txt",
 			"-o", outputBin)
 
 		// Restore disk file to "from disk", run from embedRoot
@@ -1212,7 +1221,7 @@ print(len(lst))
 		outputBin := filepath.Join(tmpDir, "embed_binary_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(embedRoot, "app.lang"),
-			"--embed", filepath.Join(embedRoot, "data.bin"),
+			"--embed", embedRoot+"/@.@data.bin",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "embed_binary_other")
@@ -1241,10 +1250,12 @@ print(content == "")
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "empty.txt"),
+			"--embed", dir+"/@.@empty.txt",
 			"-o", filepath.Join(tmpDir, "embed_empty_bin"))
 
-		got := runCmd(t, filepath.Join(tmpDir, "embed_empty_bin"), tmpDir, nil)
+		otherDir := filepath.Join(tmpDir, "embed_empty_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_empty_bin"), otherDir, nil)
 		if got != "0\ntrue" {
 			t.Errorf("empty file: got %q", got)
 		}
@@ -1267,10 +1278,12 @@ print(js)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "assets"),
+			"--embed", filepath.Join(dir, "assets")+"@assets@",
 			"-o", filepath.Join(tmpDir, "embed_nested_bin"))
 
-		got := runCmd(t, filepath.Join(tmpDir, "embed_nested_bin"), tmpDir, nil)
+		otherDir := filepath.Join(tmpDir, "embed_nested_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_nested_bin"), otherDir, nil)
 		if got != "body{}\nrun()" {
 			t.Errorf("nested dirs: got %q", got)
 		}
@@ -1289,10 +1302,12 @@ print(content)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "my file.txt"),
+			"--embed", dir+"/@.@my file.txt",
 			"-o", filepath.Join(tmpDir, "embed_spaces_bin"))
 
-		got := runCmd(t, filepath.Join(tmpDir, "embed_spaces_bin"), tmpDir, nil)
+		otherDir := filepath.Join(tmpDir, "embed_spaces_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_spaces_bin"), otherDir, nil)
 		if got != "content with spaces" {
 			t.Errorf("spaces in filename: got %q", got)
 		}
@@ -1313,7 +1328,7 @@ print(b)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "a.txt"),
+			"--embed", dir+"/@.@a.txt",
 			"-o", filepath.Join(tmpDir, "embed_fallback_bin"))
 
 		// b.txt only on disk (in run dir)
@@ -1334,20 +1349,25 @@ print(b)
 		writeFile(t, filepath.Join(dir, "config.json"), `{"x":1}`)
 		writeFile(t, filepath.Join(dir, "api.lang"), `
 import "lib/io" (fileRead)
-print(fileRead("config.json") |>> \x -> x)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+scriptDir = sysScriptDir()
+print(pathJoin([scriptDir, "config.json"]) |>> fileRead)
 `)
 		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
-			"--embed", filepath.Join(dir, "config.json"),
+			"--embed", dir+"/@.@config.json",
 			"-o", filepath.Join(tmpDir, "multi_one_bin"))
 
-		got := runCmd(t, filepath.Join(tmpDir, "multi_one_bin"), tmpDir, nil, "api")
+		otherDir := filepath.Join(tmpDir, "multi_one_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "multi_one_bin"), otherDir, nil, "api")
 		if !strings.Contains(got, "x") {
 			t.Errorf("api should read config: %q", got)
 		}
-		got = runCmd(t, filepath.Join(tmpDir, "multi_one_bin"), tmpDir, nil, "worker")
+		got = runCmd(t, filepath.Join(tmpDir, "multi_one_bin"), otherDir, nil, "worker")
 		if got != "worker" {
 			t.Errorf("worker: got %q", got)
 		}
@@ -1360,13 +1380,16 @@ print(fileRead("config.json") |>> \x -> x)
 		writeFile(t, filepath.Join(dir, "shared.txt"), "data")
 		writeFile(t, filepath.Join(dir, "api.lang"), `
 import "lib/io" (fileExists)
-print(fileExists("shared.txt"))
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+scriptDir = sysScriptDir()
+print(pathJoin([scriptDir, "shared.txt"]) |>> fileExists)
 `)
 		writeFile(t, filepath.Join(dir, "worker.lang"), `print("worker")`)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
-			"--embed", filepath.Join(dir, "shared.txt"),
+			"--embed", dir+"/@.@shared.txt",
 			"-o", filepath.Join(tmpDir, "multi_fileexists_bin"))
 
 		got := runCmd(t, filepath.Join(tmpDir, "multi_fileexists_bin"), tmpDir, nil, "api")
@@ -1382,13 +1405,16 @@ print(fileExists("shared.txt"))
 		writeFile(t, filepath.Join(dir, "config.txt"), "ok")
 		writeFile(t, filepath.Join(dir, "app.lang"), `
 import "lib/io" (fileRead)
-print(fileRead("config.txt") |>> \x -> x)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+scriptDir = sysScriptDir()
+print(pathJoin([scriptDir, "config.txt"]) |>> fileRead)
 `)
 
 		binPath := filepath.Join(tmpDir, "embed_cwd_bin")
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "config.txt"),
+			"--embed", dir+"/@.@config.txt",
 			"-o", binPath)
 
 		// Run from /tmp or other dir — resource should still be found
@@ -1418,10 +1444,12 @@ print(len(bytes))
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "big.bin"),
+			"--embed", dir+"/@.@big.bin",
 			"-o", filepath.Join(tmpDir, "embed_large_bin"))
 
-		got := runCmd(t, filepath.Join(tmpDir, "embed_large_bin"), tmpDir, nil)
+		otherDir := filepath.Join(tmpDir, "embed_large_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_large_bin"), otherDir, nil)
 		if got != "1536000" {
 			t.Errorf("large file len: got %q, want 1536000", got)
 		}
@@ -1443,7 +1471,7 @@ print(content2)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "data.txt"),
+			"--embed", dir+"/@.@data.txt",
 			"-o", filepath.Join(tmpDir, "embed_write_bin"))
 
 		runDir := filepath.Join(tmpDir, "embed_write_run")
@@ -1476,7 +1504,7 @@ match r {
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "data.txt"),
+			"--embed", dir+"/@.@data.txt",
 			"-o", filepath.Join(tmpDir, "embed_parent_bin"))
 
 		// No secret.txt on disk - should Fail (or fallback to disk which doesn't have it)
@@ -1508,11 +1536,13 @@ print(b)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "app.lang"),
-			"--embed", filepath.Join(dir, "static"),
-			"--embed", filepath.Join(dir, "static", "sub"),
+			"--embed", filepath.Join(dir, "static")+"@static@",
+			"--embed", filepath.Join(dir, "static", "sub")+"@static/sub@",
 			"-o", filepath.Join(tmpDir, "embed_overlap_bin"))
 
-		got := runCmd(t, filepath.Join(tmpDir, "embed_overlap_bin"), tmpDir, nil)
+		otherDir := filepath.Join(tmpDir, "embed_overlap_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_overlap_bin"), otherDir, nil)
 		// Document behavior: both paths work (may duplicate or not)
 		if got != "true\ntrue\nroot\nnested" {
 			t.Errorf("overlapping embed: got %q", got)
@@ -1653,7 +1683,7 @@ print(loadData())`)
 
 		outputBin := filepath.Join(tmpDir, "portable_embed_bin")
 		runCmd(t, binaryPath, projDir, nil, "build", "app.lang",
-			"--embed", filepath.Join(projDir, "data.txt"),
+			"--embed", projDir+"/@.@data.txt",
 			"-o", outputBin)
 
 		otherDir := filepath.Join(tmpDir, "other_embed")
@@ -2073,14 +2103,16 @@ print(fileRead("dir1/static/config.txt") |>> \x -> x)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(root, "dir1", "api.lang"), filepath.Join(root, "dir2", "worker.lang"),
-			"--embed", filepath.Join(root, "dir1", "static"),
+			"--embed", filepath.Join(root, "dir1", "static")+"@dir1/static@",
 			"-o", filepath.Join(tmpDir, "embed_diff_bin"))
 
-		got := runCmd(t, filepath.Join(tmpDir, "embed_diff_bin"), tmpDir, nil, "api")
+		otherDir := filepath.Join(tmpDir, "embed_diff_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_diff_bin"), otherDir, nil, "api")
 		if got != "shared-config" {
 			t.Errorf("api should see config: got %q", got)
 		}
-		got = runCmd(t, filepath.Join(tmpDir, "embed_diff_bin"), tmpDir, nil, "worker")
+		got = runCmd(t, filepath.Join(tmpDir, "embed_diff_bin"), otherDir, nil, "worker")
 		if got != "shared-config" {
 			t.Errorf("worker should see config: got %q", got)
 		}
@@ -2117,16 +2149,22 @@ print(fileRead("dir1/static/config.txt") |>> \x -> x)
 		writeFile(t, filepath.Join(dir, "static", "config.json"), `{"port":8080}`)
 		writeFile(t, filepath.Join(dir, "api.lang"), `
 import "lib/io" (fileRead)
-print(fileRead("static/config.json") |>> \x -> x)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+scriptDir = sysScriptDir()
+print(pathJoin([scriptDir, "static/config.json"]) |>> fileRead)
 `)
 		writeFile(t, filepath.Join(dir, "worker.lang"), `
 import "lib/io" (fileRead)
-print(fileRead("static/config.json") |>> \x -> x)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+scriptDir = sysScriptDir()
+print(pathJoin([scriptDir, "static/config.json"]) |>> fileRead)
 `)
 
 		runCmd(t, binaryPath, projectRoot, nil, "build",
 			filepath.Join(dir, "api.lang"), filepath.Join(dir, "worker.lang"),
-			"--embed", filepath.Join(dir, "static"),
+			"--embed", filepath.Join(dir, "static")+"@static@",
 			"-o", filepath.Join(tmpDir, "embed_server"))
 
 		got := runCmd(t, filepath.Join(tmpDir, "embed_server"), tmpDir, nil, "api")
@@ -2136,6 +2174,93 @@ print(fileRead("static/config.json") |>> \x -> x)
 		got = runCmd(t, filepath.Join(tmpDir, "embed_server"), tmpDir, nil, "worker")
 		if !strings.Contains(got, "8080") {
 			t.Errorf("worker should see config: %q", got)
+		}
+	})
+
+	// Regression: --embed with multiple files (shell glob expansion) must not treat
+	// non-.lang files as source scripts. Simulates: --embed a.html b.js c.css
+	t.Run("embed shell glob expansion", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "embed_glob_expand")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `
+import "lib/io" (fileRead)
+print(fileRead("index.html") |>> \x -> x)
+`)
+		writeFile(t, filepath.Join(dir, "index.html"), "<h1>hello</h1>")
+		writeFile(t, filepath.Join(dir, "app.js"), "console.log(1)")
+		writeFile(t, filepath.Join(dir, "style.css"), "body{}")
+
+		// Simulate shell expansion: --embed index.html app.js style.css (3 separate args)
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"),
+			"--embed", dir+"/@.@index.html", dir+"/@.@app.js", dir+"/@.@style.css",
+			"-o", filepath.Join(tmpDir, "embed_glob_bin"))
+
+		otherDir := filepath.Join(tmpDir, "embed_glob_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "embed_glob_bin"), otherDir, nil)
+		if got != "<h1>hello</h1>" {
+			t.Errorf("embed glob expansion: got %q, want <h1>hello</h1>", got)
+		}
+	})
+
+	// Multiple --embed flags: --embed static --embed templates
+	t.Run("multiple embed flags", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "multi_embed_flags")
+		os.MkdirAll(filepath.Join(dir, "static"), 0755)
+		os.MkdirAll(filepath.Join(dir, "templates"), 0755)
+		writeFile(t, filepath.Join(dir, "static", "app.js"), "js-content")
+		writeFile(t, filepath.Join(dir, "templates", "index.html"), "html-content")
+		writeFile(t, filepath.Join(dir, "api.lang"), `
+import "lib/io" (fileRead)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+scriptDir = sysScriptDir()
+a = pathJoin([scriptDir, "static/app.js"]) |>> fileRead
+b = pathJoin([scriptDir, "templates/index.html"]) |>> fileRead
+print(a)
+print(b)
+`)
+
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "api.lang"),
+			"--embed", filepath.Join(dir, "static")+"@static@",
+			"--embed", filepath.Join(dir, "templates")+"@templates@",
+			"-o", filepath.Join(tmpDir, "multi_embed_bin"))
+
+		otherDir := filepath.Join(tmpDir, "multi_embed_run")
+		os.MkdirAll(otherDir, 0755)
+		got := runCmd(t, filepath.Join(tmpDir, "multi_embed_bin"), otherDir, nil)
+		if got != "js-content\nhtml-content" {
+			t.Errorf("multiple --embed flags: got %q", got)
+		}
+	})
+
+	// Regression: non-.lang files without --embed must not become source scripts
+	t.Run("non-lang file rejected as source", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "non_lang_source")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "api.lang"), `print("api")`)
+		writeFile(t, filepath.Join(dir, "page.html"), "<html></html>")
+
+		cmd := exec.Command(binaryPath, "build",
+			filepath.Join(dir, "api.lang"), filepath.Join(dir, "page.html"),
+			"-o", filepath.Join(tmpDir, "non_lang_bin"))
+		cmd.Dir = projectRoot
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		// Should succeed (page.html is skipped with warning, not compiled)
+		if err != nil {
+			t.Fatalf("Build should succeed (skip non-.lang): %v\n%s", err, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "Warning") && !strings.Contains(stderr.String(), "recognized source") {
+			t.Errorf("Expected warning about non-source file, got stderr: %s", stderr.String())
+		}
+		// Binary should work — only api.lang compiled
+		got := runCmd(t, filepath.Join(tmpDir, "non_lang_bin"), tmpDir, nil)
+		if got != "api" {
+			t.Errorf("non-lang file rejected: got %q, want api", got)
 		}
 	})
 

@@ -5,8 +5,27 @@ import (
 	"io"
 	"os"
 	"github.com/funvibe/funxy/internal/typesystem"
+	"path/filepath"
 	"sync"
 )
+
+// lookupEmbed checks embedded resources with path normalization.
+// Normalizes "./file" → "file", "dir/../file" → "file", etc.
+// Also converts backslashes to forward slashes for cross-platform consistency.
+func lookupEmbed(resources map[string][]byte, path string) ([]byte, bool) {
+	if resources == nil {
+		return nil, false
+	}
+	clean := filepath.ToSlash(filepath.Clean(path))
+	data, found := resources[clean]
+	return data, found
+}
+
+// hasEmbed checks if a path exists in embedded resources (with normalization).
+func hasEmbed(resources map[string][]byte, path string) bool {
+	_, found := lookupEmbed(resources, path)
+	return found
+}
 
 // stdinReader is a shared buffered reader for stdin to avoid buffering issues
 // when readLine is called multiple times
@@ -131,10 +150,8 @@ func builtinReadFile(e *Evaluator, args ...Object) Object {
 	path := ListToString(pathList)
 
 	// Check embedded resources first (for self-contained binaries built with --embed)
-	if e != nil && e.EmbeddedResources != nil {
-		if data, found := e.EmbeddedResources[path]; found {
-			return makeOk(stringToList(string(data)))
-		}
+	if data, found := lookupEmbed(e.EmbeddedResources, path); found {
+		return makeOk(stringToList(string(data)))
 	}
 
 	content, err := os.ReadFile(path)
@@ -177,17 +194,15 @@ func builtinReadFileAt(e *Evaluator, args ...Object) Object {
 	}
 
 	// Check embedded resources first
-	if e != nil && e.EmbeddedResources != nil {
-		if data, found := e.EmbeddedResources[path]; found {
-			end := offset + length
-			if offset >= int64(len(data)) {
-				return makeOk(stringToList(""))
-			}
-			if end > int64(len(data)) {
-				end = int64(len(data))
-			}
-			return makeOk(stringToList(string(data[offset:end])))
+	if data, found := lookupEmbed(e.EmbeddedResources, path); found {
+		end := offset + length
+		if offset >= int64(len(data)) {
+			return makeOk(stringToList(""))
 		}
+		if end > int64(len(data)) {
+			end = int64(len(data))
+		}
+		return makeOk(stringToList(string(data[offset:end])))
 	}
 
 	file, err := os.Open(path)
@@ -223,10 +238,8 @@ func builtinReadFileBytes(e *Evaluator, args ...Object) Object {
 	path := ListToString(pathList)
 
 	// Check embedded resources first (for self-contained binaries built with --embed)
-	if e != nil && e.EmbeddedResources != nil {
-		if data, found := e.EmbeddedResources[path]; found {
-			return makeOk(BytesFromSlice(data))
-		}
+	if data, found := lookupEmbed(e.EmbeddedResources, path); found {
+		return makeOk(BytesFromSlice(data))
 	}
 
 	content, err := os.ReadFile(path)
@@ -269,17 +282,15 @@ func builtinReadFileBytesAt(e *Evaluator, args ...Object) Object {
 	}
 
 	// Check embedded resources first
-	if e != nil && e.EmbeddedResources != nil {
-		if data, found := e.EmbeddedResources[path]; found {
-			end := offset + length
-			if offset >= int64(len(data)) {
-				return makeOk(BytesFromSlice([]byte{}))
-			}
-			if end > int64(len(data)) {
-				end = int64(len(data))
-			}
-			return makeOk(BytesFromSlice(data[offset:end]))
+	if data, found := lookupEmbed(e.EmbeddedResources, path); found {
+		end := offset + length
+		if offset >= int64(len(data)) {
+			return makeOk(BytesFromSlice([]byte{}))
 		}
+		if end > int64(len(data)) {
+			end = int64(len(data))
+		}
+		return makeOk(BytesFromSlice(data[offset:end]))
 	}
 
 	file, err := os.Open(path)
@@ -371,10 +382,8 @@ func builtinFileExists(e *Evaluator, args ...Object) Object {
 	path := ListToString(pathList)
 
 	// Check embedded resources first
-	if e != nil && e.EmbeddedResources != nil {
-		if _, found := e.EmbeddedResources[path]; found {
-			return TRUE
-		}
+	if hasEmbed(e.EmbeddedResources, path) {
+		return TRUE
 	}
 
 	_, err := os.Stat(path)
@@ -397,10 +406,8 @@ func builtinFileSize(e *Evaluator, args ...Object) Object {
 	path := ListToString(pathList)
 
 	// Check embedded resources first
-	if e != nil && e.EmbeddedResources != nil {
-		if data, found := e.EmbeddedResources[path]; found {
-			return makeOk(&Integer{Value: int64(len(data))})
-		}
+	if data, found := lookupEmbed(e.EmbeddedResources, path); found {
+		return makeOk(&Integer{Value: int64(len(data))})
 	}
 
 	info, err := os.Stat(path)
@@ -602,10 +609,8 @@ func builtinIsFile(e *Evaluator, args ...Object) Object {
 	path := ListToString(pathList)
 
 	// Embedded resources are always "files"
-	if e != nil && e.EmbeddedResources != nil {
-		if _, found := e.EmbeddedResources[path]; found {
-			return TRUE
-		}
+	if hasEmbed(e.EmbeddedResources, path) {
+		return TRUE
 	}
 
 	info, err := os.Stat(path)

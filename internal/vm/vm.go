@@ -115,6 +115,9 @@ type VM struct {
 	// Key is relative path, value is file contents.
 	resources map[string][]byte
 
+	// isBundleMode is true when running from a compiled binary
+	isBundleMode bool
+
 	// Evaluator for builtin Go functions only (not for Funxy code!)
 	eval *evaluator.Evaluator
 
@@ -203,12 +206,14 @@ func (vm *VM) SetTraitDefaults(defaults map[string]*ast.FunctionStatement) {
 // instead of loading from disk.
 func (vm *VM) SetBundle(b *Bundle) {
 	vm.bundle = b
+	vm.isBundleMode = true
 	if b != nil && b.Resources != nil {
 		vm.resources = b.Resources
 		// If evaluator was already created (e.g. by RegisterFPTraits),
 		// sync resources to it now.
 		if vm.eval != nil {
 			vm.eval.EmbeddedResources = vm.resources
+			vm.eval.IsBundleMode = true
 		}
 	}
 }
@@ -546,6 +551,8 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 		vm.eval.TypeMap = vm.typeMap
 		// Pass embedded resources for file I/O builtins
 		vm.eval.EmbeddedResources = vm.resources
+		// Pass bundle mode flag (affects sysScriptDir behavior)
+		vm.eval.IsBundleMode = vm.isBundleMode
 
 		// Set Fork function for thread-safe isolation (e.g. for taskMap)
 		vm.eval.Fork = func() *evaluator.Evaluator {

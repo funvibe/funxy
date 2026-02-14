@@ -219,6 +219,8 @@ func PrintHelp() string {
 	sb.WriteString("  funxy build script.lang --embed templates  # embed static files\n")
 	sb.WriteString("  funxy build app.lang --embed static,config # comma-separated\n")
 	sb.WriteString("  funxy build app.lang --embed '*.html'      # glob patterns\n")
+	sb.WriteString("  funxy build app.lang --embed assets@static@ # alias: fileRead(\"static/...\")\n")
+	sb.WriteString("  funxy build app.lang --embed assets/@.@     # alias \".\": flat keys\n")
 	sb.WriteString("  funxy build script.lang --host release-bin/funxy-linux-amd64 -o myapp\n")
 	sb.WriteString("                                             # cross-compile for Linux\n")
 	sb.WriteString("  funxy -c script.lang && funxy -r script.fbc  # compile + run\n")
@@ -847,7 +849,7 @@ func initSysDocs() {
 		"sysExit":      {Description: "Exit with status code"},
 		"sysExec":      {Description: "Execute external command"},
 		"sysExePath":   {Description: "Absolute path to current executable"},
-		"sysScriptDir": {Description: "Directory of the currently running script"},
+		"sysScriptDir": {Description: "Directory of the currently running script. Returns \"\" in compiled binary (bundle) mode — use pathJoin([sysScriptDir(), \"file\"]) for portable code"},
 	}
 	pkg := generatePackageDocs("lib/sys", "System interaction (sysArgs, sysEnv, sysExit, sysExec, sysExePath, sysScriptDir)", meta, nil)
 	RegisterDocPackage(pkg)
