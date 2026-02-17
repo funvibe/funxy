@@ -126,6 +126,8 @@ funxy build api.lang worker.lang --embed static --embed config.json -o myserver
 
 Both `api` and `worker` can call `fileRead("static/index.html")` or `fileRead("config.json")` — they see the same embedded files.
 
+Resources are **copied** to each sub-bundle at dispatch time, so mutating one command's resources never affects the parent or other commands.
+
 #### sysArgs() in Multi-Command Mode
 
 `sysArgs()` does **not** include the command name. A script behaves the same whether it runs standalone or as a subcommand:
@@ -214,6 +216,21 @@ Each `BundledModule` contains:
 - `TraitDefaults`: module-level trait defaults
 
 The v1 format (single `Chunk` with `FXYB` + version `0x01`) is still supported for backwards compatibility.
+
+### Bundle Validation
+
+After deserialization, bundles are validated:
+
+- **Single-command**: `MainChunk` must be present with non-empty bytecode
+- **Multi-command**: Each sub-bundle must have a `MainChunk` with non-empty bytecode
+
+Invalid bundles are rejected with clear errors (e.g. `"single-command bundle has nil MainChunk"`, `"command \"api\" has empty bytecode"`).
+
+If the bytecode version is not supported, the error shows the supported range:
+
+```
+unsupported bytecode version: 3 (this binary supports versions 1–2; upgrade Funxy to run newer bytecode)
+```
 
 ## Self-Contained Binary Format
 

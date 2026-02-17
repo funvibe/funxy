@@ -156,3 +156,19 @@ func splitStringWin(s string, sep byte) []string {
 	parts = append(parts, s[start:])
 	return parts
 }
+
+// =============================================================================
+// Raw mode & readKey — Windows stubs
+// =============================================================================
+
+func enterRawMode() error {
+	return fmt.Errorf("raw mode not supported on Windows")
+}
+
+func exitRawMode() {
+	// no-op on Windows
+}
+
+func readKeyImpl(timeoutMs int) string {
+	return ""
+}

@@ -20,7 +20,9 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 		if !p.peekTokenIs(token.NEWLINE) {
 			p.nextToken() // consume {
 			blockExprs := p.parseBlockAsList()
-			exp.Arguments = append(exp.Arguments, blockExprs)
+			if blockExprs != nil {
+				exp.Arguments = append(exp.Arguments, blockExprs)
+			}
 		}
 	}
 

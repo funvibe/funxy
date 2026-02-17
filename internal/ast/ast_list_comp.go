@@ -11,10 +11,15 @@ type ListComprehension struct {
 	Clauses []CompClause // Generators and filters
 }
 
-func (lc *ListComprehension) Accept(v Visitor)      { v.VisitListComprehension(lc) }
-func (lc *ListComprehension) expressionNode()       {}
-func (lc *ListComprehension) TokenLiteral() string  { return lc.Token.Lexeme }
-func (lc *ListComprehension) GetToken() token.Token { return lc.Token }
+func (lc *ListComprehension) Accept(v Visitor)     { v.VisitListComprehension(lc) }
+func (lc *ListComprehension) expressionNode()      {}
+func (lc *ListComprehension) TokenLiteral() string { return lc.Token.Lexeme }
+func (lc *ListComprehension) GetToken() token.Token {
+	if lc == nil {
+		return token.Token{}
+	}
+	return lc.Token
+}
 
 // CompClause represents a clause in a list comprehension.
 // It can be either a generator (x <- list) or a filter (predicate).

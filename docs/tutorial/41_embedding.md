@@ -47,14 +47,51 @@ vm.Eval(`greet("Alice")`) // returns "Hello, Alice!"
 ### Supported Types
 
 The Marshaller supports automatic conversion for:
-- Integers (`int`, `int64`, etc.) -> `Int`
-- Floats (`float64`, `float32`) -> `Float`
-- Booleans (`bool`) -> `Bool`
-- Strings (`string`) -> `String`
-- Slices (`[]T`) -> `List<T>`
-- Maps (`map[string]T`) -> `Map<String, T>` or Record
-- Functions -> Callable objects
-- Structs -> Host Objects (see below)
+- Integers (`int`, `int64`, etc.) → `Int`
+- Floats (`float64`, `float32`) → `Float`
+- Booleans (`bool`) → `Bool`
+- Strings (`string`) → `String`
+- Slices (`[]T`) → `List<T>`
+- Maps (`map[K]V`) → `Map<K, V>` (all map key types supported)
+- Functions → Callable objects (supports variadic)
+- Structs → Host Objects (see below)
+- `nil` → `Nil`
+
+### Variadic Functions
+
+Go variadic functions are fully supported — the variadic parameter is properly typed and Funxy scripts can call them with any number of arguments:
+
+```go
+vm.Bind("sum", func(nums ...int) int {
+    total := 0
+    for _, n := range nums {
+        total += n
+    }
+    return total
+})
+```
+
+```rust
+sum(1, 2, 3)    // 6
+sum()            // 0
+sum(10, 20, 30, 40, 50)  // 150
+```
+
+### Multiple Return Values
+
+Go functions returning multiple values are converted to Funxy tuples:
+
+```go
+vm.Bind("divmod", func(a, b int) (int, int) {
+    return a / b, a % b
+})
+```
+
+```rust
+(q, r) = divmod(17, 5)  // q = 3, r = 2
+```
+
+If conversion of any return value fails, the error includes the index for easy debugging: `return value [2] conversion failed: ...`
 
 ## Host Objects (Binding Structs)
 
@@ -122,6 +159,15 @@ fun calculate() {
 }
 ```
 
+`LoadFile` validates the path before reading and returns descriptive errors:
+
+| Condition | Error |
+|-----------|-------|
+| Empty path | `LoadFile: empty path` |
+| File not found | `LoadFile: file not found: <path>` |
+| No permission | `LoadFile: permission denied: <path>` |
+| Path is a directory | `LoadFile: expected file, got directory: <path>` |
+
 ## Calling Funxy from Go
 
 You can call functions defined in Funxy scripts from your Go code using `vm.Call`.
@@ -141,6 +187,21 @@ vm.LoadFile("script.lang")
 result, err := vm.Call("process", "some data")
 // result is "Processed: some data"
 ```
+
+## Nil Handling
+
+Funxy `Nil` is converted to Go `nil` only for **nilable types** — pointers, interfaces, maps, slices, channels, and functions. For value types (`int`, `bool`, `string`, structs), passing `Nil` is a type error:
+
+```go
+// OK — *string is nilable
+vm.Bind("acceptPtr", func(s *string) bool { return s == nil })
+
+// ERROR at runtime — int is not nilable
+// "argument 0: cannot convert nil to non-nullable type int"
+vm.Bind("acceptInt", func(n int) int { return n })
+```
+
+This prevents silent zero-value coercion — you won't accidentally get `0` when `Nil` was passed.
 
 ## Error Handling
 

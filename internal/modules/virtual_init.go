@@ -66,6 +66,7 @@ func InitVirtualPackages() {
 		initLogPackage()
 		initTaskPackage()
 		initCsvPackage()
+		initYamlPackage()
 		initFlagPackage()
 		initGrpcPackage()
 		initProtoPackage()

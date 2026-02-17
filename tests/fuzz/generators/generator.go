@@ -647,6 +647,12 @@ func (g *Generator) GenerateValidRecordForSpread() string {
 
 // GenerateBooleanExpression creates a boolean expression for conditions
 func (g *Generator) GenerateBooleanExpression() string {
+	if g.depth > MaxDepth {
+		return []string{"true", "false"}[g.src.Intn(2)]
+	}
+	g.depth++
+	defer func() { g.depth-- }()
+
 	choice := g.src.Intn(3)
 	switch choice {
 	case 0:
@@ -774,6 +780,8 @@ func (g *Generator) GenerateType() string {
 	if g.depth > MaxDepth || g.src.Intn(3) < 2 {
 		return basicTypes[g.src.Intn(len(basicTypes))]
 	}
+	g.depth++
+	defer func() { g.depth-- }()
 
 	// Complex types
 	switch g.src.Intn(8) {

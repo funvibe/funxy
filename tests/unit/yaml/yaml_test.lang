@@ -1,0 +1,223 @@
+import "lib/yaml" (*)
+import "lib/test" (*)
+
+// ============== yamlDecode ==============
+
+testRun("yamlDecode - simple map", fun() {
+    yaml = "name: Alice\nage: 30"
+    match yamlDecode(yaml) {
+        Ok(data) -> {
+            assertEquals("Alice", data.name)
+            assertEquals(30, data.age)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - nested map", fun() {
+    yaml = "server:\n  host: localhost\n  port: 8080"
+    match yamlDecode(yaml) {
+        Ok(data) -> {
+            assertEquals("localhost", data.server.host)
+            assertEquals(8080, data.server.port)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - list", fun() {
+    yaml = "- 1\n- 2\n- 3"
+    match yamlDecode(yaml) {
+        Ok(data) -> {
+            assertEquals(3, len(data))
+            assertEquals(1, data[0])
+            assertEquals(2, data[1])
+            assertEquals(3, data[2])
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - list of maps", fun() {
+    yaml = "- name: Alice\n  age: 30\n- name: Bob\n  age: 25"
+    match yamlDecode(yaml) {
+        Ok(data) -> {
+            assertEquals(2, len(data))
+            assertEquals("Alice", data[0].name)
+            assertEquals(30, data[0].age)
+            assertEquals("Bob", data[1].name)
+            assertEquals(25, data[1].age)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - boolean values", fun() {
+    yaml = "enabled: true\ndisabled: false"
+    match yamlDecode(yaml) {
+        Ok(data) -> {
+            assertEquals(true, data.enabled)
+            assertEquals(false, data.disabled)
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - null value", fun() {
+    yaml = "value: null"
+    match yamlDecode(yaml) {
+        Ok(data) -> assertEquals(nil, data.value)
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - float", fun() {
+    yaml = "pi: 3.14"
+    match yamlDecode(yaml) {
+        Ok(data) -> assertEquals(3.14, data.pi)
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - multiline string (chomped)", fun() {
+    yaml = "text: |-\n  hello\n  world"
+    match yamlDecode(yaml) {
+        Ok(data) -> assertEquals("hello\nworld", data.text)
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})
+
+testRun("yamlDecode - empty string", fun() {
+    yaml = ""
+    match yamlDecode(yaml) {
+        Ok(data) -> assertEquals(nil, data)
+        Fail(_) -> ()
+    }
+})
+
+testRun("yamlDecode - invalid yaml", fun() {
+    yaml = ":\n  - [\ninvalid"
+    match yamlDecode(yaml) {
+        Ok(_) -> assert(true)
+        Fail(_) -> assert(true)
+    }
+})
+
+// ============== yamlEncode ==============
+
+testRun("yamlEncode - record", fun() {
+    data = { name: "Alice", age: 30 }
+    result = yamlEncode(data)
+    assert(len(result) > 0)
+})
+
+testRun("yamlEncode - list", fun() {
+    data = [1, 2, 3]
+    result = yamlEncode(data)
+    assert(len(result) > 0)
+})
+
+testRun("yamlEncode - string", fun() {
+    result = yamlEncode("hello")
+    assert(len(result) > 0)
+})
+
+testRun("yamlEncode - integer", fun() {
+    result = yamlEncode(42)
+    assert(len(result) > 0)
+})
+
+testRun("yamlEncode - boolean", fun() {
+    result = yamlEncode(true)
+    assert(len(result) > 0)
+})
+
+testRun("yamlEncode - nil", fun() {
+    result = yamlEncode(nil)
+    assert(len(result) > 0)
+})
+
+testRun("yamlEncode - nested record", fun() {
+    data = { server: { host: "localhost", port: 8080 } }
+    result = yamlEncode(data)
+    assert(len(result) > 0)
+})
+
+// ============== Round-trip ==============
+
+testRun("round-trip: encode then decode", fun() {
+    original = { name: "Alice", age: 30 }
+    encoded = yamlEncode(original)
+    match yamlDecode(encoded) {
+        Ok(decoded) -> {
+            assertEquals("Alice", decoded.name)
+            assertEquals(30, decoded.age)
+        }
+        Fail(e) -> panic("Round-trip failed: " ++ e)
+    }
+})
+
+testRun("round-trip: list of records", fun() {
+    original = [
+        { host: "a", port: 80 },
+        { host: "b", port: 443 }
+    ]
+    encoded = yamlEncode(original)
+    match yamlDecode(encoded) {
+        Ok(decoded) -> {
+            assertEquals(2, len(decoded))
+            assertEquals(80, decoded[0].port)
+            assertEquals(443, decoded[1].port)
+        }
+        Fail(e) -> panic("Round-trip failed: " ++ e)
+    }
+})
+
+testRun("round-trip: nested structure", fun() {
+    original = {
+        database: {
+            host: "db.example.com",
+            port: 5432,
+            ssl: true
+        },
+        cache: {
+            ttl: 300
+        }
+    }
+    encoded = yamlEncode(original)
+    match yamlDecode(encoded) {
+        Ok(decoded) -> {
+            assertEquals("db.example.com", decoded.database.host)
+            assertEquals(5432, decoded.database.port)
+            assertEquals(true, decoded.database.ssl)
+            assertEquals(300, decoded.cache.ttl)
+        }
+        Fail(e) -> panic("Round-trip failed: " ++ e)
+    }
+})
+
+// ============== Edge cases ==============
+
+testRun("yamlDecode - unicode", fun() {
+    yaml = "name: Маша\ncity: Москва"
+    match yamlDecode(yaml) {
+        Ok(data) -> {
+            assertEquals("Маша", data.name)
+            assertEquals("Москва", data.city)
+        }
+        Fail(e) -> panic("Unicode failed: " ++ e)
+    }
+})
+
+testRun("yamlDecode - map with list values", fun() {
+    yaml = "tags:\n  - go\n  - funxy\n  - yaml"
+    match yamlDecode(yaml) {
+        Ok(data) -> {
+            assertEquals(3, len(data.tags))
+            assertEquals("go", data.tags[0])
+            assertEquals("funxy", data.tags[1])
+            assertEquals("yaml", data.tags[2])
+        }
+        Fail(e) -> panic("Unexpected error: " ++ e)
+    }
+})

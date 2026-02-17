@@ -42,6 +42,13 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	case OP_DUP:
 		vm.push(vm.peek(0))
 
+	case OP_SWAP:
+		// Swap top two stack elements: [a, b] → [b, a]
+		if vm.sp < 2 {
+			return fmt.Errorf("stack underflow in OP_SWAP: sp=%d", vm.sp)
+		}
+		vm.stack[vm.sp-1], vm.stack[vm.sp-2] = vm.stack[vm.sp-2], vm.stack[vm.sp-1]
+
 	case OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_POW:
 		if err := vm.binaryOp(op); err != nil {
 			return err

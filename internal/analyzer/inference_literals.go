@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/config"
 	"github.com/funvibe/funxy/internal/symbols"
@@ -148,6 +149,9 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 		return typesystem.TRecord{Fields: finalFields, IsOpen: isOpen}, totalSubst, nil
 
 	case *ast.ListLiteral:
+		if n == nil {
+			return nil, nil, fmt.Errorf("panic prevention: nil ListLiteral")
+		}
 		if len(n.Elements) == 0 {
 			return typesystem.TApp{
 				Constructor: typesystem.TCon{Name: config.ListTypeName},

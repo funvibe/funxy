@@ -545,8 +545,14 @@ func TestGetNonExistent(t *testing.T) {
 	}
 }
 
-// TestLoadFileWithBindingsAndCall mirrors the full embed_demo scenario:
-// Bind objects → LoadFile → Call Funxy function → verify side effects.
+// TestLoadFileWithBindingsAndCall is the full embed_demo regression test.
+// It uses the EXACT content of examples/embed_demo/script.lang and mylib/mylib.lang
+// copied as constants. Covers: Bind → LoadFile → stdlib import (lib/rand) →
+// local package import (./mylib) → Call Funxy function from Go → verify side effects.
+//
+// If the embedding API, module resolution, stdlib integration, or script syntax
+// break — this test fails. The old version used a simplified synthetic script
+// that skipped import "lib/rand" and randomIntRange, hiding real regressions.
 func TestLoadFileWithBindingsAndCall(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "funxy_embed_demo_test")
 	if err != nil {
@@ -554,48 +560,71 @@ func TestLoadFileWithBindingsAndCall(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create mylib package
+	// --- Exact copy of examples/embed_demo/mylib/mylib.lang ---
 	pkgDir := filepath.Join(tmpDir, "mylib")
 	if err := os.Mkdir(pkgDir, 0755); err != nil {
 		t.Fatal(err)
 	}
 
-	libCode := `package mylib(*)
+	const mylibCode = `package mylib(*)
 
 fun format_bonus(bonus) {
-	"*** BONUS: ${bonus} ***"
+    "*** BONUS: ${bonus} ***"
 }
 
 fun get_welcome_message() {
-	"Welcome to the Funxy Embedding Demo!"
+    "Welcome to the Funxy Embedding Demo!"
 }
 `
-	if err := ioutil.WriteFile(filepath.Join(pkgDir, "mylib.lang"), []byte(libCode), 0644); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(pkgDir, "mylib.lang"), []byte(mylibCode), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create main script (use absolute path for import)
-	mainCode := fmt.Sprintf(`import "%s"
+	// --- Exact copy of examples/embed_demo/script.lang ---
+	// Uses relative import "./mylib" and stdlib import "lib/rand" (randomIntRange).
+	const scriptCode = `// script.lang
+// This script demonstrates interaction with the Host (Go) and Module Imports
 
+// Import a local module
+import "./mylib"
+
+// Import a built-in module
+import "lib/rand" (randomIntRange)
+// 'logger', 'calculator', and 'appConfig' are bound from Go
+
+// 1. Using bound Go functions
 logger(mylib.get_welcome_message())
+logger("Starting Funxy script...")
 
+// 2. Accessing Go Struct fields
 current_version = appConfig.Version
 logger("App Version: ${current_version}")
 
-sum = calculator.Add(10, 20)
-logger("10 + 20 = ${sum}")
+// 3. Using Go Struct methods
+// calculator is a Go struct with Add and Multiply methods
+random_number = randomIntRange(1, 100)
+sum = calculator.Add(10, random_number)
+logger("10 + ${random_number} = ${sum}")
 
+// 4. Defining a function callable from Go
+// This function takes a name and a score, updates the appConfig, and returns a greeting
 fun process_user(name, score) {
-	logger("Processing user: ${name}")
-	appConfig.UpdateLastUser(name)
-	bonus = calculator.Multiply(score, 2)
-	formatted_bonus = mylib.format_bonus(bonus)
-	"User ${name} processed. ${formatted_bonus}"
-}
-`, pkgDir)
+    logger("Processing user: ${name}")
 
+    // We can modify the Go struct (if passed by pointer)
+    appConfig.UpdateLastUser(name)
+
+    // Logic using bound helper
+    bonus = calculator.Multiply(score, 2)
+
+    // Use helper from imported module
+    formatted_bonus = mylib.format_bonus(bonus)
+
+    "User ${name} processed. ${formatted_bonus}"
+}
+`
 	mainPath := filepath.Join(tmpDir, "script.lang")
-	if err := ioutil.WriteFile(mainPath, []byte(mainCode), 0644); err != nil {
+	if err := ioutil.WriteFile(mainPath, []byte(scriptCode), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -613,53 +642,77 @@ fun process_user(name, score) {
 	config := &AppConfig{Version: "1.0.0", LastUser: "None"}
 	vm.Bind("appConfig", config)
 
-	// Load and execute file
+	// 1. Eval method call (mirrors main.go line 58)
+	res, evalErr := vm.Eval("calculator.Add(5, 5)")
+	if evalErr != nil {
+		t.Fatalf("Eval('calculator.Add(5, 5)') failed: %v", evalErr)
+	}
+	evalVal, ok := res.(int)
+	if !ok {
+		if v64, ok64 := res.(int64); ok64 {
+			evalVal = int(v64)
+		} else {
+			t.Fatalf("Expected int from Eval, got %T: %v", res, res)
+		}
+	}
+	if evalVal != 10 {
+		t.Errorf("Eval('calculator.Add(5, 5)') = %d, want 10", evalVal)
+	}
+
+	// 2. LoadFile — the real script with imports, randomIntRange, etc.
 	err = vm.LoadFile(mainPath)
 	if err != nil {
 		t.Fatalf("LoadFile failed: %v", err)
 	}
 
-	// Verify logger was called during LoadFile
-	expectedLogs := []string{
-		"Welcome to the Funxy Embedding Demo!",
-		"App Version: 1.0.0",
-		"10 + 20 = 30",
+	// Verify logger was called during LoadFile: exactly 4 entries
+	// [0] "Welcome to the Funxy Embedding Demo!"
+	// [1] "Starting Funxy script..."
+	// [2] "App Version: 1.0.0"
+	// [3] "10 + <random> = <sum>"  (depends on randomIntRange)
+	if len(logs) != 4 {
+		t.Fatalf("After LoadFile: expected 4 log entries, got %d: %v", len(logs), logs)
 	}
-	if len(logs) != len(expectedLogs) {
-		t.Fatalf("After LoadFile: expected %d log entries, got %d: %v", len(expectedLogs), len(logs), logs)
+	if logs[0] != "Welcome to the Funxy Embedding Demo!" {
+		t.Errorf("Log[0]: expected %q, got %q", "Welcome to the Funxy Embedding Demo!", logs[0])
 	}
-	for i, expected := range expectedLogs {
-		if logs[i] != expected {
-			t.Errorf("Log[%d]: expected %q, got %q", i, expected, logs[i])
-		}
+	if logs[1] != "Starting Funxy script..." {
+		t.Errorf("Log[1]: expected %q, got %q", "Starting Funxy script...", logs[1])
+	}
+	if logs[2] != "App Version: 1.0.0" {
+		t.Errorf("Log[2]: expected %q, got %q", "App Version: 1.0.0", logs[2])
+	}
+	// Log[3] contains random value — verify format "10 + N = M"
+	if !strings.HasPrefix(logs[3], "10 + ") || !strings.Contains(logs[3], " = ") {
+		t.Errorf("Log[3]: expected format '10 + N = M', got %q", logs[3])
 	}
 
-	// Call Funxy function from Go
+	// 3. Call Funxy function from Go (mirrors main.go line 74)
 	result, err := vm.Call("process_user", "Alice", 50)
 	if err != nil {
-		t.Fatalf("Call failed: %v", err)
+		t.Fatalf("Call('process_user', 'Alice', 50) failed: %v", err)
 	}
 
 	str, ok := result.(string)
 	if !ok {
-		t.Fatalf("Expected string, got %T: %v", result, result)
+		t.Fatalf("Expected string from process_user, got %T: %v", result, result)
 	}
 	expected := "User Alice processed. *** BONUS: 100 ***"
 	if str != expected {
-		t.Errorf("Expected %q, got %q", expected, str)
+		t.Errorf("process_user result: expected %q, got %q", expected, str)
 	}
 
-	// Verify Go struct was mutated by the Funxy function
+	// 4. Verify Go struct was mutated
 	if config.LastUser != "Alice" {
-		t.Errorf("Expected LastUser='Alice', got '%s'", config.LastUser)
+		t.Errorf("Expected appConfig.LastUser='Alice', got '%s'", config.LastUser)
 	}
 
-	// Verify logger was also called during Call
-	if len(logs) != 4 {
-		t.Errorf("Expected 4 total logs, got %d: %v", len(logs), logs)
+	// 5. Verify logger was called during Call
+	if len(logs) != 5 {
+		t.Errorf("Expected 5 total logs after Call, got %d: %v", len(logs), logs)
 	}
-	if len(logs) >= 4 && logs[3] != "Processing user: Alice" {
-		t.Errorf("Expected 'Processing user: Alice', got %q", logs[3])
+	if len(logs) >= 5 && logs[4] != "Processing user: Alice" {
+		t.Errorf("Expected log 'Processing user: Alice', got %q", logs[4])
 	}
 }
 
@@ -835,4 +888,214 @@ fun getRecord() { { name: "Alice", age: 30 } }
 			t.Errorf("Expected name='Alice', got %v", m["name"])
 		}
 	})
+}
+
+// =============================================================================
+// Map tests — Go map ↔ Funxy Map round-tripping
+// =============================================================================
+
+// TestSetGoMapStringString verifies that Go map[string]string converts to Funxy Map
+// and is accessible from Funxy via mapGet.
+func TestSetGoMapStringString(t *testing.T) {
+	vm := funxy.New()
+
+	headers := map[string]string{
+		"Content-Type": "application/json",
+		"Accept":       "text/html",
+	}
+	vm.Set("headers", headers)
+
+	// Read back via Get — should come back as map[interface{}]interface{} (no target type)
+	res, err := vm.Get("headers")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+
+	m, ok := res.(map[interface{}]interface{})
+	if !ok {
+		t.Fatalf("Expected map[interface{}]interface{}, got %T: %v", res, res)
+	}
+	if m["Content-Type"] != "application/json" {
+		t.Errorf("Expected Content-Type=application/json, got %v", m["Content-Type"])
+	}
+	if m["Accept"] != "text/html" {
+		t.Errorf("Expected Accept=text/html, got %v", m["Accept"])
+	}
+}
+
+// TestSetGoMapIntString verifies non-string-keyed Go maps are also converted properly.
+func TestSetGoMapIntString(t *testing.T) {
+	vm := funxy.New()
+
+	codes := map[int]string{
+		200: "OK",
+		404: "Not Found",
+		500: "Internal Server Error",
+	}
+	vm.Set("codes", codes)
+
+	res, err := vm.Get("codes")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+
+	m, ok := res.(map[interface{}]interface{})
+	if !ok {
+		t.Fatalf("Expected map[interface{}]interface{}, got %T: %v", res, res)
+	}
+	if m[200] != "OK" {
+		t.Errorf("Expected 200=OK, got %v", m[200])
+	}
+	if m[404] != "Not Found" {
+		t.Errorf("Expected 404=Not Found, got %v", m[404])
+	}
+}
+
+// TestBindFuncReturningMap verifies that a bound Go function returning a map
+// produces a Funxy Map that round-trips correctly.
+func TestBindFuncReturningMap(t *testing.T) {
+	vm := funxy.New()
+
+	vm.Bind("getHeaders", func() map[string]string {
+		return map[string]string{
+			"X-Custom": "hello",
+			"X-Count":  "42",
+		}
+	})
+
+	res, err := vm.Eval("getHeaders()")
+	if err != nil {
+		t.Fatalf("Eval failed: %v", err)
+	}
+
+	m, ok := res.(map[interface{}]interface{})
+	if !ok {
+		t.Fatalf("Expected map[interface{}]interface{}, got %T: %v", res, res)
+	}
+	if m["X-Custom"] != "hello" {
+		t.Errorf("Expected X-Custom=hello, got %v", m["X-Custom"])
+	}
+}
+
+// TestBindFuncAcceptingMap verifies that a Funxy Map created from a Go map
+// can be passed back to a Go function expecting map[string]string.
+func TestBindFuncAcceptingMap(t *testing.T) {
+	vm := funxy.New()
+
+	var received map[string]string
+	vm.Bind("processMap", func(m map[string]string) string {
+		received = m
+		return "got " + fmt.Sprintf("%d", len(m)) + " entries"
+	})
+
+	vm.Bind("makeMap", func() map[string]string {
+		return map[string]string{"a": "1", "b": "2"}
+	})
+
+	res, err := vm.Eval(`
+		m = makeMap()
+		processMap(m)
+	`)
+	if err != nil {
+		t.Fatalf("Eval failed: %v", err)
+	}
+
+	str, ok := res.(string)
+	if !ok {
+		t.Fatalf("Expected string, got %T: %v", res, res)
+	}
+	if str != "got 2 entries" {
+		t.Errorf("Expected 'got 2 entries', got %q", str)
+	}
+	if received == nil {
+		t.Fatal("processMap was not called")
+	}
+	if received["a"] != "1" || received["b"] != "2" {
+		t.Errorf("Unexpected received map: %v", received)
+	}
+}
+
+// TestBindFuncAcceptingMapIntString verifies non-string-keyed map round-trip.
+func TestBindFuncAcceptingMapIntString(t *testing.T) {
+	vm := funxy.New()
+
+	var received map[int]string
+	vm.Bind("processIntMap", func(m map[int]string) int {
+		received = m
+		return len(m)
+	})
+
+	vm.Bind("makeIntMap", func() map[int]string {
+		return map[int]string{1: "one", 2: "two", 3: "three"}
+	})
+
+	res, err := vm.Eval(`
+		m = makeIntMap()
+		processIntMap(m)
+	`)
+	if err != nil {
+		t.Fatalf("Eval failed: %v", err)
+	}
+
+	val, ok := res.(int)
+	if !ok {
+		if v64, ok64 := res.(int64); ok64 {
+			val = int(v64)
+		} else {
+			t.Fatalf("Expected int, got %T: %v", res, res)
+		}
+	}
+	if val != 3 {
+		t.Errorf("Expected 3, got %d", val)
+	}
+	if received == nil {
+		t.Fatal("processIntMap was not called")
+	}
+	if received[1] != "one" || received[2] != "two" || received[3] != "three" {
+		t.Errorf("Unexpected received map: %v", received)
+	}
+}
+
+// TestGoMapNotRecord verifies Go maps are NOT converted to Records anymore.
+// A bound Go map should NOT be accessible via record field syntax.
+func TestGoMapNotRecord(t *testing.T) {
+	vm := funxy.New()
+
+	vm.Set("data", map[string]int{"x": 10, "y": 20})
+
+	// Record field access (data.x) should NOT work on a Map
+	_, err := vm.Eval("data.x")
+	if err == nil {
+		t.Error("Expected error: Go map should be a Map, not a Record; field access should fail")
+	}
+}
+
+// TestMapWithFunxyMapBuiltins verifies Funxy's mapGet works on Go maps.
+func TestMapWithFunxyMapBuiltins(t *testing.T) {
+	vm := funxy.New()
+
+	// Use Bind (not Set) so the analyzer knows about the symbol
+	vm.Bind("data", map[string]int{"x": 10, "y": 20})
+
+	// Use the builtin mapSize to verify it's a proper Map
+	res, err := vm.Eval(`
+		import "lib/map" (mapGet, mapSize)
+		size = mapSize(data)
+		size
+	`)
+	if err != nil {
+		t.Fatalf("Eval failed: %v", err)
+	}
+
+	val, ok := res.(int)
+	if !ok {
+		if v64, ok64 := res.(int64); ok64 {
+			val = int(v64)
+		} else {
+			t.Fatalf("Expected int, got %T: %v", res, res)
+		}
+	}
+	if val != 2 {
+		t.Errorf("Expected mapSize=2, got %d", val)
+	}
 }

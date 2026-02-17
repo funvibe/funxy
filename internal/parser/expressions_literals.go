@@ -419,7 +419,11 @@ func (p *Parser) parseCompClause() ast.CompClause {
 	if pattern == nil {
 		// Not a valid pattern, must be a filter expression
 		// Re-parse as expression
-		return p.parseCompFilter(clauseToken)
+		filter := p.parseCompFilter(clauseToken)
+		if filter == nil {
+			return nil
+		}
+		return filter
 	}
 
 	// Check for <- to confirm it's a generator
@@ -442,7 +446,11 @@ func (p *Parser) parseCompClause() ast.CompClause {
 	// No <-, so this is a filter
 	// The pattern we parsed might have been an identifier that's actually an expression
 	// We need to convert it back or re-parse
-	return p.parseCompFilterFromPattern(clauseToken, pattern)
+	filter := p.parseCompFilterFromPattern(clauseToken, pattern)
+	if filter == nil {
+		return nil
+	}
+	return filter
 }
 
 // parseCompFilter parses a filter clause (boolean expression)

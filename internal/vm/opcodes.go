@@ -10,6 +10,7 @@ const (
 	OP_POP                     // Discard top of stack
 	OP_POP_BELOW               // Discard item below top N items: [..., val, a, b] -> [..., a, b]
 	OP_DUP                     // Duplicate top of stack
+	OP_SWAP                    // Swap top two stack elements
 
 	// Arithmetic
 	OP_ADD // +
@@ -143,6 +144,7 @@ var OpcodeNames = map[Opcode]string{
 	OP_POP:       "POP",
 	OP_POP_BELOW: "POP_BELOW",
 	OP_DUP:       "DUP",
+	OP_SWAP:      "SWAP",
 
 	OP_ADD: "ADD",
 	OP_SUB: "SUB",

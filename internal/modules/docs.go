@@ -197,7 +197,7 @@ func PrintHelp() string {
 	sb.WriteString("  funxy -help precedence      Show operator precedence\n")
 	sb.WriteString("\n")
 	sb.WriteString("One-liner flags (combinable: -pe, -lpe, -elp, etc.):\n")
-	sb.WriteString("  -e '<expr>'   Execute expression (auto-imports lib/* functions)\n")
+	sb.WriteString("  -e '<expr>'   Execute expression (auto-imports lib/* and ext/* functions)\n")
 	sb.WriteString("  -p            Auto-print result of expression\n")
 	sb.WriteString("  -l            Line mode: run expression for each stdin line\n")
 	sb.WriteString("  stdin         In -e mode, holds stdin content as String\n")
@@ -206,12 +206,18 @@ func PrintHelp() string {
 	sb.WriteString("  funxy -pe '1 + 2 * 3'\n")
 	sb.WriteString("  echo 'hello' | funxy -pe 'stringToUpper(stdin)'\n")
 	sb.WriteString("  cat data.json | funxy -pe 'stdin |>> jsonDecode |> \\x -> x.name'\n")
-	sb.WriteString("  cat file.txt | funxy -lpe 'stringToUpper(stdin)'\n")
+	sb.WriteString("  funxy -lpe 'stringToUpper(stdin)' < file.txt\n")
 	sb.WriteString("\n")
 	sb.WriteString("Build & Distribution:\n")
 	sb.WriteString("  funxy build <file> [-o out] [--host bin] [--embed path]  Build self-contained binary\n")
 	sb.WriteString("  funxy -c <file>                           Compile to bytecode bundle (.fbc)\n")
 	sb.WriteString("  funxy -r <file>                           Run compiled bytecode (.fbc)\n")
+	sb.WriteString("\n")
+	sb.WriteString("Go Extensions:\n")
+	sb.WriteString("  funxy ext build [-o out]                  Build custom Funxy with Go bindings\n")
+	sb.WriteString("  funxy ext check                           Validate funxy.yaml and inspect Go packages\n")
+	sb.WriteString("  funxy ext list                            Show ext modules and bindings\n")
+	sb.WriteString("  funxy ext stubs                           Generate .d.lang files for LSP\n")
 	sb.WriteString("\n")
 	sb.WriteString("Build examples:\n")
 	sb.WriteString("  funxy build script.lang                    # creates ./script binary\n")
@@ -219,10 +225,11 @@ func PrintHelp() string {
 	sb.WriteString("  funxy build script.lang --embed templates  # embed static files\n")
 	sb.WriteString("  funxy build app.lang --embed static,config # comma-separated\n")
 	sb.WriteString("  funxy build app.lang --embed '*.html'      # glob patterns\n")
-	sb.WriteString("  funxy build app.lang --embed assets@static@ # alias: fileRead(\"static/...\")\n")
-	sb.WriteString("  funxy build app.lang --embed assets/@.@     # alias \".\": flat keys\n")
+	sb.WriteString("  funxy build app.lang --embed assets/@static@  # alias: fileRead(\"static/...\")\n")
+	sb.WriteString("  funxy build app.lang --embed assets/@.@      # alias \".\": flat keys\n")
+	sb.WriteString("  funxy build api.lang worker.lang -o myserver # multi-command binary\n")
 	sb.WriteString("  funxy build script.lang --host release-bin/funxy-linux-amd64 -o myapp\n")
-	sb.WriteString("                                             # cross-compile for Linux\n")
+	sb.WriteString("                                               # cross-compile for Linux\n")
 	sb.WriteString("  funxy -c script.lang && funxy -r script.fbc  # compile + run\n")
 	sb.WriteString("\n")
 	sb.WriteString("Dual-mode: pass $ as first argument to switch to interpreter mode:\n")
@@ -336,6 +343,7 @@ func InitDocumentation() {
 	initLogDocs()
 	initTaskDocs()
 	initCsvDocs()
+	initYamlDocs()
 	initFlagDocs()
 	initTermDocs()
 	initGrpcDocs()
@@ -1473,6 +1481,21 @@ func initCsvDocs() {
 }
 
 // ============================================================================
+// lib/yaml
+// ============================================================================
+
+func initYamlDocs() {
+	meta := map[string]*DocMeta{
+		"yamlDecode": {Description: "Parse YAML string into Funxy values (records, lists, scalars)", Category: "Decode"},
+		"yamlEncode": {Description: "Encode any Funxy value to YAML string", Category: "Encode"},
+		"yamlRead":   {Description: "Read and parse a YAML file", Category: "File I/O"},
+		"yamlWrite":  {Description: "Write a Funxy value to a YAML file", Category: "File I/O"},
+	}
+	pkg := generatePackageDocs("lib/yaml", "YAML encoding, decoding, and file I/O", meta, nil)
+	RegisterDocPackage(pkg)
+}
+
+// ============================================================================
 // lib/flag
 // ============================================================================
 
@@ -1533,6 +1556,13 @@ func initTermDocs() {
 		"cursorTo":      {Description: "Move cursor to absolute position (col, row)", Category: "Cursor"},
 		"cursorHide":    {Description: "Hide the cursor", Category: "Cursor"},
 		"cursorShow":    {Description: "Show the cursor", Category: "Cursor"},
+		// Raw mode & key reading
+		"termRaw":     {Description: "Enter raw terminal mode (no echo, no line buffering). Required before readKey", Category: "Raw Input"},
+		"termRestore": {Description: "Restore terminal to normal mode. Always call this when done with raw input", Category: "Raw Input"},
+		"readKey":     {Description: "Read a single keypress. Returns key name: \"up\", \"down\", \"left\", \"right\", \"space\", \"enter\", \"escape\", \"a\"-\"z\", etc. Returns \"\" on timeout. Optional timeout in ms (default 0 = non-blocking)", Category: "Raw Input"},
+		// Output buffering
+		"termBufferStart": {Description: "Start output buffering. All subsequent write/cursorTo/print calls are buffered instead of going to stdout directly", Category: "Rendering"},
+		"termBufferFlush": {Description: "Flush buffered output to stdout in a single write call, then stop buffering. Use with termBufferStart for flicker-free rendering", Category: "Rendering"},
 		// Interactive prompts
 		"prompt":   {Description: "Prompt user for text input with optional default", Category: "Prompts"},
 		"confirm":  {Description: "Ask yes/no question, returns Bool. Default: true", Category: "Prompts"},

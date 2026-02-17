@@ -803,6 +803,13 @@ func initTermPackage() {
 			"cursorTo":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.Nil},
 			"cursorHide":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
 			"cursorShow":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			// Raw mode & key reading
+			"termRaw":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"termRestore": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"readKey":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: stringType, DefaultCount: 1},
+			// Output buffering
+			"termBufferStart": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"termBufferFlush": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
 			// Interactive prompts
 			"prompt":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType, DefaultCount: 1},
 			"confirm":  typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Bool}, ReturnType: typesystem.Bool, DefaultCount: 1},

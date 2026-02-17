@@ -47,6 +47,8 @@ func disassembleInstruction(sb *strings.Builder, chunk *Chunk, offset int) int {
 		return simpleInstruction(sb, "POP", offset)
 	case OP_DUP:
 		return simpleInstruction(sb, "DUP", offset)
+	case OP_SWAP:
+		return simpleInstruction(sb, "SWAP", offset)
 
 	case OP_ADD:
 		return simpleInstruction(sb, "ADD", offset)

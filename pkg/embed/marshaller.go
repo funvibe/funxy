@@ -47,13 +47,7 @@ func (m *Marshaller) ToValue(val interface{}) (evaluator.Object, error) {
 	case reflect.Slice:
 		return m.sliceToList(v)
 	case reflect.Map:
-		// Only support map[string]T for now -> Record
-		if v.Type().Key().Kind() == reflect.String {
-			return m.mapToRecord(v)
-		}
-		// Otherwise map -> Map? Or HostObject?
-		// User requested map[string]T -> Record.
-		return &evaluator.HostObject{Value: val}, nil
+		return m.mapToFunxyMap(v)
 	case reflect.Struct:
 		// Struct by value -> Record (copy)
 		return m.structToRecord(v)
@@ -115,6 +109,8 @@ func (m *Marshaller) FromValue(obj evaluator.Object, targetType reflect.Type) (i
 		}
 		// Default to map[string]interface{}
 		return m.recordToMap(o)
+	case *evaluator.Map:
+		return m.funxyMapToGoMap(o, targetType)
 	case *evaluator.HostObject:
 		return o.Value, nil
 	case *evaluator.Nil:
@@ -145,18 +141,21 @@ func (m *Marshaller) sliceToList(v reflect.Value) (*evaluator.List, error) {
 	return evaluator.NewList(elements), nil
 }
 
-func (m *Marshaller) mapToRecord(v reflect.Value) (*evaluator.RecordInstance, error) {
-	fields := make(map[string]evaluator.Object)
+func (m *Marshaller) mapToFunxyMap(v reflect.Value) (*evaluator.Map, error) {
+	result := evaluator.NewMap()
 	iter := v.MapRange()
 	for iter.Next() {
-		key := iter.Key().String()
+		key, err := m.ToValue(iter.Key().Interface())
+		if err != nil {
+			return nil, fmt.Errorf("map key: %w", err)
+		}
 		val, err := m.ToValue(iter.Value().Interface())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("map value: %w", err)
 		}
-		fields[key] = val
+		result = result.Put(key, val)
 	}
-	return evaluator.NewRecord(fields), nil
+	return result, nil
 }
 
 func (m *Marshaller) structToRecord(v reflect.Value) (*evaluator.RecordInstance, error) {
@@ -207,6 +206,58 @@ func (m *Marshaller) listToSlice(l *evaluator.List, targetType reflect.Type) (in
 		}
 	}
 	return slice.Interface(), nil
+}
+
+func (m *Marshaller) funxyMapToGoMap(fm *evaluator.Map, targetType reflect.Type) (interface{}, error) {
+	items := fm.Items()
+
+	// If target type is a concrete map type, convert to that
+	if targetType != nil && targetType.Kind() == reflect.Map {
+		result := reflect.MakeMapWithSize(targetType, len(items))
+		keyType := targetType.Key()
+		valType := targetType.Elem()
+		for _, item := range items {
+			key, err := m.FromValue(item.Key, keyType)
+			if err != nil {
+				return nil, fmt.Errorf("map key: %w", err)
+			}
+			val, err := m.FromValue(item.Value, valType)
+			if err != nil {
+				return nil, fmt.Errorf("map value: %w", err)
+			}
+			kv := reflect.ValueOf(key)
+			vv := reflect.ValueOf(val)
+			if key == nil {
+				kv = reflect.Zero(keyType)
+			}
+			if val == nil {
+				vv = reflect.Zero(valType)
+			}
+			if kv.Type().ConvertibleTo(keyType) {
+				kv = kv.Convert(keyType)
+			}
+			if vv.Type().ConvertibleTo(valType) {
+				vv = vv.Convert(valType)
+			}
+			result.SetMapIndex(kv, vv)
+		}
+		return result.Interface(), nil
+	}
+
+	// Default: map[interface{}]interface{}
+	result := make(map[interface{}]interface{}, len(items))
+	for _, item := range items {
+		key, err := m.FromValue(item.Key, nil)
+		if err != nil {
+			return nil, fmt.Errorf("map key: %w", err)
+		}
+		val, err := m.FromValue(item.Value, nil)
+		if err != nil {
+			return nil, fmt.Errorf("map value: %w", err)
+		}
+		result[key] = val
+	}
+	return result, nil
 }
 
 func (m *Marshaller) recordToMap(r *evaluator.RecordInstance) (map[string]interface{}, error) {

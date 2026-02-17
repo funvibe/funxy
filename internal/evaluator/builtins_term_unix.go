@@ -5,9 +5,12 @@ package evaluator
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -321,4 +324,235 @@ func splitString(s string, sep byte) []string {
 	}
 	parts = append(parts, s[start:])
 	return parts
+}
+
+// =============================================================================
+// Raw mode & readKey
+// =============================================================================
+
+var (
+	rawMu          sync.Mutex
+	rawModeActive  bool
+	rawOldTermios  syscall.Termios
+	rawKeyChannel  chan string
+	rawStopChannel chan struct{}
+)
+
+// enterRawMode puts the terminal into raw mode and starts a background key reader.
+func enterRawMode() error {
+	rawMu.Lock()
+	defer rawMu.Unlock()
+
+	if rawModeActive {
+		return nil
+	}
+
+	fd := int(os.Stdin.Fd())
+
+	// Save current terminal settings
+	if _, _, err := syscall.Syscall6(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(getTermiosGet()),
+		uintptr(unsafe.Pointer(&rawOldTermios)),
+		0, 0, 0,
+	); err != 0 {
+		return fmt.Errorf("failed to get terminal settings")
+	}
+
+	// Set raw mode:
+	// - No echo, no canonical mode, no signal generation
+	// - No input processing (IXON, ICRNL)
+	// - VMIN=0, VTIME=1: read returns after 100ms even with no input
+	newState := rawOldTermios
+	newState.Lflag &^= syscall.ECHO | syscall.ICANON | syscall.ISIG
+	newState.Iflag &^= syscall.IXON | syscall.ICRNL
+	newState.Cc[syscall.VMIN] = 0
+	newState.Cc[syscall.VTIME] = 1 // 100ms timeout
+
+	if _, _, err := syscall.Syscall6(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(getTermiosSet()),
+		uintptr(unsafe.Pointer(&newState)),
+		0, 0, 0,
+	); err != 0 {
+		return fmt.Errorf("failed to set raw mode")
+	}
+
+	rawKeyChannel = make(chan string, 32)
+	rawStopChannel = make(chan struct{})
+	rawModeActive = true
+
+	go keyReaderLoop(rawKeyChannel, rawStopChannel)
+
+	return nil
+}
+
+// exitRawMode restores the terminal to its original state.
+func exitRawMode() {
+	rawMu.Lock()
+	defer rawMu.Unlock()
+
+	if !rawModeActive {
+		return
+	}
+
+	rawModeActive = false
+	close(rawStopChannel)
+
+	fd := int(os.Stdin.Fd())
+	_, _, _ = syscall.Syscall6(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		uintptr(getTermiosSet()),
+		uintptr(unsafe.Pointer(&rawOldTermios)),
+		0, 0, 0,
+	)
+}
+
+// keyReaderLoop runs in a goroutine, reading raw bytes from stdin and sending
+// parsed key names to the channel. Exits when stop is closed.
+func keyReaderLoop(ch chan<- string, stop <-chan struct{}) {
+	buf := make([]byte, 16)
+	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		n, err := os.Stdin.Read(buf)
+		if n == 0 {
+			if err == io.EOF {
+				// VMIN=0 timeout — no data, check stop and continue
+				continue
+			}
+			if err != nil {
+				return
+			}
+			continue
+		}
+
+		key := mapKeyBytes(buf[:n])
+		if key != "" {
+			select {
+			case ch <- key:
+			case <-stop:
+				return
+			}
+		}
+	}
+}
+
+// readKeyImpl reads a single key with a timeout in milliseconds.
+// Returns "" if no key is pressed within the timeout.
+// If timeoutMs <= 0, returns immediately (non-blocking).
+func readKeyImpl(timeoutMs int) string {
+	rawMu.Lock()
+	active := rawModeActive
+	rawMu.Unlock()
+
+	if !active {
+		return ""
+	}
+
+	if timeoutMs <= 0 {
+		select {
+		case key := <-rawKeyChannel:
+			return key
+		default:
+			return ""
+		}
+	}
+
+	select {
+	case key := <-rawKeyChannel:
+		return key
+	case <-time.After(time.Duration(timeoutMs) * time.Millisecond):
+		return ""
+	}
+}
+
+// mapKeyBytes converts raw terminal bytes into a human-readable key name.
+func mapKeyBytes(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+
+	// Escape sequences
+	if data[0] == 27 {
+		if len(data) == 1 {
+			return "escape"
+		}
+		if len(data) >= 3 && data[1] == '[' {
+			switch data[2] {
+			case 'A':
+				return "up"
+			case 'B':
+				return "down"
+			case 'C':
+				return "right"
+			case 'D':
+				return "left"
+			case 'H':
+				return "home"
+			case 'F':
+				return "end"
+			}
+			// Extended sequences: \x1b[N~ (delete, pgup, pgdown, etc.)
+			if len(data) >= 4 && data[3] == '~' {
+				switch data[2] {
+				case '2':
+					return "insert"
+				case '3':
+					return "delete"
+				case '5':
+					return "pageup"
+				case '6':
+					return "pagedown"
+				}
+			}
+		}
+		// SS3 sequences: \x1bOA etc (some terminals send these for arrows)
+		if len(data) >= 3 && data[1] == 'O' {
+			switch data[2] {
+			case 'A':
+				return "up"
+			case 'B':
+				return "down"
+			case 'C':
+				return "right"
+			case 'D':
+				return "left"
+			}
+		}
+		return "escape"
+	}
+
+	// Control characters
+	switch data[0] {
+	case '\n', '\r':
+		return "enter"
+	case '\t':
+		return "tab"
+	case 127, 8:
+		return "backspace"
+	case ' ':
+		return "space"
+	case 3:
+		return "ctrl+c"
+	case 4:
+		return "ctrl+d"
+	case 26:
+		return "ctrl+z"
+	}
+
+	// Printable ASCII
+	if data[0] >= 32 && data[0] < 127 {
+		return string(data[0])
+	}
+
+	// Multi-byte UTF-8
+	return string(data)
 }

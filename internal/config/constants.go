@@ -1,5 +1,9 @@
 package config
 
+// Version is the current Funxy version.
+// Set at build time by prepare_release.sh via -ldflags or by writing to this file.
+var Version = "0.6.4"
+
 const SourceFileExt = ".lang"
 
 // SourceFileExtensions are all recognized source file extensions

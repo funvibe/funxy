@@ -107,6 +107,7 @@ type walker struct {
 	importedModules   map[string]bool                   // Track imported modules by absolute path to detect duplicates
 	injectedStmts     []ast.Statement                   // Statements queued for injection (e.g. dictionaries)
 	aborted           bool                              // Flag to abort analysis immediately (e.g. on duplicate import)
+	depth             int                               // Current AST visit depth (guards against stack overflow on deep nesting)
 }
 
 // addError adds an error to the walker, deduplicating by position and message

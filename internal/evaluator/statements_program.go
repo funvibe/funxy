@@ -305,6 +305,9 @@ func GetVirtualModuleBuiltins(name string) map[string]Object {
 	case "csv":
 		builtins = CsvBuiltins()
 		SetCsvBuiltinTypes(builtins)
+	case "yaml":
+		builtins = YamlBuiltins()
+		SetYamlBuiltinTypes(builtins)
 	case "flag":
 		builtins = FlagBuiltins()
 		SetFlagBuiltinTypes(builtins)
@@ -320,6 +323,10 @@ func GetVirtualModuleBuiltins(name string) map[string]Object {
 		builtins = TermBuiltins()
 		SetTermBuiltinTypes(builtins)
 	default:
+		// Check ext/* registry for dynamically registered modules
+		if extBuiltins := GetExtBuiltins(name); extBuiltins != nil {
+			return extBuiltins
+		}
 		return nil
 	}
 

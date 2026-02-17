@@ -39,6 +39,7 @@ case "${OS}" in
     Linux*)     OS='linux';;
     Darwin*)    OS='darwin';;
     OpenBSD*)   OS='openbsd';;
+    FreeBSD*)   OS='freebsd';;
     *)          error "Unsupported operating system: ${OS}";;
 esac
 
@@ -91,12 +92,29 @@ download_binary() {
 
 download_binary "$BIN_NAME"
 
-# Attempt to download LSP (it might not verify if it's packaged differently, but we try)
-log "Attempting to download LSP..."
-if download_binary "$LSP_BIN_NAME"; then
-    HAS_LSP=true
+# Ask about LSP (if interactive)
+DOWNLOAD_LSP=true
+if [ -e /dev/tty ]; then
+    echo ""
+    printf "Download LSP (Language Server Protocol) binary? [Y/n] "
+    read -r answer < /dev/tty
+    case "$answer" in
+        [nN]*)
+            DOWNLOAD_LSP=false
+            ;;
+    esac
+fi
+
+if [ "$DOWNLOAD_LSP" = true ]; then
+    # Attempt to download LSP (it might not verify if it's packaged differently, but we try)
+    log "Attempting to download LSP..."
+    if download_binary "$LSP_BIN_NAME"; then
+        HAS_LSP=true
+    else
+        log "LSP binary not found in release. Skipping."
+        HAS_LSP=false
+    fi
 else
-    log "LSP binary not found in release. Skipping."
     HAS_LSP=false
 fi
 
@@ -127,14 +145,18 @@ mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"
 # Install
 log "Installing to $INSTALL_DIR..."
 if [ -w "$INSTALL_DIR" ]; then
+    rm -f "$INSTALL_DIR/$BIN_NAME"
     mv "$TMP_DIR/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
     if [ "$HAS_LSP" = true ]; then
+        rm -f "$INSTALL_DIR/$LSP_BIN_NAME"
         mv "$TMP_DIR/$LSP_BIN_NAME" "$INSTALL_DIR/$LSP_BIN_NAME"
     fi
 else
     log "Requires sudo for $INSTALL_DIR"
+    sudo rm -f "$INSTALL_DIR/$BIN_NAME"
     sudo mv "$TMP_DIR/$BIN_NAME" "$INSTALL_DIR/$BIN_NAME"
     if [ "$HAS_LSP" = true ]; then
+        sudo rm -f "$INSTALL_DIR/$LSP_BIN_NAME"
         sudo mv "$TMP_DIR/$LSP_BIN_NAME" "$INSTALL_DIR/$LSP_BIN_NAME"
     fi
 fi

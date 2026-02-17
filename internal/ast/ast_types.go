@@ -22,10 +22,15 @@ type NamedType struct {
 	Args  []Type
 }
 
-func (nt *NamedType) Accept(v Visitor)      { v.VisitNamedType(nt) }
-func (nt *NamedType) typeNode()             {}
-func (nt *NamedType) TokenLiteral() string  { return nt.Token.Lexeme }
-func (nt *NamedType) GetToken() token.Token { return nt.Token }
+func (nt *NamedType) Accept(v Visitor)     { v.VisitNamedType(nt) }
+func (nt *NamedType) typeNode()            {}
+func (nt *NamedType) TokenLiteral() string { return nt.Token.Lexeme }
+func (nt *NamedType) GetToken() token.Token {
+	if nt == nil {
+		return token.Token{}
+	}
+	return nt.Token
+}
 
 // TupleType represents a tuple type, e.g. (Int, Bool)
 type TupleType struct {
@@ -33,10 +38,15 @@ type TupleType struct {
 	Types []Type
 }
 
-func (tt *TupleType) Accept(v Visitor)      { v.VisitTupleType(tt) }
-func (tt *TupleType) typeNode()             {}
-func (tt *TupleType) TokenLiteral() string  { return tt.Token.Lexeme }
-func (tt *TupleType) GetToken() token.Token { return tt.Token }
+func (tt *TupleType) Accept(v Visitor)     { v.VisitTupleType(tt) }
+func (tt *TupleType) typeNode()            {}
+func (tt *TupleType) TokenLiteral() string { return tt.Token.Lexeme }
+func (tt *TupleType) GetToken() token.Token {
+	if tt == nil {
+		return token.Token{}
+	}
+	return tt.Token
+}
 
 // RecordType represents a record/struct type, e.g. { x: Int, y: Bool }
 type RecordType struct {
@@ -44,10 +54,15 @@ type RecordType struct {
 	Fields map[string]Type
 }
 
-func (rt *RecordType) Accept(v Visitor)      { v.VisitRecordType(rt) }
-func (rt *RecordType) typeNode()             {}
-func (rt *RecordType) TokenLiteral() string  { return rt.Token.Lexeme }
-func (rt *RecordType) GetToken() token.Token { return rt.Token }
+func (rt *RecordType) Accept(v Visitor)     { v.VisitRecordType(rt) }
+func (rt *RecordType) typeNode()            {}
+func (rt *RecordType) TokenLiteral() string { return rt.Token.Lexeme }
+func (rt *RecordType) GetToken() token.Token {
+	if rt == nil {
+		return token.Token{}
+	}
+	return rt.Token
+}
 
 // FunctionType represents a function type, e.g. Int -> Int or (Int, Int) -> Bool
 type FunctionType struct {
@@ -56,10 +71,15 @@ type FunctionType struct {
 	ReturnType Type
 }
 
-func (ft *FunctionType) Accept(v Visitor)      { v.VisitFunctionType(ft) }
-func (ft *FunctionType) typeNode()             {}
-func (ft *FunctionType) TokenLiteral() string  { return ft.Token.Lexeme }
-func (ft *FunctionType) GetToken() token.Token { return ft.Token }
+func (ft *FunctionType) Accept(v Visitor)     { v.VisitFunctionType(ft) }
+func (ft *FunctionType) typeNode()            {}
+func (ft *FunctionType) TokenLiteral() string { return ft.Token.Lexeme }
+func (ft *FunctionType) GetToken() token.Token {
+	if ft == nil {
+		return token.Token{}
+	}
+	return ft.Token
+}
 
 // ForallType represents a Rank-N polymorphic type: forall A B. A -> B
 type ForallType struct {
@@ -68,10 +88,15 @@ type ForallType struct {
 	Type  Type          // The inner type
 }
 
-func (ft *ForallType) Accept(v Visitor)      { v.VisitForallType(ft) }
-func (ft *ForallType) typeNode()             {}
-func (ft *ForallType) TokenLiteral() string  { return ft.Token.Lexeme }
-func (ft *ForallType) GetToken() token.Token { return ft.Token }
+func (ft *ForallType) Accept(v Visitor)     { v.VisitForallType(ft) }
+func (ft *ForallType) typeNode()            {}
+func (ft *ForallType) TokenLiteral() string { return ft.Token.Lexeme }
+func (ft *ForallType) GetToken() token.Token {
+	if ft == nil {
+		return token.Token{}
+	}
+	return ft.Token
+}
 
 // UnionType represents a union type, e.g. Int | String | Nil
 // Also used for T? which desugars to T | Nil
@@ -80,10 +105,15 @@ type UnionType struct {
 	Types []Type      // The types in the union (at least 2)
 }
 
-func (ut *UnionType) Accept(v Visitor)      { v.VisitUnionType(ut) }
-func (ut *UnionType) typeNode()             {}
-func (ut *UnionType) TokenLiteral() string  { return ut.Token.Lexeme }
-func (ut *UnionType) GetToken() token.Token { return ut.Token }
+func (ut *UnionType) Accept(v Visitor)     { v.VisitUnionType(ut) }
+func (ut *UnionType) typeNode()            {}
+func (ut *UnionType) TokenLiteral() string { return ut.Token.Lexeme }
+func (ut *UnionType) GetToken() token.Token {
+	if ut == nil {
+		return token.Token{}
+	}
+	return ut.Token
+}
 
 // DataConstructor represents a single case in an ADT definition.
 // E.g., 'Triangle Int Int Int' or 'Empty'.
@@ -93,9 +123,14 @@ type DataConstructor struct {
 	Parameters []Type
 }
 
-func (dc *DataConstructor) Accept(v Visitor)      { v.VisitDataConstructor(dc) }
-func (dc *DataConstructor) TokenLiteral() string  { return dc.Token.Lexeme }
-func (dc *DataConstructor) GetToken() token.Token { return dc.Token }
+func (dc *DataConstructor) Accept(v Visitor)     { v.VisitDataConstructor(dc) }
+func (dc *DataConstructor) TokenLiteral() string { return dc.Token.Lexeme }
+func (dc *DataConstructor) GetToken() token.Token {
+	if dc == nil {
+		return token.Token{}
+	}
+	return dc.Token
+}
 
 // TypeDeclarationStatement represents a 'type' or 'type alias' definition.
 // E.g., 'type alias Money = Float' or 'type List a = Empty | List a (List a)'
@@ -110,10 +145,15 @@ type TypeDeclarationStatement struct {
 	Constructors []*DataConstructor
 }
 
-func (tds *TypeDeclarationStatement) Accept(v Visitor)      { v.VisitTypeDeclarationStatement(tds) }
-func (tds *TypeDeclarationStatement) statementNode()        {}
-func (tds *TypeDeclarationStatement) TokenLiteral() string  { return tds.Token.Lexeme }
-func (tds *TypeDeclarationStatement) GetToken() token.Token { return tds.Token }
+func (tds *TypeDeclarationStatement) Accept(v Visitor)     { v.VisitTypeDeclarationStatement(tds) }
+func (tds *TypeDeclarationStatement) statementNode()       {}
+func (tds *TypeDeclarationStatement) TokenLiteral() string { return tds.Token.Lexeme }
+func (tds *TypeDeclarationStatement) GetToken() token.Token {
+	if tds == nil {
+		return token.Token{}
+	}
+	return tds.Token
+}
 
 // --- Trait System Nodes ---
 
@@ -136,10 +176,15 @@ type TraitDeclaration struct {
 	Signatures   []*FunctionStatement   // Method signatures
 }
 
-func (td *TraitDeclaration) Accept(v Visitor)      { v.VisitTraitDeclaration(td) }
-func (td *TraitDeclaration) statementNode()        {}
-func (td *TraitDeclaration) TokenLiteral() string  { return td.Token.Lexeme }
-func (td *TraitDeclaration) GetToken() token.Token { return td.Token }
+func (td *TraitDeclaration) Accept(v Visitor)     { v.VisitTraitDeclaration(td) }
+func (td *TraitDeclaration) statementNode()       {}
+func (td *TraitDeclaration) TokenLiteral() string { return td.Token.Lexeme }
+func (td *TraitDeclaration) GetToken() token.Token {
+	if td == nil {
+		return token.Token{}
+	}
+	return td.Token
+}
 
 // InstanceDeclaration represents an implementation of a trait for a type.
 // instance Show Int { fun show(val: Int) -> String { ... } }
@@ -158,10 +203,15 @@ type InstanceDeclaration struct {
 	AnalyzedRequirements []typesystem.Constraint // Constraints derived from usage/params
 }
 
-func (id *InstanceDeclaration) Accept(v Visitor)      { v.VisitInstanceDeclaration(id) }
-func (id *InstanceDeclaration) statementNode()        {}
-func (id *InstanceDeclaration) TokenLiteral() string  { return id.Token.Lexeme }
-func (id *InstanceDeclaration) GetToken() token.Token { return id.Token }
+func (id *InstanceDeclaration) Accept(v Visitor)     { v.VisitInstanceDeclaration(id) }
+func (id *InstanceDeclaration) statementNode()       {}
+func (id *InstanceDeclaration) TokenLiteral() string { return id.Token.Lexeme }
+func (id *InstanceDeclaration) GetToken() token.Token {
+	if id == nil {
+		return token.Token{}
+	}
+	return id.Token
+}
 
 // --- Pattern Matching ---
 
@@ -187,20 +237,30 @@ type MatchExpression struct {
 	Arms       []*MatchArm
 }
 
-func (me *MatchExpression) Accept(v Visitor)      { v.VisitMatchExpression(me) }
-func (me *MatchExpression) expressionNode()       {}
-func (me *MatchExpression) TokenLiteral() string  { return me.Token.Lexeme }
-func (me *MatchExpression) GetToken() token.Token { return me.Token }
+func (me *MatchExpression) Accept(v Visitor)     { v.VisitMatchExpression(me) }
+func (me *MatchExpression) expressionNode()      {}
+func (me *MatchExpression) TokenLiteral() string { return me.Token.Lexeme }
+func (me *MatchExpression) GetToken() token.Token {
+	if me == nil {
+		return token.Token{}
+	}
+	return me.Token
+}
 
 // WildcardPattern: _
 type WildcardPattern struct {
 	Token token.Token
 }
 
-func (p *WildcardPattern) Accept(v Visitor)      { v.VisitWildcardPattern(p) }
-func (p *WildcardPattern) patternNode()          {}
-func (p *WildcardPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *WildcardPattern) GetToken() token.Token { return p.Token }
+func (p *WildcardPattern) Accept(v Visitor)     { v.VisitWildcardPattern(p) }
+func (p *WildcardPattern) patternNode()         {}
+func (p *WildcardPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *WildcardPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // LiteralPattern: 1, true
 type LiteralPattern struct {
@@ -208,10 +268,15 @@ type LiteralPattern struct {
 	Value interface{}
 }
 
-func (p *LiteralPattern) Accept(v Visitor)      { v.VisitLiteralPattern(p) }
-func (p *LiteralPattern) patternNode()          {}
-func (p *LiteralPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *LiteralPattern) GetToken() token.Token { return p.Token }
+func (p *LiteralPattern) Accept(v Visitor)     { v.VisitLiteralPattern(p) }
+func (p *LiteralPattern) patternNode()         {}
+func (p *LiteralPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *LiteralPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // IdentifierPattern: x
 type IdentifierPattern struct {
@@ -219,10 +284,15 @@ type IdentifierPattern struct {
 	Value string
 }
 
-func (p *IdentifierPattern) Accept(v Visitor)      { v.VisitIdentifierPattern(p) }
-func (p *IdentifierPattern) patternNode()          {}
-func (p *IdentifierPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *IdentifierPattern) GetToken() token.Token { return p.Token }
+func (p *IdentifierPattern) Accept(v Visitor)     { v.VisitIdentifierPattern(p) }
+func (p *IdentifierPattern) patternNode()         {}
+func (p *IdentifierPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *IdentifierPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // ConstructorPattern: List x xs, Empty
 type ConstructorPattern struct {
@@ -231,10 +301,15 @@ type ConstructorPattern struct {
 	Elements []Pattern
 }
 
-func (p *ConstructorPattern) Accept(v Visitor)      { v.VisitConstructorPattern(p) }
-func (p *ConstructorPattern) patternNode()          {}
-func (p *ConstructorPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *ConstructorPattern) GetToken() token.Token { return p.Token }
+func (p *ConstructorPattern) Accept(v Visitor)     { v.VisitConstructorPattern(p) }
+func (p *ConstructorPattern) patternNode()         {}
+func (p *ConstructorPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *ConstructorPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // TuplePattern: (x, y, _)
 type TuplePattern struct {
@@ -242,10 +317,15 @@ type TuplePattern struct {
 	Elements []Pattern
 }
 
-func (p *TuplePattern) Accept(v Visitor)      { v.VisitTuplePattern(p) }
-func (p *TuplePattern) patternNode()          {}
-func (p *TuplePattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *TuplePattern) GetToken() token.Token { return p.Token }
+func (p *TuplePattern) Accept(v Visitor)     { v.VisitTuplePattern(p) }
+func (p *TuplePattern) patternNode()         {}
+func (p *TuplePattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *TuplePattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // SpreadPattern represents ... in a pattern, e.g. ...xs
 type SpreadPattern struct {
@@ -253,10 +333,15 @@ type SpreadPattern struct {
 	Pattern Pattern
 }
 
-func (sp *SpreadPattern) Accept(v Visitor)      { v.VisitSpreadPattern(sp) }
-func (sp *SpreadPattern) patternNode()          {}
-func (sp *SpreadPattern) TokenLiteral() string  { return sp.Token.Lexeme }
-func (sp *SpreadPattern) GetToken() token.Token { return sp.Token }
+func (sp *SpreadPattern) Accept(v Visitor)     { v.VisitSpreadPattern(sp) }
+func (sp *SpreadPattern) patternNode()         {}
+func (sp *SpreadPattern) TokenLiteral() string { return sp.Token.Lexeme }
+func (sp *SpreadPattern) GetToken() token.Token {
+	if sp == nil {
+		return token.Token{}
+	}
+	return sp.Token
+}
 
 // ListPattern: [], [x, ...xs]
 type ListPattern struct {
@@ -264,10 +349,15 @@ type ListPattern struct {
 	Elements []Pattern
 }
 
-func (p *ListPattern) Accept(v Visitor)      { v.VisitListPattern(p) }
-func (p *ListPattern) patternNode()          {}
-func (p *ListPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *ListPattern) GetToken() token.Token { return p.Token }
+func (p *ListPattern) Accept(v Visitor)     { v.VisitListPattern(p) }
+func (p *ListPattern) patternNode()         {}
+func (p *ListPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *ListPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // RecordPattern: { x: p1, y: p2 } or Point { x: p1, y: p2 }
 type RecordPattern struct {
@@ -276,10 +366,15 @@ type RecordPattern struct {
 	Fields   map[string]Pattern
 }
 
-func (p *RecordPattern) Accept(v Visitor)      { v.VisitRecordPattern(p) }
-func (p *RecordPattern) patternNode()          {}
-func (p *RecordPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *RecordPattern) GetToken() token.Token { return p.Token }
+func (p *RecordPattern) Accept(v Visitor)     { v.VisitRecordPattern(p) }
+func (p *RecordPattern) patternNode()         {}
+func (p *RecordPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *RecordPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // TypePattern: n: Int (matches if value has type Int, binds to n)
 type TypePattern struct {
@@ -288,10 +383,15 @@ type TypePattern struct {
 	Type  Type        // The type to match against
 }
 
-func (p *TypePattern) Accept(v Visitor)      { v.VisitTypePattern(p) }
-func (p *TypePattern) patternNode()          {}
-func (p *TypePattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *TypePattern) GetToken() token.Token { return p.Token }
+func (p *TypePattern) Accept(v Visitor)     { v.VisitTypePattern(p) }
+func (p *TypePattern) patternNode()         {}
+func (p *TypePattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *TypePattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // StringPattern: "/hello/{name}" with captures
 // Matches strings and binds captured parts to variables
@@ -307,10 +407,15 @@ type StringPatternPart struct {
 	Greedy    bool   // for {path...} style captures
 }
 
-func (p *StringPattern) Accept(v Visitor)      { v.VisitStringPattern(p) }
-func (p *StringPattern) patternNode()          {}
-func (p *StringPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *StringPattern) GetToken() token.Token { return p.Token }
+func (p *StringPattern) Accept(v Visitor)     { v.VisitStringPattern(p) }
+func (p *StringPattern) patternNode()         {}
+func (p *StringPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *StringPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}
 
 // PinPattern: ^variable
 // Matches if value equals the existing variable's value (like Elixir's pin operator)
@@ -319,7 +424,12 @@ type PinPattern struct {
 	Name  string      // Variable name to compare against
 }
 
-func (p *PinPattern) Accept(v Visitor)      { v.VisitPinPattern(p) }
-func (p *PinPattern) patternNode()          {}
-func (p *PinPattern) TokenLiteral() string  { return p.Token.Lexeme }
-func (p *PinPattern) GetToken() token.Token { return p.Token }
+func (p *PinPattern) Accept(v Visitor)     { v.VisitPinPattern(p) }
+func (p *PinPattern) patternNode()         {}
+func (p *PinPattern) TokenLiteral() string { return p.Token.Lexeme }
+func (p *PinPattern) GetToken() token.Token {
+	if p == nil {
+		return token.Token{}
+	}
+	return p.Token
+}

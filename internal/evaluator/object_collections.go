@@ -413,6 +413,11 @@ func (m *Map) equals(other *Map, e *Evaluator) bool {
 }
 
 // items returns all key-value pairs as a List of Tuples
+// Items returns all key-value pairs as a slice (exported for ext codegen).
+func (m *Map) Items() []struct{ Key, Value Object } {
+	return m.hamt.Items()
+}
+
 func (m *Map) items() *List {
 	hamtItems := m.hamt.Items()
 	tuples := make([]Object, len(hamtItems))
@@ -500,7 +505,7 @@ func bytesFromSlice(data []byte) *Bytes {
 	return &Bytes{data: copied}
 }
 
-// BytesFromSlice creates Bytes from slice (exported for VM)
+// BytesFromSlice creates Bytes from slice (exported for VM and Extensions)
 func BytesFromSlice(data []byte) *Bytes {
 	return bytesFromSlice(data)
 }

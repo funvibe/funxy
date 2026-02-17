@@ -888,6 +888,28 @@ func TestBundle_ResolveCommand_ResourceInheritance(t *testing.T) {
 	}
 }
 
+func TestBundle_ResolveCommand_ResourceMutationIsolation(t *testing.T) {
+	// Mutating sub-bundle's inherited Resources must NOT affect parent.
+	parent := &Bundle{
+		Resources: map[string][]byte{"shared.txt": []byte("parent data")},
+		Commands:  map[string]*Bundle{"api": {MainChunk: &Chunk{Code: []byte{byte(OP_HALT)}}}},
+	}
+
+	cmd := parent.ResolveCommand("api")
+
+	// Mutate the sub-bundle's resources
+	cmd.Resources["shared.txt"] = []byte("mutated")
+	cmd.Resources["new.txt"] = []byte("added")
+
+	// Parent must be unaffected
+	if string(parent.Resources["shared.txt"]) != "parent data" {
+		t.Errorf("parent Resources mutated: got %q, want %q", parent.Resources["shared.txt"], "parent data")
+	}
+	if _, ok := parent.Resources["new.txt"]; ok {
+		t.Error("parent Resources gained new key from sub-bundle mutation")
+	}
+}
+
 func TestBundle_ResolveCommand_SubOwnResourcesNotOverwritten(t *testing.T) {
 	// 1.3.24 ResolveCommand — sub-bundle has own Resources → parent does NOT overwrite
 	parent := &Bundle{

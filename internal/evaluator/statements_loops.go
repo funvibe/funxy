@@ -97,6 +97,8 @@ func (e *Evaluator) evalForExpression(node *ast.ForExpression, env *Environment)
 			var items []Object
 			if list, ok := iterable.(*List); ok {
 				items = list.ToSlice()
+			} else if tuple, ok := iterable.(*Tuple); ok {
+				items = tuple.Elements
 			} else if str, ok := iterable.(*List); ok {
 				items = str.ToSlice()
 			} else if rng, ok := iterable.(*Range); ok {

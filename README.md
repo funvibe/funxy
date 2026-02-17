@@ -5,6 +5,7 @@ A statically typed scripting language that compiles to native binaries. For auto
 - Write scripts, ship native binaries — `funxy build` creates standalone executables with embedded resources
 - Static types with strong inference — most code needs no annotations
 - Batteries-included stdlib: HTTP/gRPC, JSON/protobuf, SQL, TUI, async/await, bytes/bits
+- Use any Go package from scripts — declare in `funxy.yaml`, import as `ext/*`
 - Command-line eval mode (`-pe`, `-lpe`) for one-liners and shell pipelines
 - Safe data modeling with records, unions, ADTs, and pattern matching
 - Easy embedding in Go for config, rules, and automation
@@ -14,7 +15,7 @@ funxy build server.lang -o myserver && scp myserver user@prod:~/
 ```
 
 ```bash
-echo '{"name":"Alice"}' | funxy -pe 'stdin |>> jsonDecode |> \x -> x.name'   # Alice
+echo '{"name":"Alice"}' | funxy -pe '|>> jsonDecode |> \x -> x.name'   # Alice
 ```
 
 ```rust
@@ -68,6 +69,41 @@ Built binaries are also full Funxy interpreters — pass `$` to switch:
 ./myserver $ script.lang      # interpreter mode
 ./myserver $ -pe '1 + 2'     # eval mode
 ```
+
+## Go Ecosystem Access
+
+Use any Go package directly from Funxy. Declare dependencies in `funxy.yaml` — functions and type methods are auto-generated:
+
+```yaml
+# funxy.yaml
+deps:
+  - pkg: github.com/slack-go/slack
+    version: v0.15.0
+    bind:
+      - func: New
+        as: slackNew
+      - type: Client
+        as: slack
+        methods: [PostMessage, GetUserInfo]
+        error_to_result: true
+```
+
+```rust
+import "ext/slack" (slackNew, slackPostMessage)
+
+client = slackNew("xoxb-your-token")
+
+match slackPostMessage(client, "#general", "Deploy complete!") {
+  Ok(_)   -> print("Sent!")
+  Fail(e) -> print("Error: " ++ show(e))
+}
+```
+
+```bash
+funxy build notify.lang -o notify    # auto-detects funxy.yaml, builds with Go bindings
+```
+
+Features: `error_to_result` maps Go `(T, error)` to `Result<String, T>`, `skip_context` auto-injects `context.Background()`, type bindings expose struct methods as functions. See [docs/tutorial/44_go_extensions.md](docs/tutorial/44_go_extensions.md).
 
 ## One-Liners
 
@@ -236,6 +272,7 @@ print $ qsort([3, 1, 4, 1, 5, 9, 2, 6]) // [1, 1, 2, 3, 4, 5, 6, 9]
 
 - [Reference](REFERENCE.md)
 - [Tutorial](docs/tutorial)
+- [Go Extensions](docs/tutorial/44_go_extensions.md)
 - [Playground](playground) — run code in a browser
 
 ## Editor Support

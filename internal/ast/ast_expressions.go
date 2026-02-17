@@ -12,10 +12,15 @@ type IndexExpression struct {
 	Index Expression
 }
 
-func (ie *IndexExpression) Accept(v Visitor)      { v.VisitIndexExpression(ie) }
-func (ie *IndexExpression) expressionNode()       {}
-func (ie *IndexExpression) TokenLiteral() string  { return ie.Token.Lexeme }
-func (ie *IndexExpression) GetToken() token.Token { return ie.Token }
+func (ie *IndexExpression) Accept(v Visitor)     { v.VisitIndexExpression(ie) }
+func (ie *IndexExpression) expressionNode()      {}
+func (ie *IndexExpression) TokenLiteral() string { return ie.Token.Lexeme }
+func (ie *IndexExpression) GetToken() token.Token {
+	if ie == nil {
+		return token.Token{}
+	}
+	return ie.Token
+}
 
 // MemberExpression represents dot access, e.g. obj.field or obj?.field
 type MemberExpression struct {
@@ -27,10 +32,15 @@ type MemberExpression struct {
 	MethodIndex int        // For dictionary passing: index in the vtable
 }
 
-func (me *MemberExpression) Accept(v Visitor)      { v.VisitMemberExpression(me) }
-func (me *MemberExpression) expressionNode()       {}
-func (me *MemberExpression) TokenLiteral() string  { return me.Token.Lexeme }
-func (me *MemberExpression) GetToken() token.Token { return me.Token }
+func (me *MemberExpression) Accept(v Visitor)     { v.VisitMemberExpression(me) }
+func (me *MemberExpression) expressionNode()      {}
+func (me *MemberExpression) TokenLiteral() string { return me.Token.Lexeme }
+func (me *MemberExpression) GetToken() token.Token {
+	if me == nil {
+		return token.Token{}
+	}
+	return me.Token
+}
 
 // AnnotatedExpression represents an expression with an explicit type annotation.
 // E.g., x: Int
@@ -40,10 +50,15 @@ type AnnotatedExpression struct {
 	TypeAnnotation Type
 }
 
-func (ae *AnnotatedExpression) Accept(v Visitor)      { v.VisitAnnotatedExpression(ae) }
-func (ae *AnnotatedExpression) expressionNode()       {}
-func (ae *AnnotatedExpression) TokenLiteral() string  { return ae.Token.Lexeme }
-func (ae *AnnotatedExpression) GetToken() token.Token { return ae.Token }
+func (ae *AnnotatedExpression) Accept(v Visitor)     { v.VisitAnnotatedExpression(ae) }
+func (ae *AnnotatedExpression) expressionNode()      {}
+func (ae *AnnotatedExpression) TokenLiteral() string { return ae.Token.Lexeme }
+func (ae *AnnotatedExpression) GetToken() token.Token {
+	if ae == nil {
+		return token.Token{}
+	}
+	return ae.Token
+}
 
 // ExpressionStatement is a statement that consists of a single expression.
 type ExpressionStatement struct {
@@ -51,10 +66,15 @@ type ExpressionStatement struct {
 	Expression Expression
 }
 
-func (es *ExpressionStatement) Accept(v Visitor)      { v.VisitExpressionStatement(es) }
-func (es *ExpressionStatement) statementNode()        {}
-func (es *ExpressionStatement) TokenLiteral() string  { return es.Token.Lexeme }
-func (es *ExpressionStatement) GetToken() token.Token { return es.Token }
+func (es *ExpressionStatement) Accept(v Visitor)     { v.VisitExpressionStatement(es) }
+func (es *ExpressionStatement) statementNode()       {}
+func (es *ExpressionStatement) TokenLiteral() string { return es.Token.Lexeme }
+func (es *ExpressionStatement) GetToken() token.Token {
+	if es == nil {
+		return token.Token{}
+	}
+	return es.Token
+}
 
 // BlockStatement represents a list of statements within curly braces.
 type BlockStatement struct {
@@ -63,11 +83,16 @@ type BlockStatement struct {
 	RBraceToken token.Token // } - New: Closing brace token
 }
 
-func (bs *BlockStatement) Accept(v Visitor)      { v.VisitBlockStatement(bs) }
-func (bs *BlockStatement) statementNode()        {}
-func (bs *BlockStatement) expressionNode()       {}
-func (bs *BlockStatement) TokenLiteral() string  { return bs.Token.Lexeme }
-func (bs *BlockStatement) GetToken() token.Token { return bs.Token }
+func (bs *BlockStatement) Accept(v Visitor)     { v.VisitBlockStatement(bs) }
+func (bs *BlockStatement) statementNode()       {}
+func (bs *BlockStatement) expressionNode()      {}
+func (bs *BlockStatement) TokenLiteral() string { return bs.Token.Lexeme }
+func (bs *BlockStatement) GetToken() token.Token {
+	if bs == nil {
+		return token.Token{}
+	}
+	return bs.Token
+}
 
 // TypeConstraint represents a generic constraint, e.g. T: Show
 type TypeConstraint struct {
@@ -102,10 +127,15 @@ type Parameter struct {
 	Default    Expression // Optional default value (e.g., fun f(x, y = 10))
 }
 
-func (fs *FunctionStatement) Accept(v Visitor)      { v.VisitFunctionStatement(fs) }
-func (fs *FunctionStatement) statementNode()        {}
-func (fs *FunctionStatement) TokenLiteral() string  { return fs.Token.Lexeme }
-func (fs *FunctionStatement) GetToken() token.Token { return fs.Token }
+func (fs *FunctionStatement) Accept(v Visitor)     { v.VisitFunctionStatement(fs) }
+func (fs *FunctionStatement) statementNode()       {}
+func (fs *FunctionStatement) TokenLiteral() string { return fs.Token.Lexeme }
+func (fs *FunctionStatement) GetToken() token.Token {
+	if fs == nil {
+		return token.Token{}
+	}
+	return fs.Token
+}
 
 // FunctionLiteral represents an anonymous function (lambda).
 // fun(x, y) -> x + y
@@ -117,10 +147,15 @@ type FunctionLiteral struct {
 	Body          *BlockStatement // We normalize body to a block
 }
 
-func (fl *FunctionLiteral) Accept(v Visitor)      { v.VisitFunctionLiteral(fl) }
-func (fl *FunctionLiteral) expressionNode()       {}
-func (fl *FunctionLiteral) TokenLiteral() string  { return fl.Token.Lexeme }
-func (fl *FunctionLiteral) GetToken() token.Token { return fl.Token }
+func (fl *FunctionLiteral) Accept(v Visitor)     { v.VisitFunctionLiteral(fl) }
+func (fl *FunctionLiteral) expressionNode()      {}
+func (fl *FunctionLiteral) TokenLiteral() string { return fl.Token.Lexeme }
+func (fl *FunctionLiteral) GetToken() token.Token {
+	if fl == nil {
+		return token.Token{}
+	}
+	return fl.Token
+}
 
 // IfExpression represents an if-else expression.
 type IfExpression struct {
@@ -130,10 +165,15 @@ type IfExpression struct {
 	Alternative *BlockStatement // else block (optional in struct, but required by semantics?)
 }
 
-func (ie *IfExpression) Accept(v Visitor)      { v.VisitIfExpression(ie) }
-func (ie *IfExpression) expressionNode()       {}
-func (ie *IfExpression) TokenLiteral() string  { return ie.Token.Lexeme }
-func (ie *IfExpression) GetToken() token.Token { return ie.Token }
+func (ie *IfExpression) Accept(v Visitor)     { v.VisitIfExpression(ie) }
+func (ie *IfExpression) expressionNode()      {}
+func (ie *IfExpression) TokenLiteral() string { return ie.Token.Lexeme }
+func (ie *IfExpression) GetToken() token.Token {
+	if ie == nil {
+		return token.Token{}
+	}
+	return ie.Token
+}
 
 // ForExpression represents a for loop.
 // for <condition> { body } or for <item> in <iterable> { body }
@@ -146,10 +186,15 @@ type ForExpression struct {
 	Body        *BlockStatement
 }
 
-func (fe *ForExpression) Accept(v Visitor)      { v.VisitForExpression(fe) }
-func (fe *ForExpression) expressionNode()       {}
-func (fe *ForExpression) TokenLiteral() string  { return fe.Token.Lexeme }
-func (fe *ForExpression) GetToken() token.Token { return fe.Token }
+func (fe *ForExpression) Accept(v Visitor)     { v.VisitForExpression(fe) }
+func (fe *ForExpression) expressionNode()      {}
+func (fe *ForExpression) TokenLiteral() string { return fe.Token.Lexeme }
+func (fe *ForExpression) GetToken() token.Token {
+	if fe == nil {
+		return token.Token{}
+	}
+	return fe.Token
+}
 
 // BreakStatement represents a break statement.
 // break or break <expression>
@@ -158,10 +203,15 @@ type BreakStatement struct {
 	Value Expression  // Optional value to return from the loop
 }
 
-func (bs *BreakStatement) Accept(v Visitor)      { v.VisitBreakStatement(bs) }
-func (bs *BreakStatement) statementNode()        {}
-func (bs *BreakStatement) TokenLiteral() string  { return bs.Token.Lexeme }
-func (bs *BreakStatement) GetToken() token.Token { return bs.Token }
+func (bs *BreakStatement) Accept(v Visitor)     { v.VisitBreakStatement(bs) }
+func (bs *BreakStatement) statementNode()       {}
+func (bs *BreakStatement) TokenLiteral() string { return bs.Token.Lexeme }
+func (bs *BreakStatement) GetToken() token.Token {
+	if bs == nil {
+		return token.Token{}
+	}
+	return bs.Token
+}
 
 // ContinueStatement represents a continue statement.
 // continue
@@ -169,10 +219,15 @@ type ContinueStatement struct {
 	Token token.Token // The 'continue' token
 }
 
-func (cs *ContinueStatement) Accept(v Visitor)      { v.VisitContinueStatement(cs) }
-func (cs *ContinueStatement) statementNode()        {}
-func (cs *ContinueStatement) TokenLiteral() string  { return cs.Token.Lexeme }
-func (cs *ContinueStatement) GetToken() token.Token { return cs.Token }
+func (cs *ContinueStatement) Accept(v Visitor)     { v.VisitContinueStatement(cs) }
+func (cs *ContinueStatement) statementNode()       {}
+func (cs *ContinueStatement) TokenLiteral() string { return cs.Token.Lexeme }
+func (cs *ContinueStatement) GetToken() token.Token {
+	if cs == nil {
+		return token.Token{}
+	}
+	return cs.Token
+}
 
 // ReturnStatement represents a return statement.
 // return or return <expression>
@@ -181,10 +236,15 @@ type ReturnStatement struct {
 	Value Expression  // Optional return value
 }
 
-func (rs *ReturnStatement) Accept(v Visitor)      { v.VisitReturnStatement(rs) }
-func (rs *ReturnStatement) statementNode()        {}
-func (rs *ReturnStatement) TokenLiteral() string  { return rs.Token.Lexeme }
-func (rs *ReturnStatement) GetToken() token.Token { return rs.Token }
+func (rs *ReturnStatement) Accept(v Visitor)     { v.VisitReturnStatement(rs) }
+func (rs *ReturnStatement) statementNode()       {}
+func (rs *ReturnStatement) TokenLiteral() string { return rs.Token.Lexeme }
+func (rs *ReturnStatement) GetToken() token.Token {
+	if rs == nil {
+		return token.Token{}
+	}
+	return rs.Token
+}
 
 // PrefixExpression represents a prefix operation, e.g., -5 or !true.
 type PrefixExpression struct {
@@ -193,10 +253,15 @@ type PrefixExpression struct {
 	Right    Expression
 }
 
-func (pe *PrefixExpression) Accept(v Visitor)      { v.VisitPrefixExpression(pe) }
-func (pe *PrefixExpression) expressionNode()       {}
-func (pe *PrefixExpression) TokenLiteral() string  { return pe.Token.Lexeme }
-func (pe *PrefixExpression) GetToken() token.Token { return pe.Token }
+func (pe *PrefixExpression) Accept(v Visitor)     { v.VisitPrefixExpression(pe) }
+func (pe *PrefixExpression) expressionNode()      {}
+func (pe *PrefixExpression) TokenLiteral() string { return pe.Token.Lexeme }
+func (pe *PrefixExpression) GetToken() token.Token {
+	if pe == nil {
+		return token.Token{}
+	}
+	return pe.Token
+}
 
 // InfixExpression represents an infix operation, e.g., 5 + 5.
 type InfixExpression struct {
@@ -206,10 +271,15 @@ type InfixExpression struct {
 	Right    Expression
 }
 
-func (ie *InfixExpression) Accept(v Visitor)      { v.VisitInfixExpression(ie) }
-func (ie *InfixExpression) expressionNode()       {}
-func (ie *InfixExpression) TokenLiteral() string  { return ie.Token.Lexeme }
-func (ie *InfixExpression) GetToken() token.Token { return ie.Token }
+func (ie *InfixExpression) Accept(v Visitor)     { v.VisitInfixExpression(ie) }
+func (ie *InfixExpression) expressionNode()      {}
+func (ie *InfixExpression) TokenLiteral() string { return ie.Token.Lexeme }
+func (ie *InfixExpression) GetToken() token.Token {
+	if ie == nil {
+		return token.Token{}
+	}
+	return ie.Token
+}
 
 // OperatorAsFunction represents an operator used as a function, e.g., (+), (-)
 type OperatorAsFunction struct {
@@ -217,11 +287,16 @@ type OperatorAsFunction struct {
 	Operator string      // The operator: +, -, *, /, etc.
 }
 
-func (oaf *OperatorAsFunction) Accept(v Visitor)      { v.VisitOperatorAsFunction(oaf) }
-func (oaf *OperatorAsFunction) expressionNode()       {}
-func (oaf *OperatorAsFunction) TokenLiteral() string  { return oaf.Token.Lexeme }
-func (oaf *OperatorAsFunction) GetToken() token.Token { return oaf.Token }
-func (oaf *OperatorAsFunction) String() string        { return "(" + oaf.Operator + ")" }
+func (oaf *OperatorAsFunction) Accept(v Visitor)     { v.VisitOperatorAsFunction(oaf) }
+func (oaf *OperatorAsFunction) expressionNode()      {}
+func (oaf *OperatorAsFunction) TokenLiteral() string { return oaf.Token.Lexeme }
+func (oaf *OperatorAsFunction) GetToken() token.Token {
+	if oaf == nil {
+		return token.Token{}
+	}
+	return oaf.Token
+}
+func (oaf *OperatorAsFunction) String() string { return "(" + oaf.Operator + ")" }
 
 // AssignExpression represents an assignment expression, e.g., x = 5 or x: Int = 5 or obj.x = 5
 type AssignExpression struct {
@@ -231,10 +306,15 @@ type AssignExpression struct {
 	Value         Expression
 }
 
-func (ae *AssignExpression) Accept(v Visitor)      { v.VisitAssignExpression(ae) }
-func (ae *AssignExpression) expressionNode()       {}
-func (ae *AssignExpression) TokenLiteral() string  { return ae.Token.Lexeme }
-func (ae *AssignExpression) GetToken() token.Token { return ae.Token }
+func (ae *AssignExpression) Accept(v Visitor)     { v.VisitAssignExpression(ae) }
+func (ae *AssignExpression) expressionNode()      {}
+func (ae *AssignExpression) TokenLiteral() string { return ae.Token.Lexeme }
+func (ae *AssignExpression) GetToken() token.Token {
+	if ae == nil {
+		return token.Token{}
+	}
+	return ae.Token
+}
 
 // PatternAssignExpression represents pattern destructuring: (a, b) = expr or [x, ...xs] = list
 type PatternAssignExpression struct {
@@ -244,10 +324,15 @@ type PatternAssignExpression struct {
 	Value         Expression
 }
 
-func (pe *PatternAssignExpression) Accept(v Visitor)      { v.VisitPatternAssignExpression(pe) }
-func (pe *PatternAssignExpression) expressionNode()       {}
-func (pe *PatternAssignExpression) TokenLiteral() string  { return pe.Token.Lexeme }
-func (pe *PatternAssignExpression) GetToken() token.Token { return pe.Token }
+func (pe *PatternAssignExpression) Accept(v Visitor)     { v.VisitPatternAssignExpression(pe) }
+func (pe *PatternAssignExpression) expressionNode()      {}
+func (pe *PatternAssignExpression) TokenLiteral() string { return pe.Token.Lexeme }
+func (pe *PatternAssignExpression) GetToken() token.Token {
+	if pe == nil {
+		return token.Token{}
+	}
+	return pe.Token
+}
 
 // CallExpression represents a function call, e.g., print(x, y)
 type CallExpression struct {
@@ -261,10 +346,15 @@ type CallExpression struct {
 	TypeArgs      []typesystem.Type          // Type arguments for data constructors (e.g. [String, Int] for Result<String, Int>)
 }
 
-func (ce *CallExpression) Accept(v Visitor)      { v.VisitCallExpression(ce) }
-func (ce *CallExpression) expressionNode()       {}
-func (ce *CallExpression) TokenLiteral() string  { return ce.Token.Lexeme }
-func (ce *CallExpression) GetToken() token.Token { return ce.Token }
+func (ce *CallExpression) Accept(v Visitor)     { v.VisitCallExpression(ce) }
+func (ce *CallExpression) expressionNode()      {}
+func (ce *CallExpression) TokenLiteral() string { return ce.Token.Lexeme }
+func (ce *CallExpression) GetToken() token.Token {
+	if ce == nil {
+		return token.Token{}
+	}
+	return ce.Token
+}
 
 // SpreadExpression represents ... in an expression, e.g. args...
 type SpreadExpression struct {
@@ -272,10 +362,15 @@ type SpreadExpression struct {
 	Expression Expression
 }
 
-func (se *SpreadExpression) Accept(v Visitor)      { v.VisitSpreadExpression(se) }
-func (se *SpreadExpression) expressionNode()       {}
-func (se *SpreadExpression) TokenLiteral() string  { return se.Token.Lexeme }
-func (se *SpreadExpression) GetToken() token.Token { return se.Token }
+func (se *SpreadExpression) Accept(v Visitor)     { v.VisitSpreadExpression(se) }
+func (se *SpreadExpression) expressionNode()      {}
+func (se *SpreadExpression) TokenLiteral() string { return se.Token.Lexeme }
+func (se *SpreadExpression) GetToken() token.Token {
+	if se == nil {
+		return token.Token{}
+	}
+	return se.Token
+}
 
 // RangeExpression represents a range, e.g., 1..10 or 1, 2..10.
 type RangeExpression struct {
@@ -285,10 +380,15 @@ type RangeExpression struct {
 	End   Expression
 }
 
-func (re *RangeExpression) Accept(v Visitor)      { v.VisitRangeExpression(re) }
-func (re *RangeExpression) expressionNode()       {}
-func (re *RangeExpression) TokenLiteral() string  { return re.Token.Lexeme }
-func (re *RangeExpression) GetToken() token.Token { return re.Token }
+func (re *RangeExpression) Accept(v Visitor)     { v.VisitRangeExpression(re) }
+func (re *RangeExpression) expressionNode()      {}
+func (re *RangeExpression) TokenLiteral() string { return re.Token.Lexeme }
+func (re *RangeExpression) GetToken() token.Token {
+	if re == nil {
+		return token.Token{}
+	}
+	return re.Token
+}
 
 // TypeApplicationExpression represents applying types to a generic function/identifier.
 // E.g. foo<Int>(...)
@@ -299,10 +399,15 @@ type TypeApplicationExpression struct {
 	Witnesses     []Expression // Explicit dictionary arguments resolved during inference
 }
 
-func (tae *TypeApplicationExpression) Accept(v Visitor)      { v.VisitTypeApplicationExpression(tae) }
-func (tae *TypeApplicationExpression) expressionNode()       {}
-func (tae *TypeApplicationExpression) TokenLiteral() string  { return tae.Token.Lexeme }
-func (tae *TypeApplicationExpression) GetToken() token.Token { return tae.Token }
+func (tae *TypeApplicationExpression) Accept(v Visitor)     { v.VisitTypeApplicationExpression(tae) }
+func (tae *TypeApplicationExpression) expressionNode()      {}
+func (tae *TypeApplicationExpression) TokenLiteral() string { return tae.Token.Lexeme }
+func (tae *TypeApplicationExpression) GetToken() token.Token {
+	if tae == nil {
+		return token.Token{}
+	}
+	return tae.Token
+}
 
 // PostfixExpression represents a postfix operation, e.g. expr?
 type PostfixExpression struct {
@@ -311,7 +416,12 @@ type PostfixExpression struct {
 	Left     Expression
 }
 
-func (pe *PostfixExpression) Accept(v Visitor)      { v.VisitPostfixExpression(pe) }
-func (pe *PostfixExpression) expressionNode()       {}
-func (pe *PostfixExpression) TokenLiteral() string  { return pe.Token.Lexeme }
-func (pe *PostfixExpression) GetToken() token.Token { return pe.Token }
+func (pe *PostfixExpression) Accept(v Visitor)     { v.VisitPostfixExpression(pe) }
+func (pe *PostfixExpression) expressionNode()      {}
+func (pe *PostfixExpression) TokenLiteral() string { return pe.Token.Lexeme }
+func (pe *PostfixExpression) GetToken() token.Token {
+	if pe == nil {
+		return token.Token{}
+	}
+	return pe.Token
+}

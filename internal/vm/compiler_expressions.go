@@ -1361,9 +1361,17 @@ func (c *Compiler) compileBlockExpression(block *ast.BlockStatement) error {
 
 // Compile prefix expression
 func (c *Compiler) compilePrefixExpression(expr *ast.PrefixExpression) error {
+	// Operand of a prefix expression is NOT in tail position because
+	// the result is used by the operator (e.g. !f(x) must apply NOT
+	// after the call returns, so f(x) must not be a tail call).
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+
 	if err := c.compileExpression(expr.Right); err != nil {
 		return err
 	}
+
+	c.inTailPosition = wasTail
 
 	switch expr.Operator {
 	case "-":
@@ -1506,28 +1514,56 @@ func (c *Compiler) compileLogicalOp(expr *ast.InfixExpression) error {
 }
 
 // Compile pipe operator: x |> f → f(x)
+//
+// Evaluation order: LEFT side is always evaluated FIRST (left-to-right),
+// matching TreeWalk semantics and pipe intuition (data flows left-to-right).
+// Since the VM calling convention requires [fn, arg1, ...argN] on the stack,
+// we use OP_SWAP (simple pipe) or a hidden temp local (call pipe) to
+// rearrange after compiling in the correct eval order.
 func (c *Compiler) compilePipeOp(expr *ast.InfixExpression) error {
-	// Save tail position - operands are not in tail position, but the pipe call itself might be
 	wasTail := c.inTailPosition
 	c.inTailPosition = false
+	line := expr.Token.Line
 
 	// Check if right side is a call expression: x |> f(a, b) -> f(a, b, x)
 	if call, ok := expr.Right.(*ast.CallExpression); ok {
-		// Compile function
+		// Call-expression pipe: left value goes at placeholder or end of args.
+		// We evaluate left FIRST, store in a hidden temp local, then compile
+		// function + args normally, and load temp at the right position.
+		//
+		// Stack lifecycle:
+		//   compile left → [pipe_val]
+		//   (pipe_val becomes hidden local at tempSlot)
+		//   compile f    → [pipe_val, f]
+		//   compile args → [pipe_val, f, a1, ..., aN]
+		//   GET_LOCAL    → [pipe_val, f, a1, ..., aN, pipe_val_copy]
+		//   OP_CALL N+1  → [pipe_val, result]
+		//   POP_BELOW 1  → [result]
+
+		// 1. Evaluate left first (correct left-to-right order)
+		if err := c.compileExpression(expr.Left); err != nil {
+			return err
+		}
+		// stack: [..., pipe_val], pipe_val is at slotCount-1
+
+		// 2. Register as hidden temp local
+		tempSlot := c.slotCount - 1
+		c.beginScope()
+		c.addLocal(" pipe", tempSlot)
+
+		// 3. Compile function
 		if err := c.compileExpression(call.Function); err != nil {
 			return err
 		}
 
+		// 4. Compile arguments, inserting piped value at placeholder or end
 		placeholderFound := false
-
-		// Compile arguments, replacing placeholder with pipe input
 		for _, arg := range call.Arguments {
 			if ident, ok := arg.(*ast.Identifier); ok && ident.Value == "_" {
 				if !placeholderFound {
-					// Compile pipe input (left side) at placeholder position
-					if err := c.compileExpression(expr.Left); err != nil {
-						return err
-					}
+					c.emit(OP_GET_LOCAL, line)
+					c.currentChunk().Write(byte(tempSlot), line)
+					c.slotCount++
 					placeholderFound = true
 				} else {
 					return fmt.Errorf("multiple placeholders in pipe expression not supported")
@@ -1539,60 +1575,55 @@ func (c *Compiler) compilePipeOp(expr *ast.InfixExpression) error {
 			}
 		}
 
-		// If no placeholder, append piped value to end
 		if !placeholderFound {
-			if err := c.compileExpression(expr.Left); err != nil {
-				return err
-			}
+			// Append piped value as last argument
+			c.emit(OP_GET_LOCAL, line)
+			c.currentChunk().Write(byte(tempSlot), line)
+			c.slotCount++
 		}
 
-		line := expr.Token.Line
-
-		// Restore tail position for the final call
-		if wasTail && c.funcType == TYPE_FUNCTION {
-			c.emit(OP_TAIL_CALL, line)
-		} else {
-			c.emit(OP_CALL, line)
-		}
-
+		// 5. Call (no tail call — hidden temp needs cleanup after)
 		argCount := len(call.Arguments)
 		if !placeholderFound {
 			argCount++
 		}
+		c.emit(OP_CALL, line)
 		c.currentChunk().Write(byte(argCount), line)
-
-		// Adjust slot count:
-		// We pushed: Function (1) + Args (argCount) = argCount + 1
-		// Call consumes argCount + 1 and pushes Result (1)
-		// Net change: 1 - (argCount + 1) = -argCount
 		c.slotCount -= argCount
+
+		// 6. Clean up hidden temp: stack is [..., pipe_val, result]
+		c.emit(OP_POP_BELOW, line)
+		c.currentChunk().Write(byte(1), line) // keep 1 (result), remove pipe_val below
+		c.slotCount--
+
+		c.endScopeNoEmit()
 
 		c.inTailPosition = wasTail
 		return nil
 	}
 
-	// Default behavior: x |> f becomes f(x)
-	// Compile function first (for call)
-	if err := c.compileExpression(expr.Right); err != nil {
-		return err
-	}
-
-	// Compile argument
+	// Simple pipe: x |> f becomes f(x)
+	// 1. Compile LEFT first (left-to-right eval order)
 	if err := c.compileExpression(expr.Left); err != nil {
 		return err
 	}
 
-	line := expr.Token.Line
+	// 2. Compile RIGHT (the function)
+	if err := c.compileExpression(expr.Right); err != nil {
+		return err
+	}
 
-	// Restore tail position for the final call
+	// 3. Swap to get calling convention order: [left, f] → [f, left]
+	c.emit(OP_SWAP, line)
+
+	// 4. Call
 	if wasTail && c.funcType == TYPE_FUNCTION {
 		c.emit(OP_TAIL_CALL, line)
 	} else {
 		c.emit(OP_CALL, line)
 	}
-
-	c.currentChunk().Write(byte(1), line) // 1 argument
-	c.slotCount--                         // call consumes fn+arg (2), pushes result (1). Delta -1
+	c.currentChunk().Write(byte(1), line)
+	c.slotCount-- // fn+arg consumed, result pushed. Net: -1
 
 	c.inTailPosition = wasTail
 	return nil

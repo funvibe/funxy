@@ -61,7 +61,6 @@ print("Double: ${double(10)}")  // Double: 20
 - Indexing: `${list[0]}`
 - Function calls: `${func(arg)}`
 - Nested strings: `${"inner"}`
-```
 
 ## String Concatenation
 

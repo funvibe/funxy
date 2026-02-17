@@ -23,7 +23,8 @@
 19. [Tools and Debugging](#19-tools-and-debugging)
 20. [Functional Programming](#20-functional-programming)
 21. [Compilation and Distribution](#21-compilation-and-distribution)
-22. [Summary Tables](#22-summary-tables)
+22. [Go Extensions](#22-go-extensions)
+23. [Summary Tables](#23-summary-tables)
 
 ---
 
@@ -33,8 +34,8 @@ Funxy is a general-purpose scripting language with static typing and type infere
 
 ### Typical Use Cases
 
-- **Backend services**: `lib/http`, `lib/ws`, `lib/grpc`, `lib/sql`, `lib/json`, `lib/log`, `lib/task`
-- **ML/DevOps data pipelines**: `lib/io`, `lib/path`, `lib/regex`, `lib/csv`, `lib/json`, `lib/bytes`, `lib/uuid`, `lib/time`
+- **Backend services**: `lib/http`, `lib/ws`, `lib/grpc`, `lib/sql`, `lib/json`, `lib/yaml`, `lib/log`, `lib/task`
+- **ML/DevOps data pipelines**: `lib/io`, `lib/path`, `lib/regex`, `lib/csv`, `lib/json`, `lib/yaml`, `lib/bytes`, `lib/uuid`, `lib/time`
 - **Scripting/automation**: `lib/sys`, `lib/flag`, `lib/io`, `lib/path`, `lib/date`, `lib/log`
 - **CLI tools**: `lib/term`, `lib/flag`, `lib/sys`, `lib/io`
 
@@ -66,7 +67,8 @@ print(x)  // 45
 
 ### Constants (Immutable)
 ```rust
-y :- 1  // immutable
+const x = 5 // immutable
+y :- 1      // immutable
 // y = 2  // Error: cannot reassign constant 'y'
 
 pi :- 3.14159
@@ -1135,6 +1137,14 @@ str.trim("  hi  ")    // resolves to stringTrim
 tuple.get((1, 2, 3), 1) // resolves to tupleGet
 ```
 
+### Go Extension Imports (`ext/*`)
+```rust
+import "ext/slack" (slackNew, slackPostMessage)   // Go package bindings (requires funxy.yaml)
+import "ext/redis" (redisGet, redisSet)            // Another Go package
+```
+
+Extension modules are defined in `funxy.yaml` and compiled into the binary via `funxy build`. See [Section 22: Go Extensions](#22-go-extensions).
+
 ### Single Import Rule
 - Each module can be imported only once per file
 - Choose one import style per module
@@ -1488,6 +1498,7 @@ For full APIs, see `docs/BUILTINS.md` or `./funxy -help lib/<name>`.
 | `lib/proto` | Protocol Buffers serialization |
 | `lib/sql` | SQLite database operations |
 | `lib/json` | JSON encoding/decoding and Json ADT |
+| `lib/yaml` | YAML encoding, decoding, and file I/O |
 | `lib/csv` | CSV parsing, encoding, and file I/O |
 | `lib/regex` | Regular expression matching and manipulation |
 | `lib/log` | Structured logging |
@@ -1613,6 +1624,33 @@ value = jsonParse(json)?
 
 // Access fields
 name = jsonGet(value, "name")
+```
+
+#### lib/yaml
+```rust
+import "lib/yaml" (*)
+
+// Decode YAML string
+yaml = "name: Alice\nage: 30\ntags:\n  - go\n  - funxy"
+match yamlDecode(yaml) {
+    Ok(data) -> {
+        print(data.name)      // Alice
+        print(data.age)       // 30
+        print(data.tags[0])   // go
+    }
+    Fail(e) -> print("Error: " ++ e)
+}
+
+// Encode value to YAML
+config = { server: { host: "localhost", port: 8080 }, debug: true }
+print(yamlEncode(config))
+
+// File I/O
+yamlWrite("config.yaml", config)
+match yamlRead("config.yaml") {
+    Ok(cfg) -> print(cfg.server.host)
+    Fail(e) -> print("Error: " ++ e)
+}
 ```
 
 #### lib/csv
@@ -2024,6 +2062,71 @@ Go structs bound to Funxy become **Host Objects**. Funxy scripts can:
 - Access exported fields: `user.Name`
 - Call exported methods: `user.UpdateScore(10)`
 
+### Variadic Functions
+
+Go variadic functions are fully supported. The variadic parameter is unwrapped
+from `[]T` to `T` in the type signature, and Funxy treats the function as
+accepting a variable number of arguments:
+
+```go
+vm.Bind("sum", func(nums ...int) int {
+    total := 0
+    for _, n := range nums {
+        total += n
+    }
+    return total
+})
+```
+
+```rust
+sum(1, 2, 3, 4, 5)  // 15
+sum()                // 0
+```
+
+### Multiple Return Values
+
+Go functions returning multiple values are converted to Funxy tuples:
+
+```go
+vm.Bind("divmod", func(a, b int) (int, int) {
+    return a / b, a % b
+})
+```
+
+```rust
+(q, r) = divmod(17, 5)  // q = 3, r = 2
+```
+
+If conversion of any return value fails, the error includes the index:
+`return value [2] conversion failed: ...`
+
+### Nil Handling
+
+Funxy `Nil` is converted to the Go zero value for **nilable types** only:
+
+| Go target type | Nil behavior |
+|----------------|-------------|
+| `*T` (pointer) | `nil` pointer |
+| `interface{}` | `nil` interface |
+| `map[K]V` | `nil` map |
+| `[]T` (slice) | `nil` slice |
+| `func(...)` | `nil` func |
+| `int`, `bool`, `struct`, etc. | **Error**: `cannot convert nil to non-nullable type` |
+
+Passing `Nil` where a value type (int, bool, string, struct) is expected
+is a type error — the embedding API will not silently coerce it to a zero value.
+
+### LoadFile Errors
+
+`vm.LoadFile(path)` validates the path before reading:
+
+| Condition | Error |
+|-----------|-------|
+| Empty path | `LoadFile: empty path` |
+| File not found | `LoadFile: file not found: <path>` |
+| Permission denied | `LoadFile: permission denied: <path>` |
+| Path is a directory | `LoadFile: expected file, got directory: <path>` |
+
 ### Type Mapping
 
 | Go Type | Funxy Type |
@@ -2033,9 +2136,9 @@ Go structs bound to Funxy become **Host Objects**. Funxy scripts can:
 | `bool` | `Bool` |
 | `string` | `String` |
 | `[]T` | `List<T>` |
-| `map[string]T` | `Map<String, T>` |
+| `map[K]V` | `Map<K, V>` |
 | `struct`, `*struct` | `HostObject` |
-| `func` | `HostObject` (callable) |
+| `func(...)` | Callable (type-inferred, supports variadic) |
 | `nil` | `Nil` |
 
 For more details, see the [Embedding Tutorial](tutorial/41_embedding.md).
@@ -2434,6 +2537,19 @@ funxy -r script.fbc
 - **Encoding**: Gob-encoded Bundle with main chunk + module chunks
 - **Features**: Bundles all user module dependencies, pre-compiled trait defaults, embedded resources, multi-command support (`Commands` map)
 
+**Versioning**: If a binary encounters a bytecode version it doesn't support, the error message includes the supported range and suggests upgrading:
+`unsupported bytecode version: 3 (this binary supports versions 1–2; upgrade Funxy to run newer bytecode)`
+
+### Bundle Validation
+
+After deserialization, bundles are validated for structural integrity:
+
+- **Single-command mode**: `MainChunk` must be present with non-empty bytecode
+- **Multi-command mode**: Each command sub-bundle must have a `MainChunk` with non-empty bytecode
+- Invalid bundles produce clear errors: `"single-command bundle has nil MainChunk"`, `"command \"api\" has empty bytecode"`
+
+Sub-bundle resources are copied (not shared by reference) from the parent, so mutating a sub-command's resources never affects the parent or other commands.
+
 ### Compilation Process
 
 1. **Parse**: Source code → AST
@@ -2451,7 +2567,189 @@ funxy -r script.fbc
 
 ---
 
-## 22. Summary Tables
+## 22. Go Extensions
+
+Funxy can use any Go package via the `ext/*` system. You declare dependencies in a `funxy.yaml` file, and `funxy build` automatically generates Go bindings and compiles them into your binary.
+
+### `funxy.yaml`
+
+```yaml
+deps:
+  - pkg: github.com/slack-go/slack   # Go import path
+    version: v0.15.0                  # Semver version
+    bind:
+      - func: New                     # Bind a function
+        as: slackNew                  # Name in Funxy
+      - type: Client                  # Bind a type's methods
+        as: slack                     # Prefix for method names
+        methods: [PostMessage, GetUserInfo]  # Which methods to expose
+        error_to_result: true         # (T, error) → Result<String, T>
+
+  - pkg: mycompany.dev/internal/auth  # Local Go package
+    local: ./golib/auth               # Path relative to funxy.yaml
+    bind:
+      - func: Verify
+        as: authVerify
+        error_to_result: true
+
+  - pkg: github.com/aws/aws-sdk-go-v2/aws  # Monorepo package
+    module: github.com/aws/aws-sdk-go-v2    # Module path (for go.mod)
+    version: v1.36.3
+    bind:
+      - type: Config
+        as: awsConfig
+        constructor: true
+```
+
+### Importing ext modules
+
+```rust
+import "ext/slack" (slackNew, slackPostMessage)
+
+client = slackNew("xoxb-your-token")
+
+match slackPostMessage(client, "#general", "Hello from Funxy!") {
+  Ok(result) -> print("Sent: " ++ show(result))
+  Fail(msg)  -> print("Error: " ++ show(msg))
+}
+```
+
+### Building with extensions
+
+```bash
+funxy build app.lang -o myapp                    # auto-detects funxy.yaml
+funxy build app.lang --config funxy.yaml -o myapp  # explicit config path
+funxy build app.lang --ext-verbose -o myapp        # verbose build output
+```
+
+### Local Go packages
+
+Use `local:` to bind Go code from a local directory instead of downloading from the network:
+
+```yaml
+deps:
+  - pkg: mycompany.dev/utils
+    local: ./golib/utils          # relative to funxy.yaml
+    bind:
+      - func: Hash
+        as: utilsHash
+```
+
+The path must point to a valid Go module. The `version:` field is ignored for local deps — a `replace` directive is added to the generated `go.mod` automatically. Remote and local deps can be mixed freely.
+
+### Monorepo packages
+
+For Go libraries where the module path differs from the package import path (e.g. AWS SDK v2), use `module:` to specify the Go module path separately:
+
+```yaml
+deps:
+  - pkg: github.com/aws/aws-sdk-go-v2/aws       # import path (for code)
+    module: github.com/aws/aws-sdk-go-v2         # module path (for go.mod)
+    version: v1.36.3
+```
+
+The `module:` value goes into the `require` directive in the generated `go.mod`, while `pkg:` is used as the Go import path for inspection and code generation. When `module:` is not set, `pkg:` is used for both.
+
+### Binding options
+
+| Option | Applies to | Description |
+|--------|-----------|-------------|
+| `error_to_result` | `func`, `type` | Go `(T, error)` → Funxy `Result<String, T>` |
+| `skip_context` | `func`, `type` | Auto-inject `context.Background()` for `context.Context` params |
+| `chain_result` | `type` only | Collapse fluent API chains (e.g. `.Do().Result()`). Auto-detected when `error_to_result` is set and methods return types with `.Result() → (T, error)` |
+| `constructor` | `type` only | Generate a constructor `<prefix>({ field: val, ... })` that creates a Go struct from a Funxy record |
+| `methods` | `type` only | Whitelist of methods to bind |
+| `exclude_methods` | `type` only | Blacklist of methods |
+| `bind_all` | dep level | Bind all exported types and functions |
+| `local` | dep level | Path to local Go package (relative to `funxy.yaml`) |
+| `module` | dep level | Go module path for `go.mod` when it differs from `pkg` (monorepos like AWS SDK v2) |
+| `type_args` | `func`, `type` | Explicit Go type arguments for generic functions/types (e.g. `[string]`) |
+
+### Constants
+
+Bind package-level constants:
+
+```yaml
+bind:
+  - const: StatusOK
+    as: httpStatusOK
+```
+
+Constants are exposed as values in Funxy: `httpStatusOK` evaluates to the constant's value.
+
+### Struct Field Access
+
+Exported struct fields are automatically bound as getter functions. For a type binding with `as: "redis"`, each field generates `<prefix><FieldName>(obj)`:
+
+```rust
+import "ext/redis" (redisNew, redisAddr, redisPassword)
+
+client = redisNew("localhost:6379")
+addr = redisAddr(client)        // reads client.Addr
+pass = redisPassword(client)    // reads client.Password
+```
+
+Passing a nil pointer to a field getter produces a clear error instead of a panic:
+`redisAddr: nil pointer dereference on *redis.Options`
+
+### Callbacks (Funxy closures → Go functions)
+
+Go functions accepting `func(...)` parameters can receive Funxy closures:
+
+```rust
+import "ext/mylib" (myFilter)
+
+result = myFilter([1, 2, 3, 4, 5], fun(x) -> x > 3)  // [4, 5]
+```
+
+The generated binding uses `vm.Call` / `ev.ApplyFunction` to invoke the Funxy closure from Go.
+
+### Type mapping
+
+| Go type | Funxy type |
+|---------|-----------|
+| `int`, `int64`, `int32`... | `Int` |
+| `float64`, `float32` | `Float` |
+| `bool` | `Bool` |
+| `string` | `String` |
+| `[]byte` | `Bytes` |
+| `[]T` | `List<T>` |
+| `map[K]V` | `Map<K, V>` |
+| `func(...)` | `Fn` (callable, supports callbacks) |
+| `error` | `String` (in `Result`) |
+| `context.Context` | auto-injected |
+| struct, interface, other | `HostObject` |
+
+### CLI commands
+
+```bash
+funxy ext build -o myfunxy   # Build a full Funxy interpreter with ext bindings compiled in
+funxy ext check              # Validate funxy.yaml and inspect Go packages
+funxy ext list               # Show registered ext modules and bindings
+funxy ext stubs              # Generate .d.lang files for LSP support
+```
+
+`funxy ext build` produces a general-purpose interpreter — not a stub. It works exactly like `funxy` (run scripts, eval mode, build) but with `ext/*` modules available. Use as `--host` for cross-compilation.
+
+### Caching
+
+Ext host binaries are cached in `.funxy/ext-cache/`. The cache key is a hash of `funxy.yaml` content, `GOOS`, `GOARCH`, and codegen version. Clear with `rm -rf .funxy/ext-cache/`.
+
+### Limitations
+
+- **No pointer out-parameters**: `Scan(&dest)`, `Unmarshal(data, &obj)` — can't create pointers from Funxy. Wrap in Go and return values.
+- **Struct fields are read-only**: getters are auto-generated, no setters.
+- **No channels**: `chan T` → `HostObject`, no send/receive from Funxy.
+- **No goroutines**: all ext calls are synchronous.
+- **Go generics supported**: `any` constraint auto-instantiated; constrained params need `type_args: [string]`.
+- **Can't implement Go interfaces from Funxy**: call methods yes, satisfy interfaces no.
+- **Constructor skips function/interface fields**: `constructor: true` ignores fields like `func() Retryer`.
+
+For the complete guide, see [docs/tutorial/44_go_extensions.md](docs/tutorial/44_go_extensions.md).
+
+---
+
+## 23. Summary Tables
 
 ### Operators Precedence
 1. Function application (`$`) - Lowest

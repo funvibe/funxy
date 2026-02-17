@@ -634,6 +634,7 @@ func (vm *VM) applyModuleImport(imp PendingImport, modObj *evaluator.RecordInsta
 func isVirtualModule(path string) bool {
 	return path == "lib" ||
 		len(path) > 4 && path[:4] == "lib/" ||
+		len(path) > 4 && path[:4] == "ext/" ||
 		isKnownVirtualPackage(path)
 }
 
@@ -650,15 +651,26 @@ func isKnownVirtualPackage(name string) bool {
 // importVirtualModule imports a built-in virtual module
 func (vm *VM) importVirtualModule(imp PendingImport) error {
 	pkgName := imp.Path
+	isExtModule := false
 	if len(pkgName) > 4 && pkgName[:4] == "lib/" {
 		pkgName = pkgName[4:]
+	} else if len(pkgName) > 4 && pkgName[:4] == "ext/" {
+		pkgName = pkgName[4:]
+		isExtModule = true
 	}
 
 	if imp.Path == "lib" {
 		return vm.importAllLibPackages(imp)
 	}
 
-	builtins := evaluator.GetVirtualModuleBuiltins(pkgName)
+	// For ext/* modules, only check the ext builtins registry.
+	// This avoids collision with lib/* modules of the same name (e.g. lib/uuid vs ext/uuid).
+	var builtins map[string]evaluator.Object
+	if isExtModule {
+		builtins = evaluator.GetExtBuiltins(pkgName)
+	} else {
+		builtins = evaluator.GetVirtualModuleBuiltins(pkgName)
+	}
 	if builtins == nil {
 		return fmt.Errorf("unknown virtual module: %s", pkgName)
 	}

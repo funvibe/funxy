@@ -874,7 +874,11 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				// Use UnifyAllowExtraWithResolver to handle HKT (e.g. Writer<IntList> binding to T<IntList>)
 				subst, err := typesystem.UnifyAllowExtraWithResolver(explicitType, t, enclosedTable)
 				if err != nil {
-					return nil, nil, inferErrorf(cd, "type mismatch in constant declaration %s: expected %s, got %s", cd.Name.Value, explicitType, t)
+					declName := "<pattern>"
+					if cd.Name != nil {
+						declName = cd.Name.Value
+					}
+					return nil, nil, inferErrorf(cd, "type mismatch in constant declaration %s: expected %s, got %s", declName, explicitType, t)
 				}
 				totalSubst = subst.Compose(totalSubst)
 				ctx.GlobalSubst = subst.Compose(ctx.GlobalSubst) // CRITICAL: Update global context

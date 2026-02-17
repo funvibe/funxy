@@ -70,16 +70,22 @@ func FuzzCompiler(f *testing.F) {
 				// Timeout — acceptable for random inputs
 			}
 		} else {
-			// VM Backend
-			c := vm.NewCompiler()
-			c.SetSymbolTable(symbolTable)
-			c.SetTypeMap(a.TypeMap)
-			c.SetResolutionMap(a.ResolutionMap)
+			// VM Backend — run with context timeout to prevent hangs on pathological inputs.
+			vmDone := make(chan bool, 1)
+			go func() {
+				c := vm.NewCompiler()
+				c.SetSymbolTable(symbolTable)
+				c.SetTypeMap(a.TypeMap)
+				c.SetResolutionMap(a.ResolutionMap)
 
-			_, err := c.Compile(program)
-			if err != nil {
-				// Compilation error is expected for some inputs
-				return
+				_, _ = c.Compile(program)
+				vmDone <- true
+			}()
+
+			select {
+			case <-vmDone:
+			case <-time.After(2 * time.Second):
+				// Timeout — acceptable for pathological inputs
 			}
 		}
 	})

@@ -1,7 +1,9 @@
 package evaluator
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -14,6 +16,47 @@ import (
 
 	"github.com/mattn/go-isatty"
 )
+
+// =============================================================================
+// Output buffering (double-buffering for flicker-free rendering)
+// =============================================================================
+
+var (
+	termBufMu     sync.Mutex
+	termBuf       bytes.Buffer
+	termRealOut   io.Writer
+	termBuffering bool
+)
+
+func builtinTermBufferStart(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("termBufferStart expects 0 arguments, got %d", len(args))
+	}
+	termBufMu.Lock()
+	defer termBufMu.Unlock()
+	if !termBuffering {
+		termRealOut = e.Out
+		termBuffering = true
+	}
+	termBuf.Reset()
+	e.Out = &termBuf
+	return &Nil{}
+}
+
+func builtinTermBufferFlush(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("termBufferFlush expects 0 arguments, got %d", len(args))
+	}
+	termBufMu.Lock()
+	defer termBufMu.Unlock()
+	if termBuffering && termRealOut != nil {
+		_, _ = termRealOut.Write(termBuf.Bytes())
+		termBuf.Reset()
+		e.Out = termRealOut
+		termBuffering = false
+	}
+	return &Nil{}
+}
 
 // =============================================================================
 // Color support detection
@@ -1165,6 +1208,37 @@ func objectToDisplayString(obj Object) string {
 }
 
 // =============================================================================
+// Raw mode & readKey builtins
+// =============================================================================
+
+func builtinTermRaw(e *Evaluator, args ...Object) Object {
+	if err := enterRawMode(); err != nil {
+		return newError("termRaw: %s", err)
+	}
+	return &Nil{}
+}
+
+func builtinTermRestore(e *Evaluator, args ...Object) Object {
+	exitRawMode()
+	return &Nil{}
+}
+
+func builtinReadKey(e *Evaluator, args ...Object) Object {
+	timeoutMs := int64(0)
+	if len(args) >= 1 {
+		switch v := args[0].(type) {
+		case *Integer:
+			timeoutMs = v.Value
+		default:
+			return newError("readKey: expected Int for timeout, got %s", args[0].Type())
+		}
+	}
+
+	result := readKeyImpl(int(timeoutMs))
+	return stringToList(result)
+}
+
+// =============================================================================
 // Registration
 // =============================================================================
 
@@ -1236,6 +1310,15 @@ func TermBuiltins() map[string]*Builtin {
 
 		// Phase 6: Table
 		"table": {Fn: builtinTable, Name: "table"},
+
+		// Phase 7: Raw mode & key reading
+		"termRaw":     {Fn: builtinTermRaw, Name: "termRaw"},
+		"termRestore": {Fn: builtinTermRestore, Name: "termRestore"},
+		"readKey":     {Fn: builtinReadKey, Name: "readKey"},
+
+		// Phase 8: Output buffering (double-buffering for flicker-free rendering)
+		"termBufferStart": {Fn: builtinTermBufferStart, Name: "termBufferStart"},
+		"termBufferFlush": {Fn: builtinTermBufferFlush, Name: "termBufferFlush"},
 	}
 }
 
@@ -1305,11 +1388,23 @@ func SetTermBuiltinTypes(builtins map[string]*Builtin) {
 		"progressDone":  typesystem.TFunc{Params: []typesystem.Type{handleType}, ReturnType: typesystem.Nil},
 		// Table
 		"table": typesystem.TFunc{Params: []typesystem.Type{listString, listListString}, ReturnType: typesystem.Nil},
+		// Raw mode & key reading
+		"termRaw":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+		"termRestore": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+		"readKey":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: stringType, DefaultCount: 1},
+		// Output buffering
+		"termBufferStart": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+		"termBufferFlush": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
 	}
 
 	for name, typ := range types {
 		if b, ok := builtins[name]; ok {
 			b.TypeInfo = typ
 		}
+	}
+
+	// Default args: readKey(timeoutMs=0) — non-blocking by default
+	if b, ok := builtins["readKey"]; ok {
+		b.DefaultArgs = []Object{&Integer{Value: 0}}
 	}
 }

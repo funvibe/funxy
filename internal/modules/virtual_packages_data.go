@@ -409,4 +409,50 @@ func initCsvPackage() {
 	RegisterVirtualPackage("lib/csv", pkg)
 }
 
+// initYamlPackage registers the lib/yaml virtual package
+func initYamlPackage() {
+	stringType := typesystem.TApp{
+		Constructor: ListCon,
+		Args:        []typesystem.Type{typesystem.Char},
+	}
+	resultType := func(t typesystem.Type) typesystem.Type {
+		return typesystem.TApp{
+			Constructor: ResultCon,
+			Args:        []typesystem.Type{stringType, t},
+		}
+	}
+	tVar := typesystem.TVar{Name: "T"}
+
+	pkg := &VirtualPackage{
+		Name: "yaml",
+		Symbols: map[string]typesystem.Type{
+			// yamlDecode(str: String) -> Result<String, T>
+			// Parses YAML string into Funxy values
+			"yamlDecode": typesystem.TFunc{
+				Params:     []typesystem.Type{stringType},
+				ReturnType: resultType(tVar),
+			},
+			// yamlEncode(value) -> String
+			// Converts any Funxy value to YAML string
+			"yamlEncode": typesystem.TFunc{
+				Params:     []typesystem.Type{typesystem.TVar{Name: "A"}},
+				ReturnType: stringType,
+			},
+			// yamlRead(path: String) -> Result<String, T>
+			// Reads and parses a YAML file
+			"yamlRead": typesystem.TFunc{
+				Params:     []typesystem.Type{stringType},
+				ReturnType: resultType(tVar),
+			},
+			// yamlWrite(path: String, value) -> Result<String, Nil>
+			// Writes a Funxy value to a YAML file
+			"yamlWrite": typesystem.TFunc{
+				Params:     []typesystem.Type{stringType, typesystem.TVar{Name: "A"}},
+				ReturnType: resultType(typesystem.Nil),
+			},
+		},
+	}
+	RegisterVirtualPackage("lib/yaml", pkg)
+}
+
 // initFlagPackage registers the lib/flag virtual package

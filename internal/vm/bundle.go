@@ -166,10 +166,15 @@ func DeserializeAny(data []byte) (*Bundle, error) {
 		if bundle.Commands == nil {
 			bundle.Commands = make(map[string]*Bundle)
 		}
+		if err := bundle.Validate(); err != nil {
+			return nil, fmt.Errorf("v2 bundle validation failed: %w", err)
+		}
 		return &bundle, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported bytecode version: %d", version)
+		return nil, fmt.Errorf(
+			"unsupported bytecode version: %d (this binary supports versions %d–%d; upgrade Funxy to run newer bytecode)",
+			version, bytecodeVersionV1, bytecodeVersionV2)
 	}
 }
 
@@ -276,6 +281,33 @@ func (b *Bundle) CommandNames() []string {
 	return names
 }
 
+// Validate checks the structural integrity of a deserialized bundle.
+func (b *Bundle) Validate() error {
+	isMultiCommand := len(b.Commands) > 0
+
+	if isMultiCommand {
+		// Multi-command mode: each sub-bundle must have a MainChunk
+		for name, cmd := range b.Commands {
+			if cmd.MainChunk == nil {
+				return fmt.Errorf("command %q has nil MainChunk", name)
+			}
+			if len(cmd.MainChunk.Code) == 0 {
+				return fmt.Errorf("command %q has empty bytecode", name)
+			}
+		}
+	} else {
+		// Single-command mode: MainChunk is required
+		if b.MainChunk == nil {
+			return fmt.Errorf("single-command bundle has nil MainChunk")
+		}
+		if len(b.MainChunk.Code) == 0 {
+			return fmt.Errorf("single-command bundle has empty bytecode")
+		}
+	}
+
+	return nil
+}
+
 // ResolveCommand finds the sub-bundle for a given command name.
 // It also inherits shared Resources from the parent bundle.
 func (b *Bundle) ResolveCommand(name string) *Bundle {
@@ -283,9 +315,13 @@ func (b *Bundle) ResolveCommand(name string) *Bundle {
 	if !ok {
 		return nil
 	}
-	// Inherit shared resources from parent (sub-bundles don't have their own)
+	// Inherit shared resources from parent (sub-bundles don't have their own).
+	// Copy the map to avoid shared mutation between parent and child bundles.
 	if len(cmd.Resources) == 0 && len(b.Resources) > 0 {
-		cmd.Resources = b.Resources
+		cmd.Resources = make(map[string][]byte, len(b.Resources))
+		for k, v := range b.Resources {
+			cmd.Resources[k] = v
+		}
 	}
 	return cmd
 }

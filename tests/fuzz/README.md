@@ -22,6 +22,8 @@ It uses Go's native fuzzing support (available in Go 1.18+).
   - `formatter_fuzz_test.go`: Pretty printer idempotency.
   - `lsp_fuzz_test.go`: LSP server with random JSON-RPC.
   - `async_fuzz_test.go`: Async/await and task scheduling.
+  - `ext_fuzz_test.go`: Ext config parsing and code generation.
+  - `embed_fuzz_test.go`: Embed marshaller round-trip and eval.
 - `generators/`: Contains logic for generating random Funxy code (for structure-aware fuzzing).
 - `mutator/`: Contains logic for mutating ASTs (for mutation-based fuzzing).
 - `corpus/`: Directory where the fuzzer stores interesting inputs (automatically managed).
@@ -84,11 +86,38 @@ go test -fuzz=FuzzRoundTrip ./tests/fuzz/targets
 
 ### Stress Fuzzing (Resource Exhaustion)
 
-To test the system's resilience to resource exhaustion (deep recursion, large data structures, infinite loops):
+To test the system's resilience to resource exhaustion, deep structures, long chains, and runtime errors:
 
 ```bash
 go test -fuzz=FuzzStress ./tests/fuzz/targets
 ```
+
+FuzzStress covers 20 scenarios:
+
+| Category | Generator | What it tests |
+|----------|-----------|---------------|
+| **Nesting** | `DeeplyNestedCode` | 10–60 nested `if` blocks |
+| | `DeeplyNestedClosures` | 10–40 levels of closures capturing closures |
+| | `DeeplyNestedRecords` | 10–40 levels of `{ a: { b: { c: ... } } }` |
+| | `DeepFunctionCalls` | 20–100 nested `f(f(f(...)))` |
+| **Recursion** | `DeepRecursionNonTCO` | Non-tail recursion (linear, mutual, fibonacci) |
+| **Large data** | `LargeDataStructure` | Lists with 1000–6000 elements |
+| | `LargeRecord` | Records with 50–250 fields |
+| | `LargeString` | Strings 1000–10000 chars, or 50–200 concatenations |
+| | `LargeMap` | Maps with 100–600 entries |
+| | `LargeListComprehension` | `[expr \| x <- 1..N]` with N up to 6000 |
+| | `LargeADT` | ADT with 10–50 constructors + exhaustive match |
+| **Pipes** | `LongPipeChain` | 20–100 chained `\|>` on numbers |
+| | `LongPipeChainList` | 10–40 chained `\|> map/filter` on lists |
+| **Patterns** | `ComplexPatternMatching` | Deeply nested tuple patterns |
+| | `ManyMatchArms` | Match with 50–150 literal arms |
+| **Definitions** | `ManyFunctions` | 50–150 function definitions + chained calls |
+| | `ManyVariables` | 200–700 variable declarations |
+| **Loops** | `InfiniteLoop` | Truly infinite loops (context cancellation) |
+| **Errors** | `RuntimeErrors` | Division by zero, type mismatch, index OOB, call non-function |
+| | `PanicRecovery` | `panic()`, infinite recursion, nil field access |
+
+The analyzer step is wrapped in a 500ms timeout to handle cases where type inference hangs on deep ASTs (e.g. long pipe chains — a known issue).
 
 ### Kind Checker Fuzzing (Complex Types and Traits)
 
@@ -163,6 +192,40 @@ To test the bytecode serialization roundtrip: compile → serialize (Bundle) →
 go test -fuzz=FuzzBundleRoundTrip ./tests/fuzz/targets
 ```
 
+### Ext Config Fuzzing
+To fuzz the `ext` YAML config parser with arbitrary bytes:
+```bash
+go test -fuzz=FuzzConfigParse ./tests/fuzz/targets
+```
+
+### Ext Codegen Fuzzing
+To fuzz the `ext` code generator with random binding combinations and verify the generated Go code is syntactically valid:
+```bash
+go test -fuzz=FuzzCodegen ./tests/fuzz/targets
+```
+
+### Embed Marshaller Fuzzing
+To fuzz the Go ↔ Funxy value conversion round-trip:
+```bash
+go test -fuzz=FuzzMarshallerRoundTrip ./tests/fuzz/targets
+```
+
+To fuzz `ToValue` (Go → Funxy) independently:
+```bash
+go test -fuzz=FuzzMarshallerToValue ./tests/fuzz/targets
+```
+
+To specifically fuzz `map[string]int` round-trip conversions:
+```bash
+go test -fuzz=FuzzMarshallerMapRoundTrip ./tests/fuzz/targets
+```
+
+### Embed Eval Fuzzing
+To fuzz `vm.Eval` with random Funxy code and bound Go objects (functions, maps, slices, primitives):
+```bash
+go test -fuzz=FuzzEmbedEval ./tests/fuzz/targets
+```
+
 ## Finding Edge Cases
 
 To effectively find edge cases in the Funxy compiler, use these strategies:
@@ -191,7 +254,7 @@ total worker count stays close to available CPU cores. This prevents:
 **⚠️ Do NOT run all fuzz tests as bare background jobs:**
 
 ```bash
-# BAD: 16 tests × GOMAXPROCS workers = massive CPU contention
+# BAD: 22 tests × GOMAXPROCS workers = massive CPU contention
 go test -fuzz=FuzzParser -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzTypeChecker -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzCompiler -fuzztime=180s ./tests/fuzz/targets &
@@ -208,6 +271,12 @@ go test -fuzz=FuzzVM -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzAsync -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzLSP -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzBundleRoundTrip -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzConfigParse -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzCodegen -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzMarshallerRoundTrip -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzMarshallerToValue -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzMarshallerMapRoundTrip -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzEmbedEval -fuzztime=180s ./tests/fuzz/targets &
 wait
 ```
 
@@ -230,7 +299,11 @@ If you're working on a particular component, focus on the relevant fuzz target:
 - **Backend changes**: Use `FuzzDifferential`, `FuzzCompiler`, and `FuzzVM`
 - **Build / serialization changes**: Use `FuzzBundleRoundTrip`
 - **Performance changes**: Use `FuzzStress`
-- **Pipe operators (`|>`, `|>>`)**: Use `FuzzParser`, `FuzzCompiler`, and `FuzzDifferential`
+- **Pipe operators (`|>`, `|>>`)**: Use `FuzzParser`, `FuzzCompiler`, `FuzzDifferential`, and `FuzzStress` (long pipe chains)
+- **Runtime error paths**: Use `FuzzStress` (division by zero, type mismatch, index OOB, etc.)
+- **Analyzer depth limits**: Use `FuzzStress` (deep nesting, long chains)
+- **Go extensions (`ext`)**: Use `FuzzConfigParse` and `FuzzCodegen`
+- **Embedding API (`pkg/embed`)**: Use `FuzzMarshallerRoundTrip`, `FuzzMarshallerMapRoundTrip`, and `FuzzEmbedEval`
 - **One-liner mode (`-e`, `-pe`, `-lpe`)**: Tested separately via `go test ./evaluator/ -run TestEvalMode`
 
 ### 3. Use Extended Fuzzing Sessions

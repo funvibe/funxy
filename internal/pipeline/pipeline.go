@@ -14,8 +14,8 @@ func (p *Pipeline) Run(initialCtx *PipelineContext) *PipelineContext {
 	ctx := initialCtx
 	for _, processor := range p.processors {
 		ctx = processor.Process(ctx)
-		// For now, we continue on errors.
-		// A more robust implementation could stop on fatal errors.
+		// Continue on errors to collect diagnostics from all stages
+		// (e.g. LSP needs both parse and semantic errors).
 	}
 	return ctx
 }

@@ -422,7 +422,7 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 				}
 				if !found {
 					w.addError(diagnostics.NewError(
-						diagnostics.ErrA005,
+						diagnostics.ErrA003,
 						n.Token,
 						fmt.Sprintf("unknown type variable '%s' in functional dependency", from),
 					))
@@ -439,7 +439,7 @@ func (w *walker) VisitTraitDeclaration(n *ast.TraitDeclaration) {
 				}
 				if !found {
 					w.addError(diagnostics.NewError(
-						diagnostics.ErrA005,
+						diagnostics.ErrA003,
 						n.Token,
 						fmt.Sprintf("unknown type variable '%s' in functional dependency", to),
 					))

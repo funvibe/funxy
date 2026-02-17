@@ -3,6 +3,7 @@ package funxy
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/diagnostics"
@@ -79,10 +80,19 @@ func (v *VM) hostCallHandler(fn reflect.Value, args []evaluator.Object) (evaluat
 		}
 		// Handle nil interface
 		if val == nil {
-			// Need to create a zero value for the target type if possible, or use nil
-			// reflect.ValueOf(nil) is invalid.
-			// If target type is pointer/interface/map/slice/chan/func, we can use Zero.
-			goArgs[i] = reflect.Zero(targetType)
+			// reflect.ValueOf(nil) is invalid — must create a typed zero value.
+			// Only nilable kinds (pointer, interface, map, slice, chan, func) accept nil;
+			// for value types (int, bool, struct, etc.) passing nil is a type error.
+			if targetType != nil {
+				switch targetType.Kind() {
+				case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+					goArgs[i] = reflect.Zero(targetType)
+				default:
+					return nil, fmt.Errorf("argument %d: cannot convert nil to non-nullable type %s", i, targetType)
+				}
+			} else {
+				goArgs[i] = reflect.Zero(targetType)
+			}
 		} else {
 			goArgs[i] = reflect.ValueOf(val)
 		}
@@ -104,7 +114,7 @@ func (v *VM) hostCallHandler(fn reflect.Value, args []evaluator.Object) (evaluat
 	for i, res := range results {
 		val, err := v.marshaller.ToValue(res.Interface())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("return value [%d] conversion failed: %w", i, err)
 		}
 		elements[i] = val
 	}
@@ -233,9 +243,25 @@ func (v *VM) Eval(code string) (interface{}, error) {
 
 // LoadFile parses, analyzes, compiles, and executes a file.
 func (v *VM) LoadFile(path string) error {
+	if path == "" {
+		return fmt.Errorf("LoadFile: empty path")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("LoadFile: file not found: %s", path)
+		}
+		if os.IsPermission(err) {
+			return fmt.Errorf("LoadFile: permission denied: %s", path)
+		}
+		return fmt.Errorf("LoadFile: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("LoadFile: expected file, got directory: %s", path)
+	}
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("LoadFile: %w", err)
 	}
 	code := string(content)
 
@@ -351,12 +377,25 @@ func inferType(val interface{}) typesystem.Type {
 			Constructor: typesystem.TCon{Name: "List"},
 			Args:        []typesystem.Type{elemType},
 		}
+	case reflect.Map:
+		keyType := inferType(reflect.Zero(t.Key()).Interface())
+		valType := inferType(reflect.Zero(t.Elem()).Interface())
+		return typesystem.TApp{
+			Constructor: typesystem.TCon{Name: "Map"},
+			Args:        []typesystem.Type{keyType, valType},
+		}
 	case reflect.Func:
 		// Generate function type
 		numIn := t.NumIn()
+		isVariadic := t.IsVariadic()
 		params := make([]typesystem.Type, numIn)
 		for i := 0; i < numIn; i++ {
-			params[i] = inferType(reflect.Zero(t.In(i)).Interface())
+			paramType := t.In(i)
+			// For variadic functions, the last param is []T — unwrap to T
+			if isVariadic && i == numIn-1 {
+				paramType = paramType.Elem()
+			}
+			params[i] = inferType(reflect.Zero(paramType).Interface())
 		}
 
 		var retType typesystem.Type
@@ -369,6 +408,7 @@ func inferType(val interface{}) typesystem.Type {
 		return typesystem.TFunc{
 			Params:     params,
 			ReturnType: retType,
+			IsVariadic: isVariadic,
 		}
 	}
 

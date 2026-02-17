@@ -2,9 +2,9 @@
 #
 # Run all fuzz targets with controlled parallelism.
 #
-# Running all 14 fuzz tests simultaneously (as background jobs) causes severe
+# Running all 22 fuzz tests simultaneously (as background jobs) causes severe
 # CPU contention: each `go test -fuzz` spawns GOMAXPROCS workers by default,
-# so 14 tests × 12 cores = 168 workers competing for 12 cores. This leads to:
+# so 22 tests × 12 cores = 264 workers competing for 12 cores. This leads to:
 #   - Baseline coverage gathering stalling for minutes
 #   - Tests far exceeding their -fuzztime budget
 #   - Subprocess-based tests (FuzzLSP) hanging and being killed
@@ -158,6 +158,13 @@ run_batch "Batch 4: VM & Async" \
 # ── Batch 5: Subprocess-heavy test (spawns OS process per iteration) ──
 run_batch "Batch 5: LSP" \
     FuzzLSP
+
+# ── Batch 6: Ext & Embed (config parsing, codegen, marshalling) ──
+run_batch "Batch 6: Ext & Embed" \
+    FuzzConfigParse FuzzCodegen FuzzMarshallerRoundTrip FuzzMarshallerToValue
+
+run_batch "Batch 6b: Embed Maps & Eval" \
+    FuzzMarshallerMapRoundTrip FuzzEmbedEval
 
 echo ""
 echo "══════════════════════════════════════════════════════════════"
