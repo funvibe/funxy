@@ -5,7 +5,7 @@ A statically typed scripting language that compiles to native binaries. For auto
 - Write scripts, ship native binaries — `funxy build` creates standalone executables with embedded resources
 - Static types with strong inference — most code needs no annotations
 - Batteries-included stdlib: HTTP/gRPC, JSON/protobuf, SQL, TUI, async/await, bytes/bits
-- Use any Go package from scripts — declare in `funxy.yaml`, import as `ext/*`
+- Use Go packages from scripts — declare in `funxy.yaml`, import as `ext/*`
 - Command-line eval mode (`-pe`, `-lpe`) for one-liners and shell pipelines
 - Safe data modeling with records, unions, ADTs, and pattern matching
 - Easy embedding in Go for config, rules, and automation
