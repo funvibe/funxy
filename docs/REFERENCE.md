@@ -41,9 +41,13 @@ Funxy is a general-purpose scripting language with static typing and type infere
 
 ### Where to Go Deeper
 
-- Builtins and stdlib details: `docs/BUILTINS.md`
 - Modules & packaging: `docs/tutorial/18_modules.md`
 - Type system internals: `docs/tutorial/38_type_system.md`
+- Functions: `docs/tutorial/11_functions.md`
+- Traits: `docs/tutorial/16_traits.md`
+- Compile to bytecode: `docs/tutorial/40_bytecode.md`
+- Embedding to Go apps: `docs/tutorial/41_embedding.md`
+- Use Go libs: `docs/tutorial/44_go_extensions.md`
 
 ---
 
