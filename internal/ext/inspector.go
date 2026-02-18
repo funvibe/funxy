@@ -321,10 +321,11 @@ func (ins *Inspector) setupWorkspace(cfg *Config, configDir ...string) error {
 		parts := strings.SplitN(req, " ", 2)
 		if len(parts) == 2 {
 			gomod.WriteString(fmt.Sprintf("\t%s %s\n", parts[0], parts[1]))
-		} else {
-			// Version will be resolved by go mod tidy
-			gomod.WriteString(fmt.Sprintf("\t%s v0.0.0\n", parts[0]))
 		}
+		// If no version is specified (parts len 1), we SKIP adding it to require.
+		// The dummy main.go imports the package, so 'go mod tidy' will resolve
+		// and add the latest version automatically.
+		// Adding "v0.0.0" explicitly fails if the repo has no tags.
 	}
 	gomod.WriteString(")\n")
 
