@@ -82,23 +82,23 @@ contexts:
   keywords:
     - match: \b(fun|type|alias|match|if|else|for|while|in|break|continue|return|const|package|import|as|directive)\b
       scope: keyword.control.funxy
-    - match: \b(export|trait|instance|operator|async|await)\b
+    - match: \b(export|trait|instance|operator)\b
       scope: keyword.other.funxy
-    - match: \b(true|false|Nil|None)\b
+    - match: \b(true|false|Nil|Some|None|Ok|Fail)\b
       scope: constant.language.funxy
 
   types:
-    - match: \b(Int|Float|String|Bool|Nil|List|Map|Option|Result|Some|None|Ok|Fail|Bytes|BigInt|Rational|Char|Unit|Tuple)\b
+    - match: \b(Int|Float|Bool|Char|Nil|BigInt|Rational|List|Map|Bytes|Bits|Range|Option|Result|Reader|Identity|State|Writer|OptionT|ResultT|String|Show|Equal|Order|Numeric|Bitwise|Concat|Default|Semigroup|Monoid|Functor|Applicative|Monad|Empty|Optional|Iter)\b
       scope: support.type.builtin.funxy
     - match: \b[A-Z][a-zA-Z0-9_]*\b
       scope: entity.name.type.funxy
 
   builtins:
-    - match: \b(print|write|panic|debug|trace|len|lenBytes|show|read|intToFloat|floatToInt|format|getType|typeOf|id|kindOf|debugType|debugRepr|constant|default|fmap|pure|mempty|append|fst|snd|map|filter|foldl|foldr|head|tail|range|charToCode|charFromCode)\b
+    - match: \b(len|show|read|intToFloat|floatToInt|debug|trace|panic|id|constant|print|write|identity|runIdentity|isSome|isNone|unwrap|unwrapOr|unwrapOrElse|reader|runReader|getType|typeOf|kindOf|debugType|debugRepr|isOk|isFail|unwrapResult|unwrapError|unwrapResultOr|state|runState|evalState|execState|sGet|sPut|lenBytes|format|default|fmap|pure|mempty|optionT|runOptionT|resultT|runResultT|writer|runWriter|execWriter|wTell)\b
       scope: support.function.builtin.funxy
 
   operators:
-    - match: '->|=>|>>=|<\*>|<>|\|>|<\||\+\+|::|==|!=|<=|>=|<<|>>|\*\*|&&|\|\||:=|:-|,,|\$|\\|\+|-|\*|/|%|&|\||\^|~|!|\?'
+    - match: '->|=>|>>=|<\*>|<>|\|>>|\|>|<\||\+\+|::|==|!=|<=|>=|<<|>>|\*\*|&&|\|\||:=|:-|,,|\$|\\|\+|-|\*|/|%|&|\||\^|~|!|\?|\.\.'
       scope: keyword.operator.funxy
 
   functions:

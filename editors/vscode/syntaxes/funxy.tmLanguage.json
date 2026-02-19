@@ -181,7 +181,7 @@
         },
         {
           "name": "constant.language.funxy",
-          "match": "\\b(true|false|nil)\\b"
+          "match": "\\b(true|false|Nil|Some|None|Ok|Fail)\\b"
         }
       ]
     },
@@ -189,7 +189,7 @@
       "patterns": [
         {
           "name": "support.type.builtin.funxy",
-          "match": "\\b(Int|Float|Bool|String|Char|List|Map|Option|Result|BigInt|Rational|Nil)\\b"
+          "match": "\\b(Int|Float|Bool|Char|Nil|BigInt|Rational|List|Map|Bytes|Bits|Range|Option|Result|Reader|Identity|State|Writer|OptionT|ResultT|String|Show|Equal|Order|Numeric|Bitwise|Concat|Default|Semigroup|Monoid|Functor|Applicative|Monad|Empty|Optional|Iter)\\b"
         },
         {
           "name": "entity.name.type.funxy",
@@ -221,10 +221,10 @@
         },
         {
           "name": "keyword.operator.pipe.funxy",
-          "match": "\\|>"
+          "match": "\\|>>|\\|>"
         },
         {
-          "name": "keyword.operator.compose.funxy",
+          "name": "keyword.operator.composition.funxy",
           "match": ",,"
         },
         {
@@ -244,8 +244,16 @@
           "match": "\\?\\."
         },
         {
+          "name": "keyword.operator.errorprop.funxy",
+          "match": "\\?"
+        },
+        {
           "name": "keyword.operator.user.funxy",
-          "match": "<>|<\\|>|<\\*>|>>=|<\\$>|<:>|<~>|<\\||=>"
+          "match": "<>|<\\|>|<\\*>|>>=|<\\$>|<:>|<~>|=>|<\\|"
+        },
+        {
+          "name": "keyword.operator.range.funxy",
+          "match": "\\.\\."
         },
         {
           "name": "keyword.operator.comparison.funxy",
@@ -281,7 +289,7 @@
         },
         {
           "name": "support.function.builtin.funxy",
-          "match": "\\b(print|write|panic|debug|trace|len|lenBytes|show|read|intToFloat|floatToInt|format|getType|typeOf|id|kindOf|debugType|debugRepr|constant|default|fmap|pure|mempty|append)\\b"
+          "match": "\\b(len|show|read|intToFloat|floatToInt|debug|trace|panic|id|constant|print|write|identity|runIdentity|isSome|isNone|unwrap|unwrapOr|unwrapOrElse|reader|runReader|getType|typeOf|kindOf|debugType|debugRepr|isOk|isFail|unwrapResult|unwrapError|unwrapResultOr|state|runState|evalState|execState|sGet|sPut|lenBytes|format|default|fmap|pure|mempty|optionT|runOptionT|resultT|runResultT|writer|runWriter|execWriter|wTell)\\b"
         }
       ]
     },
