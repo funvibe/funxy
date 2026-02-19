@@ -53,6 +53,23 @@ Funxy is a general-purpose scripting language with static typing and type infere
 
 ## 2. Variables and Constants
 
+### Naming Conventions
+
+Funxy enforces strict capitalization rules (like Haskell or Elm) which are checked by the parser:
+
+*   **Uppercase:** Types (`Int`, `String`), Type Constructors (`List`, `Map`), Data Constructors (`Just`, `Ok`).
+*   **Lowercase:** Functions (`map`, `filter`), Variables (`x`, `count`), Constants (`pi`), Extension Methods (`.toString()`), Type Parameters / Generics (`a`, `t` in `List<t>`).
+
+This allows the compiler to unambiguously distinguish types from variables and constructors from functions.
+
+```rust
+type User = { name: String }  // Type User (Uppercase)
+
+fun process(user: User) {     // Variable user (Lowercase)
+    print(user.name)
+}
+```
+
 ### Comments
 ```rust
 // Single line comment
@@ -2569,6 +2586,46 @@ Sub-bundle resources are copied (not shared by reference) from the parent, so mu
 - Reduced memory usage for repeated execution
 - Self-contained binaries for zero-dependency distribution
 
+### Library Embedding (`funxy pkg build`)
+
+You can embed compiled Funxy libraries directly into a binary, allowing scripts to import them without needing the source files on disk. This is useful for distributing binaries with bundled dependencies.
+
+```bash
+# Embed a library 'tmp/lib/mymath' as 'pkg/math'
+funxy pkg build tmp/lib/mymath@math -o custom-funxy
+
+# Embed multiple libraries
+funxy pkg build score pkg/stats -o custom-funxy
+
+# Overwrite existing library
+funxy pkg build pkg/stats -force -o custom-funxy
+
+# Remove a library
+funxy pkg build pkg/stats -delete -o custom-funxy
+
+# List embedded libraries
+funxy pkg list custom-funxy
+
+# Check embedded libraries
+funxy pkg check custom-funxy
+
+# Generate stubs for embedded libraries (for IDE support)
+funxy pkg stubs custom-funxy
+```
+
+**How it works:**
+1. The command compiles the library at the specified path into bytecode.
+2. It embeds the bytecode into the binary under the specified alias.
+3. If the alias doesn't start with `pkg/`, it is automatically prefixed with `pkg/`.
+4. At runtime, scripts can import the library using the alias:
+
+```rust
+import "pkg/math" (getPi)
+print(getPi())
+```
+
+**Note:** If you run `funxy pkg build` on an existing binary, it appends the new libraries to it. If the output file doesn't exist, it creates a copy of the current `funxy` executable and embeds the libraries into it.
+
 ---
 
 ## 22. Go Extensions
@@ -2608,11 +2665,12 @@ deps:
 ### Importing ext modules
 
 ```rust
-import "ext/slack" (slackNew, slackPostMessage)
+import "ext/slack" (slackNew, slackPostMessage, slackMsgOptionText)
 
 client = slackNew("xoxb-your-token")
 
-match slackPostMessage(client, "#general", "Hello from Funxy!") {
+msg = slackMsgOptionText("Hello from Funxy!", false)
+match slackPostMessage(client, "#general", msg) {
   Ok(result) -> print("Sent: " ++ show(result))
   Fail(msg)  -> print("Error: " ++ show(msg))
 }

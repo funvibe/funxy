@@ -74,31 +74,6 @@ func (s *SymbolTable) GetExtensionMethod(typeName, methodName string) (typesyste
 
 // GetAllExtensionMethods returns all extension methods from this scope
 // Returns map[typeName]map[methodName]Type
-func (s *SymbolTable) GetAllExtensionMethods() map[string]map[string]typesystem.Type {
-	result := make(map[string]map[string]typesystem.Type)
-
-	// Get from outer first
-	if s.outer != nil {
-		for typeName, methods := range s.outer.GetAllExtensionMethods() {
-			result[typeName] = make(map[string]typesystem.Type)
-			for methodName, t := range methods {
-				result[typeName][methodName] = t
-			}
-		}
-	}
-
-	// Overlay current level
-	for typeName, methods := range s.extensionMethods {
-		if result[typeName] == nil {
-			result[typeName] = make(map[string]typesystem.Type)
-		}
-		for methodName, t := range methods {
-			result[typeName][methodName] = t
-		}
-	}
-
-	return result
-}
 
 func (s *SymbolTable) RegisterTypeParams(typeName string, params []string) {
 	s.genericTypeParams[typeName] = params

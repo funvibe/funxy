@@ -13,6 +13,7 @@ import (
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/symbols"
+	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // detectPackageExtension determines which extension to use for a package.
@@ -80,6 +81,7 @@ type Loader struct {
 	LoadedModules map[string]*Module // Cache of loaded modules by path
 	ModulesByName map[string]*Module // Index by package name for quick lookup
 	Processing    map[string]bool    // Cycle detection during loading
+	GlobalBundle  interface{}        // Optional global bundle for library-only mode (*vm.Bundle)
 }
 
 func NewLoader() *Loader {
@@ -146,6 +148,11 @@ func (l *Loader) GetModule(path string) (interface{}, error) {
 
 	// Otherwise try loading as regular module
 	return l.Load(path)
+}
+
+// RegisterBundle registers a global bundle for resolving modules from memory
+func (l *Loader) RegisterBundle(b interface{}) {
+	l.GlobalBundle = b
 }
 
 // tryLoadPackageGroup checks if a directory contains subdirectories with source files
@@ -223,6 +230,31 @@ func (l *Loader) tryLoadPackageGroup(absPath string) (*Module, error) {
 // If relative, it's relative to the current working directory (initial entry point).
 // Dependency loading will be handled recursively.
 func (l *Loader) Load(path string) (*Module, error) {
+	// Check global bundle first if available
+	if l.GlobalBundle != nil {
+		// Try to find module in bundle
+		// Bundle keys are project-relative paths (e.g. "pkg/math")
+		// The input path might be absolute or relative.
+		// If it's absolute, try to make it relative to CWD (project root)
+		// Or just check if the path matches a key directly (for "pkg/math" imports)
+
+		// 1. Check exact match (e.g. "pkg/math")
+		if mod := l.loadFromBundle(path); mod != nil {
+			return mod, nil
+		}
+
+		// 2. Check relative match if path is absolute
+		if filepath.IsAbs(path) {
+			if wd, err := os.Getwd(); err == nil {
+				if rel, err := filepath.Rel(wd, path); err == nil {
+					if mod := l.loadFromBundle(rel); mod != nil {
+						return mod, nil
+					}
+				}
+			}
+		}
+	}
+
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -243,6 +275,86 @@ func (l *Loader) Load(path string) (*Module, error) {
 
 	return mod, nil
 }
+
+// BundleInterface defines the interface for accessing the bundle without importing vm package
+type BundleInterface interface {
+	GetModuleExports(key string) ([]string, bool)
+	GetModuleTraits(key string) (map[string][]string, bool)
+}
+
+// loadFromBundle attempts to load a module from the registered global bundle
+func (l *Loader) loadFromBundle(key string) *Module {
+	if l.GlobalBundle == nil {
+		return nil
+	}
+
+	bundle, ok := l.GlobalBundle.(BundleInterface)
+	if !ok {
+		return nil
+	}
+
+	exports, found := bundle.GetModuleExports(key)
+	if !found {
+		return nil
+	}
+
+	// Check cache
+	if mod, ok := l.LoadedModules["bundle:"+key]; ok {
+		return mod
+	}
+
+	// Create Module from BundledModule
+	mod := &Module{
+		Name:        filepath.Base(key),
+		Dir:         key, // Use key as Dir for bundle modules
+		Exports:     make(map[string]bool),
+		Imports:     make(map[string]*Module),
+		SymbolTable: symbols.NewSymbolTable(),
+	}
+
+	traits, _ := bundle.GetModuleTraits(key)
+
+	// Populate exports
+	for _, exp := range exports {
+		mod.Exports[exp] = true
+		// Populate symbol table with dummy symbols so analyzer knows they exist
+		tVar := typesystem.TVar{Name: "$bundle_" + exp}
+
+		// If it's a trait, mark it
+		if traits != nil {
+			if _, isTrait := traits[exp]; isTrait {
+				mod.SymbolTable.DefinePendingTrait(exp, "")
+			} else {
+				// tVar is defined in the outer scope (line 322)
+				mod.SymbolTable.Define(exp, tVar, "bundle")
+			}
+		} else {
+			mod.SymbolTable.Define(exp, tVar, "bundle")
+		}
+	}
+
+	// Populate trait info
+	if traits != nil {
+		for traitName, methods := range traits {
+			// Define trait symbol if not already
+			if _, ok := mod.SymbolTable.Find(traitName); !ok {
+				mod.SymbolTable.DefinePendingTrait(traitName, "")
+			}
+			// Register trait methods in symbol table
+			for _, method := range methods {
+				tVar := typesystem.TVar{Name: "$bundle_" + method}
+				mod.SymbolTable.Define(method, tVar, "bundle")
+				mod.SymbolTable.RegisterTraitMethod(method, traitName, tVar, "bundle")
+			}
+		}
+	}
+
+	l.LoadedModules["bundle:"+key] = mod
+	l.ModulesByName[mod.Name] = mod
+	return mod
+}
+
+// Check cache
 
 // loadDir loads a module from a directory (single pass, no recursion).
 // It enforces "one package per directory" with consistent file extension.

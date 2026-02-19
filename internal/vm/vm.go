@@ -150,9 +150,13 @@ type VM struct {
 	Context context.Context
 }
 
+// GlobalBundle holds the embedded bundle for library-only mode.
+// Set by the CLI when running a binary with IsLibraryOnly=true.
+var GlobalBundle *Bundle
+
 // New creates a new VM instance
 func New() *VM {
-	return &VM{
+	vm := &VM{
 		stack:               make([]Value, 0, InitialStackSize),      // Dynamic stack with initial capacity
 		frames:              make([]CallFrame, 0, InitialFrameCount), // Dynamic frames with initial capacity
 		globals:             NewModuleScope(),
@@ -166,6 +170,18 @@ func New() *VM {
 		typeMap:             make(map[ast.Node]typesystem.Type),
 		debugger:            NewDebugger(),
 	}
+
+	// Apply global bundle if present (for embedded libraries)
+	if GlobalBundle != nil {
+		vm.SetBundle(GlobalBundle)
+	}
+
+	return vm
+}
+
+// SetGlobalBundle sets the global bundle for library-only mode.
+func SetGlobalBundle(b *Bundle) {
+	GlobalBundle = b
 }
 
 // SetOutput sets the output writer for the VM (and its internal evaluator)

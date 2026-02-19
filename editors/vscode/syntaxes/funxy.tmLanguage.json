@@ -177,7 +177,7 @@
         },
         {
           "name": "keyword.declaration.funxy",
-          "match": "\\b(fun|type|alias|trait|instance|operator|where)\\b"
+          "match": "\\b(fun|type|alias|trait|instance|operator)\\b"
         },
         {
           "name": "constant.language.funxy",

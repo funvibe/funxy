@@ -52,6 +52,10 @@ type SymbolTable struct {
 	// Extension Methods registry: TypeName -> MethodName -> FuncType
 	extensionMethods map[string]map[string]typesystem.Type
 
+	// Extension Methods by Name: MethodName -> [TypeName]
+	// Optimization for looking up extension methods on Union types
+	extensionMethodsByName map[string][]string
+
 	// Generic Type Parameters registry: TypeName -> ParamNames
 	// Stores type parameters for generic types (aliases and ADTs) to allow correct instantiation.
 	genericTypeParams map[string][]string

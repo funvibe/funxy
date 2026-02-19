@@ -31,9 +31,10 @@ fileWrite("users.csv", csvEncode(users))
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/funvibe/funxy/main/install.sh | bash
+# Open Windows Terminal → Ubuntu/WSL tab, then run the same command
 ```
 
-Or download manually from [releases](https://github.com/funvibe/funxy/releases), or build from source: `git clone ... && cd funxy && make build` (Go 1.25+).
+Or download manually from [releases](https://github.com/funvibe/funxy/releases), or build from source: `git clone ... && cd funxy && make build` (Go 1.23+).
 
 ## Build & Distribution
 
@@ -89,11 +90,12 @@ deps:
 ```
 
 ```rust
-import "ext/slack" (slackNew, slackPostMessage)
+import "ext/slack" (slackNew, slackPostMessage, slackMsgOptionText)
 
 client = slackNew("xoxb-your-token")
 
-match slackPostMessage(client, "#general", "Deploy complete!") {
+msg = slackMsgOptionText("Deploy complete!", false)
+match slackPostMessage(client, "#general", msg) {
   Ok(_)   -> print("Sent!")
   Fail(e) -> print("Error: " ++ show(e))
 }
@@ -258,8 +260,8 @@ fun qsort(xs) {
     match xs {
         [] -> []
         [pivot, ...rest] -> {
-            less = filter(fun(x) { x < pivot }, rest)
-            greater = filter(fun(x) { x >= pivot }, rest)
+            less = filter(\x -> x < pivot, rest)
+            greater = filter(\x -> x >= pivot, rest)
             qsort(less) ++ [pivot] ++ qsort(greater)
         }
     }

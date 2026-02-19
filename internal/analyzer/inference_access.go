@@ -193,6 +193,52 @@ func lookupExtensionMethodInSourceModule(ctx *InferenceContext, t typesystem.Typ
 	return modTable.GetExtensionMethod(typeName, methodName)
 }
 
+// lookupExtensionMethodForUnionMember checks if there is an extension method defined on a Union type
+// that contains the given type `t` as a member.
+// e.g. type Number = Int | Float. fun (n: Number) add(m) ...
+// If we have `1.add(2)`, `1` is Int. We check if any alias (like Number) contains Int and has method `add`.
+func lookupExtensionMethodForUnionMember(ctx *InferenceContext, t typesystem.Type, methodName string, table *symbols.SymbolTable) (typesystem.Type, bool) {
+	// Use optimized index to get candidate types that have this method
+	candidateTypes := table.GetExtensionMethodsByName(methodName)
+
+	for _, typeName := range candidateTypes {
+		// Get the method type
+		methodType, ok := table.GetExtensionMethod(typeName, methodName)
+		if !ok {
+			continue
+		}
+
+		// Check if typeName is a Union that contains t
+		if aliasType, ok := table.ResolveType(typeName); ok {
+			// Resolve alias to underlying type
+			resolved := resolveTypeAlias(aliasType, table)
+			if union, ok := resolved.(typesystem.TUnion); ok {
+				if isMemberOfUnion(t, union, table) {
+					return methodType, true
+				}
+			}
+		}
+	}
+	return nil, false
+}
+
+func isMemberOfUnion(t typesystem.Type, union typesystem.TUnion, table *symbols.SymbolTable) bool {
+	for _, member := range union.Types {
+		// Check if t unifies with member (or is subtype).
+		// We use Unify because we want to check compatibility.
+		// t is typically a concrete type (e.g. Int), and member is also concrete (e.g. Int).
+		if _, err := typesystem.Unify(member, t); err == nil {
+			return true
+		}
+		// Also check if member is an alias to t
+		resolvedMember := resolveTypeAlias(member, table)
+		if _, err := typesystem.Unify(resolvedMember, t); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func isString(t typesystem.Type) bool {
 	if tCon, ok := t.(typesystem.TCon); ok && tCon.Name == "String" {
 		return true
@@ -475,6 +521,30 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 	// 3. Named Type / Alias
 	if tCon, ok := leftType.(typesystem.TCon); ok {
 		if resolvedType, ok := table.ResolveType(tCon.Name); ok {
+			// Check if the resolved type is a Union and if the member is an extension method on the alias
+			if _, ok := resolvedType.(typesystem.TUnion); ok {
+				if extMethodType, ok := table.GetExtensionMethod(tCon.Name, n.Member.Value); ok {
+					freshType := InstantiateWithContext(ctx, extMethodType)
+					if tFunc, ok := freshType.(typesystem.TFunc); ok && len(tFunc.Params) > 0 {
+						recvParam := tFunc.Params[0]
+						subst, err := typesystem.Unify(recvParam, leftType)
+						if err != nil {
+							return nil, nil, inferErrorf(n, "extension method %s receiver mismatch: expected %s, got %s", n.Member.Value, recvParam, leftType)
+						}
+						totalSubst = subst.Compose(totalSubst)
+						newParams := make([]typesystem.Type, len(tFunc.Params)-1)
+						for i, p := range tFunc.Params[1:] {
+							newParams[i] = p.Apply(subst)
+						}
+						return typesystem.TFunc{
+							Params:     newParams,
+							ReturnType: tFunc.ReturnType.Apply(subst),
+							IsVariadic: tFunc.IsVariadic,
+						}, totalSubst, nil
+					}
+				}
+			}
+
 			if tRec, ok := resolvedType.(typesystem.TRecord); ok {
 				if fieldType, ok := tRec.Fields[n.Member.Value]; ok {
 					instType, _ := instantiateMemberType(ctx, n, fieldType, table)
@@ -578,7 +648,63 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 		}
 	}
 
-	// 4. Handle TVar (Row Polymorphism Inference)
+	// 4. Check if leftType is a member of a Union that has the extension method
+	// This handles cases where leftType is Int, but the extension method is on Number (Int | Float)
+	if extMethodType, ok := lookupExtensionMethodForUnionMember(ctx, leftType, n.Member.Value, table); ok {
+		freshType := InstantiateWithContext(ctx, extMethodType)
+		if tFunc, ok := freshType.(typesystem.TFunc); ok && len(tFunc.Params) > 0 {
+			recvParam := tFunc.Params[0]
+			// We need to check if leftType is compatible with recvParam (which is the Union type).
+			// Since we found the method via lookupExtensionMethodForUnionMember, we know leftType is a member of the Union.
+			// However, we still need to run Unify to generate substitutions if there are type variables involved.
+
+			subst, err := typesystem.Unify(recvParam, leftType)
+			// If direct unification fails (e.g. Int vs Number), we might need to check if leftType is a subset/member.
+			// However, for extension method call `1.add(2)`, `1` is Int. `add` expects `Number`.
+			// `Int` unifies with `Number`? No, usually `Number` (Union) unifies with `Int` (Member) in one direction?
+			// In Funxy, Unify(Union, Member) works?
+			// Let's try Unify. If it fails, we might need to just accept it if it's a valid member.
+
+			if err != nil {
+				// If unification failed, check if leftType is strictly a member of recvParam (if it's a union)
+				if union, ok := recvParam.(typesystem.TUnion); ok {
+					if isMemberOfUnion(leftType, union, table) {
+						// It is a member, so it's valid.
+						// We use empty substitution for this part if no vars involved.
+						err = nil
+						subst = typesystem.Subst{}
+					}
+				}
+				// Also check if recvParam is an alias to a union
+				if tCon, ok := recvParam.(typesystem.TCon); ok {
+					resolved := resolveTypeAlias(tCon, table)
+					if union, ok := resolved.(typesystem.TUnion); ok {
+						if isMemberOfUnion(leftType, union, table) {
+							err = nil
+							subst = typesystem.Subst{}
+						}
+					}
+				}
+			}
+
+			if err != nil {
+				return nil, nil, inferErrorf(n, "extension method %s receiver mismatch: expected %s, got %s", n.Member.Value, recvParam, leftType)
+			}
+
+			totalSubst = subst.Compose(totalSubst)
+			newParams := make([]typesystem.Type, len(tFunc.Params)-1)
+			for i, p := range tFunc.Params[1:] {
+				newParams[i] = p.Apply(subst)
+			}
+			return typesystem.TFunc{
+				Params:     newParams,
+				ReturnType: tFunc.ReturnType.Apply(subst),
+				IsVariadic: tFunc.IsVariadic,
+			}, totalSubst, nil
+		}
+	}
+
+	// 5. Handle TVar (Row Polymorphism Inference)
 	if tv, ok := leftType.(typesystem.TVar); ok {
 		if ident, ok := n.Left.(*ast.Identifier); ok {
 			// Check if the identifier matches the TVar logic.
@@ -611,7 +737,7 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 		}
 	}
 
-	// 5. HostObject (Embed API)
+	// 6. HostObject (Embed API)
 	if tCon, ok := leftType.(typesystem.TCon); ok && tCon.Name == "HostObject" {
 		// Allow any member access on HostObject, return a fresh type variable (dynamic)
 		return ctx.FreshVar(), totalSubst, nil

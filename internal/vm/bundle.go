@@ -50,6 +50,10 @@ type Bundle struct {
 	// When set, MainChunk should be nil. Each sub-bundle has its own
 	// MainChunk, Modules, and TraitDefaults; Resources are shared from the parent.
 	Commands map[string]*Bundle
+
+	// IsLibraryOnly indicates that this bundle contains only libraries and no executable entry point.
+	// When true, the binary behaves as an interpreter (REPL/Script) with these libraries pre-loaded.
+	IsLibraryOnly bool
 }
 
 // BundledModule represents a single pre-compiled user module in the bundle.
@@ -79,6 +83,10 @@ type BundledModule struct {
 	// SubModulePaths lists absolute paths of sub-modules (only for package groups)
 	SubModulePaths []string
 }
+
+// IsLibraryOnly indicates that this bundle contains only libraries and no executable entry point.
+// Used for "funxy pkg build" to create a binary that acts as a custom interpreter.
+type LibraryBundleMarker struct{}
 
 // bytecodeVersion constants
 const (
@@ -295,14 +303,17 @@ func (b *Bundle) Validate() error {
 				return fmt.Errorf("command %q has empty bytecode", name)
 			}
 		}
-	} else {
-		// Single-command mode: MainChunk is required
+	} else if !b.IsLibraryOnly {
+		// Single-command mode: MainChunk is required unless it's a library-only bundle
 		if b.MainChunk == nil {
 			return fmt.Errorf("single-command bundle has nil MainChunk")
 		}
 		if len(b.MainChunk.Code) == 0 {
 			return fmt.Errorf("single-command bundle has empty bytecode")
 		}
+	} else {
+		// Library-only mode: MainChunk is optional, but if present, it should be valid
+		// (though typically it's nil or empty for library bundles)
 	}
 
 	return nil
@@ -350,7 +361,7 @@ func RunBundle(bundle *Bundle) (evaluator.Object, error) {
 	if bundle.SourceFile != "" {
 		machine.SetCurrentFile(bundle.SourceFile)
 	}
-	if bundle.MainChunk.File != "" {
+	if bundle.MainChunk != nil && bundle.MainChunk.File != "" {
 		machine.SetCurrentFile(bundle.MainChunk.File)
 	}
 
@@ -360,17 +371,47 @@ func RunBundle(bundle *Bundle) (evaluator.Object, error) {
 	}
 
 	// Process imports
-	if len(bundle.MainChunk.PendingImports) > 0 {
+	if bundle.MainChunk != nil && len(bundle.MainChunk.PendingImports) > 0 {
 		if err := machine.ProcessImports(bundle.MainChunk.PendingImports); err != nil {
 			return nil, fmt.Errorf("import error: %w", err)
 		}
 	}
 
 	// Execute main chunk
-	result, err := machine.Run(bundle.MainChunk)
-	if err != nil {
-		return nil, err
+	if bundle.MainChunk != nil {
+		result, err := machine.Run(bundle.MainChunk)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
 
-	return result, nil
+	return &evaluator.Nil{}, nil
+}
+
+// EmbedPackage adds a compiled module to the bundle.
+// This is used by `funxy pkg build` to embed libraries.
+func (b *Bundle) EmbedPackage(path string, mod *BundledModule) {
+	if b.Modules == nil {
+		b.Modules = make(map[string]*BundledModule)
+	}
+	b.Modules[path] = mod
+}
+
+// GetModuleExports returns the exports of a bundled module.
+// This method satisfies the BundleInterface required by modules/loader.go
+func (b *Bundle) GetModuleExports(key string) ([]string, bool) {
+	if mod, ok := b.Modules[key]; ok {
+		return mod.Exports, true
+	}
+	return nil, false
+}
+
+// GetModuleTraits returns the traits of a bundled module.
+// This method satisfies the BundleInterface required by modules/loader.go
+func (b *Bundle) GetModuleTraits(key string) (map[string][]string, bool) {
+	if mod, ok := b.Modules[key]; ok {
+		return mod.Traits, true
+	}
+	return nil, false
 }

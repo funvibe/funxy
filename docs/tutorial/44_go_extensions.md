@@ -15,6 +15,8 @@ deps:
     bind:
       - func: New
         as: slackNew
+      - func: MsgOptionText
+        as: slackMsgOptionText
       - type: Client
         as: slack
         methods: [PostMessage, GetUserInfo]
@@ -26,11 +28,14 @@ deps:
 
 ```rust
 // notify.lang
-import "ext/slack" (slackNew, slackPostMessage)
+import "ext/slack" (slackNew, slackPostMessage, slackMsgOptionText)
 
 client = slackNew("xoxb-your-token")
 
-match slackPostMessage(client, "#general", "Hello from Funxy!") {
+// Use MsgOptionText to create the message option
+msg = slackMsgOptionText("Hello from Funxy!", false)
+
+match slackPostMessage(client, "#general", msg) {
   Ok(result) -> print("Sent to: " ++ show(result))
   Fail(err)  -> print("Slack error: " ++ show(err))
 }
@@ -83,15 +88,15 @@ Go functions often return `(T, error)`. With `error_to_result: true`, this becom
 ```yaml
 - type: Client
   as: slack
-  methods: [PostMessage]
+  methods: [GetUserInfo]
   error_to_result: true
 ```
 
 ```rust
-import "ext/slack" (slackPostMessage)
+import "ext/slack" (slackGetUserInfo)
 
-match slackPostMessage(client, "#general", "Hello!") {
-  Ok(result) -> print("Sent: " ++ show(result))
+match slackGetUserInfo(client, "U12345") {
+  Ok(user) -> print("Got user: " ++ show(user))
   Fail(msg)  -> print("Error: " ++ show(msg))
 }
 ```
@@ -100,25 +105,27 @@ Without `error_to_result`, Go errors cause a runtime panic. With it — they bec
 
 ### Context Injection (`skip_context`)
 
-Many Go APIs (gRPC clients, Slack, database drivers) require `context.Context` as the first argument. With `skip_context: true`, Funxy auto-injects `context.Background()`:
+Many Go APIs (gRPC clients, database drivers) require `context.Context` as the first argument. With `skip_context: true`, Funxy auto-injects `context.Background()`:
 
 ```yaml
 deps:
-  - pkg: github.com/slack-go/slack
-    version: v0.15.0
+  - pkg: github.com/redis/go-redis/v9
+    version: v9.7.0
     bind:
       - type: Client
-        as: slack
-        methods: [PostMessage, GetUserInfo]
+        as: redis
+        methods: [Get]
         skip_context: true
         error_to_result: true
 ```
 
 ```rust
-// Instead of slackPostMessage(ctx, client, channel, text), just:
-match slackPostMessage(client, "#general", "Hello!") {
-  Ok(result) -> print("Sent: " ++ show(result))
-  Fail(err)  -> print("Slack error: " ++ show(err))
+import "ext/redis" (redisGet)
+
+// Instead of redisGet(ctx, client, "key"), just:
+match redisGet(client, "key") {
+  Ok(val) -> print("Value: " ++ val)
+  Fail(err) -> print("Redis error: " ++ show(err))
 }
 ```
 
@@ -228,15 +235,16 @@ Funxy closures are automatically wrapped into Go `func(...)` types when passed t
 deps:
   - pkg: sort
     bind:
-      - func: Slice
-        as: sortSlice
+      - func: Search
+        as: sortSearch
 ```
 
 ```rust
-import "ext/sort" (sortSlice)
+import "ext/sort" (sortSearch)
 
-data = [3, 1, 4, 1, 5]
-sortSlice(data, fun(i, j) { data[i] < data[j] })
+// Find the smallest index i in [0, 10) such that i >= 6
+idx = sortSearch(10, fun(i) { i >= 6 })
+print(idx) // 6
 ```
 
 The wrapping is transparent: Funxy closures are converted to Go functions at call time, with arguments and return values automatically marshalled between Funxy and Go types.
@@ -610,6 +618,8 @@ deps:
     bind:
       - func: New
         as: slackNew
+      - func: MsgOptionText
+        as: slackMsgOptionText
       - type: Client
         as: slack
         methods: [PostMessage]
@@ -631,7 +641,7 @@ deps:
 ```
 
 ```rust
-import "ext/slack" (slackNew, slackPostMessage)
+import "ext/slack" (slackNew, slackPostMessage, slackMsgOptionText)
 import "ext/redis" (redisParseURL, redisNew, redisGet)
 
 // Initialize Redis client
@@ -644,7 +654,8 @@ redis = match redisParseURL("redis://localhost:6379/0") {
 match redisGet(redis, "slack-channel") {
   Ok(channel) -> {
     client = slackNew("xoxb-your-token")
-    match slackPostMessage(client, channel, "Deploy complete!") {
+    msg = slackMsgOptionText("Deploy complete!", false)
+    match slackPostMessage(client, channel, msg) {
       Ok(_)    -> print("Notification sent")
       Fail(e)  -> print("Slack error: " ++ show(e))
     }

@@ -22,6 +22,9 @@ func (sap *SemanticAnalyzerProcessor) Process(ctx *pipeline.PipelineContext) *pi
 
 	// Create loader and store in context for sharing with evaluator
 	loader := modules.NewLoader()
+	if ctx.GlobalBundle != nil {
+		loader.RegisterBundle(ctx.GlobalBundle)
+	}
 	ctx.Loader = loader
 
 	program, _ := ctx.AstRoot.(*ast.Program)

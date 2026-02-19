@@ -74,9 +74,24 @@ func bindKind(s KindSubst, name string, k Kind) error {
 	if v, ok := k.(KVar); ok && v.Name == name {
 		return nil
 	}
-	// Occurs check could go here, but kinds are rarely recursive in a dangerous way for this simple system
+	// Occurs check to prevent infinite recursion (e.g. k1 ~ k1 -> *)
+	if kindOccurs(name, k) {
+		return fmt.Errorf("recursive kind unification: %s occurs in %s", name, k)
+	}
 	s[name] = k
 	return nil
+}
+
+// kindOccurs checks if a KVar with the given name appears in the kind k
+func kindOccurs(name string, k Kind) bool {
+	switch k := k.(type) {
+	case KVar:
+		return k.Name == name
+	case KArrow:
+		return kindOccurs(name, k.Left) || kindOccurs(name, k.Right)
+	default:
+		return false
+	}
 }
 
 // KindContext holds the mapping from TVar names to their Kinds/KVars

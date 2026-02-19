@@ -47,6 +47,10 @@ type PipelineContext struct {
 
 	// StdinData holds pre-read stdin data for -e mode (injected as `stdin` variable)
 	StdinData *string
+
+	// GlobalBundle holds the embedded bundle for library-only mode.
+	// Using interface{} to avoid import cycle with vm package.
+	GlobalBundle interface{}
 }
 
 // NewPipelineContext creates and initializes a new PipelineContext.

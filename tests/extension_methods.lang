@@ -38,3 +38,13 @@ fun (l: List<t>) len_plus_one() -> Int {
 
 lst = [1, 2, 3]
 print(lst.len_plus_one())
+
+// Test extension on Union Type alias
+type alias Number = Float | Int
+
+fun (n: Number) add(m) {
+    n + m
+}
+
+print(1.add(2))
+print(1.5.add(2.5))

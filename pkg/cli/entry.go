@@ -1443,6 +1443,455 @@ func handleExtList(cfg *ext.Config) {
 	}
 }
 
+// handlePkg handles the "funxy pkg" subcommands.
+//
+//	funxy pkg build <lib-path>[@alias] -o <binary>
+func handlePkg() bool {
+	if len(os.Args) < 3 || os.Args[1] != "pkg" {
+		return false
+	}
+
+	subcommand := os.Args[2]
+
+	switch subcommand {
+	case "build":
+		handlePkgBuild()
+	case "list":
+		handlePkgList()
+	case "check":
+		handlePkgCheck()
+	case "stubs":
+		handlePkgStubs()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown pkg subcommand: %s\n", subcommand)
+		fmt.Fprintln(os.Stderr, "Available: build, list, check, stubs")
+		os.Exit(1)
+	}
+
+	return true
+}
+
+func handlePkgBuild() {
+	// funxy pkg build <lib-path>[@alias] [-force] [-delete] -o <binary>
+	if len(os.Args) < 5 {
+		fmt.Fprintf(os.Stderr, "Usage: funxy pkg build <lib-path>[@alias] [-force] [-delete] -o <binary>\n")
+		os.Exit(1)
+	}
+
+	var libSpecs []string
+	var outputPath string
+	var force bool
+	var deleteMode bool
+
+	for i := 3; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if arg == "-o" {
+			if i+1 < len(os.Args) {
+				outputPath = os.Args[i+1]
+				i++
+			}
+		} else if arg == "-force" {
+			force = true
+		} else if arg == "-delete" {
+			deleteMode = true
+		} else {
+			libSpecs = append(libSpecs, arg)
+		}
+	}
+
+	if len(libSpecs) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: no library path specified\n")
+		os.Exit(1)
+	}
+
+	if outputPath == "" {
+		fmt.Fprintf(os.Stderr, "Error: output binary not specified (-o <binary>)\n")
+		os.Exit(1)
+	}
+
+	// Determine host binary and existing bundle
+	var hostBinary []byte
+	var bundle *vm.Bundle
+
+	// Check if output file exists
+	if _, err := os.Stat(outputPath); err == nil {
+		// Output file exists - try to read it and extract bundle
+		binaryData, err := os.ReadFile(outputPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading binary %s: %s\n", outputPath, err)
+			os.Exit(1)
+		}
+
+		bundle, err = vm.ExtractEmbeddedBundle(binaryData)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error extracting bundle from %s: %s\n", outputPath, err)
+			os.Exit(1)
+		}
+
+		if bundle != nil {
+			// Found existing bundle, use host part of the binary
+			hostSize := vm.GetHostBinarySize(binaryData)
+			hostBinary = binaryData[:hostSize]
+		} else {
+			// No bundle found, treat entire file as host binary
+			hostBinary = binaryData
+		}
+	} else {
+		// Output file does not exist - use current executable as host
+		selfPath, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot find own executable: %s\n", err)
+			os.Exit(1)
+		}
+		selfPath, err = filepath.EvalSymlinks(selfPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot resolve executable path: %s\n", err)
+			os.Exit(1)
+		}
+
+		binaryData, err := os.ReadFile(selfPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot read own executable: %s\n", err)
+			os.Exit(1)
+		}
+
+		// Check if self has a bundle (e.g. if we are running a custom build)
+		// If so, we should probably strip it to get the clean host?
+		// Or maybe we want to preserve it?
+		// For `funxy pkg build`, we usually want to start with a clean host or the specified output file.
+		// If we are creating a NEW file, we likely want the base interpreter as host.
+
+		hostSize := vm.GetHostBinarySize(binaryData)
+		hostBinary = binaryData[:hostSize]
+	}
+
+	// Initialize bundle if needed
+	if bundle == nil {
+		bundle = &vm.Bundle{
+			Modules:       make(map[string]*vm.BundledModule),
+			IsLibraryOnly: true,
+		}
+	}
+
+	// Initialize virtual packages
+	modules.InitVirtualPackages()
+	ext.RegisterVirtualPackagesFromRegistry()
+
+	// Process each library spec
+	for _, spec := range libSpecs {
+		parts := strings.SplitN(spec, "@", 2)
+		libPath := parts[0]
+		alias := ""
+		if len(parts) > 1 {
+			alias = parts[1]
+		} else {
+			alias = filepath.Base(libPath)
+		}
+
+		// "pkg/" prefix is mandatory for user libraries added this way, unless already present
+		if !strings.HasPrefix(alias, "pkg/") {
+			alias = "pkg/" + alias
+		}
+
+		if deleteMode {
+			if _, exists := bundle.Modules[alias]; !exists {
+				fmt.Fprintf(os.Stderr, "Warning: module %s not found in binary, skipping delete\n", alias)
+				continue
+			}
+			delete(bundle.Modules, alias)
+			fmt.Printf("Deleted module %s\n", alias)
+			continue
+		}
+
+		fmt.Printf("Compiling %s as %s...\n", libPath, alias)
+
+		// Compile library
+		mod, err := compileLibraryToBundle(libPath, alias)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error compiling library %s: %s\n", libPath, err)
+			os.Exit(1)
+		}
+
+		// Check for conflict
+		if _, exists := bundle.Modules[alias]; exists && !force {
+			fmt.Fprintf(os.Stderr, "Error: module %s already exists in the binary (use -force to overwrite)\n", alias)
+			os.Exit(1)
+		}
+
+		bundle.Modules[alias] = mod
+	}
+
+	// Pack back
+	outputData, err := vm.PackSelfContained(hostBinary, bundle)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error packing binary: %s\n", err)
+		os.Exit(1)
+	}
+
+	if err := os.WriteFile(outputPath, outputData, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing output: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Re-sign if needed
+	if runtime.GOOS == "darwin" {
+		resignBinary(outputPath)
+	}
+
+	action := "Updated"
+	if deleteMode {
+		action = "Cleaned"
+	}
+	fmt.Printf("%s %s (total modules: %d)\n", action, outputPath, len(bundle.Modules))
+}
+
+func handlePkgList() {
+	if len(os.Args) < 4 {
+		fmt.Fprintf(os.Stderr, "Usage: funxy pkg list <binary>\n")
+		os.Exit(1)
+	}
+	binaryPath := os.Args[3]
+
+	data, err := os.ReadFile(binaryPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading binary: %s\n", err)
+		os.Exit(1)
+	}
+
+	bundle, err := vm.ExtractEmbeddedBundle(data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error extracting bundle: %s\n", err)
+		os.Exit(1)
+	}
+
+	if bundle == nil {
+		fmt.Println("No embedded packages found.")
+		return
+	}
+
+	fmt.Printf("Embedded packages in %s:\n", binaryPath)
+	for name, mod := range bundle.Modules {
+		fmt.Printf("- %s (exports: %d)\n", name, len(mod.Exports))
+	}
+}
+
+func handlePkgCheck() {
+	if len(os.Args) < 4 {
+		fmt.Fprintf(os.Stderr, "Usage: funxy pkg check <binary>\n")
+		os.Exit(1)
+	}
+	binaryPath := os.Args[3]
+
+	data, err := os.ReadFile(binaryPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading binary: %s\n", err)
+		os.Exit(1)
+	}
+
+	bundle, err := vm.ExtractEmbeddedBundle(data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error extracting bundle: %s\n", err)
+		os.Exit(1)
+	}
+
+	if bundle == nil {
+		fmt.Println("No embedded packages found.")
+		return
+	}
+
+	fmt.Printf("Checking embedded packages in %s...\n", binaryPath)
+	hasErrors := false
+	for name, mod := range bundle.Modules {
+		fmt.Printf("- %s: ", name)
+		if len(mod.Exports) == 0 {
+			fmt.Println("WARNING: No exports found")
+			hasErrors = true
+		} else {
+			fmt.Printf("OK (%d exports)\n", len(mod.Exports))
+		}
+	}
+
+	if hasErrors {
+		fmt.Println("\nSome packages have warnings.")
+		os.Exit(1)
+	} else {
+		fmt.Println("\nAll packages look good.")
+	}
+}
+
+func handlePkgStubs() {
+	if len(os.Args) < 4 {
+		fmt.Fprintf(os.Stderr, "Usage: funxy pkg stubs <binary>\n")
+		os.Exit(1)
+	}
+	binaryPath := os.Args[3]
+
+	data, err := os.ReadFile(binaryPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading binary: %s\n", err)
+		os.Exit(1)
+	}
+
+	bundle, err := vm.ExtractEmbeddedBundle(data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error extracting bundle: %s\n", err)
+		os.Exit(1)
+	}
+
+	if bundle == nil {
+		fmt.Println("No embedded packages found.")
+		return
+	}
+
+	// Create .funxy/pkg directory
+	stubDir := filepath.Join(".funxy", "pkg")
+	if err := os.MkdirAll(stubDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating stub directory: %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Generating stubs in %s...\n", stubDir)
+	for name, mod := range bundle.Modules {
+		// name is like "pkg/math"
+		// We want to create .funxy/pkg/pkg/math.d.lang?
+		// Or maybe just flatten it?
+		// Let's follow the structure.
+
+		relPath := name
+		if strings.HasPrefix(name, "pkg/") {
+			relPath = name[4:] // strip pkg/
+		}
+
+		// Ensure directory exists
+		stubPath := filepath.Join(stubDir, relPath+".d.lang")
+		stubFileDir := filepath.Dir(stubPath)
+		if err := os.MkdirAll(stubFileDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating directory for %s: %s\n", name, err)
+			continue
+		}
+
+		var content strings.Builder
+		content.WriteString(fmt.Sprintf("// Stub for %s\n", name))
+		content.WriteString(fmt.Sprintf("package %s\n\n", filepath.Base(name)))
+
+		for _, export := range mod.Exports {
+			// We don't have type info easily available in the bundle without deserializing everything
+			// and even then, we might not have full signatures if we didn't store them.
+			// For now, just generate basic declarations.
+			// If we stored type info in the bundle, we could use it here.
+			// But BundledModule only has Exports []string.
+			// Wait, we have Traits map[string][]string.
+
+			if methods, ok := mod.Traits[export]; ok {
+				content.WriteString(fmt.Sprintf("trait %s {\n", export))
+				for _, method := range methods {
+					content.WriteString(fmt.Sprintf("    fun %s()\n", method))
+				}
+				content.WriteString("}\n\n")
+			} else {
+				// Assume it's a value/function
+				content.WriteString(fmt.Sprintf("val %s\n", export))
+			}
+		}
+
+		if err := os.WriteFile(stubPath, []byte(content.String()), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing stub %s: %s\n", stubPath, err)
+		} else {
+			fmt.Printf("  %s\n", stubPath)
+		}
+	}
+}
+
+func compileLibraryToBundle(libPath, alias string) (*vm.BundledModule, error) {
+	absPath, err := filepath.Abs(libPath)
+	if err != nil {
+		return nil, err
+	}
+
+	loader := modules.NewLoader()
+	mod, err := loader.Load(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading module: %w", err)
+	}
+
+	// Analyze module to populate symbol table and exports
+	analyzer := analyzer.New(mod.SymbolTable)
+	analyzer.SetLoader(loader)
+	analyzer.BaseDir = mod.Dir
+	analyzer.RegisterBuiltins()
+
+	// Run analysis phases
+	for _, fileAST := range mod.OrderedFiles() {
+		if errs := analyzer.AnalyzeNaming(fileAST); len(errs) > 0 {
+			return nil, fmt.Errorf("analysis error (naming): %v", errs[0])
+		}
+	}
+	for _, fileAST := range mod.OrderedFiles() {
+		if errs := analyzer.AnalyzeHeaders(fileAST); len(errs) > 0 {
+			return nil, fmt.Errorf("analysis error (headers): %v", errs[0])
+		}
+	}
+	for _, fileAST := range mod.OrderedFiles() {
+		if errs := analyzer.AnalyzeInstances(fileAST); len(errs) > 0 {
+			return nil, fmt.Errorf("analysis error (instances): %v", errs[0])
+		}
+	}
+	for _, fileAST := range mod.OrderedFiles() {
+		if errs := analyzer.AnalyzeBodies(fileAST); len(errs) > 0 {
+			return nil, fmt.Errorf("analysis error (bodies): %v", errs[0])
+		}
+	}
+
+	// Compile
+	modCompiler := vm.NewCompiler()
+	modCompiler.SetBaseDir(mod.Dir)
+	modCompiler.SetSymbolTable(mod.SymbolTable)
+	// Note: TypeMap might be needed if we had full type inference, but for now we might get by.
+	// Ideally we should run the full pipeline to get TypeMap.
+
+	// Let's use the pipeline to ensure we have everything, similar to compileToBundle
+	// But we need to compile just this module, not a full program.
+	// The manual analysis above populates SymbolTable which is crucial.
+
+	modChunk, err := modCompiler.CompileModule(mod.OrderedFiles())
+	if err != nil {
+		return nil, fmt.Errorf("compilation error: %w", err)
+	}
+
+	bm := &vm.BundledModule{
+		Chunk:          modChunk,
+		PendingImports: modCompiler.GetPendingImports(),
+		Exports:        exportNamesList(mod),
+		Dir:            alias, // Use alias as the directory/key
+	}
+
+	// Store trait info
+	if mod.SymbolTable != nil {
+		for _, name := range bm.Exports {
+			if sym, ok := mod.SymbolTable.Find(name); ok && sym.Kind == symbols.TraitSymbol {
+				if bm.Traits == nil {
+					bm.Traits = make(map[string][]string)
+				}
+				bm.Traits[name] = mod.SymbolTable.GetTraitAllMethods(name)
+			}
+		}
+	}
+
+	// Store trait defaults
+	if mod.TraitDefaults != nil && len(mod.TraitDefaults) > 0 {
+		bm.TraitDefaults = make(map[string]*vm.CompiledFunction)
+		for key, fn := range mod.TraitDefaults {
+			compiledFn, err := vm.CompileTraitDefault(fn)
+			if err != nil {
+				continue
+			}
+			bm.TraitDefaults[key] = compiledFn
+		}
+	}
+
+	return bm, nil
+}
+
 func resignBinary(path string) {
 	// Try to use codesign (available on all macOS)
 	cmd := exec.Command("codesign", "--force", "--sign", "-", path)
@@ -1493,6 +1942,13 @@ func runEmbeddedBundle() bool {
 	}
 	if bundle == nil {
 		return false // No embedded bundle
+	}
+
+	// Library-only mode: load bundle into global state and continue as interpreter
+	// Check if MainChunk is dummy (just OP_RETURN)
+	if bundle.IsLibraryOnly {
+		vm.SetGlobalBundle(bundle)
+		return false
 	}
 
 	// Multi-command dispatch
@@ -1590,6 +2046,9 @@ func runPipeline(sourceCode string, filePath string, useTreeWalk bool, isTestMod
 	initialContext := pipeline.NewPipelineContext(sourceCode)
 	initialContext.FilePath = filePath
 	initialContext.IsTestMode = isTestMode
+	if vm.GlobalBundle != nil {
+		initialContext.GlobalBundle = vm.GlobalBundle
+	}
 
 	// 2. Select backend based on flag
 	var execBackend backend.Backend
@@ -1691,6 +2150,10 @@ func Run() {
 
 	// Handle ext command (funxy ext stubs/check/list)
 	if handleExt() {
+		return
+	}
+	// Handle pkg command (funxy pkg build)
+	if handlePkg() {
 		return
 	}
 

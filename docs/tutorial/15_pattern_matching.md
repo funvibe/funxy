@@ -301,35 +301,34 @@ Combine with tuple matching for HTTP routing:
 import "lib/http" (*)
 import "lib/json" (jsonEncode)
 
+const headers = [("Content-Type", "text/plain")]
+
 fun handler(req) {
     match (req.method, req.path) {
         ("GET", "/") -> {
             status: 200,
             body: "Welcome!"
+            headers: headers
         }
-        ("GET", "/users/{id}") -> {
+        ("GET", "/users/{userId}/posts/{postId}") -> {
             status: 200,
-            body: jsonEncode({ userId: id })
-        }
-        ("GET", "/users/{id}/posts/{postId}") -> {
-            status: 200,
-            body: "User " ++ id ++ ", Post " ++ postId
+            body: "User " ++ userId ++ ", Post " ++ postId,
+            headers: headers
         }
         ("GET", "/static/{...file}") -> {
             status: 200,
-            body: "File: " ++ file
-        }
-        ("POST", "/users") -> {
-            status: 201,
-            body: "Created"
+            body: "File: " ++ file,
+            headers: headers
         }
         _ -> {
             status: 404,
-            body: "Not found"
+            body: "Not found",
+            headers: headers
         }
     }
 }
 
+print("Listening on :8080")
 // httpServe(8080, handler)
 ```
 
