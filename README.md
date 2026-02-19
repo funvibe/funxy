@@ -31,8 +31,8 @@ fileWrite("users.csv", csvEncode(users))
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/funvibe/funxy/main/install.sh | bash
-# Open Windows Terminal → Ubuntu/WSL tab, then run the same command
 ```
+*Open Windows Terminal → Ubuntu/WSL tab, then run the same command
 
 Or download manually from [releases](https://github.com/funvibe/funxy/releases), or build from source: `git clone ... && cd funxy && make build` (Go 1.23+).
 
