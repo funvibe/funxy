@@ -206,12 +206,14 @@ Ranges and comprehensions, pipes, error propagation, tail call optimization, arg
 | `lib/json` | jsonEncode, jsonDecode |
 | `lib/list` | map, filter, foldl, sort, zip |
 | `lib/log` | Structured logging |
+| `lib/mailbox` | Asynchronous actor messaging and queuing |
 | `lib/map` | Key-value operations |
 | `lib/math` | Math functions |
 | `lib/path` | File path manipulation |
 | `lib/proto` | Protocol Buffers |
 | `lib/rand` | Random number generation |
 | `lib/regex` | Regular expressions |
+| `lib/rpc` | RPC cross-VM communication |
 | `lib/sql` | SQLite (built-in, no drivers needed) |
 | `lib/string` | split, trim, replace, contains |
 | `lib/sys` | Args, env, exec, exePath, scriptDir |
@@ -222,7 +224,9 @@ Ranges and comprehensions, pipes, error propagation, tail call optimization, arg
 | `lib/tuple` | Tuple manipulation |
 | `lib/url` | URL parsing and encoding |
 | `lib/uuid` | UUID generation |
+| `lib/vmm` | Virtual Machine Manager and state orchestration |
 | `lib/ws` | WebSocket client and server |
+| `lib/yaml` | YAML encoding, decoding, and file I/O |
 
 Run `funxy -help lib/<name>` for documentation.
 
