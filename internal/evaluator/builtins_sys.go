@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"github.com/funvibe/funxy/internal/config"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -17,6 +18,7 @@ func SysBuiltins() map[string]*Builtin {
 		"sysExit":      {Fn: builtinExit, Name: "sysExit"},
 		"sysExec":      {Fn: builtinExec, Name: "sysExec"},
 		"sysExePath":   {Fn: builtinSysExePath, Name: "sysExePath"},
+		"sysCPUCount":  {Fn: builtinSysCPUCount, Name: "sysCPUCount"},
 		"sysScriptDir": {Fn: builtinSysScriptDir, Name: "sysScriptDir"},
 	}
 }
@@ -156,6 +158,16 @@ func builtinSysExePath(e *Evaluator, args ...Object) Object {
 	}
 
 	return stringToList(exePath)
+}
+
+// sysCPUCount: () -> Int
+// Returns current Go runtime parallelism (GOMAXPROCS).
+func builtinSysCPUCount(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("sysCPUCount expects 0 arguments, got %d", len(args))
+	}
+
+	return &Integer{Value: int64(runtime.GOMAXPROCS(0))}
 }
 
 // sysScriptDir: () -> String

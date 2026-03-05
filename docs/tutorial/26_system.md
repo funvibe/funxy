@@ -1,6 +1,6 @@
 # System Functions (lib/sys)
 
-The `lib/sys` module provides access to system functions: command line arguments, environment variables, program termination, and executing external commands.
+The `lib/sys` module provides access to system functions: command line arguments, environment variables, process CPU parallelism, program termination, and executing external commands.
 
 ```rust
 import "lib/sys" (*)
@@ -126,6 +126,21 @@ result = sysExec(sysExePath(), ["user_script.lang"])
 print(result.stdout)
 ```
 
+### sysCPUCount
+
+```rust
+sysCPUCount() -> Int
+```
+
+Returns the current Go runtime CPU parallelism (`GOMAXPROCS`), i.e. how many OS threads can execute Go code simultaneously.
+
+```rust
+import "lib/sys" (sysCPUCount)
+
+workers = sysCPUCount()
+print("workers: " ++ show(workers))
+```
+
 ### sysScriptDir
 
 ```rust
@@ -246,4 +261,5 @@ if length(arguments) < 3 {
 | `sysExit` | `(Int) -> Nil` | Terminate program |
 | `sysExec` | `(String, List<String>) -> { code: Int, stdout: String, stderr: String }` | Execute command |
 | `sysExePath` | `() -> String` | Absolute path to current executable |
+| `sysCPUCount` | `() -> Int` | Current Go runtime CPU parallelism (`GOMAXPROCS`) |
 | `sysScriptDir` | `() -> String` | Directory of the running script |

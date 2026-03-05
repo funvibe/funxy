@@ -35,28 +35,30 @@ print(hasNoVar)  // false
 // sysExit(0) would terminate here
 
 // =============================================
+// sysCPUCount: () -> Int
+// =============================================
+cpuCount = sysCPUCount()
+print(cpuCount > 0)  // true
+
+// =============================================
 // sysExec: (String, List<String>) -> { code: Int, stdout: String, stderr: String }
 // =============================================
 // Executes a command and returns result
 
-// Simple echo command
-echoResult = sysExec("echo", ["hello"])
-print(echoResult.code == 0)  // true - success
+// Execute current funxy binary (portable across platforms)
+selfExec = sysExec(sysExePath(), ["-e", "print(\"sys-ok\")"])
+print(selfExec.code == 0)  // true - success
 
 // Check stdout contains expected output
-print(len(echoResult.stdout) > 0)  // true
+print(len(selfExec.stdout) > 0)  // true
 
 // Non-existent command returns code -1
 badResult = sysExec("definitely_not_a_real_command_12345", [])
 print(badResult.code == -1)  // true - command not found
 
-// Command with arguments
-lsResult = sysExec("ls", ["-la", "/"])
-print(lsResult.code == 0)  // true on unix systems
-
 // Print result struct works
-print(getType(echoResult.code))   // Int
-print(getType(echoResult.stdout)) // String
-print(getType(echoResult.stderr)) // String
+print(getType(selfExec.code))   // Int
+print(getType(selfExec.stdout)) // String
+print(getType(selfExec.stderr)) // String
 
 print("lib/sys tests passed!")

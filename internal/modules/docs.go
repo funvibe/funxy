@@ -884,9 +884,10 @@ func initSysDocs() {
 		"sysExit":      {Description: "Exit with status code"},
 		"sysExec":      {Description: "Execute external command"},
 		"sysExePath":   {Description: "Absolute path to current executable"},
+		"sysCPUCount":  {Description: "Current Go runtime CPU parallelism (GOMAXPROCS)"},
 		"sysScriptDir": {Description: "Directory of the currently running script. Returns \"\" in compiled binary (bundle) mode — use pathJoin([sysScriptDir(), \"file\"]) for portable code"},
 	}
-	pkg := generatePackageDocs("lib/sys", "System interaction (sysArgs, sysEnv, sysExit, sysExec, sysExePath, sysScriptDir)", meta, nil)
+	pkg := generatePackageDocs("lib/sys", "System interaction (sysArgs, sysEnv, sysExit, sysExec, sysExePath, sysCPUCount, sysScriptDir)", meta, nil)
 	RegisterDocPackage(pkg)
 }
 

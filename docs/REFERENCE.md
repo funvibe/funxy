@@ -1579,7 +1579,7 @@ For full APIs, see `docs/BUILTINS.md` or `./funxy -help lib/<name>`.
 | `lib/task` | Async tasks and concurrency |
 | `lib/io` | File and stream I/O |
 | `lib/path` | Path manipulation |
-| `lib/sys` | System interaction (args, env, exec, exePath, scriptDir) |
+| `lib/sys` | System interaction (args, env, exec, exePath, cpuCount, scriptDir) |
 | `lib/date` | Date and time with timezone offset |
 | `lib/time` | Timers and sleep |
 | `lib/uuid` | UUID generation |
@@ -1813,6 +1813,7 @@ args = sysArgs()
 val = sysEnv("HOME")
 // sysExec("ls", ["-la"])  // Execute external command
 exe = sysExePath()         // Absolute path to current executable
+cpu = sysCPUCount()        // Current Go runtime CPU parallelism (GOMAXPROCS)
 dir = sysScriptDir()       // Directory of the running script ("" in compiled binary)
 ```
 

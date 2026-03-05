@@ -146,6 +146,8 @@ func initSysPackage() {
 			"sysExec": typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: execResultType},
 			// Path to current executable
 			"sysExePath": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
+			// Current Go runtime CPU parallelism (GOMAXPROCS)
+			"sysCPUCount": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
 			// Directory of the currently running script
 			"sysScriptDir": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
 		},
