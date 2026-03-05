@@ -1,10 +1,5 @@
 package evaluator
 
-import (
-	"github.com/funvibe/funxy/internal/config"
-	"github.com/funvibe/funxy/internal/typesystem"
-)
-
 // GetMapBuiltins returns the map of map-related built-in functions
 func GetMapBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
@@ -20,6 +15,9 @@ func GetMapBuiltins() map[string]*Builtin {
 		"mapContains":   {Fn: builtinMapContains, Name: "mapContains"},
 		"mapSize":       {Fn: builtinMapSize, Name: "mapSize"},
 		"mapMerge":      {Fn: builtinMapMerge, Name: "mapMerge"},
+		"mapFold":       {Fn: builtinMapFold, Name: "mapFold"},
+		"mapMap":        {Fn: builtinMapMap, Name: "mapMap"},
+		"mapFilter":     {Fn: builtinMapFilter, Name: "mapFilter"},
 	}
 }
 
@@ -192,69 +190,73 @@ func builtinMapMerge(e *Evaluator, args ...Object) Object {
 	return m1.merge(m2)
 }
 
-// SetMapBuiltinTypes sets type information for map builtins
-func SetMapBuiltinTypes(builtins map[string]*Builtin) {
-	K := typesystem.TVar{Name: "K"}
-	V := typesystem.TVar{Name: "V"}
-
-	mapKV := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.MapTypeName},
-		Args:        []typesystem.Type{K, V},
+// mapFold: ((U, K, V) -> U, U, Map<K, V>) -> U
+func builtinMapFold(e *Evaluator, args ...Object) Object {
+	if len(args) != 3 {
+		return newError("mapFold expects 3 arguments, got %d", len(args))
+	}
+	foldFn := args[0]
+	acc := args[1]
+	m, ok := args[2].(*Map)
+	if !ok {
+		return newError("mapFold expects a Map as third argument, got %s", args[2].Type())
 	}
 
-	// For mapFromRecord: Map<String, V>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ListTypeName},
-		Args:        []typesystem.Type{typesystem.Char},
+	for _, item := range m.Items() {
+		result := e.ApplyFunction(foldFn, []Object{acc, item.Key, item.Value})
+		if isError(result) {
+			return result
+		}
+		acc = result
 	}
-	mapStringV := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.MapTypeName},
-		Args:        []typesystem.Type{stringType, V},
-	}
-	// We don't have a specific Record type in Type system that matches "any record",
-	// so we might use a generic or a special check. For now, use Any or specific Record logic in analyzer.
-	// Using TVar "R" for record.
-	recordType := typesystem.TVar{Name: "R"}
+	return acc
+}
 
-	optionV := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.OptionTypeName},
-		Args:        []typesystem.Type{V},
+// mapMap: ((K, V) -> V2, Map<K, V>) -> Map<K, V2>
+func builtinMapMap(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("mapMap expects 2 arguments, got %d", len(args))
 	}
-
-	listK := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ListTypeName},
-		Args:        []typesystem.Type{K},
+	mapFn := args[0]
+	m, ok := args[1].(*Map)
+	if !ok {
+		return newError("mapMap expects a Map as second argument, got %s", args[1].Type())
 	}
 
-	listV := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ListTypeName},
-		Args:        []typesystem.Type{V},
+	newM := newMap()
+	for _, item := range m.Items() {
+		mappedVal := e.ApplyFunction(mapFn, []Object{item.Key, item.Value})
+		if isError(mappedVal) {
+			return mappedVal
+		}
+		// Since we're building a new map internally in Go, using put is very efficient
+		newM = newM.put(item.Key, mappedVal)
+	}
+	return newM
+}
+
+// mapFilter: ((K, V) -> Bool, Map<K, V>) -> Map<K, V>
+func builtinMapFilter(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("mapFilter expects 2 arguments, got %d", len(args))
+	}
+	predFn := args[0]
+	m, ok := args[1].(*Map)
+	if !ok {
+		return newError("mapFilter expects a Map as second argument, got %s", args[1].Type())
 	}
 
-	pairKV := typesystem.TTuple{Elements: []typesystem.Type{K, V}}
-	listPairs := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ListTypeName},
-		Args:        []typesystem.Type{pairKV},
-	}
-
-	types := map[string]typesystem.Type{
-		"mapNew":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: mapKV},
-		"mapFromRecord": typesystem.TFunc{Params: []typesystem.Type{recordType}, ReturnType: mapStringV},
-		"mapGet":        typesystem.TFunc{Params: []typesystem.Type{mapKV, K}, ReturnType: optionV},
-		"mapGetOr":      typesystem.TFunc{Params: []typesystem.Type{mapKV, K, V}, ReturnType: V},
-		"mapPut":        typesystem.TFunc{Params: []typesystem.Type{mapKV, K, V}, ReturnType: mapKV},
-		"mapRemove":     typesystem.TFunc{Params: []typesystem.Type{mapKV, K}, ReturnType: mapKV},
-		"mapKeys":       typesystem.TFunc{Params: []typesystem.Type{mapKV}, ReturnType: listK},
-		"mapValues":     typesystem.TFunc{Params: []typesystem.Type{mapKV}, ReturnType: listV},
-		"mapItems":      typesystem.TFunc{Params: []typesystem.Type{mapKV}, ReturnType: listPairs},
-		"mapContains":   typesystem.TFunc{Params: []typesystem.Type{mapKV, K}, ReturnType: typesystem.Bool},
-		"mapSize":       typesystem.TFunc{Params: []typesystem.Type{mapKV}, ReturnType: typesystem.Int},
-		"mapMerge":      typesystem.TFunc{Params: []typesystem.Type{mapKV, mapKV}, ReturnType: mapKV},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
+	newM := newMap()
+	for _, item := range m.Items() {
+		predResult := e.ApplyFunction(predFn, []Object{item.Key, item.Value})
+		if isError(predResult) {
+			return predResult
+		}
+		if boolResult, isBool := predResult.(*Boolean); isBool && boolResult.Value {
+			newM = newM.put(item.Key, item.Value)
 		}
 	}
+	return newM
 }
+
+// SetMapBuiltinTypes sets type information for map builtins

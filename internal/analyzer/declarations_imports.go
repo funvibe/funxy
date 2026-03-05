@@ -523,21 +523,21 @@ func (w *walker) analyzeRegularModule(loadedMod LoadedModule, pathToCheck string
 			// This replaces preRegisterModuleNames
 			for _, file := range loadedMod.GetFiles() {
 				// Use AnalyzeNaming (ModeNaming)
-				errs := modAnalyzer.AnalyzeNaming(file)
+				errs := modAnalyzer.AnalyzeNaming(file, w.ctx)
 				// Naming errors (e.g. invalid names) should be reported
 				w.addErrors(errs)
 			}
 
 			// Pass 2: Declarations (Headers) - Resolve Types and Signatures
 			for _, file := range loadedMod.GetFiles() {
-				errs := modAnalyzer.AnalyzeHeaders(file)
+				errs := modAnalyzer.AnalyzeHeaders(file, w.ctx)
 				w.addErrors(errs)
 			}
 
 			// Pass 3: Instances - Check trait implementations
 			// This is done after all headers (types/traits/signatures) are known
 			for _, file := range loadedMod.GetFiles() {
-				errs := modAnalyzer.AnalyzeInstances(file)
+				errs := modAnalyzer.AnalyzeInstances(file, w.ctx)
 				w.addErrors(errs)
 			}
 
@@ -566,7 +566,7 @@ func (w *walker) analyzeRegularModule(loadedMod LoadedModule, pathToCheck string
 			modAnalyzer.BaseDir = utils.GetModuleDir(pathToCheck)
 
 			for _, file := range loadedMod.GetFiles() {
-				errs := modAnalyzer.AnalyzeBodies(file)
+				errs := modAnalyzer.AnalyzeBodies(file, w.ctx)
 				w.addErrors(errs)
 			}
 
@@ -591,7 +591,7 @@ func (w *walker) analyzeRegularModule(loadedMod LoadedModule, pathToCheck string
 			modAnalyzer.BaseDir = utils.GetModuleDir(pathToCheck)
 
 			for _, file := range loadedMod.GetFiles() {
-				errs := modAnalyzer.Analyze(file)
+				errs := modAnalyzer.Analyze(file, w.ctx)
 				w.addErrors(errs)
 			}
 

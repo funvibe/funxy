@@ -1,0 +1,13 @@
+import "lib/mailbox"
+
+fun ping(msg: String) -> String {
+    return msg ++ "-PONG"
+}
+
+// Keep the worker alive
+// In tests, the VM runs until canceled by KillVM
+for true {
+    // Wait for messages without timeout (or with large timeout)
+    msg = mailbox.receiveWait(100)
+    // ignore
+}

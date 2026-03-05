@@ -1,0 +1,27 @@
+import "lib/mailbox" (send, sendWait, Importance)
+import "lib/time" (sleepMs)
+import "lib/vmm" (setState)
+
+// 1. Send msg1, msg2, urgent (receiver will receiveByWait for urgent, skipping first two)
+send("worker_metrics_recv", { payload: "msg 1", type: "normal" })
+send("worker_metrics_recv", { payload: "msg 2", type: "normal" })
+send("worker_metrics_recv", { payload: "urgent msg", type: "urgent", importance: Warn })
+
+// 2. Wait for receiver to run receiveByWait and receiveWait
+sleepMs(2000)
+
+// 3. Spam queue to trigger drops
+i = 0
+while i < 20 {
+    send("worker_metrics_recv", { payload: "spam " ++ show(i), importance: Low })
+    i = i + 1
+}
+
+// 4. Test sendWait (may block or fail when full)
+sendWait("worker_metrics_recv", { payload: "blocked msg", importance: Low }, 100)
+
+setState("done")
+
+for true {
+    sleepMs(500)
+}

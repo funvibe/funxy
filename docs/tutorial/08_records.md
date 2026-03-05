@@ -33,6 +33,12 @@ p: Point = { x: 10, y: 20 }
 
 // Field order doesn't matter
 person: Person = { age: 30, name: "Alice", active: true }
+
+// Note: To avoid grammar ambiguity with block statements, top-level assignment expressions 
+// are forbidden inside record values. If you need to assign a variable inside a record literal, 
+// wrap the assignment in parentheses:
+// { a: (b = 1) } // Valid record
+// { a: b = 1 }   // Invalid as a record (parsed as a block statement)
 ```
 
 ### Empty Record
@@ -59,19 +65,34 @@ print(rect.topLeft.x)      // 0
 print(rect.bottomRight.y)  // 50
 ```
 
-## Field Modification
+## Field Modification (Immutable)
 
-Funxy allows modifying record fields:
+Funxy records are immutable. When you assign to a field, the expression evaluates to a new record with the updated field. The original record remains unchanged.
 
 ```rust
 p = { x: 10, y: 20 }
-p.x = 100
-print(p.x)  // 100
+p2 = p.x = 100 // Returns a new record
 
-// Nested modification
+print(p.x)   // 10 (original is unchanged)
+print(p2.x)  // 100
+
+// To "mutate" a variable, reassign it:
+p = p.x = 100
+print(p.x)   // 100
+
+// Nested modification returns a new root record
 rect = { tl: { x: 0, y: 0 }, br: { x: 10, y: 10 } }
-rect.tl.y = 50
+rect = rect.tl.y = 50
 print(rect.tl.y)  // 50
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `p.x = 10` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun updateX(p: Point, val: Int) -> Point {
+    // Valid: implicitly returns the new record
+    p.x = val
+}
 ```
 
 ## Record Update (spread)

@@ -6,8 +6,10 @@ A statically typed scripting language that compiles to native binaries. For auto
 - Static types with strong inference — most code needs no annotations
 - Batteries-included stdlib: HTTP/gRPC, JSON/protobuf, SQL, TUI, async/await, bytes/bits
 - Use Go packages from scripts — declare in `funxy.yaml`, import as `ext/*`
+- Built-in VMM for supervisor/worker orchestration with RPC, mailbox, tracing, and circuit breaker
 - Command-line eval mode (`-pe`, `-lpe`) for one-liners and shell pipelines
 - Safe data modeling with records, unions, ADTs, and pattern matching
+- Immutable data structures (Records, Lists, Maps) with ergonomic update syntax
 - Easy embedding in Go for config, rules, and automation
 
 ```bash
@@ -223,6 +225,34 @@ Ranges and comprehensions, pipes, error propagation, tail call optimization, arg
 | `lib/ws` | WebSocket client and server |
 
 Run `funxy -help lib/<name>` for documentation.
+
+## VMM (Supervisor/Workers)
+
+Run isolated workers inside one host process and orchestrate them from a supervisor script:
+
+```bash
+funxy vmm supervisor.lang
+funxy vmm ps
+funxy vmm inspect worker_1
+funxy vmm trace worker_1
+funxy vmm trace --all
+```
+
+Useful runtime flags:
+
+```bash
+funxy vmm supervisor.lang --rpc-serialization auto
+```
+
+- `auto` (default): fast object path when available, stable `fdf` for byte fallback.
+- `fdf`: stable wire format for slow RPC path.
+- `ephemeral`: `gob` on slow path (faster in some cases, version-coupled).
+
+Supervisor utilities:
+- `kit/vmm` — restart intensity/backoff, state-validation fallback, lifecycle helpers.
+- `kit/vmmui` — interactive TUI for inspect/stats/trace/uptime/stop/kill/reload.
+
+See the full guide in [docs/tutorial/47_vmm.md](docs/tutorial/47_vmm.md).
 
 ## Examples
 

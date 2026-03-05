@@ -73,7 +73,6 @@ func RegisterDateBuiltins(env *Environment) {
 
 	// Functions
 	builtins := DateBuiltins()
-	SetDateBuiltinTypes(builtins)
 	for name, fn := range builtins {
 		env.Set(name, fn)
 	}
@@ -759,86 +758,3 @@ func builtinDateDiffSeconds(e *Evaluator, args ...Object) Object {
 }
 
 // SetDateBuiltinTypes sets type info for date builtins
-func SetDateBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-
-	// Date = { year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, offset: Int }
-	dateType := typesystem.TRecord{
-		Fields: map[string]typesystem.Type{
-			"year":   typesystem.Int,
-			"month":  typesystem.Int,
-			"day":    typesystem.Int,
-			"hour":   typesystem.Int,
-			"minute": typesystem.Int,
-			"second": typesystem.Int,
-			"offset": typesystem.Int,
-		},
-	}
-
-	// Option<Date>
-	optionDate := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{dateType},
-	}
-
-	types := map[string]typesystem.Type{
-		// Creation
-		"dateNow":           typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: dateType},
-		"dateNowUtc":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: dateType},
-		"dateFromTimestamp": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: dateType},
-		// dateNew has optional offset (handled by DefaultCount)
-		"dateNew": typesystem.TFunc{
-			Params:       []typesystem.Type{typesystem.Int, typesystem.Int, typesystem.Int, typesystem.Int},
-			ReturnType:   dateType,
-			DefaultCount: 1,
-		},
-		// dateNewTime has optional offset
-		"dateNewTime": typesystem.TFunc{
-			Params:       []typesystem.Type{typesystem.Int, typesystem.Int, typesystem.Int, typesystem.Int, typesystem.Int, typesystem.Int, typesystem.Int},
-			ReturnType:   dateType,
-			DefaultCount: 1,
-		},
-		"dateToTimestamp": typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-
-		// Timezone/Offset
-		"dateToUtc":      typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: dateType},
-		"dateToLocal":    typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: dateType},
-		"dateOffset":     typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-		"dateWithOffset": typesystem.TFunc{Params: []typesystem.Type{dateType, typesystem.Int}, ReturnType: dateType},
-
-		// Formatting
-		"dateFormat": typesystem.TFunc{Params: []typesystem.Type{dateType, stringType}, ReturnType: stringType},
-		"dateParse":  typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: optionDate},
-
-		// Components
-		"dateYear":    typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-		"dateMonth":   typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-		"dateDay":     typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-		"dateWeekday": typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-		"dateHour":    typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-		"dateMinute":  typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-		"dateSecond":  typesystem.TFunc{Params: []typesystem.Type{dateType}, ReturnType: typesystem.Int},
-
-		// Arithmetic
-		"dateAddDays":    typesystem.TFunc{Params: []typesystem.Type{dateType, typesystem.Int}, ReturnType: dateType},
-		"dateAddMonths":  typesystem.TFunc{Params: []typesystem.Type{dateType, typesystem.Int}, ReturnType: dateType},
-		"dateAddYears":   typesystem.TFunc{Params: []typesystem.Type{dateType, typesystem.Int}, ReturnType: dateType},
-		"dateAddHours":   typesystem.TFunc{Params: []typesystem.Type{dateType, typesystem.Int}, ReturnType: dateType},
-		"dateAddMinutes": typesystem.TFunc{Params: []typesystem.Type{dateType, typesystem.Int}, ReturnType: dateType},
-		"dateAddSeconds": typesystem.TFunc{Params: []typesystem.Type{dateType, typesystem.Int}, ReturnType: dateType},
-
-		// Difference
-		"dateDiffDays":    typesystem.TFunc{Params: []typesystem.Type{dateType, dateType}, ReturnType: typesystem.Int},
-		"dateDiffSeconds": typesystem.TFunc{Params: []typesystem.Type{dateType, dateType}, ReturnType: typesystem.Int},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

@@ -1,0 +1,131 @@
+import "lib/test" (*)
+import "lib/map" (mapGetOr)
+import "lib/list" (nthOr)
+
+testRun("Immutable deep record update", \ -> {
+    r1 = { a: 1, b: { c: 2, d: [3, 4, 5] } }
+    
+    r2 = r1.b.c = 99
+    r3 = r1.b.d[1] = 42
+    
+    assertEquals(2, r1.b.c, "Original record unchanged")
+    assertEquals(99, r2.b.c, "New record updated")
+    
+    assertEquals(4, r1.b.d[1], "Original list unchanged")
+    assertEquals(42, r3.b.d[1], "New list in record updated")
+})
+
+testRun("Reassignment to mutable variable", \ -> {
+    r1 = { a: 1, b: { c: 2, d: [3, 4, 5] } }
+    m_var = r1
+    m_var = m_var.b.c = 100
+    
+    assertEquals(100, m_var.b.c, "Variable reassigned successfully")
+    assertEquals(2, r1.b.c, "Original reference unchanged")
+})
+
+testRun("Immutable list and map index update", \ -> {
+    lst = [1, 2, 3]
+    lst2 = lst[0] = 99
+    
+    assertEquals(1, lst[0], "Original list unchanged")
+    assertEquals(99, lst2[0], "New list updated")
+    
+    mp = %{"x" => 10}
+    mp2 = mp["x"] = 20
+    
+    assertEquals(Some(10), mp["x"], "Original map unchanged")
+    assertEquals(Some(20), mp2["x"], "New map updated")
+})
+
+testRun("Return from function (explicit and implicit)", \ -> {
+    fun updateRecImplicit(r: { x: Int }, val: Int) -> { x: Int } {
+        r.x = val // Implicit return
+    }
+
+    fun updateRecExplicit(r: { x: Int }, val: Int) -> { x: Int } {
+        return r.x = val // Explicit return
+    }
+
+    r = { x: 10 }
+    
+    r1 = updateRecImplicit(r, 20)
+    assertEquals(10, r.x, "Original unchanged (implicit)")
+    assertEquals(20, r1.x, "New returned (implicit)")
+
+    r2 = updateRecExplicit(r, 30)
+    assertEquals(10, r.x, "Original unchanged (explicit)")
+    assertEquals(30, r2.x, "New returned (explicit)")
+})
+
+testRun("Return from block/if/match", \ -> {
+    // Return from block
+    r = { x: 10 }
+    rBlock = {
+        temp = 42
+        r.x = temp
+    }
+    assertEquals(10, r.x, "Original unchanged")
+    assertEquals(42, rBlock.x, "Returned from block")
+
+    // Return from if
+    cond = true
+    rIf = if cond {
+        r.x = 99
+    } else {
+        r.x = 0
+    }
+    assertEquals(10, r.x, "Original unchanged")
+    assertEquals(99, rIf.x, "Returned from if")
+
+    // Return from match
+    val = "update"
+    rMatch = match val {
+        "update" -> r.x = 100
+        _ -> r.x = -1
+    }
+    assertEquals(10, r.x, "Original unchanged")
+    assertEquals(100, rMatch.x, "Returned from match")
+})
+
+testRun("Return from loop (break with value)", \ -> {
+    r = { x: 10 }
+    rLoop = for i in 1..5 {
+        if i == 3 {
+            break r.x = i * 10
+        }
+        r.x = 0
+    }
+    assertEquals(10, r.x, "Original unchanged")
+    
+    // In Funxy, if the loop has a body that returns a value, and break returns a value,
+    // the loop might return the value directly or Option. Let's just check if it has .x
+    // If it's an Option, we'd need to unwrap. Let's try matching Option first, if that failed, it's direct.
+    // Actually, the error said: expected { x: Int }, got (Option t?) for Some(res).
+    // This means rLoop is of type { x: Int }.
+    assertEquals(30, rLoop.x, "Returned from loop break")
+})
+
+testRun("Complex nested collections returned", \ -> {
+    fun processData(data: Map<String, List<{v: Int}>>, key: String, idx: Int, newVal: Int) -> Map<String, List<{v: Int}>> {
+        // Extract list, update it, and return new map
+        list = data[key] ?? []
+        data[key] = list[idx].v = newVal
+    }
+
+    initial = %{
+        "items" => [{v: 1}, {v: 2}]
+    }
+
+    updated = processData(initial, "items", 1, 99)
+    
+    // Original asserts
+    origList = mapGetOr(initial, "items", [])
+    origItem = nthOr(origList, 1, {v: -1})
+    assertEquals(2, origItem.v, "Original unchanged")
+
+    // Updated asserts
+    updList = mapGetOr(updated, "items", [])
+    updItem = nthOr(updList, 1, {v: -1})
+    assertEquals(99, updItem.v, "Updated value correct")
+})

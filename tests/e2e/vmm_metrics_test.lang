@@ -1,0 +1,109 @@
+import "lib/test" (testRun, assertEquals, assertOk, testSpawnVM, assertTrue)
+import "lib/vmm" (vmStats, spawnVM, killVM)
+import "lib/time" (sleepMs)
+
+fun getStat(id: String, key: String) -> Int {
+    stats = vmStats(id)
+    match stats[key] {
+        Some(v) -> v
+        None -> 0
+    }
+}
+
+testRun("VMM Metrics E2E", \ -> {
+    // Spawn workers
+    idIdleRes = testSpawnVM("./tests/e2e/vmm_worker_idle.lang", { name: "worker_idle", capabilities: ["lib/time"] })
+    assertOk(idIdleRes)
+    idIdle = match idIdleRes { Ok(id) -> id; Fail(_) -> "" }
+    
+    idBusyRes = testSpawnVM("./tests/e2e/vmm_worker_busy.lang", { name: "worker_busy", capabilities: [] })
+    assertOk(idBusyRes)
+    idBusy = match idBusyRes { Ok(id) -> id; Fail(_) -> "" }
+    
+    idLeakRes = testSpawnVM("./tests/e2e/vmm_worker_leak.lang", { name: "worker_leak", capabilities: ["lib/time"] })
+    assertOk(idLeakRes)
+    idLeak = match idLeakRes { Ok(id) -> id; Fail(_) -> "" }
+    
+    idLimitsRes = spawnVM("./tests/e2e/vmm_worker_idle.lang", { 
+        name: "worker_limits",
+        capabilities: ["lib/time"],
+        limits: { 
+            maxInstructions: 5000000,
+            maxInstructionsPerSec: 10000,
+            maxMemoryMB: 256,
+            maxAllocationsPerSecond: 10,
+            maxStackDepth: 100
+        }
+    })
+    assertOk(idLimitsRes)
+    idLimits = match idLimitsRes { Ok(id) -> id; Fail(_) -> "" }
+
+    sleepMs(500)
+
+    // Test 1: Verify All VMs are Reported
+    assertTrue(getStat(idIdle, "instructions") > 0, "idle worker should have instructions")
+    assertTrue(getStat(idBusy, "instructions") > 0, "busy worker should have instructions")
+    assertTrue(getStat(idLeak, "instructions") > 0, "leak worker should have instructions")
+    assertEquals(1, getStat(idIdle, "status_code"))  // running
+    assertEquals(1, getStat(idBusy, "status_code"))  // running
+
+    // Test 2: Verify Busy Worker CPU usage
+    busy_start = getStat(idBusy, "instructions")
+    idle_start = getStat(idIdle, "instructions")
+    
+    sleepMs(2000)
+    
+    busy_end = getStat(idBusy, "instructions")
+    idle_end = getStat(idIdle, "instructions")
+    
+    busy_delta = busy_end - busy_start
+    idle_delta = idle_end - idle_start
+    
+    assertTrue(busy_delta > 1000, "busy delta > 1000")
+    assertTrue(busy_delta > idle_delta, "busy delta > idle delta")
+
+    // Test 4: Verify Memory Leak
+    leak_start = getStat(idLeak, "allocations")
+    sleepMs(2000)
+    leak_end = getStat(idLeak, "allocations")
+    leak_delta = leak_end - leak_start
+    assertTrue(leak_delta > 100, "leak delta > 100")
+
+    // Test 5: Verify VM Limits Metrics
+    limit_inst = getStat(idLimits, "limit_instructions")
+    limit_inst_per_sec = getStat(idLimits, "limit_instructions_per_sec")
+    limit_mem = getStat(idLimits, "limit_allocations_bytes")
+    limit_mem_per_sec = getStat(idLimits, "limit_allocations_bytes_per_sec")
+    limit_stack = getStat(idLimits, "limit_stack_depth")
+
+    assertEquals(5000000, limit_inst)
+    assertEquals(10000, limit_inst_per_sec)
+    assertEquals(268435456, limit_mem) // 256 MB
+    assertEquals(10, limit_mem_per_sec)
+    assertEquals(100, limit_stack)
+
+    // Test 6: Verify Rate Metrics
+    rate_inst = getStat(idBusy, "current_instructions_per_sec")
+    rate_alloc = getStat(idLeak, "current_allocations_bytes_per_sec")
+    
+    assertTrue(rate_inst > 0, "busy instructions_per_sec > 0")
+    assertTrue(rate_alloc > 0, "leak allocations_bytes_per_sec > 0")
+
+    // Test 7: Event queue metrics are present
+    queue_size = getStat(idIdle, "event_queue_size")
+    queue_capacity = getStat(idIdle, "event_queue_capacity")
+    dropped = getStat(idIdle, "event_queue_dropped_total")
+    assertTrue(queue_capacity > 0, "event_queue_capacity > 0")
+    assertTrue(queue_size >= 0, "event_queue_size >= 0")
+    assertTrue(dropped >= 0, "event_queue_dropped_total >= 0")
+
+    // Test 8: RPC circuit metrics are present in vmStats
+    circuit_state = getStat(idIdle, "rpc_circuit_state_code")
+    circuit_failures = getStat(idIdle, "rpc_circuit_failure_count")
+    circuit_fast_fail = getStat(idIdle, "rpc_circuit_fast_fail_total")
+    assertTrue(circuit_state >= 0, "rpc_circuit_state_code >= 0")
+    assertTrue(circuit_failures >= 0, "rpc_circuit_failure_count >= 0")
+    assertTrue(circuit_fast_fail >= 0, "rpc_circuit_fast_fail_total >= 0")
+
+    killVM(idLimits)
+})

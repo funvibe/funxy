@@ -118,6 +118,28 @@ func (m *PersistentMap) Put(key string, value evaluator.Object) *PersistentMap {
 	}
 }
 
+// Delete returns a new map with the key removed
+func (m *PersistentMap) Delete(key string) *PersistentMap {
+	if m.root == nil {
+		return m
+	}
+	hash := hashString(key)
+	newRoot, removed := m.root.delete(hash, key, 0)
+	if !removed {
+		return m
+	}
+
+	newCount := m.count - 1
+	if newRoot == nil {
+		return EmptyMap()
+	}
+
+	return &PersistentMap{
+		root:  newRoot,
+		count: newCount,
+	}
+}
+
 // --- hamtNode methods ---
 
 func (n *hamtNode) get(hash uint32, key string, shift uint) evaluator.Object {
@@ -230,6 +252,95 @@ func (n *hamtNode) put(hash uint32, key string, value evaluator.Object, shift ui
 	}
 
 	return newNode, false
+}
+
+func (n *hamtNode) delete(hash uint32, key string, shift uint) (*hamtNode, bool) {
+	idx := (hash >> shift) & hamtMask
+	bit := uint32(1) << idx
+
+	if n.bitmap&bit == 0 {
+		return n, false // Not found
+	}
+
+	pos := popcount(n.bitmap & (bit - 1))
+	item := n.contents[pos]
+
+	switch v := item.(type) {
+	case *hamtEntry:
+		if v.hash == hash && v.key == key {
+			// Remove this entry
+			return n.removeAt(pos, bit), true
+		}
+		return n, false
+
+	case *hamtNode:
+		newChild, removed := v.delete(hash, key, shift+hamtBits)
+		if !removed {
+			return n, false
+		}
+
+		// If newChild is nil (empty), remove it from this node.
+		if newChild == nil {
+			return n.removeAt(pos, bit), true
+		}
+
+		newNode := n.clone()
+		newNode.contents[pos] = newChild
+		return newNode, true
+
+	case []*hamtEntry:
+		// Bucket
+		for i, e := range v {
+			if e.hash == hash && e.key == key {
+				// Remove from bucket
+				if len(v) == 1 {
+					// Bucket becomes empty, remove from node
+					return n.removeAt(pos, bit), true
+				}
+				if len(v) == 2 {
+					// Bucket becomes single entry, replace bucket with entry
+					otherIdx := 1 - i
+					newNode := n.clone()
+					newNode.contents[pos] = v[otherIdx]
+					return newNode, true
+				}
+
+				// Remove from slice
+				newBucket := make([]*hamtEntry, len(v)-1)
+				copy(newBucket, v[:i])
+				copy(newBucket[i:], v[i+1:])
+
+				newNode := n.clone()
+				newNode.contents[pos] = newBucket
+				return newNode, true
+			}
+		}
+		return n, false
+	}
+	return n, false
+}
+
+func (n *hamtNode) clone() *hamtNode {
+	newNode := &hamtNode{
+		bitmap:   n.bitmap,
+		contents: make([]interface{}, len(n.contents)),
+	}
+	copy(newNode.contents, n.contents)
+	return newNode
+}
+
+func (n *hamtNode) removeAt(pos int, bit uint32) *hamtNode {
+	if len(n.contents) == 1 {
+		return nil // Node becomes empty
+	}
+
+	newNode := &hamtNode{
+		bitmap:   n.bitmap &^ bit,
+		contents: make([]interface{}, len(n.contents)-1),
+	}
+	copy(newNode.contents[:pos], n.contents[:pos])
+	copy(newNode.contents[pos:], n.contents[pos+1:])
+	return newNode
 }
 
 // --- Helper functions ---

@@ -55,9 +55,32 @@ xs = [1, 2, 3]
 [...xs, ...xs]     // [1, 2, 3, 1, 2, 3]
 ```
 
-### Modification
+### Modification (Immutable)
 
-Lists are **immutable**. You cannot assign to an index directly (e.g., `list[0] = 1`). Instead, use `insert` or `update` to create a new list.
+Lists are **immutable**. When you assign to an index directly, it evaluates to a **new** list with the updated element. The original list remains unchanged.
+
+```rust
+list = [1, 2, 3]
+
+// Index assignment creates a new list
+list2 = list[0] = 10
+print(list)   // [1, 2, 3]
+print(list2)  // [10, 2, 3]
+
+// To "mutate" a variable, reassign it
+list = list[0] = 99
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `list[0] = 10` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun updateFirst(lst: List<Int>, val: Int) -> List<Int> {
+    // Valid: implicitly returns the new list
+    lst[0] = val
+}
+```
+
+You can also use functions from `lib/list`:
 
 ```rust
 import "lib/list" (insert, update)
@@ -67,7 +90,7 @@ list = [1, 2, 3]
 // Insert at index
 insert(list, 1, 99)      // [1, 99, 2, 3]
 
-// Update at index
+// Update at index (alternative to list[0] = 10)
 update(list, 0, 10)      // [10, 2, 3]
 ```
 
@@ -144,12 +167,30 @@ type alias User = { name: String, age: Int }
 alice: User = { name: "Alice", age: 30 }
 ```
 
-### Mutation
+### Modification (Immutable)
+
+Records are immutable. When you assign to a field, it evaluates to a **new** record with the updated field. The original record remains unchanged.
 
 ```rust
 user = { name: "Alice", age: 30 }
-user.age = 31  // OK
-print(user.age)  // 31
+
+// Field assignment creates a new record
+user2 = user.age = 31
+
+print(user.age)   // 30 (original is unchanged)
+print(user2.age)  // 31
+
+// To "mutate" a variable, reassign it
+user = user.age = 31
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `user.age = 31` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun updateAge(u: User, newAge: Int) -> User {
+    // Valid: implicitly returns the new record
+    u.age = newAge
+}
 ```
 
 ### Spread (Update)
@@ -201,14 +242,30 @@ scores = %{ "Alice" => 100, "Bob" => 85 }
 empty: Map<String, Int> = %{}
 
 // Access
+scores["Alice"]                   // Some(100)
 mapGet(scores, "Alice")           // Some(100)
 mapGetOr(scores, "Unknown", 0)    // 0
 mapContains(scores, "Alice")      // true
 
-// Modification (returns new Map)
-scores2 = mapPut(scores, "Charlie", 92)
-scores3 = mapRemove(scores, "Bob")
+// Modification (Immutable - returns new Map)
+scores2 = scores["Charlie"] = 92
+scores3 = mapPut(scores, "Charlie", 92)
+scores4 = mapRemove(scores, "Bob")
 
+// To "mutate" a variable, reassign it
+scores = scores["Charlie"] = 92
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `scores["Alice"] = 100` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun addScore(scores: Map<String, Int>, name: String, val: Int) -> Map<String, Int> {
+    // Valid: implicitly returns the new map
+    scores[name] = val
+}
+```
+
+```rust
 // Iteration
 mapKeys(scores)    // ["Alice", "Bob"]
 mapValues(scores)  // [100, 85]

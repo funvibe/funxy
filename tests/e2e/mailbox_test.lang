@@ -1,0 +1,271 @@
+import "lib/mailbox" (Importance)
+import "lib/test" (testRun, assertEquals, assertOk, testSpawnVM, assertTrue)
+import "lib/rpc" (callWait)
+import "lib/vmm" (getState, stopVM, vmStats)
+import "lib/time" (sleepMs)
+
+testRun("mailbox basic send/receive via RPC inspection", \ -> {
+    recvIdRes = testSpawnVM("./tests/e2e/mailbox_1_recv.lang", {
+        name: "worker_recv",
+        capabilities: ["lib/mailbox", "lib/rpc", "lib/vmm"]
+    })
+    assertOk(recvIdRes)
+
+    sendIdRes = testSpawnVM("./tests/e2e/mailbox_1_send.lang", {
+        name: "worker_send",
+        capabilities: ["lib/mailbox", "lib/rpc"]
+    })
+    assertOk(sendIdRes)
+
+    match recvIdRes {
+        Ok(recvId) -> {
+            match sendIdRes {
+                Ok(sendId) -> {
+                    res = callWait(sendId, "sendMsg", "worker_recv", 1000)
+                    assertOk(res)
+
+                    match res {
+                        Ok(v) -> assertEquals("sent", v)
+                        Fail(e) -> ()
+                    }
+
+                    sleepMs(500)
+
+                    res2 = callWait(recvId, "getResult", [], 1000)
+                    assertOk(res2)
+                    match res2 {
+                        Ok(v) -> assertEquals("correct", v)
+                        Fail(e) -> ()
+                    }
+                }
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("mailbox requestWait and reply", \ -> {
+    responderIdRes = testSpawnVM("./tests/e2e/mailbox_2_responder.lang", {
+        name: "worker_responder_2",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"]
+    })
+    assertOk(responderIdRes)
+
+    requesterIdRes = testSpawnVM("./tests/e2e/mailbox_2_requester.lang", {
+        name: "worker_requester_2",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"]
+    })
+    assertOk(requesterIdRes)
+
+    sleepMs(1500) // Wait for them to interact
+
+    match responderIdRes {
+        Ok(respId) -> {
+            // we use stopVM to gracefully kill it and get its state
+            stateRes = stopVM(respId, Some({ saveState: true }))
+            assertOk(stateRes)
+            match stateRes {
+                Ok(s) -> assertEquals("correct", s)
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+
+    match requesterIdRes {
+        Ok(reqId) -> {
+            stateRes = stopVM(reqId, Some({ saveState: true }))
+            assertOk(stateRes)
+            match stateRes {
+                Ok(s) -> assertEquals("correct", s)
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("mailbox receiveBy (selective receive)", \ -> {
+    recvIdRes = testSpawnVM("./tests/e2e/mailbox_3_recv.lang", {
+        name: "worker_recv_by_3",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"]
+    })
+    assertOk(recvIdRes)
+
+    sendIdRes = testSpawnVM("./tests/e2e/mailbox_3_sender.lang", {
+        name: "worker_sender_by_3",
+        capabilities: ["lib/mailbox", "lib/time"]
+    })
+    assertOk(sendIdRes)
+
+    sleepMs(2000)
+
+    match recvIdRes {
+        Ok(recvId) -> {
+            stateRes = stopVM(recvId, Some({ saveState: true }))
+            assertOk(stateRes)
+            match stateRes {
+                Ok(s) -> {
+                    assertEquals("correct", s.urgent)
+                    assertEquals("correct", s.normal)
+                }
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("mailbox peek", \ -> {
+    recvIdRes = testSpawnVM("./tests/e2e/mailbox_4_recv.lang", {
+        name: "worker_peek_recv_4",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"]
+    })
+    assertOk(recvIdRes)
+
+    sendIdRes = testSpawnVM("./tests/e2e/mailbox_4_sender.lang", {
+        name: "worker_peek_sender_4",
+        capabilities: ["lib/mailbox", "lib/time"]
+    })
+    assertOk(sendIdRes)
+
+    sleepMs(1500)
+
+    match recvIdRes {
+        Ok(recvId) -> {
+            stateRes = stopVM(recvId, Some({ saveState: true }))
+            assertOk(stateRes)
+            match stateRes {
+                Ok(s) -> assertEquals("correct", s)
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("mailbox dropOld strategy", \ -> {
+    recvIdRes = testSpawnVM("./tests/e2e/mailbox_5_recv.lang", {
+        name: "worker_drop_recv",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"],
+        mailbox: { capacity: 5, dropOnFull: Info, strategy: "dropOld" }
+    })
+    assertOk(recvIdRes)
+
+    sendIdRes = testSpawnVM("./tests/e2e/mailbox_5_sender.lang", {
+        name: "worker_drop_sender",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"]
+    })
+    assertOk(sendIdRes)
+
+    sleepMs(3500)
+
+    match recvIdRes {
+        Ok(recvId) -> {
+            stateRes = stopVM(recvId, Some({ saveState: true }))
+            assertOk(stateRes)
+            match stateRes {
+                Ok(s) -> assertEquals("correct", s)
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+
+    match sendIdRes {
+        Ok(sendId) -> {
+            stateRes = stopVM(sendId, Some({ saveState: true }))
+            assertOk(stateRes)
+            match stateRes {
+                Ok(s) -> assertEquals("correct", s)
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("mailbox receiveBy with Importance", \ -> {
+    recvIdRes = testSpawnVM("./tests/e2e/mailbox_6_recv.lang", {
+        name: "worker_imp_recv",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"]
+    })
+    assertOk(recvIdRes)
+
+    sendIdRes = testSpawnVM("./tests/e2e/mailbox_6_sender.lang", {
+        name: "worker_imp_sender",
+        capabilities: ["lib/mailbox", "lib/time"]
+    })
+    assertOk(sendIdRes)
+
+    sleepMs(2000)
+
+    match recvIdRes {
+        Ok(recvId) -> {
+            stateRes = stopVM(recvId, Some({ saveState: true }))
+            assertOk(stateRes)
+            match stateRes {
+                Ok(s) -> {
+                    assertEquals("correct", s.crit)
+                    assertEquals("correct", s.warn)
+                    assertEquals("correct", s.low)
+                }
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("mailbox metrics", \ -> {
+    recvIdRes = testSpawnVM("./tests/e2e/mailbox_7_metrics_recv.lang", {
+        name: "worker_metrics_recv",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"],
+        mailbox: { capacity: 5, dropOnFull: Warn, strategy: "dropOld" }
+    })
+    assertOk(recvIdRes)
+
+    sendIdRes = testSpawnVM("./tests/e2e/mailbox_7_metrics_send.lang", {
+        name: "worker_metrics_sender",
+        capabilities: ["lib/mailbox", "lib/time", "lib/vmm"]
+    })
+    assertOk(sendIdRes)
+
+    sleepMs(3000)
+
+    match recvIdRes {
+        Ok(recvId) -> {
+            stats = vmStats(recvId)
+
+            // Receiver successfully extracted messages (at least 2)
+            match stats["mailbox_messages_received_total"] {
+                Some(v) -> assertTrue(v >= 2, "received msgs >= 2")
+                None -> ()
+            }
+
+            // Mailbox correctly tracked dropped messages due to full capacity (dropOld strategy)
+            match stats["mailbox_drops_total_full_old"] {
+                Some(v) -> assertTrue(v > 0, "has old drops")
+                None -> ()
+            }
+
+            // Selective receive correctly incremented depth and skipped counters
+            match stats["mailbox_selective_scan_depth_total"] {
+                Some(v) -> assertTrue(v > 0, "selective depth > 0")
+                None -> ()
+            }
+            match stats["mailbox_skipped_messages"] {
+                Some(v) -> assertTrue(v > 0, "skipped msgs > 0")
+                None -> ()
+            }
+
+            // Block duration is 0 as expected for dropOld strategy
+            match stats["mailbox_block_duration_ms_total"] {
+                Some(v) -> assertEquals(0, v)
+                None -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})

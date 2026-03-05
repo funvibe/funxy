@@ -659,6 +659,13 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 		isExtModule = true
 	}
 
+	// Check sandbox mode for dirty modules early
+	if vm.loader != nil && vm.loader.SandboxMode {
+		if !modules.IsPureVirtualPackage(imp.Path) && !vm.loader.AllowedModules[imp.Path] {
+			return fmt.Errorf("capability denied: module '%s' is not allowed in sandbox mode", imp.Path)
+		}
+	}
+
 	if imp.Path == "lib" {
 		return vm.importAllLibPackages(imp)
 	}
@@ -711,14 +718,24 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 	} else if len(imp.Symbols) > 0 {
 		for _, sym := range imp.Symbols {
 			if fn, ok := builtins[sym]; ok {
+				vm.evalMu.Lock()
 				vm.globals.Globals = vm.globals.Globals.Put(sym, fn)
+				if vm.eval != nil && vm.eval.GlobalEnv != nil {
+					vm.eval.GlobalEnv.Set(sym, fn)
+				}
+				vm.evalMu.Unlock()
 
 				// Auto-import ADT constructors if present
 				if pkg := modules.GetVirtualPackage("lib/" + pkgName); pkg != nil {
 					if variants, ok := pkg.Variants[sym]; ok {
 						for _, variantName := range variants {
 							if variantFn, exists := builtins[variantName]; exists {
+								vm.evalMu.Lock()
 								vm.globals.Globals = vm.globals.Globals.Put(variantName, variantFn)
+								if vm.eval != nil && vm.eval.GlobalEnv != nil {
+									vm.eval.GlobalEnv.Set(variantName, variantFn)
+								}
+								vm.evalMu.Unlock()
 							}
 						}
 					}
@@ -734,7 +751,12 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 		}
 		modObj := evaluator.NewRecord(fields)
 		modObj.ModuleName = pkgName
+		vm.evalMu.Lock()
 		vm.globals.Globals = vm.globals.Globals.Put(pkgName, modObj)
+		if vm.eval != nil && vm.eval.GlobalEnv != nil {
+			vm.eval.GlobalEnv.Set(pkgName, modObj)
+		}
+		vm.evalMu.Unlock()
 	}
 
 	return nil
@@ -755,7 +777,12 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
 			for name, fn := range builtins {
 				if !excluded[name] {
+					vm.evalMu.Lock()
 					vm.globals.Globals = vm.globals.Globals.Put(name, fn)
+					if vm.eval != nil && vm.eval.GlobalEnv != nil {
+						vm.eval.GlobalEnv.Set(name, fn)
+					}
+					vm.evalMu.Unlock()
 				}
 			}
 		}
@@ -770,7 +797,12 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
 			for name, fn := range builtins {
 				if !excluded[name] {
+					vm.evalMu.Lock()
 					vm.globals.Globals = vm.globals.Globals.Put(name, fn)
+					if vm.eval != nil && vm.eval.GlobalEnv != nil {
+						vm.eval.GlobalEnv.Set(name, fn)
+					}
+					vm.evalMu.Unlock()
 				}
 			}
 		}
@@ -788,7 +820,13 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 				libFields[pkg] = pkgObj
 			}
 		}
-		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, evaluator.NewRecord(libFields))
+		vm.evalMu.Lock()
+		libObj := evaluator.NewRecord(libFields)
+		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, libObj)
+		if vm.eval != nil && vm.eval.GlobalEnv != nil {
+			vm.eval.GlobalEnv.Set(imp.Alias, libObj)
+		}
+		vm.evalMu.Unlock()
 	} else {
 		libFields := make(map[string]evaluator.Object)
 		for _, pkg := range packages {
@@ -803,7 +841,13 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 				libFields[pkg] = pkgObj
 			}
 		}
-		vm.globals.Globals = vm.globals.Globals.Put("lib", evaluator.NewRecord(libFields))
+		vm.evalMu.Lock()
+		libObj := evaluator.NewRecord(libFields)
+		vm.globals.Globals = vm.globals.Globals.Put("lib", libObj)
+		if vm.eval != nil && vm.eval.GlobalEnv != nil {
+			vm.eval.GlobalEnv.Set("lib", libObj)
+		}
+		vm.evalMu.Unlock()
 	}
 
 	return nil

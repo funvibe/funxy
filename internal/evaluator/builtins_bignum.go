@@ -3,8 +3,6 @@ package evaluator
 import (
 	"math"
 	"math/big"
-
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // BignumBuiltins returns built-in functions for lib/bignum virtual package
@@ -27,40 +25,6 @@ func BignumBuiltins() map[string]*Builtin {
 }
 
 // SetBignumBuiltinTypes sets type info for bignum builtins
-func SetBignumBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	optionInt := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{typesystem.Int},
-	}
-	optionFloat := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{typesystem.Float},
-	}
-
-	types := map[string]typesystem.Type{
-		"bigIntNew":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.BigInt},
-		"bigIntFromInt":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.BigInt},
-		"bigIntToString": typesystem.TFunc{Params: []typesystem.Type{typesystem.BigInt}, ReturnType: stringType},
-		"bigIntToInt":    typesystem.TFunc{Params: []typesystem.Type{typesystem.BigInt}, ReturnType: optionInt},
-		"ratFromInt":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.Rational},
-		"ratNew":         typesystem.TFunc{Params: []typesystem.Type{typesystem.BigInt, typesystem.BigInt}, ReturnType: typesystem.Rational},
-		"ratNumer":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Rational}, ReturnType: typesystem.BigInt},
-		"ratDenom":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Rational}, ReturnType: typesystem.BigInt},
-		"ratToFloat":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Rational}, ReturnType: optionFloat},
-		"ratToString":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Rational}, ReturnType: stringType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // =============================================================================
 // BigInt functions

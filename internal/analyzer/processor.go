@@ -52,7 +52,7 @@ func (sap *SemanticAnalyzerProcessor) Process(ctx *pipeline.PipelineContext) *pi
 	if ctx.FilePath != "" {
 		analyzer.BaseDir = utils.GetModuleDir(ctx.FilePath)
 	}
-	errors := analyzer.Analyze(ctx.AstRoot)
+	errors := analyzer.Analyze(ctx.AstRoot, ctx)
 
 	ctx.TypeMap = analyzer.TypeMap                                     // Export inferred types to context
 	ctx.ResolutionMap = analyzer.ResolutionMap                         // Export resolved symbols to context
@@ -91,16 +91,16 @@ func (sap *SemanticAnalyzerProcessor) analyzeEntryModule(ctx *pipeline.PipelineC
 
 	var errors []*diagnostics.DiagnosticError
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, analyzer.AnalyzeNaming(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeNaming(fileAST, ctx)...)
 	}
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, analyzer.AnalyzeHeaders(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeHeaders(fileAST, ctx)...)
 	}
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, analyzer.AnalyzeInstances(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeInstances(fileAST, ctx)...)
 	}
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, analyzer.AnalyzeBodies(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeBodies(fileAST, ctx)...)
 	}
 
 	ctx.TypeMap = analyzer.TypeMap

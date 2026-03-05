@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"io"
 	"os"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"path/filepath"
 	"sync"
 )
@@ -77,7 +76,34 @@ func IOBuiltins() map[string]*Builtin {
 		// Path type checks
 		"isDir":  {Fn: builtinIsDir, Name: "isDir"},
 		"isFile": {Fn: builtinIsFile, Name: "isFile"},
+
+		// Bytecode execution (moved from global builtins for sandbox: requires lib/io capability)
+		"runBytecode": {Fn: builtinRunBytecode, Name: "runBytecode"},
 	}
+}
+
+// runBytecode: (String) -> Result<String, String>
+func builtinRunBytecode(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("runBytecode expects 1 argument, got %d", len(args))
+	}
+	pathList, ok := args[0].(*List)
+	if !ok {
+		return newError("runBytecode expects a string argument, got %s", args[0].Type())
+	}
+	path := listToString(pathList)
+
+	if e.RunBytecodeHandler != nil {
+		res, err := e.RunBytecodeHandler(path)
+		if err != nil {
+			return makeFailStr(err.Error())
+		}
+		if res == nil {
+			return makeOk(stringToList("Nil"))
+		}
+		return makeOk(stringToList(res.Inspect()))
+	}
+	return makeFailStr("runBytecode is not supported in this environment")
 }
 
 // readLine: () -> Option<String>
@@ -625,79 +651,3 @@ func builtinIsFile(e *Evaluator, args ...Object) Object {
 }
 
 // SetIOBuiltinTypes sets type info for io builtins
-func SetIOBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.String
-	// String | Bytes
-	stringOrBytes := typesystem.StringOrBytes
-
-	// Result<String, Bytes>
-	resultBytes := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, typesystem.Bytes},
-	}
-
-	resultString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, stringType},
-	}
-	// Result<String, Int>
-	resultInt := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, typesystem.Int},
-	}
-	// Result<String, Nil>
-	resultNil := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, typesystem.Nil},
-	}
-	optionString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{stringType},
-	}
-
-	listString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-	// Result<String, List<String>>
-	resultListString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, listString},
-	}
-
-	types := map[string]typesystem.Type{
-		// Stdin operations
-		"readLine":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: optionString},
-		"readAll":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
-		"readAllBytes": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bytes},
-
-		// File operations
-		"fileRead":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultString},
-		"fileReadBytes":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytes},
-		"fileReadBytesAt": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Int}, ReturnType: resultBytes},
-		"fileReadAt":      typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Int}, ReturnType: resultString},
-		"fileWrite":       typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultInt},
-		"fileAppend":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultInt},
-		"fileExists":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-		"fileSize":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultInt},
-		"fileDelete":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
-
-		// Directory operations
-		"dirCreate":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
-		"dirCreateAll": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
-		"dirRemove":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
-		"dirRemoveAll": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
-		"dirList":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultListString},
-		"dirExists":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-
-		// Path type checks
-		"isDir":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-		"isFile": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

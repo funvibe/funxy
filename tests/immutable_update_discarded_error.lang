@@ -1,0 +1,15 @@
+// Test error when an immutable record/list update is discarded
+// (e.g. r.f = 1 without assigning the result)
+
+r = { a: 1, b: 2 }
+r.a = 10  // ERROR
+
+lst = [1, 2, 3]
+lst[0] = 99 // ERROR
+
+mp = %{"x" => 10}
+mp["x"] = 20 // ERROR
+
+// Assignment with usage is valid, but the discarded updates above should cause analysis to fail
+// before execution.
+print("Should not print")

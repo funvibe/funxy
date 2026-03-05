@@ -101,8 +101,7 @@ const (
 	OP_CHECK_LIST_LEN     // Check list length (==, >=), push bool
 	OP_GET_LIST_REST      // Get rest of list from index
 	OP_CHECK_TYPE         // Check if value is of given type
-	OP_SET_FIELD          // Set field in record
-	OP_SET_INDEX          // Set element in list/map
+	OP_UPDATE_PATH        // Deep immutable update: [base, path..., value] -> [new_base]
 	OP_CALL_METHOD        // Call method on object (extension methods or field access + call)
 	OP_COALESCE           // Null coalescing: push (unwrapped, true) or (original, false)
 	OP_MAKE_ITER          // Convert iterable to iterator (handles Iter trait)
@@ -224,8 +223,7 @@ var OpcodeNames = map[Opcode]string{
 	OP_CHECK_LIST_LEN:     "CHECK_LIST_LEN",
 	OP_GET_LIST_REST:      "GET_LIST_REST",
 	OP_CHECK_TYPE:         "CHECK_TYPE",
-	OP_SET_FIELD:          "SET_FIELD",
-	OP_SET_INDEX:          "SET_INDEX",
+	OP_UPDATE_PATH:        "UPDATE_PATH",
 	OP_CALL_METHOD:        "CALL_METHOD",
 	OP_COALESCE:           "COALESCE",
 	OP_SET_TYPE_NAME:      "SET_TYPE_NAME",

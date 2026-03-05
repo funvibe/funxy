@@ -300,11 +300,14 @@ var Builtins = map[string]*Builtin{
 			if len(args) != 1 {
 				return newError("floatToInt expects 1 argument, got %d", len(args))
 			}
-			f, ok := args[0].(*Float)
-			if !ok {
-				return newError("floatToInt expects a Float, got %s", args[0].Type())
+			switch v := args[0].(type) {
+			case *Integer:
+				return v
+			case *Float:
+				return &Integer{Value: int64(v.Value)}
+			default:
+				return newError("floatToInt expects Int or Float, got %s", args[0].Type())
 			}
-			return &Integer{Value: int64(f.Value)}
 		},
 	},
 	"format": {
@@ -1253,6 +1256,11 @@ func isZeroValue(obj Object) bool {
 
 // makeNone creates an Option None (None) value
 func makeNone() Object {
+	return MakeNone()
+}
+
+// MakeNone returns Option's None. Exported for use by embed/hypervisor etc.
+func MakeNone() Object {
 	return &DataInstance{
 		Name:     config.NoneCtorName,
 		Fields:   []Object{},
@@ -1262,6 +1270,11 @@ func makeNone() Object {
 
 // makeSome creates an Option Some(value)
 func makeSome(val Object) Object {
+	return MakeSome(val)
+}
+
+// MakeSome returns Option's Some(val). Exported for use by embed/hypervisor etc.
+func MakeSome(val Object) Object {
 	return &DataInstance{
 		Name:     config.SomeCtorName,
 		Fields:   []Object{val},

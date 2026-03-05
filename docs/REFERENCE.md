@@ -271,6 +271,11 @@ numbers = [
 { x: 10, y: 20 }            // Anonymous record
 p: Point = { x: 10, y: 20 }  // Named type
 {}                          // Empty record
+
+// Note: To avoid grammar ambiguity with block statements, top-level assignment expressions
+// are forbidden inside record values. If you need to assign a variable inside a record literal,
+// wrap the assignment in parentheses:
+{ a: (b = 1) }
 ```
 
 ### Map Literals
@@ -705,11 +710,23 @@ names = ["Alice", "Bob"]
 empty: List<Int> = []
 ```
 
-#### Access
+#### Access and Modification (Immutable)
 ```rust
 xs[0]      // First element
 xs[2]      // Third element
 xs[-1]     // Last element (negative index)
+
+// Index assignment returns a new list
+ys = xs[0] = 99
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `xs[0] = 10` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun updateFirst(lst: List<Int>, val: Int) -> List<Int> {
+    // Valid: implicitly returns the new list
+    lst[0] = val
+}
 ```
 
 #### Operations
@@ -782,11 +799,24 @@ p = { x: 10, y: 20 }
 p: Point = { x: 10, y: 20 }
 ```
 
-#### Field Access and Modification
+#### Field Access and Modification (Immutable)
 ```rust
 print(p.x)    // 10
-p.x = 100     // Modify field
-print(p.x)    // 100
+p2 = p.x = 100 // Returns a new record with x updated
+print(p.x)    // 10 (original unchanged)
+print(p2.x)   // 100
+
+// To "mutate" a variable, reassign it:
+p = p.x = 100
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `p.x = 10` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun updateX(p: Point, val: Int) -> Point {
+    // Valid: implicitly returns the new record
+    p.x = val
+}
 ```
 
 #### Record Update (Spread)
@@ -840,6 +870,18 @@ mapContains(scores, "Alice")  // true
 scores2 = mapPut(scores, "Charlie", 92)
 scores3 = mapRemove(scores, "Bob")
 merged = mapMerge(m1, m2)
+
+// Map index assignment returns a new map
+scores4 = scores["David"] = 80
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `scores["Alice"] = 100` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun addScore(scores: Map<String, Int>, name: String, val: Int) -> Map<String, Int> {
+    // Valid: implicitly returns the new map
+    scores[name] = val
+}
 ```
 
 #### Iteration
@@ -847,6 +889,11 @@ merged = mapMerge(m1, m2)
 keys = mapKeys(scores)       // ["Alice", "Bob"]
 vals = mapValues(scores)     // [100, 85]
 items = mapItems(scores)     // [("Alice", 100), ("Bob", 85)]
+
+// Higher-order functions
+mapped = mapMap(\k, v -> v * 2, scores)          // Map<String, Int>
+filtered = mapFilter(\k, v -> v > 90, scores)    // Map<String, Int>
+total = mapFold(\acc, k, v -> acc + v, 0, scores) // Int
 ```
 
 ---
@@ -1479,6 +1526,11 @@ read("3.14", Float)   // Some(3.14)
 read("true", Bool)    // Some(true)
 ```
 
+### Execution
+```rust
+runBytecode("app.fbc") // Result<String, String> - Load and execute bytecode
+```
+
 ### Introspection
 ```rust
 getType(42)           // type(Int)
@@ -1515,6 +1567,7 @@ For full APIs, see `docs/BUILTINS.md` or `./funxy -help lib/<name>`.
 |--------|-------------|
 | `lib/http` | HTTP client and server |
 | `lib/ws` | WebSocket client and server |
+| `lib/mailbox` | Asynchronous actor messaging |
 | `lib/grpc` | gRPC client and server support |
 | `lib/proto` | Protocol Buffers serialization |
 | `lib/sql` | SQLite database operations |
@@ -1582,6 +1635,22 @@ wsClose(conn)
 wsServe(8080, fun(conn, msg) -> {
     "Echo: " ++ msg
 })
+```
+
+#### lib/mailbox
+```rust
+import "lib/mailbox" (*)
+
+// Send message (async)
+send("worker_1", { payload: "Hello" })
+send("worker_1", { payload: "Urgent", importance: Crit })
+
+// Receive message (blocking)
+msg = receiveWait(5000)?
+print(msg.payload)
+
+// Request-Response pattern
+reply = requestWait("worker_1", { cmd: "ping" }, 1000)?
 ```
 
 #### lib/grpc
@@ -2162,7 +2231,79 @@ is a type error — the embedding API will not silently coerce it to a zero valu
 | `func(...)` | Callable (type-inferred, supports variadic) |
 | `nil` | `Nil` |
 
-For more details, see the [Embedding Tutorial](tutorial/41_embedding.md).
+### Resource Limits
+
+Funxy VMs can be sandboxed with resource limits to prevent noisy neighbors and infinite loops. The VMM implements Preemption Safe Points, checking limits every N instructions and backwards jumps.
+
+```rust
+config = {
+    name: "billing_worker",
+    limits: {
+        maxMemoryMB: 64,       // Hard limit on memory allocations
+        maxInstructions: 10000000, // Budget per tick / CPU Gas limit
+        maxStackDepth: 50      // Prevent deep recursion
+    }
+}
+```
+
+If a VM exceeds these limits, it is safely preempted, and a `limit_exceeded` event is sent to the supervisor.
+
+### Funxy VMM and Supervisor API
+
+Funxy supports a Virtual Machine Manager (VMM) architecture via the Supervisor Pattern. You can run multiple isolated microservice VMs inside a single Go process, orchestrating them via a master VM.
+
+**1. The Hypervisor (Go):**
+```go
+hypervisor := funxy.NewHypervisor()
+
+// Register capability providers
+hypervisor.RegisterCapabilityProvider(func(cap string, vm *funxy.VM) error {
+    if cap == "db:read_write" {
+        vm.Bind("db", NewSafeDbProxy(rawDb)) // Inject safe proxies
+        return nil
+    }
+    return fmt.Errorf("unknown capability: %s", cap)
+})
+
+supervisorVM := funxy.New()
+supervisorVM.RegisterSupervisor(hypervisor)
+supervisorVM.LoadFile("supervisor.lang")
+```
+
+**2. The Supervisor Script (Funxy):**
+```rust
+import "lib/vmm" (spawnVM, killVM, listVMs)
+
+// Request capabilities for the child VM
+config = {
+    name: "billing_v1",
+    capabilities: ["db:read_write"]
+}
+
+// Spawn isolated VM
+res = spawnVM("service.lang", config)
+```
+
+**3. Cross-VM Communication (RPC):**
+```rust
+import "lib/rpc" (callWait, callWaitGroup)
+
+// Assuming "billing_v1" VM is running and exposes a function `processPayment`
+match callWait("billing_v1", "processPayment", {amount: 100}) {  // timeoutMs defaults to 5000
+    Ok(res) -> print("Payment processed: " ++ show(res))
+    Fail(e) -> print("RPC failed: " ++ e)
+}
+
+// Group call (Round Robin across VMs spawned with group "billing_workers")
+match callWaitGroup("billing_workers", "processPayment", {amount: 100}) {
+    Ok(res) -> print("Group Payment processed: " ++ show(res))
+    Fail(e) -> print("Group RPC failed: " ++ e)
+}
+```
+
+See `examples/vmm` for a full example demonstrating safe callbacks and isolation.
+
+For more details, see the [Virtual Machine Manager (VMM) Tutorial](tutorial/new/47_vmm.md) and [Embedding Tutorial](tutorial/41_embedding.md).
 
 ---
 
@@ -2510,6 +2651,26 @@ Both `api` and `worker` can call `fileRead("config.json")` — they share the sa
 ```
 
 The `$` escape hatch works the same: `./myserver $ -e 'print(42)'`.
+
+#### Interpreter Extension Mode (`--up`)
+
+You can build an extended version of the `funxy` interpreter that embeds scripts as subcommands, while still functioning as a normal interpreter for all other tasks. This is ideal for shipping built-in tools like formatters or package managers.
+
+```bash
+# Build an extended interpreter
+funxy build fmt.lang lint.lang --up -o myfunxy
+
+# Run embedded subcommands
+./myfunxy fmt          # runs fmt.lang
+./myfunxy lint         # runs lint.lang
+
+# Still works as a normal interpreter!
+./myfunxy script.lang  # runs an external script
+./myfunxy -pe '1+2'    # eval mode
+./myfunxy              # prints standard Funxy usage help
+```
+
+In `--up` mode, the binary ignores symlink dispatch to prevent accidental command execution if the binary shares a name with an embedded command.
 
 #### Cross-Compilation (`--host`)
 

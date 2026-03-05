@@ -70,7 +70,7 @@ print(show(true))       // true
 print(show([1, 2]))     // [1, 2]
 ```
 
-### `format(format: String, ...args: Any)` → `String`
+### `format(format: String, ...args: a)` → `String`
 
 Formats a value according to a format string (like printf).
 
@@ -637,6 +637,65 @@ print("Enter your name: ")
 match readLine() {
     Some(name) -> print("Hello, " ++ name ++ "!")
     None -> print("No input received")
+}
+```
+
+---
+
+# `lib/vmm` — Virtual Machine Manager
+
+See the [VMM Tutorial](new/47_vmm.md) for detailed examples and architecture overview.
+
+Import with:
+
+```rust
+import "lib/vmm" (spawnVM, killVM, listVMs, receiveEventWait, vmStats, stopVM, getState, setState)
+```
+
+## Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `spawnVM` | `(String, config: Record) -> Result<String, String>` | Spawn a new isolated VM |
+| `killVM` | `(String) -> Nil` | Force kill a VM by ID |
+| `stopVM` | `(String, config: Option<Record>) -> Result<String, a>` | Intentionally stop VM, optional state capture (`saveState: false` still maps to lifecycle `exit/stopped` on success) |
+| `traceOn` | `(vmId?: String) -> Nil` | Enable live RPC trace stream (`traceOn()` for all VMs, `traceOn("vm")` for one VM) |
+| `traceOff` | `(vmId?: String) -> Nil` | Disable live RPC trace stream (`traceOff()` disables global/all, `traceOff("vm")` disables one VM) |
+| `listVMs` | `() -> List<String>` | List running VM IDs |
+| `vmStats` | `(String) -> Map<String, Int>` | Get CPU/Memory metrics (also includes numeric event-queue and RPC-circuit diagnostics) |
+| `rpcCircuitStats` | `(String) -> Record` | Get RPC circuit breaker diagnostics for a VM (`state`, failures, fast-fails, transition counters, thresholds) |
+| `receiveEventWait` | `(timeoutMs?: Int = 5000) -> { type: String, vmId: String, seq: Int, ... }` | Receive VM lifecycle events (or timeout event). `seq` is a monotonic watermark for gap detection |
+| `getState` | `() -> Option<a>` | Get current VM state; use `?? default` when None |
+| `setState` | `(a) -> Nil` | Set current VM state |
+
+---
+
+# `lib/rpc` — Cross-VM Communication
+
+VMs can call functions synchronously on other running VMs.
+
+Import with:
+
+```rust
+import "lib/rpc" (callWait, callWaitGroup)
+```
+
+## Functions
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `callWait` | `<a, b>(String, String, a, timeoutMs?: Int = 5000) -> Result<String, b>` | Call a function on another VM (returns `Fail("CircuitOpen")` when target breaker is open) |
+| `callWaitGroup` | `<a, b>(String, String, a, timeoutMs?: Int = 5000) -> Result<String, b>` | Call a function on a VM selected from a group (round-robin, skipping unhealthy/open-circuit workers when possible) |
+
+### Example
+
+```rust
+import "lib/rpc" (callWait)
+
+// Assuming a VM named "target_vm" is running and exposes a function `ping`
+match callWait("target_vm", "ping", "hello") {
+    Ok(res) -> print("Response: " ++ show(res))
+    Fail(e) -> print("RPC failed: " ++ e)
 }
 ```
 

@@ -1,6 +1,7 @@
 package targets
 
 import (
+	"context"
 	"fmt"
 	"github.com/funvibe/funxy/internal/analyzer"
 	"github.com/funvibe/funxy/internal/lexer"
@@ -9,7 +10,6 @@ import (
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/tests/fuzz/generators"
 	"github.com/funvibe/funxy/internal/vm"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -466,19 +466,14 @@ func FuzzStress(f *testing.F) {
 	f.Add([]byte("largeADT"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		// Skip if too many leaked goroutines from previous timed-out iterations.
-		if runtime.NumGoroutine() > 500 {
-			time.Sleep(50 * time.Millisecond)
-			if runtime.NumGoroutine() > 500 {
-				return
-			}
-		}
-
 		// Run the entire iteration inside a goroutine with an overall deadline.
 		// This guarantees that no stage (parse, analyze, compile, run) can block
 		// the fuzz worker indefinitely.
 		const iterationTimeout = 1 * time.Second
 		done := make(chan struct{}, 1)
+
+		ctxTimeout, cancel := context.WithTimeout(context.Background(), iterationTimeout)
+		defer cancel()
 
 		go func() {
 			defer func() {
@@ -538,8 +533,9 @@ func FuzzStress(f *testing.F) {
 				input = sg.GenerateDeeplyNestedCode()
 			}
 
-			// 1. Parse
+			// Parse
 			ctx := pipeline.NewPipelineContext(input)
+			ctx.Context = ctxTimeout
 			l := lexer.New(input)
 			stream := lexer.NewTokenStream(l)
 			p := parser.New(stream, ctx)
@@ -549,17 +545,16 @@ func FuzzStress(f *testing.F) {
 				return
 			}
 
-			// 2. Analyze
+			// Analyze
 			st := symbols.NewSymbolTable()
 			an := analyzer.New(st)
 			an.RegisterBuiltins()
-			errs := an.Analyze(program)
+			errs := an.Analyze(program, ctx)
 			if len(errs) > 0 {
 				return
 			}
 
-			// 3. Compile (no execution — runtime is stress-tested by FuzzEmbedEval;
-			// here we only verify that parse/analyze/compile don't crash or hang)
+			// Compile
 			c := vm.NewCompiler()
 			c.SetSymbolTable(st)
 			c.SetTypeMap(an.TypeMap)
@@ -569,9 +564,9 @@ func FuzzStress(f *testing.F) {
 
 		select {
 		case <-done:
-		case <-time.After(iterationTimeout):
-			// Iteration timed out — one of the stages (parse, analyze,
-			// compile, or run) is stuck. Abandon the goroutine and move on.
+		case <-ctxTimeout.Done():
+			// Timeout reached. Just return, do not fail.
+			return
 		}
 	})
 }

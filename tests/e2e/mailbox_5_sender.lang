@@ -1,0 +1,23 @@
+import "lib/mailbox" (send, Importance)
+import "lib/time" (sleepMs)
+import "lib/vmm" (setState)
+
+sleepMs(500)
+ok = 0
+fail = 0
+i = 0
+while i < 15 {
+    match send("worker_drop_recv", { payload: show(i), importance: Low }) {
+        Ok(_) -> ok = ok + 1
+        Fail(_) -> fail = fail + 1
+    }
+    i = i + 1
+}
+
+if ok == 15 && fail == 0 {
+    setState("correct")
+} else {
+    setState("wrong ok=" ++ show(ok) ++ " fail=" ++ show(fail))
+}
+
+for true { sleepMs(100) }

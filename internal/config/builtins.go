@@ -161,7 +161,7 @@ var BuiltinFunctions = []FunctionInfo{
 	{Name: "read", Signature: "(String, Type) -> Option<T>", Description: "Parse string to type",
 		Example: "read(\"42\", Int)", Category: "Conversion"},
 	{Name: "intToFloat", Signature: "(Int) -> Float", Description: "Convert Int to Float", Category: "Conversion"},
-	{Name: "floatToInt", Signature: "(Float) -> Int", Description: "Convert Float to Int (truncate)", Category: "Conversion"},
+	{Name: "floatToInt", Signature: "(Int | Float) -> Int", Description: "Convert to Int (Int passthrough, Float truncate)", Category: "Conversion"},
 	{Name: "format", Signature: "(String, ...T) -> String", Description: "Format string (printf style)", Category: "String"},
 
 	// Reflection
@@ -259,16 +259,18 @@ func GetFunctionsByCategory() map[string][]FunctionInfo {
 
 // Virtual package paths
 const (
-	ListPackagePath   = "lib/list"
-	StringPackagePath = "lib/string"
-	TimePackagePath   = "lib/time"
-	IOPackagePath     = "lib/io"
-	SysPackagePath    = "lib/sys"
-	TuplePackagePath  = "lib/tuple"
-	MathPackagePath   = "lib/math"
-	BignumPackagePath = "lib/bignum"
-	CharPackagePath   = "lib/char"
-	TestPackagePath   = "lib/test"
+	ListPackagePath       = "lib/list"
+	StringPackagePath     = "lib/string"
+	TimePackagePath       = "lib/time"
+	IOPackagePath         = "lib/io"
+	SysPackagePath        = "lib/sys"
+	TuplePackagePath      = "lib/tuple"
+	MathPackagePath       = "lib/math"
+	BignumPackagePath     = "lib/bignum"
+	CharPackagePath       = "lib/char"
+	TestPackagePath       = "lib/test"
+	SupervisorPackagePath = "lib/vmm"
+	MailboxPackagePath    = "lib/mailbox"
 )
 
 // Note: Type names (ListTypeName, OptionTypeName, ResultTypeName) are in constants.go

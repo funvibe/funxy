@@ -1,0 +1,23 @@
+import "lib/mailbox" (receiveByWait, receive)
+import "lib/vmm" (setState)
+import "lib/time" (sleepMs)
+
+sleepMs(800)
+pred = \m -> m.type == "urgent"
+
+result_urgent = match receiveByWait(pred, 3000) {
+    Ok(m) -> if m.payload == "urgent" { "correct" } else { "wrong: " ++ show(m.payload) }
+    Fail(e) -> "receiveByWait failed: " ++ e
+}
+
+result_normal = match receive() {
+    Ok(m) -> if m.payload == "a" { "correct" } else { "wrong: " ++ show(m.payload) }
+    Fail(e) -> "receive failed: " ++ e
+}
+
+setState({
+    urgent: result_urgent,
+    normal: result_normal
+})
+
+for true { sleepMs(100) }

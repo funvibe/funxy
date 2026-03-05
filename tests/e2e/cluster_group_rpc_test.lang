@@ -1,0 +1,28 @@
+import "lib/test" (testRun, assertEquals, assertOk, testSpawnVMGroup, assertFail)
+import "lib/rpc" (callWaitGroup)
+import "lib/time" (sleep)
+
+testRun("spawn real vms in group and use group rpc", \ -> {
+    res = testSpawnVMGroup("./tests/e2e/dummy_worker.lang", {
+        group: "test_workers",
+        capabilities: ["lib/mailbox", "lib/rpc"]
+    }, 2)
+    assertOk(res)
+
+    // Call group via Round Robin
+    pong1 = callWaitGroup("test_workers", "ping", "hello from test", 1000)
+    assertOk(pong1)
+
+    match pong1 {
+        Ok(v) -> assertEquals("hello from test-PONG", v)
+        Fail(e) -> assertFail(pong1)
+    }
+
+    pong2 = callWaitGroup("test_workers", "ping", "hello from test 2", 1000)
+    assertOk(pong2)
+
+    match pong2 {
+        Ok(v) -> assertEquals("hello from test 2-PONG", v)
+        Fail(e) -> assertFail(pong2)
+    }
+})

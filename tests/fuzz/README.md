@@ -24,6 +24,7 @@ It uses Go's native fuzzing support (available in Go 1.18+).
   - `async_fuzz_test.go`: Async/await and task scheduling.
   - `ext_fuzz_test.go`: Ext config parsing and code generation.
   - `embed_fuzz_test.go`: Embed marshaller round-trip and eval.
+  - `vmm_rpc_fuzz_test.go`: VMM (spawn/kill/stop) and RPC (cross-VM call) with random configs and args.
 - `generators/`: Contains logic for generating random Funxy code (for structure-aware fuzzing).
 - `mutator/`: Contains logic for mutating ASTs (for mutation-based fuzzing).
 - `corpus/`: Directory where the fuzzer stores interesting inputs (automatically managed).
@@ -226,6 +227,23 @@ To fuzz `vm.Eval` with random Funxy code and bound Go objects (functions, maps, 
 go test -fuzz=FuzzEmbedEval ./tests/fuzz/targets
 ```
 
+### VMM & RPC Fuzzing
+To fuzz the Hypervisor (spawnVM, killVM, stopVM, listVMs) with random configs:
+```bash
+go test -fuzz=FuzzHypervisor ./tests/fuzz/targets
+```
+
+To fuzz cross-VM RPC (RPCCall) with random method names and serialized args:
+```bash
+go test -fuzz=FuzzRPC ./tests/fuzz/targets
+```
+
+### FDF Deserialization Fuzzing
+To fuzz FDF/gob auto-detect deserialization with arbitrary bytes:
+```bash
+go test -fuzz=FuzzFDFDeserialize ./tests/fuzz/targets
+```
+
 ## Finding Edge Cases
 
 To effectively find edge cases in the Funxy compiler, use these strategies:
@@ -277,6 +295,9 @@ go test -fuzz=FuzzMarshallerRoundTrip -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzMarshallerToValue -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzMarshallerMapRoundTrip -fuzztime=180s ./tests/fuzz/targets &
 go test -fuzz=FuzzEmbedEval -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzHypervisor -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzRPC -fuzztime=180s ./tests/fuzz/targets &
+go test -fuzz=FuzzFDFDeserialize -fuzztime=180s ./tests/fuzz/targets &
 wait
 ```
 
@@ -304,6 +325,7 @@ If you're working on a particular component, focus on the relevant fuzz target:
 - **Analyzer depth limits**: Use `FuzzStress` (deep nesting, long chains)
 - **Go extensions (`ext`)**: Use `FuzzConfigParse` and `FuzzCodegen`
 - **Embedding API (`pkg/embed`)**: Use `FuzzMarshallerRoundTrip`, `FuzzMarshallerMapRoundTrip`, and `FuzzEmbedEval`
+- **VMM & RPC**: Use `FuzzHypervisor` and `FuzzRPC`
 - **One-liner mode (`-e`, `-pe`, `-lpe`)**: Tested separately via `go test ./evaluator/ -run TestEvalMode`
 
 ### 3. Use Extended Fuzzing Sessions

@@ -28,7 +28,7 @@ func analyzeSource(input string) []error {
 	// Ensure builtins are available
 	symbolTable.InitBuiltins()
 	a := New(symbolTable)
-	diags := a.Analyze(program)
+	diags := a.Analyze(program, ctx)
 	var errs []error
 	for _, d := range diags {
 		errs = append(errs, d)

@@ -116,6 +116,7 @@ const (
 	RETURN    TokenType = "RETURN"
 	PACKAGE   TokenType = "PACKAGE"
 	IMPORT    TokenType = "IMPORT"
+	AS        TokenType = "AS"
 	DO        TokenType = "DO"     // do notation
 	CONST     TokenType = "CONST"  // const keyword
 	FORALL    TokenType = "FORALL" // forall a. T
@@ -170,12 +171,19 @@ var Keywords = map[string]TokenType{
 	"return":    RETURN,
 	"package":   PACKAGE,
 	"import":    IMPORT,
+	"as":        AS,
 	"_":         UNDERSCORE,
 	"while":     FOR,
 	"do":        DO,
 	"const":     CONST,
 	"forall":    FORALL,
 	"directive": DIRECTIVE,
+}
+
+// IsKeyword checks if the given string is a keyword.
+func IsKeyword(lexeme string) bool {
+	_, ok := Keywords[lexeme]
+	return ok
 }
 
 // LookupIdent checks the keywords table to see whether the given identifier

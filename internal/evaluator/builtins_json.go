@@ -211,7 +211,6 @@ func RegisterJsonBuiltins(env *Environment) {
 
 	// Functions
 	builtins := JsonBuiltins()
-	SetJsonBuiltinTypes(builtins)
 	for name, fn := range builtins {
 		env.Set(name, fn)
 	}
@@ -230,58 +229,6 @@ func JsonBuiltins() map[string]*Builtin {
 }
 
 // SetJsonBuiltinTypes sets type info for JSON builtins
-func SetJsonBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	jsonType := typesystem.TCon{Name: "Json"}
-	resultType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.TVar{Name: "T"}, stringType},
-	}
-	resultJsonType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{jsonType, stringType},
-	}
-	optionJsonType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{jsonType},
-	}
-
-	types := map[string]typesystem.Type{
-		"jsonEncode": typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "A"}},
-			ReturnType: stringType,
-		},
-		"jsonDecode": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultType,
-		},
-		"jsonParse": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultJsonType,
-		},
-		"jsonFromValue": typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "A"}},
-			ReturnType: jsonType,
-		},
-		"jsonGet": typesystem.TFunc{
-			Params:     []typesystem.Type{jsonType, stringType},
-			ReturnType: optionJsonType,
-		},
-		"jsonKeys": typesystem.TFunc{
-			Params:     []typesystem.Type{jsonType},
-			ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{stringType}},
-		},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 func builtinEncode(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {

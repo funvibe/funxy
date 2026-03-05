@@ -28,6 +28,9 @@ type Parser struct {
 	// depth tracks recursion depth to prevent stack overflow
 	depth int
 
+	// forbidAssignments disables parsing of assignment expressions at the current level
+	forbidAssignments bool
+
 	// inRecursionRecovery suppresses duplicate depth errors while we resync
 	inRecursionRecovery bool
 }
@@ -458,6 +461,15 @@ func (p *Parser) ParseProgram() *ast.Program {
 
 	// 3. Parse Statements
 	for p.curToken.Type != token.EOF {
+		if p.ctx.Context != nil && p.ctx.Context.Err() != nil {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP008,
+				p.curToken,
+				"parser timeout",
+			))
+			break
+		}
+
 		if p.curToken.Type == token.NEWLINE {
 			p.nextToken()
 			continue

@@ -707,7 +707,7 @@ options = opts({ addr: "localhost:6379", password: "", db: 0 })
 client = redisNew(options)
 ```
 
-The constructor takes a Funxy record and maps camelCase field names to Go PascalCase fields (`addr` → `Addr`, `db` → `DB`). Omitted fields use Go zero values. The result is a `HostObject` wrapping a pointer to the struct (`*Options`).
+The constructor takes a Funxy record and maps its keys to the Go struct fields. The keys must exactly match the Go struct field names (which are typically PascalCase, e.g., `Addr`, `DB`), or match their `funxy` or `json` struct tags if present. Omitted fields use Go zero values. The result is a `HostObject` wrapping a pointer to the struct (`*Options`).
 
 **Supported field types:**
 - Basic types: `string`, `int`, `int32`, `int64`, `float64`, `bool`
@@ -806,6 +806,27 @@ You can call methods on a Go object that implements an interface. But you can't 
 ### Multiple return values → Tuple
 
 The `(T, error)` pattern is well supported via `error_to_result: true` → `Result<String, T>`. But functions returning 3+ values (e.g. `(int, string, bool)`) are wrapped in a `Tuple`, which is less ergonomic — you need to destructure by index.
+
+## VMM as Reference Architecture
+
+The current `funxy vmm` is a reference host/runtime implementation, not the only possible architecture.
+You can build your own system with Go extensions and/or embedding APIs, while reusing the same Funxy language and module model.
+
+Practical path:
+
+1. **Define host boundaries in Go**  
+   Create explicit capability proxies around raw resources (DB, queues, internal services). Keep raw objects private to host code.
+
+2. **Expose host APIs to Funxy**  
+   Use `ext/*` bindings (`funxy.yaml`) for packages/methods you want scripts to call, with `error_to_result` and `skip_context` where needed.
+
+3. **Compose orchestration in Funxy**  
+   Put policy/state/retries/recovery logic in scripts (`lib/vmm`, `kit/vmm`, `kit/sql`, etc.), keeping infrastructure concerns in host code.
+
+4. **Ship as a dedicated runtime binary**  
+   Build with `funxy build` / `funxy ext build` and run as your own service profile.
+
+If you want a concrete host-side pattern, see `examples/vmm/main.go`: it shows capability injection, safe proxying, and supervisor-driven orchestration.
 
 ## Summary
 

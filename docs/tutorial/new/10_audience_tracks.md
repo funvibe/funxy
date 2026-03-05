@@ -137,6 +137,7 @@ getName({ name: "Alice", age: 30, role: "admin" })  // OK
 **Immutable Collections, Mutable Bindings**
 ```rust
 import "lib/list" (update)
+import "lib/map" (mapPut)
 
 // Variables can be reassigned
 x = 1
@@ -144,9 +145,18 @@ x = 2  // OK
 
 // But collections are immutable
 list = [1, 2, 3]
-// list[0] = 10  // Error!
-// Create new collection instead
+
+// Operations return a new collection
 list2 = update(list, 0, 10) // [10, 2, 3]
+list3 = list[0] = 10        // Also returns [10, 2, 3]
+
+// Or reassign the variable
+list = list[0] = 99
+
+// Same for maps
+m = %{ "a" => 1 }
+m2 = mapPut(m, "b", 2)
+m3 = m["b"] = 2
 ```
 
 **Constants**
@@ -474,13 +484,14 @@ type alias User = { name: String }  // OK
 - Built-in `lib/term` for colored output, progress bars, and interactive menus (no `pip install` needed)
 
 **What's Different:**
-- **Immutable collections**: Lists and Maps cannot be modified in place
+- **Immutable collections**: Lists and Maps cannot be modified in place. Update operations return new collections.
 ```rust
 import "lib/list" (update)
 
 list = [1, 2, 3]
-// list[0] = 10  // Error!
-list2 = update(list, 0, 10) // [10, 2, 3]
+list2 = update(list, 0, 10) // Returns new list [10, 2, 3]
+list3 = list[0] = 10        // Also returns [10, 2, 3]
+// list is still [1, 2, 3]
 ```
 - **Pattern matching** for complex destructuring and control flow:
 ```rust
@@ -547,7 +558,7 @@ fun processUsers(users) {
 *   Strict types without TypeScript's complex configuration.
 
 **What's New:**
-*   **Immutability:** Lists and Maps are immutable (use `update` or `mapPut`). Records are mutable (like JS objects).
+*   **Immutability:** Lists, Maps, and Records are immutable. Update operations return new collections. Use assignment (`xs2 = xs[0] = 1`) or functions (`mapPut`, `update`).
 *   **Pipelines:** Use `|>` for chaining instead of method chaining.
 *   **Result Type:** No `try/catch` for logic flow, use `Result<E, T>`.
 *   **Built-in TUI:** `lib/term` has colors, prompts, and spinners — no `npm install chalk inquirer ora` needed.

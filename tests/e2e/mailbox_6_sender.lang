@@ -1,0 +1,10 @@
+import "lib/mailbox" (send, Importance)
+import "lib/time" (sleepMs)
+
+sleepMs(300)
+// Send messages with different importance
+send("worker_imp_recv", { payload: "low", importance: Low })
+send("worker_imp_recv", { payload: "warn", importance: Warn })
+send("worker_imp_recv", { payload: "crit", importance: Crit })
+
+for true { sleepMs(100) }

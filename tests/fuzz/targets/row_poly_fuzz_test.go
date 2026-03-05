@@ -56,7 +56,7 @@ func FuzzRowPolymorphism(f *testing.F) {
 		// Use a channel to detect hangs during Analysis (infinite recursion in unifier)
 		doneAnalysis := make(chan bool, 1)
 		go func() {
-			a.Analyze(program)
+			a.Analyze(program, ctx)
 			doneAnalysis <- true
 		}()
 

@@ -55,7 +55,7 @@ func FuzzKindChecker(f *testing.F) {
 			symbolTable := symbols.NewSymbolTable()
 			proc := analyzer.New(symbolTable)
 			proc.RegisterBuiltins()
-			errs := proc.Analyze(astProg)
+			errs := proc.Analyze(astProg, ctx)
 			if len(errs) > 0 {
 				// Analysis errors are also expected
 				done <- true

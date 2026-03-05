@@ -17,13 +17,15 @@ import (
 	"github.com/funvibe/funxy/internal/vm"
 	"path/filepath"
 	"reflect"
+	"sync/atomic"
 )
 
 // VM wraps the underlying Funxy VM and provides a high-level embedding API.
 type VM struct {
-	machine    *vm.VM
-	marshaller *Marshaller
-	bindings   map[string]Binding
+	machine      *vm.VM
+	marshaller   *Marshaller
+	bindings     map[string]Binding
+	initialState []byte
 }
 
 // Binding represents a bound Go value or function.
@@ -35,16 +37,103 @@ type Binding struct {
 // New creates a new Funxy VM instance.
 func New() *VM {
 	v := vm.New()
-	// Set default loader
-	v.SetLoader(modules.NewLoader())
+
+	// Create a loader in SandboxMode by default
+	loader := modules.NewLoader()
+	loader.SandboxMode = true
+	v.SetLoader(loader)
+
+	v.RegisterBuiltins()
 
 	funxyVM := &VM{
-		machine:    v,
-		marshaller: NewMarshaller(),
-		bindings:   make(map[string]Binding),
+		machine:  v,
+		bindings: make(map[string]Binding),
 	}
+	funxyVM.marshaller = NewMarshaller(v)
 	v.SetHostHandlers(funxyVM.hostCallHandler, funxyVM.hostToValueHandler)
 	return funxyVM
+}
+
+// AllowModule explicitly allows loading a dirty virtual package
+func (v *VM) AllowModule(path string) {
+	if loader := v.machine.GetLoader(); loader != nil {
+		loader.AllowedModules[path] = true
+	}
+}
+
+// SetInitialState sets the initial state data for the VM.
+// Must be called before LoadFile or Eval.
+func (v *VM) SetInitialState(data []byte) {
+	v.initialState = data
+}
+
+// GetMetrics returns VM monitoring statistics (CPU instructions, memory allocations).
+// GetMetrics returns memory, instruction, and rate metrics for this VM instance
+func (v *VM) GetMetrics() map[string]uint64 {
+	evalMetrics := v.machine.GetEvaluatorMetrics()
+	vmInstr := atomic.LoadUint64(&v.machine.InstructionCount)
+	vmAlloc := atomic.LoadUint64(&v.machine.AllocatedBytes)
+
+	metrics := map[string]uint64{
+		"instructions": evalMetrics["instructions"] + vmInstr,
+		"allocations":  evalMetrics["allocations"] + vmAlloc,
+	}
+
+	// Add rates
+	metrics["current_instructions_per_sec"] = atomic.LoadUint64(&v.machine.CurrentInstructionsPerSec)
+	metrics["current_allocations_bytes_per_sec"] = atomic.LoadUint64(&v.machine.CurrentAllocationsPerSec)
+
+	// Add limits if they are set
+	if v.machine.MaxInstructions > 0 {
+		metrics["limit_instructions"] = v.machine.MaxInstructions
+	}
+	if v.machine.MaxInstructionsPerSec > 0 {
+		metrics["limit_instructions_per_sec"] = v.machine.MaxInstructionsPerSec
+	}
+	if v.machine.MaxAllocBytes > 0 {
+		metrics["limit_allocations_bytes"] = v.machine.MaxAllocBytes
+	}
+	if v.machine.MaxAllocBytesPerSecond > 0 {
+		metrics["limit_allocations_bytes_per_sec"] = v.machine.MaxAllocBytesPerSecond
+	}
+	if v.machine.MaxStackDepth > 0 {
+		metrics["limit_stack_depth"] = uint64(v.machine.MaxStackDepth)
+	}
+
+	return metrics
+}
+
+// RegisterSupervisor enables Supervisor API capabilities in this VM.
+func (v *VM) RegisterSupervisor(h *Hypervisor) {
+	// Let the evaluator know about the supervisor handler so builtins can use it
+	eval := v.machine.GetEvaluator()
+	if eval != nil {
+		eval.SupervisorHandler = h.SupervisorHandler()
+	}
+}
+
+// InjectStateHandler sets up state handoff mechanisms
+func (v *VM) InjectStateHandler() {
+	eval := v.machine.GetEvaluator()
+	if eval != nil {
+		var currentState evaluator.Object = &evaluator.Nil{}
+
+		eval.StateHandler = &evaluator.StateHandler{
+			GetState: func() evaluator.Object {
+				return currentState
+			},
+			SetState: func(state evaluator.Object) {
+				currentState = state
+			},
+		}
+
+		// Pre-populate with initialState if it's set and valid
+		if len(v.initialState) > 0 {
+			if decoded, err := evaluator.DeserializeValue(v.initialState); err == nil {
+				currentState = decoded
+			}
+		}
+	}
 }
 
 func (v *VM) hostCallHandler(fn reflect.Value, args []evaluator.Object) (evaluator.Object, error) {
@@ -241,27 +330,27 @@ func (v *VM) Eval(code string) (interface{}, error) {
 	return v.marshaller.FromValue(result, nil)
 }
 
-// LoadFile parses, analyzes, compiles, and executes a file.
-func (v *VM) LoadFile(path string) error {
+// CompileFile parses, analyzes, and compiles a file, returning the chunk.
+func (v *VM) CompileFile(path string) (*vm.Chunk, error) {
 	if path == "" {
-		return fmt.Errorf("LoadFile: empty path")
+		return nil, fmt.Errorf("CompileFile: empty path")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("LoadFile: file not found: %s", path)
+			return nil, fmt.Errorf("CompileFile: file not found: %s", path)
 		}
 		if os.IsPermission(err) {
-			return fmt.Errorf("LoadFile: permission denied: %s", path)
+			return nil, fmt.Errorf("CompileFile: permission denied: %s", path)
 		}
-		return fmt.Errorf("LoadFile: %w", err)
+		return nil, fmt.Errorf("CompileFile: %w", err)
 	}
 	if info.IsDir() {
-		return fmt.Errorf("LoadFile: expected file, got directory: %s", path)
+		return nil, fmt.Errorf("CompileFile: expected file, got directory: %s", path)
 	}
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("LoadFile: %w", err)
+		return nil, fmt.Errorf("CompileFile: %w", err)
 	}
 	code := string(content)
 
@@ -290,30 +379,47 @@ func (v *VM) LoadFile(path string) error {
 		for _, e := range ctx.Errors {
 			errMsg += fmt.Sprintf("%s\n", e.Error())
 		}
-		return fmt.Errorf("%s", errMsg)
+		return nil, fmt.Errorf("%s", errMsg)
 	}
 
-	// Execute bytecode
 	if ctx.BytecodeChunk == nil {
-		return nil // No code to run
+		return nil, nil // No code to run
 	}
 
 	chunk, ok := ctx.BytecodeChunk.(*vm.Chunk)
 	if !ok {
-		return fmt.Errorf("invalid bytecode chunk type")
+		return nil, fmt.Errorf("invalid bytecode chunk type")
 	}
 
-	// Set VM BaseDir for relative imports
-	dir := filepath.Dir(path)
-	v.machine.SetBaseDir(dir)
+	return chunk, nil
+}
 
-	// Process imports
+// RunChunk executes a compiled chunk.
+func (v *VM) RunChunk(chunk *vm.Chunk, dir string) error {
+	v.InjectStateHandler()
+
+	// Pre-initialize evaluator so it's ready for any concurrent RPC calls
+	// before the main loop starts executing instructions
+	v.machine.GetEvaluator()
+
+	v.machine.SetBaseDir(dir)
 	if err := v.machine.ProcessImports(chunk.PendingImports); err != nil {
 		return fmt.Errorf("import error: %w", err)
 	}
-
-	_, err = v.machine.Run(chunk)
+	_, err := v.machine.Run(chunk)
 	return err
+}
+
+// LoadFile parses, analyzes, compiles, and executes a file.
+func (v *VM) LoadFile(path string) error {
+	chunk, err := v.CompileFile(path)
+	if err != nil {
+		return err
+	}
+	if chunk == nil {
+		return nil
+	}
+	return v.RunChunk(chunk, filepath.Dir(path))
 }
 
 // CompilerProcessor compiles AST to bytecode

@@ -144,6 +144,25 @@ The `$` escape hatch works with multi-command binaries too:
 ./myserver $ -e 'print(42)'   # interpreter mode
 ```
 
+#### Interpreter Extension Mode (`--up`)
+
+Use `--up` to build a multi-command binary that acts as a standard interpreter by default, while exposing the bundled scripts as subcommands:
+
+```bash
+# Build an extended interpreter
+funxy build fmt.lang lint.lang --up -o myfunxy
+
+# Run subcommands
+./myfunxy fmt          # runs fmt.lang
+./myfunxy lint         # runs lint.lang
+
+# Still works as an interpreter
+./myfunxy script.lang  # runs an external script
+./myfunxy -pe '1+2'    # eval mode
+```
+
+Symlink dispatch is disabled in `--up` mode to avoid conflicts if the binary name matches a command name.
+
 ### Cross-Compilation (`--host`)
 
 To build for a different OS or architecture, provide a pre-built Funxy binary for the target platform via `--host`:
@@ -192,6 +211,22 @@ funxy -c script.lang          # creates script.fbc
 # Run compiled bytecode
 funxy -r script.fbc
 ```
+
+### Loading Bytecode from Scripts
+
+You can dynamically load and execute compiled bytecode (`.fbc` files) from within a running Funxy script using `runBytecode` from `lib/io`. This is especially useful for plugin systems or dynamic service loading (e.g. in the Funxy VMM architecture). In sandbox mode (e.g. VMM workers), `lib/io` capability is required.
+
+```rust
+import "lib/io" (runBytecode)
+
+// Load and run a compiled bytecode bundle
+match runBytecode("service.fbc") {
+    Ok(result) -> print("Execution success:", result)
+    Fail(err)  -> print("Execution failed:", err)
+}
+```
+
+The `runBytecode` function executes the loaded bundle and returns its final evaluated expression as a string representation wrapped in a `Result`.
 
 ## Bundle Format (v2)
 

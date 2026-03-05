@@ -675,58 +675,9 @@ func RegisterSqlBuiltins(env *Environment) {
 
 	// Functions
 	builtins := SqlBuiltins()
-	SetSqlBuiltinTypes(builtins)
 	for name, fn := range builtins {
 		env.Set(name, fn)
 	}
 }
 
 // SetSqlBuiltinTypes sets TypeInfo for SQL builtins
-func SetSqlBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.Char}}
-	nilType := typesystem.Nil
-	intType := typesystem.Int
-	boolType := typesystem.Bool
-
-	sqlDBType := typesystem.TCon{Name: "SqlDB"}
-	sqlTxType := typesystem.TCon{Name: "SqlTx"}
-	sqlValueType := typesystem.TCon{Name: "SqlValue"}
-
-	resultDB := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, sqlDBType}}
-	resultTx := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, sqlTxType}}
-	resultNil := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, nilType}}
-	resultInt := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, intType}}
-
-	rowType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Map"}, Args: []typesystem.Type{stringType, sqlValueType}}
-	listRow := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{rowType}}
-	optionRow := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{rowType}}
-	resultListRow := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, listRow}}
-	resultOptionRow := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, optionRow}}
-	optionSqlValue := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{sqlValueType}}
-
-	anyType := typesystem.TVar{Name: "a"}
-	paramsType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{anyType}}
-
-	types := map[string]typesystem.Type{
-		"sqlOpen":         typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultDB},
-		"sqlClose":        typesystem.TFunc{Params: []typesystem.Type{sqlDBType}, ReturnType: resultNil},
-		"sqlPing":         typesystem.TFunc{Params: []typesystem.Type{sqlDBType}, ReturnType: resultNil},
-		"sqlQuery":        typesystem.TFunc{Params: []typesystem.Type{sqlDBType, stringType, paramsType}, ReturnType: resultListRow},
-		"sqlQueryRow":     typesystem.TFunc{Params: []typesystem.Type{sqlDBType, stringType, paramsType}, ReturnType: resultOptionRow},
-		"sqlExec":         typesystem.TFunc{Params: []typesystem.Type{sqlDBType, stringType, paramsType}, ReturnType: resultInt},
-		"sqlLastInsertId": typesystem.TFunc{Params: []typesystem.Type{sqlDBType, stringType, paramsType}, ReturnType: resultInt},
-		"sqlBegin":        typesystem.TFunc{Params: []typesystem.Type{sqlDBType}, ReturnType: resultTx},
-		"sqlCommit":       typesystem.TFunc{Params: []typesystem.Type{sqlTxType}, ReturnType: resultNil},
-		"sqlRollback":     typesystem.TFunc{Params: []typesystem.Type{sqlTxType}, ReturnType: resultNil},
-		"sqlTxQuery":      typesystem.TFunc{Params: []typesystem.Type{sqlTxType, stringType, paramsType}, ReturnType: resultListRow},
-		"sqlTxExec":       typesystem.TFunc{Params: []typesystem.Type{sqlTxType, stringType, paramsType}, ReturnType: resultInt},
-		"sqlUnwrap":       typesystem.TFunc{Params: []typesystem.Type{sqlValueType}, ReturnType: optionSqlValue},
-		"sqlIsNull":       typesystem.TFunc{Params: []typesystem.Type{sqlValueType}, ReturnType: boolType},
-	}
-
-	for name, builtin := range builtins {
-		if t, ok := types[name]; ok {
-			builtin.TypeInfo = t
-		}
-	}
-}

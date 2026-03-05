@@ -2,8 +2,6 @@ package evaluator
 
 import (
 	"math"
-
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // MathBuiltins returns built-in functions for lib/math virtual package
@@ -57,50 +55,6 @@ func MathBuiltins() map[string]*Builtin {
 }
 
 // SetMathBuiltinTypes sets type info for math builtins
-func SetMathBuiltinTypes(builtins map[string]*Builtin) {
-	floatType := typesystem.Float
-	intType := typesystem.Int
-
-	types := map[string]typesystem.Type{
-		"abs":    typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"absInt": typesystem.TFunc{Params: []typesystem.Type{intType}, ReturnType: intType},
-		"sign":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: intType},
-		"min":    typesystem.TFunc{Params: []typesystem.Type{floatType, floatType}, ReturnType: floatType},
-		"max":    typesystem.TFunc{Params: []typesystem.Type{floatType, floatType}, ReturnType: floatType},
-		"minInt": typesystem.TFunc{Params: []typesystem.Type{intType, intType}, ReturnType: intType},
-		"maxInt": typesystem.TFunc{Params: []typesystem.Type{intType, intType}, ReturnType: intType},
-		"clamp":  typesystem.TFunc{Params: []typesystem.Type{floatType, floatType, floatType}, ReturnType: floatType},
-		"floor":  typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: intType},
-		"ceil":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: intType},
-		"round":  typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: intType},
-		"trunc":  typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: intType},
-		"sqrt":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"cbrt":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"pow":    typesystem.TFunc{Params: []typesystem.Type{floatType, floatType}, ReturnType: floatType},
-		"exp":    typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"log":    typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"log10":  typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"log2":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"sin":    typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"cos":    typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"tan":    typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"asin":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"acos":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"atan":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"atan2":  typesystem.TFunc{Params: []typesystem.Type{floatType, floatType}, ReturnType: floatType},
-		"sinh":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"cosh":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"tanh":   typesystem.TFunc{Params: []typesystem.Type{floatType}, ReturnType: floatType},
-		"pi":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: floatType},
-		"e":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: floatType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // =============================================================================
 // Helper to get float from Object (accepts both Float and Integer)

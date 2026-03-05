@@ -103,7 +103,7 @@ func registerBuiltinsToPrelude() {
 		Args:        []typesystem.Type{typesystem.Char},
 	}
 
-	// typeOf: (val: Any, type: Type) -> Bool
+	// typeOf: (val: a, type: Type) -> Bool
 	typeOfType := typesystem.TFunc{
 		Params: []typesystem.Type{
 			typesystem.TVar{Name: "val"},
@@ -249,14 +249,14 @@ func registerBuiltinsToPrelude() {
 	}
 	table.DefineConstant("intToFloat", intToFloatType, prelude)
 
-	// floatToInt: (Float) -> Int
+	// floatToInt: (Int | Float) -> Int — accepts both; Int passthrough, Float truncates
 	floatToIntType := typesystem.TFunc{
-		Params:     []typesystem.Type{typesystem.Float},
+		Params:     []typesystem.Type{typesystem.TUnion{Types: []typesystem.Type{typesystem.Int, typesystem.Float}}},
 		ReturnType: typesystem.Int,
 	}
 	table.DefineConstant("floatToInt", floatToIntType, prelude)
 
-	// format: (format: String, args: ...Any) -> String
+	// format: (format: String, args: ...a) -> String
 	formatType := typesystem.TFunc{
 		Params: []typesystem.Type{
 			stringType,
@@ -575,7 +575,7 @@ func registerBuiltinsToPrelude() {
 	table.InitDictionaryType()
 
 	// Internal builtin for dictionary creation (Analyzer usage)
-	// __make_dictionary(name: String, methods: Tuple/Any, supers: List<Dictionary>) -> Dictionary
+	// __make_dictionary(name: String, methods: a, supers: List<Dictionary>) -> Dictionary
 	makeDictType := typesystem.TFunc{
 		Params: []typesystem.Type{
 			stringType,

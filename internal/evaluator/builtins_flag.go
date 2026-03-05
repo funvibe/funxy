@@ -3,7 +3,6 @@ package evaluator
 import (
 	"fmt"
 	"os"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"strconv"
 	"strings"
 )
@@ -35,51 +34,6 @@ func FlagBuiltins() map[string]*Builtin {
 }
 
 // SetFlagBuiltinTypes sets type info for flag builtins
-func SetFlagBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	// List<String>
-	listString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-
-	// Generic T
-	T := typesystem.TVar{Name: "T"}
-
-	types := map[string]typesystem.Type{
-		"flagSet": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType, T, stringType},
-			ReturnType: typesystem.Nil,
-		},
-		"flagParse": typesystem.TFunc{
-			Params:       []typesystem.Type{listString},
-			ReturnType:   typesystem.Nil,
-			DefaultCount: 1, // args is optional
-		},
-		"flagGet": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: T,
-		},
-		"flagArgs": typesystem.TFunc{
-			Params:     []typesystem.Type{},
-			ReturnType: listString,
-		},
-		"flagUsage": typesystem.TFunc{
-			Params:     []typesystem.Type{},
-			ReturnType: typesystem.Nil,
-		},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // flagSet(name: String, default: T, desc: String) -> Nil
 func builtinFlagSet(e *Evaluator, args ...Object) Object {

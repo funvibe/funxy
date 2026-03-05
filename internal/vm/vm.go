@@ -13,6 +13,9 @@ import (
 	"github.com/funvibe/funxy/internal/typesystem"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // formatFilePath formats a file path for display in stack traces
@@ -43,6 +46,10 @@ var errStackUnderflow = errors.New("stack underflow")
 var errStackOverflow = errors.New("stack overflow")
 var errInvalidConstantIndex = errors.New("invalid constant index")
 
+var ErrMemoryLimitExceeded = errors.New("memory limit exceeded")
+var ErrGasLimitExceeded = errors.New("gas limit exceeded")
+var ErrStackLimitExceeded = errors.New("stack limit exceeded")
+
 // Initial sizes for stack and frames
 const InitialStackSize = 2048
 const InitialFrameCount = 1024
@@ -69,6 +76,11 @@ type CallFrame struct {
 
 	// ExplicitTypeContextDepth tracks the depth of explicit context stack when frame started
 	ExplicitTypeContextDepth int
+}
+
+type MetricsHandler interface {
+	RecordAllocationsPerSec(uint64)
+	RecordInstructionsPerSec(uint64)
 }
 
 // VM is the virtual machine that executes bytecode
@@ -118,8 +130,33 @@ type VM struct {
 	// isBundleMode is true when running from a compiled binary
 	isBundleMode bool
 
+	evalMu sync.Mutex
+
 	// Evaluator for builtin Go functions only (not for Funxy code!)
 	eval *evaluator.Evaluator
+
+	// Metrics for System Monitoring
+	InstructionCount uint64
+	AllocatedBytes   uint64
+
+	// Current Rate Metrics (updated every second)
+	CurrentAllocationsPerSec  uint64
+	CurrentInstructionsPerSec uint64
+
+	// Execution Limits
+	MaxAllocBytes          uint64
+	MaxAllocBytesPerSecond uint64
+	MaxInstructions        uint64
+	MaxInstructionsPerSec  uint64
+	MaxStackDepth          int
+
+	// Optional metrics handler
+	MetricsHandler MetricsHandler
+
+	// Rate limiting state
+	lastLimitCheck   time.Time
+	allocsSinceCheck uint64
+	instrsSinceCheck uint64
 
 	// Module loading support
 	loader         *modules.Loader // Module loader for resolving imports
@@ -148,6 +185,9 @@ type VM struct {
 
 	// Context for cancellation
 	Context context.Context
+
+	// mu protects VM state during concurrent access (e.g. fast path RPC)
+	mu sync.Mutex
 }
 
 // GlobalBundle holds the embedded bundle for library-only mode.
@@ -234,9 +274,38 @@ func (vm *VM) SetBundle(b *Bundle) {
 	}
 }
 
+// PrepareForBundle configures the VM to run bytecode from a pre-compiled bundle (e.g. .fbc).
+// Call before Run/RunChunk when executing from a bundle. Sets bundle, baseDir, trait defaults.
+func (vm *VM) PrepareForBundle(bundle *Bundle) {
+	vm.SetBundle(bundle)
+	sourceDir := ""
+	if bundle.SourceFile != "" {
+		sourceDir = filepath.Dir(bundle.SourceFile)
+	} else if bundle.MainChunk != nil && bundle.MainChunk.File != "" {
+		sourceDir = filepath.Dir(bundle.MainChunk.File)
+	}
+	if sourceDir != "" {
+		vm.SetBaseDir(sourceDir)
+	}
+	if bundle.SourceFile != "" {
+		vm.SetCurrentFile(bundle.SourceFile)
+	}
+	if bundle.MainChunk != nil && bundle.MainChunk.File != "" {
+		vm.SetCurrentFile(bundle.MainChunk.File)
+	}
+	if bundle.TraitDefaults != nil {
+		vm.compiledTraitDefaults = bundle.TraitDefaults
+	}
+}
+
 // SetLoader sets the module loader for resolving imports
 func (vm *VM) SetLoader(loader *modules.Loader) {
 	vm.loader = loader
+}
+
+// GetLoader returns the module loader
+func (vm *VM) GetLoader() *modules.Loader {
+	return vm.loader
 }
 
 // RegisterTraitMethod registers a compiled method for a trait/type combination
@@ -536,8 +605,37 @@ func (vm *VM) DisableDebugger() {
 	}
 }
 
+// GetEvaluator returns the evaluator instance for this VM
+func (vm *VM) GetEvaluator() *evaluator.Evaluator {
+	return vm.getEvaluator()
+}
+
+// GetMetrics returns metrics from the VM and internal evaluator
+func (vm *VM) GetMetrics() map[string]uint64 {
+	vm.evalMu.Lock()
+	var evalInstr, evalAlloc uint64
+	if vm.eval != nil {
+		evalInstr = atomic.LoadUint64(&vm.eval.InstructionCount)
+		evalAlloc = atomic.LoadUint64(&vm.eval.AllocatedBytes)
+	}
+	vm.evalMu.Unlock()
+
+	return map[string]uint64{
+		"instructions": atomic.LoadUint64(&vm.InstructionCount) + evalInstr,
+		"allocations":  atomic.LoadUint64(&vm.AllocatedBytes) + evalAlloc,
+	}
+}
+
+// GetEvaluatorMetrics returns metrics from the internal evaluator (Deprecated: use GetMetrics)
+func (vm *VM) GetEvaluatorMetrics() map[string]uint64 {
+	return vm.GetMetrics()
+}
+
 // getEvaluator returns or creates the evaluator for builtin calls
 func (vm *VM) getEvaluator() *evaluator.Evaluator {
+	vm.evalMu.Lock()
+	defer vm.evalMu.Unlock()
+
 	if vm.eval == nil {
 		vm.eval = evaluator.New()
 		vm.eval.Out = vm.out
@@ -569,6 +667,19 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 		vm.eval.EmbeddedResources = vm.resources
 		// Pass bundle mode flag (affects sysScriptDir behavior)
 		vm.eval.IsBundleMode = vm.isBundleMode
+
+		// Handler for runBytecode
+		vm.eval.RunBytecodeHandler = func(path string) (evaluator.Object, error) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			bundle, err := DeserializeAny(data)
+			if err != nil {
+				return nil, err
+			}
+			return RunBundle(bundle)
+		}
 
 		// Set Fork function for thread-safe isolation (e.g. for taskMap)
 		vm.eval.Fork = func() *evaluator.Evaluator {
@@ -606,6 +717,11 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 	if vm.eval.GlobalEnv != nil {
 		if vm.globals != nil && vm.globals.Globals != nil {
 			vm.globals.Globals.Range(func(name string, obj evaluator.Object) bool {
+				// Don't sync if this gets called concurrently from multiple goroutines
+				// the VM map handles its own locking, but GlobalEnv.Set does not
+				// lock the map itself. We must lock it if we are mutating.
+				// For now, getEvaluator should only be called from a single thread
+				// or we need to ensure thread safety of evaluator's GlobalEnv
 				vm.eval.GlobalEnv.Set(name, obj)
 				return true
 			})
@@ -740,6 +856,15 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 	// Push arguments onto stack (closure is NOT pushed - callClosureDirect handles it)
 	for _, arg := range args {
 		vm.push(ObjectToValue(arg))
+	}
+
+	// Check recursion limit
+	limit := MaxFrameCount
+	if vm.MaxStackDepth > 0 {
+		limit = vm.MaxStackDepth
+	}
+	if vm.frameCount >= limit {
+		return &evaluator.Error{Message: fmt.Sprintf("stack overflow: recursion depth limit exceeded (%v)", ErrStackLimitExceeded)}
 	}
 
 	// Grow frames array if needed
@@ -957,6 +1082,11 @@ func (vm *VM) Run(chunk *Chunk) (result evaluator.Object, err error) {
 	vm.sp = 0
 	vm.frames = make([]CallFrame, InitialFrameCount)
 
+	// Initialize rate limits
+	vm.lastLimitCheck = time.Now()
+	vm.allocsSinceCheck = 0
+	vm.instrsSinceCheck = 0
+
 	// Set up the initial frame for top-level code
 	vm.frameCount = 1
 	vm.frames[0] = CallFrame{
@@ -989,11 +1119,59 @@ func (vm *VM) executeWithDebugger() (Value, error) {
 	opsSinceCheck := 0
 	const checkInterval = 1000
 
+	vm.lastLimitCheck = time.Now()
+	vm.instrsSinceCheck = 0
+	vm.allocsSinceCheck = 0
+
 	for {
-		// Check for cancellation periodically
+		atomic.AddUint64(&vm.InstructionCount, 1)
+		vm.instrsSinceCheck++
 		opsSinceCheck++
+
+		// Preemption safe points: check context and gas limits periodically
 		if opsSinceCheck >= checkInterval {
 			opsSinceCheck = 0
+
+			instrCount := atomic.LoadUint64(&vm.InstructionCount)
+			if vm.MaxInstructions > 0 && instrCount > vm.MaxInstructions {
+				return NilVal(), vm.formatError(fmt.Errorf("%w: executed %d instructions, absolute limit is %d", ErrGasLimitExceeded, instrCount, vm.MaxInstructions))
+			}
+
+			// Rate limit checks
+			now := time.Now()
+			elapsed := now.Sub(vm.lastLimitCheck)
+			if elapsed >= time.Second {
+				// Only reset counters if we haven't exceeded limits
+				if vm.MaxInstructionsPerSec > 0 && vm.instrsSinceCheck > vm.MaxInstructionsPerSec {
+					return NilVal(), vm.formatError(fmt.Errorf("%w: executed %d instructions in %v, rate limit is %d/sec", ErrGasLimitExceeded, vm.instrsSinceCheck, elapsed, vm.MaxInstructionsPerSec))
+				}
+				if vm.MaxAllocBytesPerSecond > 0 && vm.allocsSinceCheck > vm.MaxAllocBytesPerSecond {
+					return NilVal(), vm.formatError(fmt.Errorf("%w: allocated %d bytes in %v, rate limit is %d/sec", ErrMemoryLimitExceeded, vm.allocsSinceCheck, elapsed, vm.MaxAllocBytesPerSecond))
+				}
+
+				// Update metrics via MetricsHandler if attached
+				if vm.MetricsHandler != nil {
+					vm.MetricsHandler.RecordAllocationsPerSec(vm.allocsSinceCheck)
+					vm.MetricsHandler.RecordInstructionsPerSec(vm.instrsSinceCheck)
+				}
+
+				// Update current rates for metrics endpoint
+				vm.CurrentAllocationsPerSec = vm.allocsSinceCheck
+				vm.CurrentInstructionsPerSec = vm.instrsSinceCheck
+
+				vm.lastLimitCheck = now
+				vm.instrsSinceCheck = 0
+				vm.allocsSinceCheck = 0
+			} else {
+				// Check limits even before 1 second has elapsed (fast path)
+				if vm.MaxInstructionsPerSec > 0 && vm.instrsSinceCheck > vm.MaxInstructionsPerSec {
+					return NilVal(), vm.formatError(fmt.Errorf("%w: executed %d instructions in %v, rate limit is %d/sec", ErrGasLimitExceeded, vm.instrsSinceCheck, elapsed, vm.MaxInstructionsPerSec))
+				}
+				if vm.MaxAllocBytesPerSecond > 0 && vm.allocsSinceCheck > vm.MaxAllocBytesPerSecond {
+					return NilVal(), vm.formatError(fmt.Errorf("%w: allocated %d bytes in %v, rate limit is %d/sec", ErrMemoryLimitExceeded, vm.allocsSinceCheck, elapsed, vm.MaxAllocBytesPerSecond))
+				}
+			}
+
 			if vm.Context != nil {
 				select {
 				case <-vm.Context.Done():
@@ -1242,6 +1420,57 @@ func (vm *VM) getTypeName(obj Value) string {
 }
 
 // Helper functions
+
+// AddAllocatedBytes safely increments the allocated bytes counter and checks against the limit.
+func (vm *VM) AddAllocatedBytes(size uint64) error {
+	// Use atomic operations if we want thread-safe reads of metrics without locks
+	atomic.AddUint64(&vm.AllocatedBytes, size)
+	atomic.AddUint64(&vm.allocsSinceCheck, size)
+
+	allocs := atomic.LoadUint64(&vm.AllocatedBytes)
+	allocsSinceCheck := atomic.LoadUint64(&vm.allocsSinceCheck)
+
+	if vm.MaxAllocBytes > 0 && allocs > vm.MaxAllocBytes {
+		return fmt.Errorf("%w: allocated %d bytes, absolute limit is %d", ErrMemoryLimitExceeded, allocs, vm.MaxAllocBytes)
+	}
+
+	// We only need rate limiting logic if there's a rate limit
+	if vm.MaxAllocBytesPerSecond > 0 {
+		now := time.Now()
+		elapsed := now.Sub(vm.lastLimitCheck)
+		if elapsed >= time.Second {
+			if allocsSinceCheck > vm.MaxAllocBytesPerSecond {
+				return fmt.Errorf("%w: allocated %d bytes in %v, rate limit is %d/sec", ErrMemoryLimitExceeded, allocsSinceCheck, elapsed, vm.MaxAllocBytesPerSecond)
+			}
+			// Only reset if we do a time check
+		} else if allocsSinceCheck > vm.MaxAllocBytesPerSecond {
+			// Fast path: if we exceeded the limit BEFORE a second has passed
+			return fmt.Errorf("%w: allocated %d bytes in %v, rate limit is %d/sec", ErrMemoryLimitExceeded, allocsSinceCheck, elapsed, vm.MaxAllocBytesPerSecond)
+		}
+	} else {
+		now := time.Now()
+		elapsed := now.Sub(vm.lastLimitCheck)
+		if elapsed >= time.Second {
+			instrsSinceCheck := atomic.LoadUint64(&vm.instrsSinceCheck)
+
+			// Update metrics via MetricsHandler if attached
+			if vm.MetricsHandler != nil {
+				vm.MetricsHandler.RecordAllocationsPerSec(allocsSinceCheck)
+				vm.MetricsHandler.RecordInstructionsPerSec(instrsSinceCheck)
+			}
+
+			// Update current rates for metrics endpoint
+			atomic.StoreUint64(&vm.CurrentAllocationsPerSec, allocsSinceCheck)
+			atomic.StoreUint64(&vm.CurrentInstructionsPerSec, instrsSinceCheck)
+
+			vm.lastLimitCheck = now
+			atomic.StoreUint64(&vm.instrsSinceCheck, 0)
+			atomic.StoreUint64(&vm.allocsSinceCheck, 0)
+		}
+	}
+
+	return nil
+}
 
 func (vm *VM) isTruthy(obj Value) bool {
 	if obj.IsBool() {

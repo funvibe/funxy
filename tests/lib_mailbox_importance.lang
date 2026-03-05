@@ -1,0 +1,7 @@
+import "lib/mailbox" (Importance)
+
+if typeOf(Low, Importance) {
+    print("true")
+} else {
+    print("false")
+}

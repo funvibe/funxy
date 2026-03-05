@@ -96,7 +96,7 @@ fun main() {
             region = row.region
             amount = read(row.amount, Float) ?? 0.0
             current = mapGetOr(acc, region, 0.0)
-            mapPut(acc, region, current + amount)
+            acc[region] = current + amount // Immutable update returns new map
         },
         %{},
         rows

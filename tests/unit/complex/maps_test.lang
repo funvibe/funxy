@@ -48,3 +48,35 @@ testRun("Empty map", \ -> {
     m: Map<String, Int> = %{}
     assertEquals(0, mapSize(m), "Empty map size")
 })
+
+testRun("Map mapMap", \ -> {
+    m = %{ "a" => 1, "b" => 2, "c" => 3 }
+    m2 = mapMap(\k, v -> v * 10, m)
+
+    assertEquals(3, mapSize(m2), "Mapped size")
+    assertEquals(10, mapGetOr(m2, "a", 0), "Mapped val a")
+    assertEquals(20, mapGetOr(m2, "b", 0), "Mapped val b")
+    assertEquals(30, mapGetOr(m2, "c", 0), "Mapped val c")
+})
+
+testRun("Map mapFilter", \ -> {
+    m = %{ "a" => 1, "b" => 2, "c" => 3, "d" => 4 }
+    // Keep only even values
+    m2 = mapFilter(\k, v -> v % 2 == 0, m)
+
+    assertEquals(2, mapSize(m2), "Filtered size")
+    assertEquals(true, mapContains(m2, "b"), "Kept even")
+    assertEquals(true, mapContains(m2, "d"), "Kept even")
+    assertEquals(false, mapContains(m2, "a"), "Removed odd")
+    assertEquals(false, mapContains(m2, "c"), "Removed odd")
+})
+
+testRun("Map mapFold", \ -> {
+    m = %{ "a" => 1, "b" => 2, "c" => 3 }
+    sum = mapFold(\acc, k, v -> acc + v, 0, m)
+    assertEquals(6, sum, "Sum of values")
+
+    concatKeys = mapFold(\acc, k, v -> acc ++ k, "", m)
+    // Order of keys in fold is not strictly guaranteed by HAMT, but length is 3
+    assertEquals(3, len(concatKeys), "Concatenated keys length")
+})

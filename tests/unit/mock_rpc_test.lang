@@ -1,0 +1,31 @@
+import "lib/test" (testRun, assertEquals, assertOk, assertFail, mockRpc, mockRpcOff)
+import "lib/rpc" (callWait)
+
+testRun("mockRpc intercept", \ -> {
+    mockRpc("billing_vm", "processPayment", \args -> {
+        assertEquals("100$", args.amount)
+        return { status: "success", tx_id: "mock-123" }
+    })
+
+    result = callWait("billing_vm", "processPayment", { amount: "100$" })
+    
+    assertOk(result)
+    
+    match result {
+        Ok(v) -> {
+            assertEquals("success", v.status)
+            assertEquals("mock-123", v.tx_id)
+        }
+        Fail(e) -> {
+            assertEquals(true, false, "Should be Ok")
+        }
+    }
+})
+
+testRun("mockRpc off", \ -> {
+    mockRpcOff()
+    
+    // Should fail because there is no host injected during standard test run
+    result = callWait("billing_vm", "processPayment", { amount: "100$" })
+    assertFail(result)
+})

@@ -220,6 +220,84 @@ The `funxy.VM` instance is **not safe for concurrent use** by multiple goroutine
 
 However, bound Go functions are called directly. If your Go function is thread-safe, it can be called from multiple Funxy contexts (if you have multiple VMs).
 
+## Funxy VMM (Virtual Machine Manager) and Supervisor API
+
+Funxy provides a VMM architecture via the Supervisor Pattern. This allows running multiple isolated VMs inside a single Go host process, orchestrating them via a master VM.
+
+### 1. The Hypervisor
+In Go, you create a `Hypervisor` to manage VMs and their isolated capabilities:
+
+```go
+hypervisor := funxy.NewHypervisor()
+
+// Register a capability provider
+hypervisor.RegisterCapabilityProvider(func(cap string, vm *funxy.VM) error {
+    if cap == "db:read_write" {
+        vm.Bind("db", NewSafeDbProxy(rawDb)) // Inject safe proxies
+        return nil
+    }
+    return fmt.Errorf("unknown capability: %s", cap)
+})
+
+// Inject supervisor built-ins into the master VM
+supervisorVM := funxy.New()
+supervisorVM.RegisterSupervisor(hypervisor)
+supervisorVM.LoadFile("supervisor.lang")
+```
+
+### 2. The Supervisor Script
+The master VM (`supervisor.lang`) imports `lib/vmm` to dynamically spawn child VMs with restricted permissions:
+
+```rust
+import "lib/vmm" (spawnVM, killVM, listVMs)
+
+// Request only specific capabilities for this microservice
+config = {
+    name: "billing_v1",
+    capabilities: ["db:read_write"]
+}
+
+// Spawns a new isolated VM in a separate goroutine
+match spawnVM("service.lang", config) {
+    Ok(id) -> print("Spawned " ++ id)
+    Fail(err) -> print("Failed: " ++ err)
+    _ -> print("Error")
+}
+
+print(listVMs().show())
+```
+
+### 3. Safe Callbacks (Unit of Work)
+When passing closures from Funxy to Go, the Go host can safely wrap resource usage (like DB transactions). If the Funxy script panics, Go safely recovers and rolls back the transaction.
+
+```go
+// Go Capability Proxy
+func (p *DbProxy) WithTransaction(callback func(tx *Tx) error) (err error) {
+    tx := p.raw.BeginTx()
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("funxy panic: %v", r)
+            tx.Rollback()
+        } else if err != nil {
+            tx.Rollback()
+        } else {
+            tx.Commit()
+        }
+    }()
+    return callback(tx)
+}
+```
+
+```rust
+// service.lang
+db.WithTransaction(\tx -> {
+    tx.Exec("UPDATE users SET balance = balance - 100")
+    panic("Script crashed!") // Go intercepts this and triggers Rollback!
+})
+```
+
+See `examples/vmm` for a complete example of the VMM architecture.
+
 ## Example Project
 
 See `examples/embed_demo` for a complete working example including:
@@ -227,3 +305,5 @@ See `examples/embed_demo` for a complete working example including:
 - Modifying Go state from Funxy
 - Calling Funxy functions from Go
 - Module imports
+- Using built-in functions via the Go Embed API
+

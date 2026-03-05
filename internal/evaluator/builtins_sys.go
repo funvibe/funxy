@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"path/filepath"
 )
 
@@ -199,43 +198,3 @@ func builtinSysScriptDir(e *Evaluator, args ...Object) Object {
 }
 
 // SetSysBuiltinTypes sets type info for sys builtins
-func SetSysBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	// List<String>
-	listString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-	// Option<String>
-	optionString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{stringType},
-	}
-	// ExecResult = { code: Int, stdout: String, stderr: String }
-	execResultType := typesystem.TRecord{
-		Fields: map[string]typesystem.Type{
-			"code":   typesystem.Int,
-			"stdout": stringType,
-			"stderr": stringType,
-		},
-	}
-
-	types := map[string]typesystem.Type{
-		"sysArgs":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: listString},
-		"sysEnv":       typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: optionString},
-		"sysExit":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"sysExec":      typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: execResultType},
-		"sysExePath":   typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
-		"sysScriptDir": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

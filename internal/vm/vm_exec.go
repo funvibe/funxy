@@ -7,6 +7,7 @@ import (
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
+	"sync/atomic"
 )
 
 func (vm *VM) executeOneOp(op Opcode) error {
@@ -60,11 +61,20 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 
 	case OP_CONCAT:
+		if err := vm.AddAllocatedBytes(64); err != nil {
+			return err
+		}
 		if err := vm.concatOp(); err != nil {
 			return err
 		}
+		// Concat creates new list/string/bytes
+		// We should ideally track size in concatOp, but it's hard to access vm.AllocatedBytes there without changing signature
+		// or making it public.
 
 	case OP_CONS:
+		if err := vm.AddAllocatedBytes(32); err != nil {
+			return err
+		}
 		if err := vm.consOp(); err != nil {
 			return err
 		}
@@ -412,6 +422,15 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 		vm.frame.ip = newIP
 
+		// Preemption safe point on backward jump (loop)
+		instrCount := atomic.LoadUint64(&vm.InstructionCount)
+		if vm.MaxInstructions > 0 && instrCount > vm.MaxInstructions {
+			return fmt.Errorf("%w: executed %d instructions, limit is %d", ErrGasLimitExceeded, instrCount, vm.MaxInstructions)
+		}
+		if vm.Context != nil && vm.Context.Err() != nil {
+			return vm.Context.Err()
+		}
+
 	case OP_GET_LOCAL:
 		slot := int(vm.readByte())
 		idx := vm.frame.base + slot
@@ -458,6 +477,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		name := vm.readConstant().Inspect()
 		val := vm.peek(0).AsObject()
 
+		vm.evalMu.Lock()
 		if vm.frame.closure != nil && vm.frame.closure.Globals != nil {
 			// Update shared module scope
 			vm.frame.closure.Globals.Globals = vm.frame.closure.Globals.Globals.Put(name, val)
@@ -470,6 +490,7 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		} else {
 			vm.globals.Globals = vm.globals.Globals.Put(name, val)
 		}
+		vm.evalMu.Unlock()
 
 	case OP_CLOSE_SCOPE:
 		n := int(vm.readByte())
@@ -718,6 +739,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		// Although readConstantIndex() is named for reading constant pool indices,
 		// it reads a uint16 which is used here directly as the element count.
 		count := vm.readConstantIndex()
+		if err := vm.AddAllocatedBytes(uint64(count*16 + 48)); err != nil {
+			return err
+		}
 		elements := make([]evaluator.Object, count)
 		for i := count - 1; i >= 0; i-- {
 			elements[i] = vm.pop().AsObject()
@@ -726,6 +750,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 	case OP_MAKE_TUPLE:
 		count := int(vm.readByte())
+		if err := vm.AddAllocatedBytes(uint64(count*16 + 48)); err != nil {
+			return err
+		}
 		elements := make([]evaluator.Object, count)
 		for i := count - 1; i >= 0; i-- {
 			elements[i] = vm.pop().AsObject()
@@ -762,6 +789,9 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			}
 		}
 
+		if err := vm.AddAllocatedBytes(uint64(fieldCount*32 + 64)); err != nil {
+			return err
+		}
 		vm.push(ObjVal(record))
 
 	case OP_EXTEND_RECORD:
@@ -829,10 +859,16 @@ func (vm *VM) executeOneOp(op Opcode) error {
 			newRec.TypeName = baseRec.TypeName
 		}
 
+		if err := vm.AddAllocatedBytes(uint64(len(finalFields)*32 + 64)); err != nil {
+			return err
+		}
 		vm.push(ObjVal(newRec))
 
 	case OP_MAKE_MAP:
 		pairCount := int(vm.readByte())
+		if err := vm.AddAllocatedBytes(uint64(pairCount*48 + 64)); err != nil {
+			return err
+		}
 		m := evaluator.NewMap()
 		for i := 0; i < pairCount; i++ {
 			value := vm.pop().AsObject()
@@ -1112,49 +1148,28 @@ func (vm *VM) executeOneOp(op Opcode) error {
 
 		vm.push(BoolVal(match))
 
-	case OP_SET_FIELD:
-		// Set field in record: [record, value] -> [record] (mutates in-place for reference semantics)
-		fieldNameConst, ok := vm.readConstant().(*stringConstant)
-		if !ok {
-			return fmt.Errorf("expected string constant for field name")
-		}
-		fieldName := fieldNameConst.Value
-		value := vm.pop().AsObject()
-		obj := vm.pop()
-		if !obj.IsObj() {
-			return fmt.Errorf("cannot set field on %s", obj.RuntimeType().String())
-		}
-		record, ok := obj.AsObject().(*evaluator.RecordInstance)
-		if !ok {
-			return fmt.Errorf("cannot set field on %s", obj.RuntimeType().String())
-		}
-		// Mutate record in-place for reference semantics
-		record.Set(fieldName, value)
-		vm.push(obj) // Push original Value (record pointer)
+	case OP_UPDATE_PATH:
+		// Deep immutable update: [base, path..., value] -> [new_base]
+		pathCount := int(vm.readByte())
 
-	case OP_SET_INDEX:
-		// Set element in list/map: [collection, index, value] -> [new_collection]
+		// 1. Pop value
 		value := vm.pop().AsObject()
-		index := vm.pop().AsObject()
-		obj := vm.pop()
-		if !obj.IsObj() {
-			return fmt.Errorf("cannot set index on %s", obj.RuntimeType().String())
+
+		// 2. Pop path elements
+		path := make([]Value, pathCount)
+		for i := pathCount - 1; i >= 0; i-- {
+			path[i] = vm.pop()
 		}
-		switch coll := obj.AsObject().(type) {
-		case *evaluator.List:
-			idx, ok := index.(*evaluator.Integer)
-			if !ok {
-				return fmt.Errorf("list index must be integer")
-			}
-			// Create new list with updated element
-			newList := coll.Set(int(idx.Value), value)
-			vm.push(ObjVal(newList))
-		case *evaluator.Map:
-			newMap := coll.Put(index, value)
-			vm.push(ObjVal(newMap))
-		default:
-			return fmt.Errorf("cannot set index on %s", obj.RuntimeType().String())
+
+		// 3. Pop base
+		base := vm.pop().AsObject()
+
+		// 4. Update
+		newBase, err := vm.updatePath(base, path, value)
+		if err != nil {
+			return err
 		}
+		vm.push(ObjVal(newBase))
 
 	case OP_COALESCE:
 		// Null coalescing: check if value isEmpty
@@ -1829,6 +1844,94 @@ func (vm *VM) executeOneOp(op Opcode) error {
 	}
 
 	return nil
+}
+
+// updatePath recursively clones and updates a path within a collection
+func (vm *VM) updatePath(obj evaluator.Object, path []Value, value evaluator.Object) (evaluator.Object, error) {
+	if len(path) == 0 {
+		return value, nil
+	}
+	keyVal := path[0]
+
+	var childObj evaluator.Object
+	var isRecord, isList, isMap bool
+	var fieldName string
+	var listIndex int
+	var mapKey evaluator.Object
+
+	// 1. Extract current child
+	switch coll := obj.(type) {
+	case *evaluator.RecordInstance:
+		isRecord = true
+		if sc, ok := keyVal.AsObject().(*stringConstant); ok {
+			fieldName = sc.Value
+		} else if l, ok := keyVal.AsObject().(*evaluator.List); ok && evaluator.IsStringList(l) {
+			fieldName = evaluator.ListToString(l)
+		} else {
+			return nil, fmt.Errorf("record field name must be string")
+		}
+		childObj = coll.Get(fieldName)
+		if childObj == nil {
+			childObj = &evaluator.Nil{}
+		}
+	case *evaluator.List:
+		isList = true
+		if keyVal.IsInt() {
+			listIndex = int(keyVal.AsInt())
+		} else if idx, ok := keyVal.AsObject().(*evaluator.Integer); ok {
+			listIndex = int(idx.Value)
+		} else {
+			return nil, fmt.Errorf("list index must be integer")
+		}
+		if listIndex >= 0 && listIndex < coll.Len() {
+			childObj = coll.Get(listIndex)
+		} else {
+			childObj = &evaluator.Nil{}
+		}
+	case *evaluator.Map:
+		isMap = true
+		mapKey = keyVal.AsObject()
+		if val, ok := coll.Get(mapKey); ok {
+			childObj = val
+		} else {
+			childObj = &evaluator.Nil{}
+		}
+	default:
+		return nil, fmt.Errorf("cannot update path on %s", obj.RuntimeType().String())
+	}
+
+	// 2. Recursively update child
+	newChild, err := vm.updatePath(childObj, path[1:], value)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. Create new container
+	if isRecord {
+		rec := obj.(*evaluator.RecordInstance)
+		newRec := rec.Put(fieldName, newChild)
+		// Account memory
+		if err := vm.AddAllocatedBytes(uint64(len(newRec.Fields)*32 + 64)); err != nil {
+			return nil, err
+		}
+		return newRec, nil
+	} else if isList {
+		lst := obj.(*evaluator.List)
+		newList := lst.Set(listIndex, newChild)
+		if err := vm.AddAllocatedBytes(64); err != nil {
+			return nil, err
+		}
+		return newList, nil
+	} else if isMap {
+		m := obj.(*evaluator.Map)
+		newMap := m.Put(mapKey, newChild)
+		if err := vm.AddAllocatedBytes(64); err != nil {
+			return nil, err
+		}
+		return newMap, nil
+	}
+
+	return nil, fmt.Errorf("unreachable")
 }
 
 // Run executes the bytecode and returns the result

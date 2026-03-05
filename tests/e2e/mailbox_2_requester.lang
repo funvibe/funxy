@@ -1,0 +1,22 @@
+import "lib/mailbox" (requestWait)
+import "lib/vmm" (setState)
+import "lib/time" (sleepMs)
+
+sleepMs(500)
+
+fun runRequest() {
+    match requestWait("worker_responder_2", { payload: "ping" }, 8000) {
+        Ok(m) -> {
+            if show(m.payload) == "{payload: \"pong\"}" {
+                setState("correct")
+            } else {
+                setState("wrong: " ++ show(m.payload))
+            }
+        }
+        Fail(e) -> setState("request failed: " ++ e)
+    }
+}
+
+runRequest()
+
+for true { sleepMs(100) }

@@ -57,6 +57,12 @@ type List struct {
 	ElementType string // Optional: declared element type
 }
 
+// NewListWithType creates a new List with a specified element type (exported for VM)
+func NewListWithType(elements []Object, elemType string) *List {
+	v := VectorFrom(elements)
+	return &List{vector: v, ElementType: elemType}
+}
+
 // newList creates a new List from a slice of Objects (internal)
 func newList(elements []Object) *List {
 	v := VectorFrom(elements)
@@ -141,6 +147,9 @@ func (l *List) Set(i int, value Object) *List {
 
 // toSlice returns a copy of elements as a slice (for iteration)
 func (l *List) ToSlice() []Object {
+	if l == nil {
+		return nil
+	}
 	if l.vector != nil {
 		return l.vector.ToSlice()
 	}
@@ -415,6 +424,9 @@ func (m *Map) equals(other *Map, e *Evaluator) bool {
 // items returns all key-value pairs as a List of Tuples
 // Items returns all key-value pairs as a slice (exported for ext codegen).
 func (m *Map) Items() []struct{ Key, Value Object } {
+	if m == nil {
+		return nil
+	}
 	return m.hamt.Items()
 }
 
@@ -485,6 +497,53 @@ func (m *Map) Hash() uint32 {
 		h ^= (item.Key.Hash() ^ (item.Value.Hash() * 31))
 	}
 	return h
+}
+
+// GobEncode implements gob encoding for Map
+func (m *Map) GobEncode() ([]byte, error) {
+	if m == nil {
+		return nil, nil
+	}
+	// Serialize as a slice of key-value pairs
+	items := m.Items()
+	gobMap := struct {
+		Items   []struct{ Key, Value Object }
+		KeyType string
+		ValType string
+	}{
+		Items:   items,
+		KeyType: m.KeyType,
+		ValType: m.ValType,
+	}
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(gobMap); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// GobDecode implements gob decoding for Map
+func (m *Map) GobDecode(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := gob.NewDecoder(buf)
+	var gobMap struct {
+		Items   []struct{ Key, Value Object }
+		KeyType string
+		ValType string
+	}
+	if err := dec.Decode(&gobMap); err != nil {
+		return err
+	}
+	// Reconstruct the map
+	newM := NewMap()
+	for _, item := range gobMap.Items {
+		newM = newM.Put(item.Key, item.Value)
+	}
+	newM.KeyType = gobMap.KeyType
+	newM.ValType = gobMap.ValType
+	*m = *newM
+	return nil
 }
 
 // Bytes represents an immutable byte sequence
@@ -606,6 +665,9 @@ func (b *Bytes) Hash() uint32 {
 
 // GobEncode implements gob encoding for Bytes
 func (b *Bytes) GobEncode() ([]byte, error) {
+	if b == nil {
+		return nil, nil
+	}
 	return b.data, nil
 }
 
@@ -899,6 +961,9 @@ func (b *Bits) Hash() uint32 {
 
 // GobEncode implements gob encoding for Bits
 func (b *Bits) GobEncode() ([]byte, error) {
+	if b == nil {
+		return nil, nil
+	}
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
 	if err := enc.Encode(b.data); err != nil {

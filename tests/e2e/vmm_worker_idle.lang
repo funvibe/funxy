@@ -1,0 +1,4 @@
+import "lib/time" (sleepMs)
+while true {
+    sleepMs(100)
+}

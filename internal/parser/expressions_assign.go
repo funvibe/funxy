@@ -7,6 +7,14 @@ import (
 )
 
 func (p *Parser) parseAssignExpression(left ast.Expression) ast.Expression {
+	if p.forbidAssignments {
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006, p.curToken,
+			"Assignment is forbidden in this context (e.g. inside a record literal value). Use parentheses if you need an assignment here",
+		))
+		return nil
+	}
+
 	target, pattern, annotatedType, ok := p.validateAssignmentTarget(left)
 	if !ok {
 		return nil
@@ -43,6 +51,14 @@ func (p *Parser) parseAssignExpression(left ast.Expression) ast.Expression {
 // parseCompoundAssignExpression handles +=, -=, *=, /=, %=, **=
 // Desugars `x += y` to `x = x + y`
 func (p *Parser) parseCompoundAssignExpression(left ast.Expression) ast.Expression {
+	if p.forbidAssignments {
+		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+			diagnostics.ErrP006, p.curToken,
+			"Assignment is forbidden in this context (e.g. inside a record literal value). Use parentheses if you need an assignment here",
+		))
+		return nil
+	}
+
 	// Determine the operator from the compound assignment token
 	compoundTok := p.curToken
 	var operator string
@@ -156,12 +172,8 @@ func (p *Parser) validateAssignmentTarget(left ast.Expression) (ast.Expression, 
 		// OK - member assignment
 		return target, nil, annotatedType, true
 	case *ast.IndexExpression:
-		// ERROR - Index assignment (list[0] = 1) is not supported for immutable lists
-		p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
-			diagnostics.ErrP007,
-			t.Token,
-		))
-		return nil, nil, nil, false
+		// OK - evaluates to a new collection
+		return target, nil, annotatedType, true
 	case *ast.TupleLiteral:
 		// Pattern destructuring: (a, b) = expr
 		pattern := p.tupleExprToPattern(t)

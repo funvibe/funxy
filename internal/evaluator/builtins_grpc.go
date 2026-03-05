@@ -10,7 +10,9 @@ import (
 	"github.com/jhump/protoreflect/desc/protoparse"
 	"github.com/jhump/protoreflect/dynamic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	"github.com/funvibe/funxy/internal/typesystem"
@@ -62,15 +64,16 @@ func (o *GrpcServerObject) Hash() uint32 {
 // GrpcBuiltins returns built-in functions for lib/grpc
 func GrpcBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
-		"grpcConnect":    {Fn: builtinGrpcConnect, Name: "grpcConnect"},
-		"grpcClose":      {Fn: builtinGrpcClose, Name: "grpcClose"},
-		"grpcLoadProto":  {Fn: builtinGrpcLoadProto, Name: "grpcLoadProto"},
-		"grpcInvoke":     {Fn: builtinGrpcInvoke, Name: "grpcInvoke"},
-		"grpcServer":     {Fn: builtinGrpcServer, Name: "grpcServer"},
-		"grpcRegister":   {Fn: builtinGrpcRegister, Name: "grpcRegister"},
-		"grpcServe":      {Fn: builtinGrpcServe, Name: "grpcServe"},
-		"grpcServeAsync": {Fn: builtinGrpcServeAsync, Name: "grpcServeAsync"},
-		"grpcStop":       {Fn: builtinGrpcStop, Name: "grpcStop"},
+		"grpcConnect":           {Fn: builtinGrpcConnect, Name: "grpcConnect"},
+		"grpcClose":             {Fn: builtinGrpcClose, Name: "grpcClose"},
+		"grpcLoadProto":         {Fn: builtinGrpcLoadProto, Name: "grpcLoadProto"},
+		"grpcInvoke":            {Fn: builtinGrpcInvoke, Name: "grpcInvoke"},
+		"grpcServer":            {Fn: builtinGrpcServer, Name: "grpcServer"},
+		"grpcRegister":          {Fn: builtinGrpcRegister, Name: "grpcRegister"},
+		"grpcServe":             {Fn: builtinGrpcServe, Name: "grpcServe"},
+		"grpcServeAsync":        {Fn: builtinGrpcServeAsync, Name: "grpcServeAsync"},
+		"grpcStop":              {Fn: builtinGrpcStop, Name: "grpcStop"},
+		"grpcSetMaxConnections": {Fn: builtinGrpcSetMaxConnections, Name: "grpcSetMaxConnections"},
 	}
 }
 
@@ -394,6 +397,60 @@ func builtinGrpcStop(e *Evaluator, args ...Object) Object {
 	return makeOk(&Nil{})
 }
 
+var (
+	grpcMaxConnections int64 = 0
+	grpcCurrentConns   int64 = 0
+	grpcMaxConnsMu     sync.Mutex
+)
+
+// acquireGrpcConnSlot attempts to acquire a connection slot.
+// Returns true if acquired, false if max connections reached.
+func acquireGrpcConnSlot() bool {
+	grpcMaxConnsMu.Lock()
+	defer grpcMaxConnsMu.Unlock()
+
+	if grpcMaxConnections <= 0 {
+		return true // unlimited
+	}
+
+	if grpcCurrentConns >= grpcMaxConnections {
+		return false // full
+	}
+
+	grpcCurrentConns++
+	return true
+}
+
+func releaseGrpcConnSlot() {
+	grpcMaxConnsMu.Lock()
+	defer grpcMaxConnsMu.Unlock()
+
+	if grpcMaxConnections > 0 && grpcCurrentConns > 0 {
+		grpcCurrentConns--
+	}
+}
+
+// grpcSetMaxConnections(max: Int) -> Result<String, Nil>
+func builtinGrpcSetMaxConnections(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("grpcSetMaxConnections expects 1 argument")
+	}
+
+	maxConns, ok := args[0].(*Integer)
+	if !ok {
+		return newError("grpcSetMaxConnections expects an Int")
+	}
+	if maxConns.Value < 0 {
+		return newError("grpcSetMaxConnections expects a non-negative integer")
+	}
+
+	grpcMaxConnsMu.Lock()
+	grpcMaxConnections = maxConns.Value
+	grpcMaxConnsMu.Unlock()
+
+	return makeOk(&Nil{})
+}
+
 type FunxyGrpcHandler struct {
 	Impl Object
 	Eval *Evaluator
@@ -401,6 +458,11 @@ type FunxyGrpcHandler struct {
 }
 
 func (h *FunxyGrpcHandler) HandleUnary(ctx context.Context, md *desc.MethodDescriptor, dec func(interface{}) error) (interface{}, error) {
+	if !acquireGrpcConnSlot() {
+		return nil, status.Error(codes.Unavailable, "Too Many Connections")
+	}
+	defer releaseGrpcConnSlot()
+
 	// 1. Create dynamic message for input
 	inMsg := dynamic.NewMessage(md.GetInputType())
 

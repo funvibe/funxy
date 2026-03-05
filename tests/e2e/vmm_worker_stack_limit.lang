@@ -1,0 +1,4 @@
+fun recurse() {
+    recurse() + 1
+}
+recurse()

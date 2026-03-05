@@ -14,6 +14,7 @@ func initTestPackage() {
 	// Generic type variable
 	T := typesystem.TVar{Name: "T"}
 	A := typesystem.TVar{Name: "A"}
+	B := typesystem.TVar{Name: "B"}
 	E := typesystem.TVar{Name: "E"}
 
 	// Option<T>
@@ -50,6 +51,11 @@ func initTestPackage() {
 		},
 	}
 
+	resultStringString := typesystem.TApp{
+		Constructor: ResultCon,
+		Args:        []typesystem.Type{stringType, stringType},
+	}
+
 	// Test body function type: () -> Nil
 	testBodyType := typesystem.TFunc{
 		Params:     []typesystem.Type{},
@@ -75,44 +81,49 @@ func initTestPackage() {
 
 			// Assertions (all accept optional message as last argument)
 			"assert": typesystem.TFunc{
-				Params:     []typesystem.Type{typesystem.Bool, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{typesystem.Bool, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 			"assertTrue": typesystem.TFunc{
-				Params:     []typesystem.Type{typesystem.Bool, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{typesystem.Bool, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 			"assertFalse": typesystem.TFunc{
-				Params:     []typesystem.Type{typesystem.Bool, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{typesystem.Bool, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 			"assertEquals": typesystem.TFunc{
-				Params:     []typesystem.Type{T, T, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{T, T, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
+			},
+			"assertNotEquals": typesystem.TFunc{
+				Params:       []typesystem.Type{T, T, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 			"assertOk": typesystem.TFunc{
-				Params:     []typesystem.Type{resultET, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{resultET, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 			"assertFail": typesystem.TFunc{
-				Params:     []typesystem.Type{resultET, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{resultET, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 			"assertSome": typesystem.TFunc{
-				Params:     []typesystem.Type{optionT, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{optionT, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 			"assertNone": typesystem.TFunc{
-				Params:     []typesystem.Type{optionT, stringType},
-				ReturnType: typesystem.Nil,
-				IsVariadic: true,
+				Params:       []typesystem.Type{optionT, stringType},
+				ReturnType:   typesystem.Nil,
+				DefaultCount: 1,
 			},
 
 			// HTTP mocks
@@ -159,6 +170,59 @@ func initTestPackage() {
 			"mockEnvBypass": typesystem.TFunc{
 				Params:     []typesystem.Type{A},
 				ReturnType: A,
+			},
+
+			// RPC mocks
+			"mockRpc": typesystem.TFunc{
+				Params: []typesystem.Type{
+					stringType, // targetVM
+					stringType, // method
+					typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: B}, // callback
+				},
+				ReturnType: typesystem.Nil,
+			},
+			"mockRpcOff": typesystem.TFunc{
+				Params:     []typesystem.Type{},
+				ReturnType: typesystem.Nil,
+			},
+
+			// Mailbox mocks
+			"mockMailboxSend": typesystem.TFunc{
+				Params: []typesystem.Type{
+					stringType, // targetVM
+					typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: B}, // callback
+				},
+				ReturnType: typesystem.Nil,
+			},
+			"mockMailboxOff": typesystem.TFunc{
+				Params:     []typesystem.Type{},
+				ReturnType: typesystem.Nil,
+			},
+			"mockSupervisorEvent": typesystem.TFunc{
+				Params: []typesystem.Type{
+					typesystem.TFunc{
+						Params:     []typesystem.Type{typesystem.Int},
+						ReturnType: typesystem.TRecord{Fields: map[string]typesystem.Type{}, IsOpen: true},
+					},
+				},
+				ReturnType: typesystem.Nil,
+			},
+			"mockSupervisorEventOff": typesystem.TFunc{
+				Params:     []typesystem.Type{},
+				ReturnType: typesystem.Nil,
+			},
+			// Cluster Testing
+			"testSpawnVM": typesystem.TFunc{
+				Params:     []typesystem.Type{stringType, typesystem.TVar{Name: "r"}}, // path, config record
+				ReturnType: resultStringString,
+			},
+			"testSpawnVMGroup": typesystem.TFunc{
+				Params:     []typesystem.Type{stringType, typesystem.TVar{Name: "r"}, typesystem.Int}, // path, config record, size
+				ReturnType: typesystem.TApp{Constructor: ResultCon, Args: []typesystem.Type{stringType, typesystem.TApp{Constructor: ListCon, Args: []typesystem.Type{stringType}}}},
+			},
+			"testSpawnLoad": typesystem.TFunc{
+				Params:     []typesystem.Type{typesystem.TVar{Name: "r"}}, // config record
+				ReturnType: resultStringString,
 			},
 		},
 	}
@@ -277,15 +341,16 @@ func initWsPackage() {
 	pkg := &VirtualPackage{
 		Name: "ws",
 		Symbols: map[string]typesystem.Type{
-			"wsConnect":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultInt},
-			"wsConnectTimeout": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int}, ReturnType: resultInt},
-			"wsSend":           typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, stringType}, ReturnType: resultNil},
-			"wsRecv":           typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultString},
-			"wsRecvTimeout":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: resultStringOptionString},
-			"wsClose":          typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultNil},
-			"wsServe":          typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
-			"wsServeAsync":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultInt},
-			"wsServerStop":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultNil},
+			"wsConnect":           typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultInt},
+			"wsConnectTimeout":    typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int}, ReturnType: resultInt},
+			"wsSend":              typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, stringType}, ReturnType: resultNil},
+			"wsRecv":              typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultString},
+			"wsRecvTimeout":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: resultStringOptionString},
+			"wsClose":             typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultNil},
+			"wsServe":             typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
+			"wsServeAsync":        typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultInt},
+			"wsServerStop":        typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultNil},
+			"wsSetMaxConnections": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
 		},
 	}
 
@@ -792,17 +857,18 @@ func initTermPackage() {
 			"termColors": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
 			"cprint":     typesystem.TFunc{Params: []typesystem.Type{styleFn, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
 			// Terminal control
-			"termSize":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: tupleIntInt},
-			"termIsTTY":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bool},
-			"termClear":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-			"termClearLine": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-			"cursorUp":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-			"cursorDown":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-			"cursorLeft":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-			"cursorRight":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-			"cursorTo":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.Nil},
-			"cursorHide":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-			"cursorShow":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"termSize":       typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: tupleIntInt},
+			"termIsTTY":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bool},
+			"termIsStdinTTY": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bool},
+			"termClear":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"termClearLine":  typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"cursorUp":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorDown":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorLeft":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorRight":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorTo":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.Nil},
+			"cursorHide":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
+			"cursorShow":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
 			// Raw mode & key reading
 			"termRaw":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
 			"termRestore": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},

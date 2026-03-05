@@ -440,6 +440,17 @@ func builtinTermIsTTY(e *Evaluator, args ...Object) Object {
 	return FALSE
 }
 
+func builtinTermIsStdinTTY(e *Evaluator, args ...Object) Object {
+	if len(args) != 0 {
+		return newError("termIsStdinTTY expects 0 arguments, got %d", len(args))
+	}
+	isTTY := isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+	if isTTY {
+		return TRUE
+	}
+	return FALSE
+}
+
 func builtinTermClear(e *Evaluator, args ...Object) Object {
 	if len(args) != 0 {
 		return newError("termClear expects 0 arguments, got %d", len(args))
@@ -1234,6 +1245,15 @@ func builtinReadKey(e *Evaluator, args ...Object) Object {
 		}
 	}
 
+	// Check for cancellation before blocking
+	if e.Context != nil {
+		select {
+		case <-e.Context.Done():
+			return newError("readKey cancelled: %v", e.Context.Err())
+		default:
+		}
+	}
+
 	result := readKeyImpl(int(timeoutMs))
 	return stringToList(result)
 }
@@ -1278,17 +1298,18 @@ func TermBuiltins() map[string]*Builtin {
 		"cprint":     {Fn: builtinCprint, Name: "cprint"},
 
 		// Phase 2: Terminal control
-		"termSize":      {Fn: builtinTermSize, Name: "termSize"},
-		"termIsTTY":     {Fn: builtinTermIsTTY, Name: "termIsTTY"},
-		"termClear":     {Fn: builtinTermClear, Name: "termClear"},
-		"termClearLine": {Fn: builtinTermClearLine, Name: "termClearLine"},
-		"cursorUp":      {Fn: builtinCursorUp, Name: "cursorUp"},
-		"cursorDown":    {Fn: builtinCursorDown, Name: "cursorDown"},
-		"cursorLeft":    {Fn: builtinCursorLeft, Name: "cursorLeft"},
-		"cursorRight":   {Fn: builtinCursorRight, Name: "cursorRight"},
-		"cursorTo":      {Fn: builtinCursorTo, Name: "cursorTo"},
-		"cursorHide":    {Fn: builtinCursorHide, Name: "cursorHide"},
-		"cursorShow":    {Fn: builtinCursorShow, Name: "cursorShow"},
+		"termSize":       {Fn: builtinTermSize, Name: "termSize"},
+		"termIsTTY":      {Fn: builtinTermIsTTY, Name: "termIsTTY"},
+		"termIsStdinTTY": {Fn: builtinTermIsStdinTTY, Name: "termIsStdinTTY"},
+		"termClear":      {Fn: builtinTermClear, Name: "termClear"},
+		"termClearLine":  {Fn: builtinTermClearLine, Name: "termClearLine"},
+		"cursorUp":       {Fn: builtinCursorUp, Name: "cursorUp"},
+		"cursorDown":     {Fn: builtinCursorDown, Name: "cursorDown"},
+		"cursorLeft":     {Fn: builtinCursorLeft, Name: "cursorLeft"},
+		"cursorRight":    {Fn: builtinCursorRight, Name: "cursorRight"},
+		"cursorTo":       {Fn: builtinCursorTo, Name: "cursorTo"},
+		"cursorHide":     {Fn: builtinCursorHide, Name: "cursorHide"},
+		"cursorShow":     {Fn: builtinCursorShow, Name: "cursorShow"},
 
 		// Phase 3: Interactive prompts
 		"prompt":   {Fn: builtinPrompt, Name: "prompt"},
@@ -1323,88 +1344,3 @@ func TermBuiltins() map[string]*Builtin {
 }
 
 // SetTermBuiltinTypes sets type info for term builtins
-func SetTermBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	listString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-	handleType := typesystem.TCon{Name: "Handle"}
-	styleFn := typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType}
-	// List<List<String>> for table rows
-	listListString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{listString},
-	}
-	tupleIntInt := typesystem.TTuple{Elements: []typesystem.Type{typesystem.Int, typesystem.Int}}
-
-	types := map[string]typesystem.Type{
-		// Styles
-		"bold": styleFn, "dim": styleFn, "italic": styleFn, "underline": styleFn, "strikethrough": styleFn,
-		// Colors
-		"red": styleFn, "green": styleFn, "yellow": styleFn, "blue": styleFn,
-		"magenta": styleFn, "cyan": styleFn, "white": styleFn, "gray": styleFn,
-		// Background colors
-		"bgRed": styleFn, "bgGreen": styleFn, "bgYellow": styleFn, "bgBlue": styleFn,
-		"bgCyan": styleFn, "bgMagenta": styleFn,
-		// RGB/Hex
-		"rgb":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int, typesystem.Int, stringType}, ReturnType: stringType},
-		"bgRgb": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int, typesystem.Int, stringType}, ReturnType: stringType},
-		"hex":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
-		"bgHex": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
-		// Utility
-		"stripAnsi":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"termColors": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
-		"cprint":     typesystem.TFunc{Params: []typesystem.Type{styleFn, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		// Terminal control
-		"termSize":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: tupleIntInt},
-		"termIsTTY":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bool},
-		"termClear":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"termClearLine": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"cursorUp":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"cursorDown":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"cursorLeft":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"cursorRight":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"cursorTo":      typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.Nil},
-		"cursorHide":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"cursorShow":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		// Interactive prompts
-		"prompt":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType, DefaultCount: 1},
-		"confirm":  typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Bool}, ReturnType: typesystem.Bool, DefaultCount: 1},
-		"password": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		// Select
-		"select":      typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: stringType},
-		"multiSelect": typesystem.TFunc{Params: []typesystem.Type{stringType, listString}, ReturnType: listString},
-		// Spinner & Progress
-		"spinnerStart":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: handleType},
-		"spinnerUpdate": typesystem.TFunc{Params: []typesystem.Type{handleType, stringType}, ReturnType: typesystem.Nil},
-		"spinnerStop":   typesystem.TFunc{Params: []typesystem.Type{handleType, stringType}, ReturnType: typesystem.Nil},
-		"progressNew":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, stringType}, ReturnType: handleType},
-		"progressTick":  typesystem.TFunc{Params: []typesystem.Type{handleType}, ReturnType: typesystem.Nil},
-		"progressSet":   typesystem.TFunc{Params: []typesystem.Type{handleType, typesystem.Int}, ReturnType: typesystem.Nil},
-		"progressDone":  typesystem.TFunc{Params: []typesystem.Type{handleType}, ReturnType: typesystem.Nil},
-		// Table
-		"table": typesystem.TFunc{Params: []typesystem.Type{listString, listListString}, ReturnType: typesystem.Nil},
-		// Raw mode & key reading
-		"termRaw":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"termRestore": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"readKey":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: stringType, DefaultCount: 1},
-		// Output buffering
-		"termBufferStart": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"termBufferFlush": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-
-	// Default args: readKey(timeoutMs=0) — non-blocking by default
-	if b, ok := builtins["readKey"]; ok {
-		b.DefaultArgs = []Object{&Integer{Value: 0}}
-	}
-}

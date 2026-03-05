@@ -1,0 +1,24 @@
+import "lib/test" (testRun, assertEquals, assertOk, testSpawnVM, assertFail)
+import "lib/rpc" (callWait)
+import "lib/time" (sleep)
+
+testRun("spawn real vm and use rpc", \ -> {
+        res = testSpawnVM("./tests/e2e/dummy_worker.lang", {
+        capabilities: ["lib/mailbox", "lib/rpc"]
+    })
+    assertOk(res)
+
+    match res {
+        Ok(vm_id) -> {
+            // Make sure the function works
+            pong = callWait(vm_id, "ping", "hello from test", 1000)
+            assertOk(pong)
+            
+            match pong {
+                Ok(v) -> assertEquals("hello from test-PONG", v)
+                Fail(e) -> assertFail(pong)
+            }
+        }
+        Fail(e) -> assertFail(res)
+    }
+})

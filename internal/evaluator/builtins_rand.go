@@ -2,7 +2,6 @@ package evaluator
 
 import (
 	"math/rand"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"sync"
 	"time"
 )
@@ -241,37 +240,3 @@ func builtinRandomSeed(e *Evaluator, args ...Object) Object {
 }
 
 // SetRandBuiltinTypes sets type info for rand builtins
-func SetRandBuiltinTypes(builtins map[string]*Builtin) {
-	// Generic type variable
-	typeA := typesystem.TVar{Name: "A"}
-
-	// List<A>
-	listA := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typeA},
-	}
-
-	// Option<A>
-	optionA := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{typeA},
-	}
-
-	types := map[string]typesystem.Type{
-		"randomInt":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
-		"randomIntRange":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.Int},
-		"randomFloat":      typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Float},
-		"randomFloatRange": typesystem.TFunc{Params: []typesystem.Type{typesystem.Float, typesystem.Float}, ReturnType: typesystem.Float},
-		"randomBool":       typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Bool},
-		"randomChoice":     typesystem.TFunc{Params: []typesystem.Type{listA}, ReturnType: optionA},
-		"randomShuffle":    typesystem.TFunc{Params: []typesystem.Type{listA}, ReturnType: listA},
-		"randomSample":     typesystem.TFunc{Params: []typesystem.Type{listA, typesystem.Int}, ReturnType: listA},
-		"randomSeed":       typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

@@ -2,8 +2,6 @@ package evaluator
 
 import (
 	"unicode"
-
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // CharBuiltins returns built-in functions for lib/char virtual package
@@ -24,22 +22,6 @@ func CharBuiltins() map[string]*Builtin {
 }
 
 // SetCharBuiltinTypes sets type info for char builtins
-func SetCharBuiltinTypes(builtins map[string]*Builtin) {
-	types := map[string]typesystem.Type{
-		"charToCode":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Char}, ReturnType: typesystem.Int},
-		"charFromCode": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Char},
-		"charIsUpper":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Char}, ReturnType: typesystem.Bool},
-		"charIsLower":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Char}, ReturnType: typesystem.Bool},
-		"charToUpper":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Char}, ReturnType: typesystem.Char},
-		"charToLower":  typesystem.TFunc{Params: []typesystem.Type{typesystem.Char}, ReturnType: typesystem.Char},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // =============================================================================
 // Conversion

@@ -16,6 +16,7 @@ import (
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
+	"github.com/funvibe/funxy/pkg/embed"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/token"
 	"github.com/funvibe/funxy/internal/utils"
@@ -165,17 +166,18 @@ func runModule(path string) {
 
 	hasErrors := false
 	var errors []*diagnostics.DiagnosticError
+	ctx := pipeline.NewPipelineContext("")
 	for _, fileAST := range mod.OrderedFiles() {
-		errors = append(errors, analyzer.AnalyzeNaming(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeNaming(fileAST, ctx)...)
 	}
 	for _, fileAST := range mod.OrderedFiles() {
-		errors = append(errors, analyzer.AnalyzeHeaders(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeHeaders(fileAST, ctx)...)
 	}
 	for _, fileAST := range mod.OrderedFiles() {
-		errors = append(errors, analyzer.AnalyzeInstances(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeInstances(fileAST, ctx)...)
 	}
 	for _, fileAST := range mod.OrderedFiles() {
-		errors = append(errors, analyzer.AnalyzeBodies(fileAST)...)
+		errors = append(errors, analyzer.AnalyzeBodies(fileAST, ctx)...)
 	}
 
 	if len(errors) > 0 {
@@ -257,14 +259,26 @@ func handleTest() bool {
 	useTreeWalk := isTreeWalkMode()
 
 	// Initialize test runner
-	// Note: We pass nil to InitTestRunner if using VM, as VM handles execution internally
-	// But InitTestRunner expects an evaluator reference.
-	// For Tree-walk, we pass 'eval'. For VM, we pass nil (and VM will use its own).
+	// We always initialize the hypervisor in test mode so testSpawnVM works
+	h := funxy.NewHypervisor()
+
+	// Register standard capabilities for the test hypervisor
+	h.RegisterCapabilityProvider(func(cap string, vm *funxy.VM) error {
+		if cap == "supervisor" {
+			vm.RegisterSupervisor(h)
+			return nil
+		}
+		if strings.HasPrefix(cap, "lib/") || strings.HasPrefix(cap, "ext/") || strings.HasPrefix(cap, "pkg/") {
+			return nil
+		}
+		return fmt.Errorf("unknown capability: %s", cap)
+	})
+
 	var eval *evaluator.Evaluator
 	if useTreeWalk {
 		eval = evaluator.New()
 	}
-	evaluator.InitTestRunner(eval)
+	evaluator.InitTestRunner(eval, h)
 
 	// Run each test file
 	for _, testFile := range testFiles {
@@ -308,7 +322,7 @@ func handleHelp() bool {
 		return false
 	}
 
-	if os.Args[1] != "-help" && os.Args[1] != "--help" && os.Args[1] != "help" {
+	if os.Args[1] != "-help" && os.Args[1] != "--help" && os.Args[1] != "help" && os.Args[1] != "-h" {
 		return false
 	}
 
@@ -766,8 +780,11 @@ func handleBuild() bool {
 	configPath := ""
 	verboseExt := false
 	var embedPaths []string
+	isInterpreterExtension := false
 	for i := 2; i < len(os.Args); i++ {
 		switch os.Args[i] {
+		case "--up":
+			isInterpreterExtension = true
 		case "-o":
 			if i+1 < len(os.Args) {
 				outputPath = os.Args[i+1]
@@ -851,7 +868,7 @@ func handleBuild() bool {
 	// Step 1: Compile source(s) to bundle
 	var bundle *vm.Bundle
 
-	if len(sourcePaths) == 1 {
+	if len(sourcePaths) == 1 && !isInterpreterExtension {
 		// Single-command mode (backward compatible)
 		fmt.Printf("Compiling %s...\n", sourcePaths[0])
 		var err error
@@ -884,6 +901,8 @@ func handleBuild() bool {
 		fmt.Printf("Multi-command binary: %d commands (%s)\n",
 			len(bundle.Commands), strings.Join(bundle.CommandNames(), ", "))
 	}
+
+	bundle.IsInterpreterExtension = isInterpreterExtension
 
 	// Step 1.5: Collect embedded resources
 	// Key scheme: the --embed argument determines the key prefix.
@@ -1821,23 +1840,24 @@ func compileLibraryToBundle(libPath, alias string) (*vm.BundledModule, error) {
 	analyzer.RegisterBuiltins()
 
 	// Run analysis phases
+	ctx := pipeline.NewPipelineContext("")
 	for _, fileAST := range mod.OrderedFiles() {
-		if errs := analyzer.AnalyzeNaming(fileAST); len(errs) > 0 {
+		if errs := analyzer.AnalyzeNaming(fileAST, ctx); len(errs) > 0 {
 			return nil, fmt.Errorf("analysis error (naming): %v", errs[0])
 		}
 	}
 	for _, fileAST := range mod.OrderedFiles() {
-		if errs := analyzer.AnalyzeHeaders(fileAST); len(errs) > 0 {
+		if errs := analyzer.AnalyzeHeaders(fileAST, ctx); len(errs) > 0 {
 			return nil, fmt.Errorf("analysis error (headers): %v", errs[0])
 		}
 	}
 	for _, fileAST := range mod.OrderedFiles() {
-		if errs := analyzer.AnalyzeInstances(fileAST); len(errs) > 0 {
+		if errs := analyzer.AnalyzeInstances(fileAST, ctx); len(errs) > 0 {
 			return nil, fmt.Errorf("analysis error (instances): %v", errs[0])
 		}
 	}
 	for _, fileAST := range mod.OrderedFiles() {
-		if errs := analyzer.AnalyzeBodies(fileAST); len(errs) > 0 {
+		if errs := analyzer.AnalyzeBodies(fileAST, ctx); len(errs) > 0 {
 			return nil, fmt.Errorf("analysis error (bodies): %v", errs[0])
 		}
 	}
@@ -1951,26 +1971,52 @@ func runEmbeddedBundle() bool {
 		return false
 	}
 
-	// Multi-command dispatch
+	// Handle embedded multi-command binary execution
 	if bundle.IsMultiCommand() {
-		runMultiCommand(bundle)
+		if bundle.IsInterpreterExtension {
+			// Set the bundle as the global bundle so embedded modules are available
+			vm.SetGlobalBundle(bundle)
+
+			// In --up mode, we act as an interpreter by default,
+			// but we intercept commands that match sub-bundles first.
+			if len(os.Args) >= 2 {
+				cmdName := os.Args[1]
+				if cmd := bundle.ResolveCommand(cmdName); cmd != nil {
+					// We matched an embedded command, run it.
+					// Strip command name from args so script doesn't see it
+					os.Args = append([]string{os.Args[0], os.Args[0]}, os.Args[2:]...)
+					modules.InitVirtualPackages()
+					if _, err := vm.RunBundle(cmd); err != nil {
+						fmt.Fprintf(os.Stderr, "Runtime error: %s\n", err)
+						os.Exit(1)
+					}
+					return true
+				}
+			}
+			// If no embedded command matched, fall through to act as a normal interpreter
+			return false
+		} else {
+			// Normal multi-command mode (acts as a standalone app)
+			runMultiCommand(bundle)
+			return true
+		}
+	} else if bundle.MainChunk != nil {
+		// Single-command mode (backward compatible)
+		// Make sysArgs() consistent with interpreter mode:
+		// Insert argv[0] at position 1 so sysArgs()[0] = binary name
+		os.Args = append([]string{os.Args[0], os.Args[0]}, os.Args[1:]...)
+
+		modules.InitVirtualPackages()
+
+		_, err = vm.RunBundle(bundle)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Runtime error: %s\n", err)
+			os.Exit(1)
+		}
 		return true
 	}
 
-	// Single-command mode (backward compatible)
-	// Make sysArgs() consistent with interpreter mode:
-	// Insert argv[0] at position 1 so sysArgs()[0] = binary name
-	os.Args = append([]string{os.Args[0], os.Args[0]}, os.Args[1:]...)
-
-	modules.InitVirtualPackages()
-
-	_, err = vm.RunBundle(bundle)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Runtime error: %s\n", err)
-		os.Exit(1)
-	}
-
-	return true
+	return false
 }
 
 // runMultiCommand dispatches a multi-command binary to the appropriate sub-bundle.
@@ -2145,6 +2191,11 @@ func Run() {
 
 	// Handle test command
 	if handleTest() {
+		return
+	}
+
+	// Handle vmm command (funxy vmm <script>)
+	if handleVmm() {
 		return
 	}
 
@@ -2406,6 +2457,7 @@ func runEvalExpression(expression string, stdinData string, useTreeWalk bool, de
 	initialContext.FilePath = "<eval>"
 	initialContext.IsEvalMode = true
 	initialContext.StdinData = &stdinData
+	initialContext.IsTestMode = config.IsTestMode
 
 	// Select backend
 	var execBackend backend.Backend

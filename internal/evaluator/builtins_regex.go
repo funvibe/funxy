@@ -1,7 +1,6 @@
 package evaluator
 
 import (
-	"github.com/funvibe/funxy/internal/typesystem"
 	"regexp"
 )
 
@@ -286,47 +285,3 @@ func builtinRegexValidate(e *Evaluator, args ...Object) Object {
 }
 
 // SetRegexBuiltinTypes sets type info for regex builtins
-func SetRegexBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	// List<String>
-	listString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-	// Option<String>
-	optionString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{stringType},
-	}
-	// Option<List<String>>
-	optionListString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{listString},
-	}
-	// Result<String, Nil>
-	resultNil := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.Nil, stringType},
-	}
-
-	types := map[string]typesystem.Type{
-		"regexMatch":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Bool},
-		"regexFind":       typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: optionString},
-		"regexFindAll":    typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: listString},
-		"regexCapture":    typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: optionListString},
-		"regexReplace":    typesystem.TFunc{Params: []typesystem.Type{stringType, stringType, stringType}, ReturnType: stringType},
-		"regexReplaceAll": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType, stringType}, ReturnType: stringType},
-		"regexSplit":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: listString},
-		"regexValidate":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

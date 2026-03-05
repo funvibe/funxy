@@ -106,6 +106,14 @@ func (c *Cache) computeKey(configData []byte, funxyModPath, targetOS, targetArch
 	h.Write([]byte("\x00"))
 	h.Write([]byte(codegenVersion))
 
+	// Invalidate cache if the funxy compiler binary itself was updated
+	if exePath, err := os.Executable(); err == nil {
+		if info, err := os.Stat(exePath); err == nil {
+			h.Write([]byte("\x00"))
+			h.Write([]byte(info.ModTime().String()))
+		}
+	}
+
 	return hex.EncodeToString(h.Sum(nil))[:16] // First 16 hex chars = 64 bits
 }
 

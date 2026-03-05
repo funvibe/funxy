@@ -1,0 +1,10 @@
+import "lib/mailbox" (receiveWait, reply)
+
+for true {
+    match receiveWait(5000) {
+        Ok(m) -> {
+            reply(m, m.payload)
+        }
+        Fail(_) -> ()
+    }
+}

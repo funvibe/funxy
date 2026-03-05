@@ -3,7 +3,6 @@ package evaluator
 import (
 	"fmt"
 	"os"
-	"github.com/funvibe/funxy/internal/typesystem"
 
 	"gopkg.in/yaml.v3"
 )
@@ -132,48 +131,6 @@ func YamlBuiltins() map[string]*Builtin {
 }
 
 // SetYamlBuiltinTypes sets type info for YAML builtins
-func SetYamlBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	resultType := func(t typesystem.Type) typesystem.Type {
-		return typesystem.TApp{
-			Constructor: typesystem.TCon{Name: "Result"},
-			Args:        []typesystem.Type{stringType, t},
-		}
-	}
-	tVar := typesystem.TVar{Name: "T"}
-
-	types := map[string]typesystem.Type{
-		// yamlDecode(str: String) -> Result<String, T>
-		"yamlDecode": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultType(tVar),
-		},
-		// yamlEncode(value) -> String
-		"yamlEncode": typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "A"}},
-			ReturnType: stringType,
-		},
-		// yamlRead(path: String) -> Result<String, T>
-		"yamlRead": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultType(tVar),
-		},
-		// yamlWrite(path: String, value) -> Result<String, Nil>
-		"yamlWrite": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType, typesystem.TVar{Name: "A"}},
-			ReturnType: resultType(typesystem.Nil),
-		},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // Builtin function implementations
 

@@ -1,0 +1,51 @@
+import "lib/test" (testRun, assertOk, assertEquals, testSpawnVM)
+import "lib/vmm" (spawnVM, killVM, receiveEventWait, traceOn, traceOff)
+import "lib/rpc" (callWait)
+import "lib/time" (sleepMs)
+
+fun ensureSupervisorApi() {
+    bootRes = testSpawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "trace_bootstrap", capabilities: ["lib/time"] })
+    assertOk(bootRes)
+    match bootRes {
+        Ok(id) -> {
+            killVM(id)
+            _ = receiveEventWait(1000)
+        }
+        Fail(_) -> ()
+    }
+}
+
+testRun("vmm traceOn/traceOff works with RPC flow", \ -> {
+    ensureSupervisorApi()
+
+    res = spawnVM("./tests/e2e/vmm_worker_rpc.lang", {
+        name: "trace_rpc_worker",
+        capabilities: ["lib/rpc", "lib/time"]
+    })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            sleepMs(200)
+
+            traceOn() // global enable without vmId
+            ping1 = callWait(id, "ping", "trace-on", 1000)
+            assertOk(ping1)
+            match ping1 {
+                Ok(v) -> assertEquals("pong: trace-on", v)
+                Fail(_) -> ()
+            }
+
+            traceOff() // global disable without vmId
+            ping2 = callWait(id, "ping", "trace-off", 1000)
+            assertOk(ping2)
+            match ping2 {
+                Ok(v) -> assertEquals("pong: trace-off", v)
+                Fail(_) -> ()
+            }
+
+            killVM(id)
+        }
+        Fail(_) -> ()
+    }
+})

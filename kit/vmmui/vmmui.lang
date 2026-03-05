@@ -1,0 +1,437 @@
+import "lib/sys" (sysExit)
+import "lib/term" (select, termClear, cyan, bold, red, gray, confirm, prompt, table, termRaw, readKey, termRestore)
+import "lib/http" (httpGet)
+import "lib/string" (stringStartsWith, stringEndsWith, stringTrim)
+import "lib/list" (filter, map, length, append, sort)
+import "lib/io" (dirList, dirExists, isFile, fileRead)
+import "lib/path" (pathJoin, pathDir, pathTemp)
+import "lib/json" (jsonDecode)
+import "lib/flag" (flagSet, flagParse, flagGet, flagArgs, flagUsage)
+import "lib/map" (mapKeys, mapGet, mapFromRecord)
+
+defaultPidFile :- ".vmm.pid"
+defaultSocket :- pathJoin([pathTemp(), "funxy_vmm.sock"])
+
+flagSet("socket", "", "Path to VMM admin socket (overrides pid-file discovery)")
+flagSet("target", ".", "Directory to scan, or path to .pid/.sock file")
+flagParse()
+
+fun printUsage() {
+    flagUsage()
+    sysExit(1)
+}
+
+fun parseArgs() -> (String, String) {
+    socketOverride = flagGet("socket")
+    rest = flagArgs()
+    // rest = [script_path, user_target?]; when run as "funxy kit/vmmui/vmmui.lang path/to/pid-or-socket"
+    target = if length(rest) >= 2 { rest[1] } else { flagGet("target") }
+    if socketOverride != "" {
+        (socketOverride, pathDir(socketOverride))
+    } else if length(rest) == 0 && target == "." {
+        printUsage()
+        ("", "")
+    } else if stringEndsWith(target, ".sock") && isFile(target) {
+        (target, pathDir(target))
+    } else {
+        ("", target)
+    }
+}
+
+fun socketForPidFile(pidFileName: String, pidStr: String) -> String {
+    if pidFileName == defaultPidFile {
+        defaultSocket
+    } else {
+        pathJoin([pathTemp(), "funxy_vmm_" ++ stringTrim(pidStr) ++ ".sock"])
+    }
+}
+
+fun supervisorDisplayName(pidFileName: String, pidStr: String) -> String {
+    if pidFileName == defaultPidFile {
+        "VMM (default)"
+    } else {
+        "VMM (" ++ stringTrim(pidStr) ++ ")"
+    }
+}
+
+fun findSupervisors(targetDir: String) -> List<(String, String)> {
+    match dirList(targetDir) {
+        Ok(files) -> {
+            pidFiles = filter(\f -> stringStartsWith(f, ".vmm") && stringEndsWith(f, ".pid"), files)
+            pairs = map(\f -> {
+                match fileRead(pathJoin([targetDir, f])) {
+                    Ok(pidStr) -> {
+                        sock = socketForPidFile(f, pidStr)
+                        if length(sock) > 0 {
+                            (supervisorDisplayName(f, pidStr), sock)
+                        } else {
+                            ("", "")
+                        }
+                    }
+                    Fail(_) -> ("", "")
+                }
+            }, pidFiles)
+            filter(\p -> length(p[0]) > 0, pairs)
+        }
+        Fail(_) -> []
+    }
+}
+
+fun unixGet(socketPath: String, path: String) -> Result<String, { status: Int, body: String, headers: List<(String, String)> }> {
+    httpGet("http+unix://" ++ socketPath ++ ":" ++ path)
+}
+
+fun getWorkersForSupervisor(socketPath: String) -> List<String> {
+    match unixGet(socketPath, "/ps") {
+        Ok(resp) -> match jsonDecode(resp.body) {
+            Ok(ids) -> {
+                sorted = sort(ids)
+                if contains(sorted, "supervisor") {
+                    ["supervisor"] ++ filter(\x -> x != "supervisor", sorted)
+                } else {
+                    sorted
+                }
+            }
+            Fail(_) -> []
+        }
+        Fail(_) -> []
+    }
+}
+
+fun contains(xs: List<String>, y: String) -> Bool {
+    length(filter(\x -> x == y, xs)) > 0
+}
+
+fun formatUptime(sec: Int) -> String {
+    if sec < 60 { show(sec) ++ "s" }
+    else if sec < 3600 { show(sec / 60) ++ "m" ++ show(sec % 60) ++ "s" }
+    else if sec < 86400 { show(sec / 3600) ++ "h" ++ show((sec % 3600) / 60) ++ "m" ++ show(sec % 60) ++ "s" }
+    else { show(sec / 86400) ++ "d" ++ show((sec % 86400) / 3600) ++ "h" ++ show((sec % 3600) / 60) ++ "m" ++ show(sec % 60) ++ "s" }
+}
+
+fun statsToTableRows(stats) {
+    keys = sort(mapKeys(stats))
+    map(\k -> [k, show(mapGet(stats, k) ?? "")], keys)
+}
+
+fun viewStats(socketPath: String, vm: String) {
+    termClear()
+    print(cyan("Stats for VM: ") ++ bold(vm) ++ "\n")
+    match unixGet(socketPath, "/stats?id=" ++ vm) {
+        Ok(resp) -> match jsonDecode(resp.body) {
+            Ok(stats) -> table(["Metric", "Value"], statsToTableRows(mapFromRecord(stats)))
+            Fail(_) -> print(resp.body ++ "\n")
+        }
+        Fail(e) -> print(red("Error: " ++ e ++ "\n"))
+    }
+    print("\n" ++ gray("Press Enter to continue..."))
+    prompt("")
+}
+
+fun renderInspect(socketPath: String, vm: String) {
+    match unixGet(socketPath, "/inspect?id=" ++ vm) {
+        Ok(resp) -> match jsonDecode(resp.body) {
+            Ok(data) -> {
+                stats = mapFromRecord(data.stats)
+                keys = sort(mapKeys(stats))
+                rows = map(\k -> [k, show(mapGet(stats, k) ?? "")], keys)
+                table(["Metric", "Value"], rows)
+                dataMap = mapFromRecord(data)
+                mode = show(mapGet(dataMap, "rpc_serialization_mode") ?? "auto")
+                print("\n" ++ bold("RPC serialization mode: ") ++ mode ++ "\n")
+                uptimeSec = floatToInt(data.uptime_seconds)
+                print("\n" ++ bold("Uptime: ") ++ formatUptime(uptimeSec) ++ "\n")
+                stackTrace = data.stack_trace
+                if length(stackTrace) > 0 {
+                    print("\n" ++ bold("Stack trace:") ++ "\n" ++ stackTrace)
+                }
+            }
+            Fail(_) -> print(resp.body ++ "\n")
+        }
+        Fail(e) -> print(red("Error: " ++ e ++ "\n"))
+    }
+}
+
+fun viewInspect(socketPath: String, vm: String) {
+    _ = termRaw()
+    for true {
+        termClear()
+        print(cyan("Inspect VM: ") ++ bold(vm) ++ "  ")
+        print(gray("(refreshing every 3s, Enter to go back)\n\n"))
+        renderInspect(socketPath, vm)
+        key = readKey(3000)
+        if key == "enter" {
+            termRestore()
+            break ()
+        } else {
+            ()
+        }
+    }
+}
+
+fun viewUptime(socketPath: String, vm: String) {
+    termClear()
+    print(cyan("Uptime for VM: ") ++ bold(vm) ++ "\n")
+    match unixGet(socketPath, "/uptime?id=" ++ vm) {
+        Ok(resp) -> match jsonDecode(resp.body) {
+            Ok(data) -> {
+                sec = floatToInt(data.uptime_seconds)
+                print("Uptime: " ++ formatUptime(sec) ++ "\n")
+            }
+            Fail(_) -> print(resp.body ++ "\n")
+        }
+        Fail(e) -> print(red("Error: " ++ e ++ "\n"))
+    }
+    print("\n" ++ gray("Press Enter to continue..."))
+    prompt("")
+}
+
+fun traceRowForVm(evt, vm: String) {
+    m = mapFromRecord(evt)
+    fromVm = show(mapGet(m, "FromVM") ?? "")
+    toVm = show(mapGet(m, "ToVM") ?? "")
+    method = show(mapGet(m, "Method") ?? "")
+    status = show(mapGet(m, "Status") ?? "")
+    dur = show(mapGet(m, "DurationMs") ?? 0)
+    traceId = show(mapGet(m, "TraceID") ?? "")
+    seq = show(mapGet(m, "Seq") ?? 0)
+    if toVm == vm {
+        [seq, "<-", method, fromVm, status, dur, traceId]
+    } else {
+        [seq, "->", method, toVm, status, dur, traceId]
+    }
+}
+
+fun statusText(evt) -> String {
+    m = mapFromRecord(evt)
+    show(mapGet(m, "Status") ?? "")
+}
+
+fun statusMatches(evt, statusFilter: String) -> Bool {
+    if statusFilter == "all" {
+        true
+    } else {
+        s = statusText(evt)
+        s == statusFilter || s == ("\"" ++ statusFilter ++ "\"")
+    }
+}
+
+fun fetchTraceEvents(socketPath: String, vm: String) {
+    match unixGet(socketPath, "/trace_recent?id=" ++ vm ++ "&limit=30") {
+        Ok(resp) -> match jsonDecode(resp.body) {
+            Ok(events) -> events
+            Fail(_) -> []
+        }
+        Fail(_) -> []
+    }
+}
+
+fun renderTrace(events, vm: String, statusFilter: String) {
+    filtered = filter(\evt -> statusMatches(evt, statusFilter), events)
+    if length(filtered) == 0 {
+        print(gray("No trace events yet for this VM.\n"))
+        print(gray("Tip: generate RPC traffic for this VM.\n\n"))
+        table(["Seq", "Dir", "Method", "Peer", "Status", "DurMs", "TraceID"], [])
+    } else {
+        rows = map(\evt -> traceRowForVm(evt, vm), filtered)
+        table(["Seq", "Dir", "Method", "Peer", "Status", "DurMs", "TraceID"], rows)
+    }
+}
+
+fun tryEnableTrace(socketPath: String, vm: String) {
+    _ = unixGet(socketPath, "/trace_on?id=" ++ vm)
+}
+
+fun tryDisableTrace(socketPath: String, vm: String) {
+    _ = unixGet(socketPath, "/trace_off?id=" ++ vm)
+}
+
+fun viewTrace(socketPath: String, vm: String) {
+    _ = termRaw()
+    tryEnableTrace(socketPath, vm)
+    statusFilter = "all"
+    paused = false
+    cachedEvents = []
+    for true {
+        if !paused {
+            cachedEvents = fetchTraceEvents(socketPath, vm)
+        } else {
+            ()
+        }
+        termClear()
+        print(cyan("Trace VM: ") ++ bold(vm) ++ "  ")
+        print(gray("(Enter back, P pause/resume, F filter, R refresh)"))
+        print("  ")
+        print(gray("paused=" ++ show(paused) ++ ", filter=" ++ statusFilter ++ "\n\n"))
+        renderTrace(cachedEvents, vm, statusFilter)
+        key = readKey(1000)
+        if key == "enter" {
+            tryDisableTrace(socketPath, vm)
+            termRestore()
+            break ()
+        } else if key == "p" || key == "P" {
+            paused = !paused
+            ()
+        } else if key == "f" || key == "F" {
+            if statusFilter == "all" {
+                statusFilter = "error"
+            } else if statusFilter == "error" {
+                statusFilter = "fast_fail"
+            } else {
+                statusFilter = "all"
+            }
+            ()
+        } else if key == "r" || key == "R" {
+            cachedEvents = fetchTraceEvents(socketPath, vm)
+            ()
+        } else {
+            ()
+        }
+    }
+}
+
+fun stopVM(socketPath: String, vm: String) {
+    if confirm("Are you sure you want to gracefully STOP " ++ vm ++ "?") {
+        _ = unixGet(socketPath, "/stop?id=" ++ vm)
+        ()
+    } else { () }
+}
+
+fun killVM(socketPath: String, vm: String) {
+    if confirm("Are you sure you want to KILL " ++ vm ++ "?") {
+        _ = unixGet(socketPath, "/kill?id=" ++ vm)
+        ()
+    } else { () }
+}
+
+fun reloadVM(socketPath: String, vm: String) {
+    match unixGet(socketPath, "/reload?id=" ++ vm) {
+        Ok(resp) -> print(resp.body ++ "\n")
+        Fail(e) -> print(red("Error: " ++ e ++ "\n"))
+    }
+    print(gray("Press Enter to continue..."))
+    prompt("")
+}
+
+fun manageSupervisor(displayName: String, socketPath: String) {
+    lastWorkers = []
+    skipRefetch = false
+    for true {
+        termClear()
+        print(bold(cyan("Managing Supervisor: ")) ++ displayName ++ "\n\n")
+
+        workers = if skipRefetch && length(lastWorkers) > 0 {
+            skipRefetch = false
+            lastWorkers
+        } else {
+            fresh = getWorkersForSupervisor(socketPath)
+            if length(fresh) > 0 {
+                lastWorkers = fresh
+                fresh
+            } else if length(lastWorkers) > 0 {
+                lastWorkers
+            } else {
+                []
+            }
+        }
+        if length(workers) == 0 {
+            print(red("No running VMs found or supervisor not responding.\n"))
+            print("Press Enter to go back...")
+            prompt("")
+            break ()
+        }
+
+        options = append(workers, "Back to Supervisors")
+        selected = select("Select VM to manage:", options)
+
+        if selected == "Back to Supervisors" {
+            break ()
+        }
+
+        action = select("Action for " ++ selected ++ ":", ["Back", "Inspect", "Stats", "Trace", "Uptime", "Reload", "Stop", "Kill"])
+        match action {
+            "Back" -> ()
+            "Inspect" -> {
+                viewInspect(socketPath, selected)
+                skipRefetch = true
+            }
+            "Stats" -> {
+                viewStats(socketPath, selected)
+                skipRefetch = true
+            }
+            "Trace" -> {
+                viewTrace(socketPath, selected)
+                skipRefetch = true
+            }
+            "Uptime" -> {
+                viewUptime(socketPath, selected)
+                skipRefetch = true
+            }
+            "Stop" -> stopVM(socketPath, selected)
+            "Kill" -> killVM(socketPath, selected)
+            "Reload" -> {
+                reloadVM(socketPath, selected)
+                skipRefetch = true
+            }
+            _ -> ()
+        }
+    }
+}
+
+fun resolveTargetDir(target: String) -> String {
+    if dirExists(target) {
+        target
+    } else if isFile(target) {
+        pathDir(target)
+    } else {
+        print(red("Error: Target path '" ++ target ++ "' does not exist.\n"))
+        sysExit(1)
+        ""
+    }
+}
+
+fun uiLoop() {
+    (socketOverride, target) = parseArgs()
+    targetDir = if socketOverride != "" {
+        target
+    } else {
+        resolveTargetDir(target)
+    }
+
+    for true {
+        termClear()
+        print(bold("Funxy VMM Dashboard") ++ " - " ++ targetDir ++ "\n\n")
+
+        supervisors = if socketOverride != "" {
+            [("VMM (custom)", socketOverride)]
+        } else {
+            findSupervisors(targetDir)
+        }
+        if length(supervisors) == 0 {
+            print(red("No running supervisors found in '" ++ targetDir ++ "'\n"))
+            print("Make sure there are .vmm*.pid files in the target directory.\n")
+            print("Press Enter to refresh or Ctrl+C to exit...")
+            prompt("")
+        } else {
+            displayNames = map(\p -> p[0], supervisors)
+            options = append(displayNames, "Exit Dashboard")
+            selected = select("Select Supervisor to manage:", options)
+
+            if selected == "Exit Dashboard" {
+                termClear()
+                break ()
+            }
+
+            for p in supervisors {
+                if p[0] == selected {
+                    manageSupervisor(p[0], p[1])
+                    break ()
+                } else {
+                    ()
+                }
+            }
+        }
+    }
+}
+
+uiLoop()

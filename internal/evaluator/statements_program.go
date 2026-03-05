@@ -139,6 +139,18 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 
 // importVirtualModule handles importing built-in virtual modules
 func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.Module, env *Environment) Object {
+	// Check sandbox mode for dirty modules early
+	if e.Loader != nil {
+		if loader, ok := e.Loader.(*modules.Loader); ok && loader.SandboxMode {
+			path := "lib/" + mod.Name
+			if !modules.IsPureVirtualPackage(path) && !loader.AllowedModules[path] {
+				// e.vmName // We don't have VM name directly in Evaluator without changing it.
+				// For now let's just make it clear.
+				return newError("capability denied: module '%s' is not allowed in sandbox mode", path)
+			}
+		}
+	}
+
 	// Special case: import "lib" imports all lib/* packages
 	if mod.Name == "lib" {
 		return e.importAllLibPackages(node, env)
@@ -226,91 +238,76 @@ func GetVirtualModuleBuiltins(name string) map[string]Object {
 	switch name {
 	case "list":
 		builtins = ListBuiltins()
-		SetListBuiltinTypes(builtins)
 	case "map":
 		builtins = GetMapBuiltins()
-		SetMapBuiltinTypes(builtins)
 	case "bytes":
 		builtins = BytesBuiltins()
-		SetBytesBuiltinTypes(builtins)
 	case "bits":
 		builtins = BitsBuiltins()
-		SetBitsBuiltinTypes(builtins)
 	case "time":
 		builtins = TimeBuiltins()
-		SetTimeBuiltinTypes(builtins)
 	case "io":
 		builtins = IOBuiltins()
-		SetIOBuiltinTypes(builtins)
 	case "sys":
 		builtins = SysBuiltins()
-		SetSysBuiltinTypes(builtins)
+	case "vmm":
+		builtins = SupervisorBuiltins()
+	case "mailbox":
+		RegisterMailboxBuiltins(env)
+		applyVirtualPackageTypes("mailbox", env.GetStore())
+		return env.GetStore()
+	case "rpc":
+		builtins = RpcBuiltins()
 	case "tuple":
 		builtins = TupleBuiltins()
-		SetTupleBuiltinTypes(builtins)
 	case "string":
 		builtins = StringBuiltins()
-		SetStringBuiltinTypes(builtins)
 	case "math":
 		builtins = MathBuiltins()
-		SetMathBuiltinTypes(builtins)
 	case "bignum":
 		builtins = BignumBuiltins()
-		SetBignumBuiltinTypes(builtins)
 	case "char":
 		builtins = CharBuiltins()
-		SetCharBuiltinTypes(builtins)
 	case "json":
 		RegisterJsonBuiltins(env)
+		applyVirtualPackageTypes("json", env.GetStore())
 		return env.GetStore()
 	case "crypto":
 		builtins = CryptoBuiltins()
-		SetCryptoBuiltinTypes(builtins)
 	case "regex":
 		builtins = RegexBuiltins()
-		SetRegexBuiltinTypes(builtins)
 	case "http":
 		builtins = HttpBuiltins()
-		SetHttpBuiltinTypes(builtins)
 	case "test":
 		builtins = TestBuiltins()
-		SetTestBuiltinTypes(builtins)
 	case "rand":
 		builtins = RandBuiltins()
-		SetRandBuiltinTypes(builtins)
 	case "date":
 		RegisterDateBuiltins(env)
+		applyVirtualPackageTypes("date", env.GetStore())
 		return env.GetStore()
 	case "ws":
 		builtins = WsBuiltins()
-		SetWsBuiltinTypes(builtins)
 	case "sql":
 		RegisterSqlBuiltins(env)
+		applyVirtualPackageTypes("sql", env.GetStore())
 		return env.GetStore()
 	case "url":
 		builtins = UrlBuiltins()
-		SetUrlBuiltinTypes(builtins)
 	case "path":
 		builtins = PathBuiltins()
-		SetPathBuiltinTypes(builtins)
 	case "uuid":
 		builtins = UuidBuiltins()
-		SetUuidBuiltinTypes(builtins)
 	case "log":
 		builtins = LogBuiltins()
-		SetLogBuiltinTypes(builtins)
 	case "task":
 		builtins = TaskBuiltins()
-		SetTaskBuiltinTypes(builtins)
 	case "csv":
 		builtins = CsvBuiltins()
-		SetCsvBuiltinTypes(builtins)
 	case "yaml":
 		builtins = YamlBuiltins()
-		SetYamlBuiltinTypes(builtins)
 	case "flag":
 		builtins = FlagBuiltins()
-		SetFlagBuiltinTypes(builtins)
 	case "option":
 		builtins = OptionBuiltins()
 	case "result":
@@ -321,7 +318,6 @@ func GetVirtualModuleBuiltins(name string) map[string]Object {
 		builtins = ProtoBuiltins()
 	case "term":
 		builtins = TermBuiltins()
-		SetTermBuiltinTypes(builtins)
 	default:
 		// Check ext/* registry for dynamically registered modules
 		if extBuiltins := GetExtBuiltins(name); extBuiltins != nil {
@@ -350,6 +346,7 @@ func GetVirtualModuleBuiltins(name string) map[string]Object {
 			}
 		}
 
+		applyVirtualPackageTypes(name, env.GetStore())
 		return env.GetStore()
 	}
 
@@ -593,4 +590,19 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 	}
 
 	return modObj, nil
+}
+
+// applyVirtualPackageTypes applies types from VirtualPackages to builtins
+func applyVirtualPackageTypes(name string, m map[string]Object) {
+	pkg := modules.GetVirtualPackage("lib/" + name)
+	if pkg == nil {
+		return
+	}
+	for bName, obj := range m {
+		if b, ok := obj.(*Builtin); ok {
+			if sym, exists := pkg.Symbols[bName]; exists && sym != nil {
+				b.TypeInfo = sym
+			}
+		}
+	}
 }

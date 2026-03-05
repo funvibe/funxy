@@ -1,0 +1,4 @@
+Processing failed with errors:
+- error at 5:5 [A003]: type error: pure expression result discarded: record field update is immutable and must be assigned (e.g. r = r.f = 1)
+- error at 8:8 [A003]: type error: pure expression result discarded: collection index update is immutable and must be assigned (e.g. list = list[0] = 1)
+- error at 11:9 [A003]: type error: pure expression result discarded: collection index update is immutable and must be assigned (e.g. list = list[0] = 1)

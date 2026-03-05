@@ -8,10 +8,11 @@ testRun("Record literal and access", \ -> {
     assertEquals(20, p.y, "Access y")
 })
 
-testRun("Record modification (mutable)", \ -> {
+testRun("Record modification (immutable)", \ -> {
     p = { x: 10, y: 20 }
-    p.x = 100
-    assertEquals(100, p.x, "Mutable update")
+    p2 = p.x = 100
+    assertEquals(100, p2.x, "Immutable update")
+    assertEquals(10, p.x, "Original unchanged")
 })
 
 testRun("Record spread (immutable update)", \ -> {

@@ -129,7 +129,7 @@ func (p *Parser) parseRecordLiteralOrBlock() ast.Expression {
 
 	// 3. Check for { key: val } (Non-empty Record) - single line
 	isRecord := false
-	if p.peekTokenIs(token.IDENT_LOWER) || p.peekTokenIs(token.IDENT_UPPER) {
+	if p.peekTokenIs(token.IDENT_LOWER) || p.peekTokenIs(token.IDENT_UPPER) || token.IsKeyword(p.peekToken.Lexeme) {
 		peekNext := p.stream.Peek(1)
 		if len(peekNext) >= 1 && peekNext[0].Type == token.COLON {
 			isRecord = true
@@ -154,7 +154,7 @@ func (p *Parser) parseRecordLiteralOrBlock() ast.Expression {
 			} else if first.Type == token.ELLIPSIS {
 				// Record spread: { \n ...expr }
 				isRecord = true
-			} else if first.Type == token.IDENT_LOWER || first.Type == token.IDENT_UPPER {
+			} else if first.Type == token.IDENT_LOWER || first.Type == token.IDENT_UPPER || token.IsKeyword(first.Lexeme) {
 				// Find colon after ident
 				colonIdx := idx + 1
 				for colonIdx < len(peekTokens) && peekTokens[colonIdx].Type == token.NEWLINE {
@@ -166,28 +166,47 @@ func (p *Parser) parseRecordLiteralOrBlock() ast.Expression {
 					// Record: key: value (no = before newline/comma/})
 					hasAssign := false
 					angleBalance := 0
+					parenBalance := 0
+					braceBalance := 0
+					bracketBalance := 0
+
 					for checkIdx := colonIdx + 1; checkIdx < len(peekTokens); checkIdx++ {
 						tt := peekTokens[checkIdx].Type
 						if tt == token.LT {
 							angleBalance++
 						} else if tt == token.GT {
 							angleBalance--
-						} else if angleBalance == 0 {
-							// Only check for terminators when not inside <...>
-							if tt == token.NEWLINE || tt == token.RBRACE {
+						} else if tt == token.LPAREN {
+							parenBalance++
+						} else if tt == token.RPAREN {
+							parenBalance--
+						} else if tt == token.LBRACE {
+							braceBalance++
+						} else if tt == token.RBRACE {
+							if braceBalance == 0 {
+								break // End of record
+							}
+							braceBalance--
+						} else if tt == token.LBRACKET {
+							bracketBalance++
+						} else if tt == token.RBRACKET {
+							bracketBalance--
+						} else if angleBalance <= 0 && parenBalance <= 0 && braceBalance <= 0 && bracketBalance <= 0 {
+							// Only check for terminators when not inside <...>, (...), {...}, [...]
+							if tt == token.NEWLINE {
 								break // End of field/statement
 							}
 							if tt == token.COMMA {
 								break // End of record field
 							}
-							if tt == token.ASSIGN || tt == token.COLON_MINUS {
+							if tt == token.ASSIGN || tt == token.COLON_MINUS || tt == token.PLUS_ASSIGN || tt == token.MINUS_ASSIGN || tt == token.ASTERISK_ASSIGN || tt == token.SLASH_ASSIGN || tt == token.PERCENT_ASSIGN || tt == token.POWER_ASSIGN {
 								hasAssign = true
 								break
 							}
 						}
 					}
 					if !hasAssign {
-						isRecord = true // No = found, so it's a record field
+						isRecord = true // No = found (or it's an assignment in a record field), so it's a record field
 					}
 				}
 			}
@@ -248,7 +267,7 @@ func (p *Parser) parseRecordLiteral() *ast.RecordLiteral {
 			continue
 		}
 
-		if !p.curTokenIs(token.IDENT_LOWER) && !p.curTokenIs(token.IDENT_UPPER) {
+		if !p.curTokenIs(token.IDENT_LOWER) && !p.curTokenIs(token.IDENT_UPPER) && !token.IsKeyword(p.curToken.Lexeme) {
 			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP004, p.curToken, p.curToken.Type))
 			return nil // Expected identifier key
 		}
@@ -264,7 +283,11 @@ func (p *Parser) parseRecordLiteral() *ast.RecordLiteral {
 			p.nextToken()
 		}
 
+		oldForbidAssignments := p.forbidAssignments
+		p.forbidAssignments = true
 		val := p.parseExpression(LOWEST)
+		p.forbidAssignments = oldForbidAssignments
+
 		if val == nil {
 			return nil // Failed to parse value expression
 		}

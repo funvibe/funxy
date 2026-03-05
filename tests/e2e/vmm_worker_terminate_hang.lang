@@ -1,0 +1,11 @@
+import "lib/time" (sleepMs)
+
+fun onTerminate(state) {
+    while true {
+        sleepMs(50)
+    }
+}
+
+while true {
+    sleepMs(100)
+}

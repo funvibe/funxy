@@ -1,0 +1,25 @@
+import "lib/mailbox" (receiveWait)
+import "lib/vmm" (setState, getState)
+
+setState("waiting")
+
+fun getResult(dummy: List<String>) -> String {
+    match getState() {
+        Some(s) -> s
+        None -> "none"
+    }
+}
+
+msg = receiveWait(5000)
+match msg {
+    Ok(m) -> {
+        if m.payload == "hello" {
+            setState("correct")
+        } else {
+            setState("wrong payload: " ++ show(m.payload))
+        }
+    }
+    Fail(e) -> {
+        setState("receive failed: " ++ e)
+    }
+}

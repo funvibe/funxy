@@ -3,8 +3,6 @@ package evaluator
 import (
 	"strings"
 	"unicode"
-
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // StringBuiltins returns built-in functions for lib/string virtual package
@@ -41,42 +39,6 @@ func StringBuiltins() map[string]*Builtin {
 }
 
 // SetStringBuiltinTypes sets type info for string builtins
-func SetStringBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	listString := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{stringType}}
-	optionInt := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{typesystem.Int}}
-
-	types := map[string]typesystem.Type{
-		"stringSplit":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: listString},
-		"stringJoin":       typesystem.TFunc{Params: []typesystem.Type{listString, stringType}, ReturnType: stringType},
-		"stringLines":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: listString},
-		"stringWords":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: listString},
-		"stringTrim":       typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"stringTrimStart":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"stringTrimEnd":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"stringToUpper":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"stringToLower":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"stringCapitalize": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"stringReplace":    typesystem.TFunc{Params: []typesystem.Type{stringType, stringType, stringType}, ReturnType: stringType},
-		"stringReplaceAll": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType, stringType}, ReturnType: stringType},
-		"stringStartsWith": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Bool},
-		"stringEndsWith":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Bool},
-		"stringIndexOf":    typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: optionInt},
-		"stringRepeat":     typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int}, ReturnType: stringType},
-		"stringPadLeft":    typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Char}, ReturnType: stringType},
-		"stringPadRight":   typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int, typesystem.Char}, ReturnType: stringType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // =============================================================================
 // Helper: convert List<Char> (our string representation) to Go string

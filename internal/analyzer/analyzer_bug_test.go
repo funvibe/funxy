@@ -31,7 +31,7 @@ fun getX(r) {
 
 	symbolTable := symbols.NewSymbolTable()
 	a := New(symbolTable)
-	errors := a.Analyze(program)
+	errors := a.Analyze(program, ctx)
 
 	if len(errors) > 0 {
 		for _, e := range errors {

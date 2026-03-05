@@ -38,6 +38,11 @@ func TestEmbedAPI(t *testing.T) {
 
 	// 3. Eval script using bound values
 	code := `
+	// Use built-in functions
+	print("Running TestEmbedAPI script...")
+	items = [1, 2, 3]
+	l = len(items)
+
 	doubled = double(21)
 
 	// Access field
@@ -47,7 +52,7 @@ func TestEmbedAPI(t *testing.T) {
 	player.AddScore(5)
 	status = player.GetStatus()
 
-	[doubled, name, status]
+	[doubled, name, status, l]
 	`
 
 	res, err := vm.Eval(code)
@@ -61,8 +66,8 @@ func TestEmbedAPI(t *testing.T) {
 		t.Fatalf("Expected []interface{} result, got %T", res)
 	}
 
-	if len(list) != 3 {
-		t.Fatalf("Expected 3 results, got %d", len(list))
+	if len(list) != 4 {
+		t.Fatalf("Expected 4 results, got %d", len(list))
 	}
 
 	// Check doubled
@@ -97,6 +102,19 @@ func TestEmbedAPI(t *testing.T) {
 	expectedStatus := "User Alice has 15 points"
 	if val3 != expectedStatus {
 		t.Errorf("Expected '%s', got '%s'", expectedStatus, val3)
+	}
+
+	// Check len
+	val4, ok := list[3].(int)
+	if !ok {
+		if val464, ok64 := list[3].(int64); ok64 {
+			val4 = int(val464)
+		} else {
+			t.Errorf("Expected int for len, got %T", list[3])
+		}
+	}
+	if val4 != 3 {
+		t.Errorf("Expected 3 for len, got %d", val4)
 	}
 
 	// 5. Verify side effect on Go struct

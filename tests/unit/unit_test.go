@@ -12,6 +12,7 @@ import (
 	"github.com/funvibe/funxy/internal/modules"
 	"github.com/funvibe/funxy/internal/parser"
 	"github.com/funvibe/funxy/internal/pipeline"
+	funxy "github.com/funvibe/funxy/pkg/embed"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -103,7 +104,14 @@ func runLangTest(t *testing.T, filePath string) {
 
 	// Initialize test runner
 	// Note: We use nil evaluator here because VM handles execution
-	evaluator.InitTestRunner(nil)
+	h := funxy.NewHypervisor()
+	h.RegisterCapabilityProvider(func(cap string, vm *funxy.VM) error {
+		if strings.HasPrefix(cap, "lib/") || strings.HasPrefix(cap, "ext/") || strings.HasPrefix(cap, "pkg/") || cap == "supervisor" {
+			return nil
+		}
+		return fmt.Errorf("unknown capability: %s", cap)
+	})
+	evaluator.InitTestRunner(nil, h)
 
 	// Create pipeline context
 	ctx := pipeline.NewPipelineContext(string(sourceCode))

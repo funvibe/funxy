@@ -33,6 +33,7 @@ func init() {
 	gob.Register(&evaluator.Constructor{})
 	gob.Register(&evaluator.ClassMethod{})
 	gob.Register(&evaluator.TypeObject{})
+	gob.Register(&evaluator.Error{}) // Register Error type for serialization
 	// Custom serialized types (implement GobEncode/GobDecode):
 	gob.Register(&evaluator.OperatorFunction{}) // Only serializes Operator field
 	// NOT registered (contain Environment/Evaluator and not used in bytecode):

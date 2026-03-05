@@ -1,8 +1,6 @@
 package evaluator
 
-import (
-	"github.com/funvibe/funxy/internal/typesystem"
-)
+import ()
 
 // TupleBuiltins returns built-in functions for lib/tuple virtual package
 func TupleBuiltins() map[string]*Builtin {
@@ -32,51 +30,6 @@ func TupleBuiltins() map[string]*Builtin {
 }
 
 // SetTupleBuiltinTypes sets type info for tuple builtins
-func SetTupleBuiltinTypes(builtins map[string]*Builtin) {
-	A := typesystem.TVar{Name: "A"}
-	B := typesystem.TVar{Name: "B"}
-	C := typesystem.TVar{Name: "C"}
-	D := typesystem.TVar{Name: "D"}
-	T := typesystem.TVar{Name: "T"}
-
-	pairAB := typesystem.TTuple{Elements: []typesystem.Type{A, B}}
-	pairBA := typesystem.TTuple{Elements: []typesystem.Type{B, A}}
-	pairAA := typesystem.TTuple{Elements: []typesystem.Type{A, A}}
-	pairCB := typesystem.TTuple{Elements: []typesystem.Type{C, B}}
-	pairAC := typesystem.TTuple{Elements: []typesystem.Type{A, C}}
-	pairCD := typesystem.TTuple{Elements: []typesystem.Type{C, D}}
-
-	aToC := typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: C}
-	bToC := typesystem.TFunc{Params: []typesystem.Type{B}, ReturnType: C}
-	bToD := typesystem.TFunc{Params: []typesystem.Type{B}, ReturnType: D}
-	aToBool := typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: typesystem.Bool}
-
-	pairABToC := typesystem.TFunc{Params: []typesystem.Type{pairAB}, ReturnType: C}
-	aToFunc := typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: typesystem.TFunc{Params: []typesystem.Type{B}, ReturnType: C}}
-
-	genericTuple := typesystem.TVar{Name: "Tuple"}
-
-	types := map[string]typesystem.Type{
-		"fst":         typesystem.TFunc{Params: []typesystem.Type{pairAB}, ReturnType: A},
-		"snd":         typesystem.TFunc{Params: []typesystem.Type{pairAB}, ReturnType: B},
-		"tupleGet":    typesystem.TFunc{Params: []typesystem.Type{genericTuple, typesystem.Int}, ReturnType: T},
-		"tupleSwap":   typesystem.TFunc{Params: []typesystem.Type{pairAB}, ReturnType: pairBA},
-		"tupleDup":    typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: pairAA},
-		"mapFst":      typesystem.TFunc{Params: []typesystem.Type{aToC, pairAB}, ReturnType: pairCB},
-		"mapSnd":      typesystem.TFunc{Params: []typesystem.Type{bToC, pairAB}, ReturnType: pairAC},
-		"mapPair":     typesystem.TFunc{Params: []typesystem.Type{aToC, bToD, pairAB}, ReturnType: pairCD},
-		"curry":       typesystem.TFunc{Params: []typesystem.Type{pairABToC}, ReturnType: aToFunc},
-		"uncurry":     typesystem.TFunc{Params: []typesystem.Type{aToFunc}, ReturnType: pairABToC},
-		"tupleBoth":   typesystem.TFunc{Params: []typesystem.Type{aToBool, pairAA}, ReturnType: typesystem.Bool},
-		"tupleEither": typesystem.TFunc{Params: []typesystem.Type{aToBool, pairAA}, ReturnType: typesystem.Bool},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // =============================================================================
 // Basic Access

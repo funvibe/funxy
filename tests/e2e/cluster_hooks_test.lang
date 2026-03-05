@@ -1,0 +1,41 @@
+import "lib/test" (testRun, assertEquals, assertOk, testSpawnVM, assertFail)
+import "lib/vmm" (killVM, stopVM)
+import "lib/time" (sleepMs)
+
+testRun("lifecycle hooks - onInit, onTerminate, onError", \ -> {
+    // 1. Spawn a VM that has all lifecycle hooks defined
+    res = testSpawnVM("./tests/e2e/hooks_worker.lang", {
+        capabilities: ["lib/mailbox", "lib/rpc", "lib/vmm"]
+    })
+    assertOk(res)
+
+    match res {
+        Ok(vm_id) -> {
+            // Wait a little bit for onInit to finish
+            sleepMs(200)
+
+            // Test normal termination (onTerminate)
+            // Stop gracefully, passing saveState = true
+            stopRes = stopVM(vm_id, Some({ saveState: true, timeoutMs: 2000 }))
+            assertOk(stopRes)
+            
+            // Re-spawn the VM to test crash / onError
+            res2 = testSpawnVM("./tests/e2e/hooks_worker.lang", {
+                capabilities: ["lib/mailbox", "lib/rpc", "lib/vmm"]
+            })
+            assertOk(res2)
+
+            match res2 {
+                Ok(vm_id2) -> {
+                    sleepMs(200)
+                    // Force kill the VM, this should trigger onError
+                    // Note: Test runner tracks and kills VMs automatically, but we kill it manually here
+                    killVM(vm_id2)
+                    sleepMs(200)
+                }
+                Fail(e) -> assertFail(res2)
+            }
+        }
+        Fail(e) -> assertFail(res)
+    }
+})

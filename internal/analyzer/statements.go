@@ -226,10 +226,13 @@ func (w *walker) VisitProgram(program *ast.Program) {
 	}
 
 	// Pass 2: Analyze bodies and other statements
-	for _, stmt := range program.Statements {
+	for i, stmt := range program.Statements {
 		if stmt == nil {
 			continue
 		}
+
+		w.isLastStatement = (i == len(program.Statements)-1)
+
 		switch s := stmt.(type) {
 		case *ast.FunctionStatement:
 			// Analyze function body manually to avoid duplicate registration
@@ -687,7 +690,35 @@ func (w *walker) VisitExpressionStatement(stmt *ast.ExpressionStatement) {
 		// If we are inside a function body, skip redundant inference of individual expressions
 		// because the whole body will be inferred together in analyzeFunctionBody.
 		if w.inFunctionBody {
+			// Check for bare path updates (e.g. `list[0] = 10` without assignment)
+			// They are parsed as AssignExpression, but if they are the root of an ExpressionStatement,
+			// it means their result is discarded.
+			// BUT if this is the last statement in a block/function, it's the return value, so it's NOT discarded.
+			if !w.isLastStatement {
+				if assign, ok := stmt.Expression.(*ast.AssignExpression); ok {
+					if _, isMember := assign.Left.(*ast.MemberExpression); isMember {
+						w.addError(diagnostics.NewError(diagnostics.ErrA003, assign.Token, "pure expression result discarded: record field update is immutable and must be assigned (e.g. r = r.f = 1)"))
+					} else if _, isIndex := assign.Left.(*ast.IndexExpression); isIndex {
+						w.addError(diagnostics.NewError(diagnostics.ErrA003, assign.Token, "pure expression result discarded: collection index update is immutable and must be assigned (e.g. list = list[0] = 1)"))
+					}
+				}
+			}
 			return
+		}
+
+		// Check for bare path updates at top level
+		// They are parsed as AssignExpression, but if they are the root of an ExpressionStatement,
+		// it means their result is discarded.
+		// Top-level expressions in scripts are often implicitly returned/printed, but for safety
+		// we still warn unless it's the very last statement.
+		if !w.isLastStatement {
+			if assign, ok := stmt.Expression.(*ast.AssignExpression); ok {
+				if _, isMember := assign.Left.(*ast.MemberExpression); isMember {
+					w.addError(diagnostics.NewError(diagnostics.ErrA003, assign.Token, "pure expression result discarded: record field update is immutable and must be assigned (e.g. r = r.f = 1)"))
+				} else if _, isIndex := assign.Left.(*ast.IndexExpression); isIndex {
+					w.addError(diagnostics.NewError(diagnostics.ErrA003, assign.Token, "pure expression result discarded: collection index update is immutable and must be assigned (e.g. list = list[0] = 1)"))
+				}
+			}
 		}
 
 		// Run inference to check types and exhaustiveness (for scripts/top-level expressions)
@@ -708,9 +739,12 @@ func (w *walker) VisitBlockStatement(block *ast.BlockStatement) {
 	w.symbolTable = symbols.NewEnclosedSymbolTable(outer, symbols.ScopeBlock)
 	defer func() { w.symbolTable = outer }()
 
-	for _, stmt := range block.Statements {
+	for i, stmt := range block.Statements {
+		// Update isLastStatement flag for the last statement in the block
+		w.isLastStatement = (i == len(block.Statements)-1)
 		stmt.Accept(w)
 	}
+	w.isLastStatement = false
 }
 
 func (w *walker) VisitIfExpression(expr *ast.IfExpression) {

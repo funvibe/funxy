@@ -1,7 +1,6 @@
 package evaluator
 
 import (
-	"github.com/funvibe/funxy/internal/typesystem"
 	"sort"
 )
 
@@ -981,71 +980,3 @@ func compareObjects(a, b Object) int {
 }
 
 // SetListBuiltinTypes sets type info for list builtins
-func SetListBuiltinTypes(builtins map[string]*Builtin) {
-	T := typesystem.TVar{Name: "T"}
-	U := typesystem.TVar{Name: "U"}
-	A := typesystem.TVar{Name: "A"}
-	B := typesystem.TVar{Name: "B"}
-
-	listT := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{T}}
-	listU := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{U}}
-	listA := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{A}}
-	listB := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{B}}
-	listListT := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{listT}}
-	tupleAB := typesystem.TTuple{Elements: []typesystem.Type{A, B}}
-	listTupleAB := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{tupleAB}}
-	tupleListAListB := typesystem.TTuple{Elements: []typesystem.Type{listA, listB}}
-	optionInt := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{typesystem.Int}}
-
-	optionT := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{T}}
-	tupleListTListT := typesystem.TTuple{Elements: []typesystem.Type{listT, listT}}
-	predicateT := typesystem.TFunc{Params: []typesystem.Type{T}, ReturnType: typesystem.Bool}
-
-	types := map[string]typesystem.Type{
-		"head":     typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: T},
-		"headOr":   typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: T},
-		"last":     typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: T},
-		"lastOr":   typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: T},
-		"nth":      typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int}, ReturnType: T},
-		"nthOr":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, T}, ReturnType: T},
-		"tail":     typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: listT},
-		"init":     typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: listT},
-		"take":     typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int}, ReturnType: listT},
-		"drop":     typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int}, ReturnType: listT},
-		"slice":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, typesystem.Int}, ReturnType: listT},
-		"length":   typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: typesystem.Int},
-		"contains": typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: typesystem.Bool},
-		// Function-first for higher-order functions
-		"filter":    typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: listT},
-		"map":       typesystem.TFunc{Params: []typesystem.Type{typesystem.TFunc{Params: []typesystem.Type{T}, ReturnType: U}, listT}, ReturnType: listU},
-		"foldl":     typesystem.TFunc{Params: []typesystem.Type{typesystem.TFunc{Params: []typesystem.Type{U, T}, ReturnType: U}, U, listT}, ReturnType: U},
-		"foldr":     typesystem.TFunc{Params: []typesystem.Type{typesystem.TFunc{Params: []typesystem.Type{T, U}, ReturnType: U}, U, listT}, ReturnType: U},
-		"indexOf":   typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: optionInt},
-		"find":      typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: optionT},
-		"findIndex": typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: optionInt},
-		"any":       typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: typesystem.Bool},
-		"all":       typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: typesystem.Bool},
-		"takeWhile": typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: listT},
-		"dropWhile": typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: listT},
-		"partition": typesystem.TFunc{Params: []typesystem.Type{predicateT, listT}, ReturnType: tupleListTListT},
-		"forEach":   typesystem.TFunc{Params: []typesystem.Type{typesystem.TFunc{Params: []typesystem.Type{T}, ReturnType: typesystem.Nil}, listT}, ReturnType: typesystem.Nil},
-		"reverse":   typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: listT},
-		"concat":    typesystem.TFunc{Params: []typesystem.Type{listT, listT}, ReturnType: listT},
-		"flatten":   typesystem.TFunc{Params: []typesystem.Type{listListT}, ReturnType: listT},
-		"unique":    typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: listT},
-		"zip":       typesystem.TFunc{Params: []typesystem.Type{listA, listB}, ReturnType: listTupleAB},
-		"unzip":     typesystem.TFunc{Params: []typesystem.Type{listTupleAB}, ReturnType: tupleListAListB},
-		"sort":      typesystem.TFunc{Params: []typesystem.Type{listT}, ReturnType: listT},
-		"sortBy":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.TFunc{Params: []typesystem.Type{T, T}, ReturnType: typesystem.Int}}, ReturnType: listT},
-		"range":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.Int}}},
-		"append":    typesystem.TFunc{Params: []typesystem.Type{listT, T}, ReturnType: listT},
-		"insert":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, T}, ReturnType: listT},
-		"update":    typesystem.TFunc{Params: []typesystem.Type{listT, typesystem.Int, T}, ReturnType: listT},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

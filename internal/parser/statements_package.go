@@ -152,7 +152,7 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 	is.Path = &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal.(string)}
 
 	// Check for alias
-	if p.peekTokenIs(token.IDENT_LOWER) && p.peekToken.Lexeme == "as" {
+	if p.peekTokenIs(token.AS) {
 		p.nextToken() // consume 'as'
 
 		// Alias can be either lowercase or uppercase identifier

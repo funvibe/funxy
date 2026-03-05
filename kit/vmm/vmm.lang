@@ -1,0 +1,249 @@
+package vmm (*)
+
+import "lib/vmm" (spawnVM, receiveEventWait)
+import "lib/time" (clockMs, sleepMs)
+import "lib/list" (append, filter, length)
+
+fun defaultRestartPolicy() {
+    {
+        maxRestarts: 5,
+        windowMs: 30000,
+        initialBackoffMs: 200,
+        maxBackoffMs: 5000,
+        stateProbeMs: 500,
+        eventStepTimeoutMs: 5000
+    }
+}
+
+fun _pow2(n) {
+    if n <= 0 {
+        1
+    } else {
+        2 * _pow2(n - 1)
+    }
+}
+
+fun restartBackoffMs(restartsInWindow, initialBackoffMs, maxBackoffMs) {
+    if restartsInWindow <= 1 {
+        0
+    } else {
+        raw = initialBackoffMs * _pow2(restartsInWindow - 2)
+        if raw > maxBackoffMs { maxBackoffMs } else { raw }
+    }
+}
+
+fun recordRestartAt(nowMs, restartTimestamps, windowMs) {
+    kept = filter(\ts -> (nowMs - ts) <= windowMs, restartTimestamps)
+    append(kept, nowMs)
+}
+
+fun isLifecycleEventForVm(evt, vmId: String) {
+    if evt.type == "exit" || evt.type == "crash" || evt.type == "vm_exit" {
+        evt.vmId == vmId
+    } else {
+        false
+    }
+}
+
+fun consumeEventWithGap(lastSeq: Int, timeoutMs: Int) {
+    evt = receiveEventWait(timeoutMs)
+    if evt.type == "timeout" {
+        { event: evt, lastSeq: lastSeq, gap: false, gapCount: 0 }
+    } else {
+        seq = evt.seq
+        if seq > lastSeq + 1 {
+            { event: evt, lastSeq: seq, gap: true, gapCount: seq - lastSeq - 1 }
+        } else {
+            { event: evt, lastSeq: seq, gap: false, gapCount: 0 }
+        }
+    }
+}
+
+fun consumeAndReconcile(lastSeq: Int, timeoutMs: Int, reconcileFn) {
+    res = consumeEventWithGap(lastSeq, timeoutMs)
+    if res.gap {
+        _ = reconcileFn(res.gapCount)
+        res
+    } else {
+        res
+    }
+}
+
+fun waitLifecycleEventForVmWithReconcile(vmId: String, timeoutMs: Int, lastSeq: Int, reconcileFn) {
+    deadlineMs = clockMs() + timeoutMs
+    _waitLifecycleEventForVmWithReconcileUntil(vmId, deadlineMs, lastSeq, reconcileFn)
+}
+
+fun _waitLifecycleEventForVmWithReconcileUntil(vmId: String, deadlineMs: Int, lastSeq: Int, reconcileFn) {
+    remaining = deadlineMs - clockMs()
+    if remaining <= 0 {
+        res = consumeAndReconcile(lastSeq, 1, reconcileFn)
+        evt = res.event
+        if evt.type == "timeout" {
+            { event: evt, lastSeq: res.lastSeq }
+        } else if isLifecycleEventForVm(evt, vmId) {
+            { event: evt, lastSeq: res.lastSeq }
+        } else {
+            _waitLifecycleEventForVmWithReconcileUntil(vmId, deadlineMs, res.lastSeq, reconcileFn)
+        }
+    } else {
+        res = consumeAndReconcile(lastSeq, remaining, reconcileFn)
+        evt = res.event
+        if evt.type == "timeout" {
+            { event: evt, lastSeq: res.lastSeq }
+        } else if isLifecycleEventForVm(evt, vmId) {
+            { event: evt, lastSeq: res.lastSeq }
+        } else {
+            _waitLifecycleEventForVmWithReconcileUntil(vmId, deadlineMs, res.lastSeq, reconcileFn)
+        }
+    }
+}
+
+fun waitLifecycleEventForVm(vmId: String, timeoutMs: Int) {
+    deadlineMs = clockMs() + timeoutMs
+    _waitLifecycleEventForVmUntil(vmId, deadlineMs)
+}
+
+fun awaitLifecycle(vmId: String, timeoutMs: Int) {
+    waitLifecycleEventForVm(vmId, timeoutMs)
+}
+
+fun waitVmExit(vmId: String, timeoutMs: Int) {
+    deadlineMs = clockMs() + timeoutMs
+    _waitLifecycleTypeForVmUntil(vmId, "exit", deadlineMs)
+}
+
+fun waitVmCrash(vmId: String, timeoutMs: Int) {
+    deadlineMs = clockMs() + timeoutMs
+    _waitLifecycleTypeForVmUntil(vmId, "crash", deadlineMs)
+}
+
+fun _waitLifecycleTypeForVmUntil(vmId: String, expectedType: String, deadlineMs: Int) {
+    remaining = deadlineMs - clockMs()
+    if remaining <= 0 {
+        receiveEventWait(1)
+    } else {
+        evt = receiveEventWait(remaining)
+        if evt.type == "timeout" {
+            evt
+        } else if isLifecycleEventForVm(evt, vmId) && evt.type == expectedType {
+            evt
+        } else {
+            _waitLifecycleTypeForVmUntil(vmId, expectedType, deadlineMs)
+        }
+    }
+}
+
+fun _waitLifecycleEventForVmUntil(vmId: String, deadlineMs: Int) {
+    remaining = deadlineMs - clockMs()
+    if remaining <= 0 {
+        receiveEventWait(1)
+    } else {
+        evt = receiveEventWait(remaining)
+        if evt.type == "timeout" {
+            evt
+        } else if isLifecycleEventForVm(evt, vmId) {
+            evt
+        } else {
+            _waitLifecycleEventForVmUntil(vmId, deadlineMs)
+        }
+    }
+}
+
+fun spawnWithStateValidation(path, config, stateOpt, probeTimeoutMs) {
+    first = spawnVM(path, config, stateOpt)
+    match (stateOpt, first) {
+        (Some(_), Ok(vmId)) -> {
+            evt = waitLifecycleEventForVm(vmId, probeTimeoutMs)
+            // If worker dies immediately after state handoff, treat state as poisoned and retry clean boot.
+            if evt.type == "timeout" {
+                first
+            } else if evt.status == "crashed" || evt.type == "crash" {
+                spawnVM(path, config, None)
+            } else {
+                first
+            }
+        }
+        _ -> first
+    }
+}
+
+fun supervise(path, config, initialStateOpt, policy) {
+    _superviseLoop(path, config, initialStateOpt, policy, [])
+}
+
+fun superviseWithReconcile(path, config, initialStateOpt, policy, reconcileFn) {
+    _superviseLoopWithReconcile(path, config, initialStateOpt, policy, [], 0, reconcileFn)
+}
+
+fun _superviseLoop(path, config, stateOpt, policy, restartTimestamps) {
+    spawnRes = spawnWithStateValidation(path, config, stateOpt, policy.stateProbeMs)
+    match spawnRes {
+        Ok(vmId) -> {
+            evt = waitLifecycleEventForVm(vmId, policy.eventStepTimeoutMs)
+            if evt.type == "timeout" {
+                _superviseLoop(path, config, None, policy, restartTimestamps)
+            } else if evt.status == "stopped" && evt.type == "exit" {
+                ()
+            } else {
+                nowMs = clockMs()
+                recent = recordRestartAt(nowMs, restartTimestamps, policy.windowMs)
+                if length(recent) > policy.maxRestarts {
+                    panic("restart intensity exceeded for " ++ vmId)
+                } else {
+                    delay = restartBackoffMs(length(recent), policy.initialBackoffMs, policy.maxBackoffMs)
+                    if delay > 0 { sleepMs(delay) } else { () }
+                    _superviseLoop(path, config, None, policy, recent)
+                }
+            }
+        }
+        Fail(err) -> {
+            nowMs = clockMs()
+            recent = recordRestartAt(nowMs, restartTimestamps, policy.windowMs)
+            if length(recent) > policy.maxRestarts {
+                panic("spawn restart intensity exceeded: " ++ err)
+            } else {
+                delay = restartBackoffMs(length(recent), policy.initialBackoffMs, policy.maxBackoffMs)
+                if delay > 0 { sleepMs(delay) } else { () }
+                _superviseLoop(path, config, None, policy, recent)
+            }
+        }
+    }
+}
+
+fun _superviseLoopWithReconcile(path, config, stateOpt, policy, restartTimestamps, lastSeq: Int, reconcileFn) {
+    spawnRes = spawnWithStateValidation(path, config, stateOpt, policy.stateProbeMs)
+    match spawnRes {
+        Ok(vmId) -> {
+            waitRes = waitLifecycleEventForVmWithReconcile(vmId, policy.eventStepTimeoutMs, lastSeq, reconcileFn)
+            evt = waitRes.event
+            nextSeq = waitRes.lastSeq
+            if evt.type == "timeout" {
+                _superviseLoopWithReconcile(path, config, None, policy, restartTimestamps, nextSeq, reconcileFn)
+            } else if evt.status == "stopped" && evt.type == "exit" {
+                ()
+            } else {
+                nowMs = clockMs()
+                recent = recordRestartAt(nowMs, restartTimestamps, policy.windowMs)
+                if length(recent) > policy.maxRestarts {
+                    panic("restart intensity exceeded for " ++ vmId)
+                } else {
+                    delay = restartBackoffMs(length(recent), policy.initialBackoffMs, policy.maxBackoffMs)
+                    if delay > 0 { sleepMs(delay) } else { () }
+                    _superviseLoopWithReconcile(path, config, None, policy, recent, nextSeq, reconcileFn)
+                }
+            }
+        }
+        Fail(err) -> {
+            nowMs = clockMs()
+            recent = recordRestartAt(nowMs, restartTimestamps, policy.windowMs)
+            if length(recent) > policy.maxRestarts {
+                panic("spawn restart intensity exceeded: " ++ err)
+            } else {
+                delay = restartBackoffMs(length(recent), policy.initialBackoffMs, policy.maxBackoffMs)
+                if delay > 0 { sleepMs(delay) } else { () }
+                _superviseLoopWithReconcile(path, config, None, policy, recent, lastSeq, reconcileFn)
+            }
+        }
+    }
+}

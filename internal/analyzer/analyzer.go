@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/diagnostics"
+	"github.com/funvibe/funxy/internal/pipeline"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/token"
 	"github.com/funvibe/funxy/internal/typesystem"
@@ -87,6 +88,7 @@ func (a *Analyzer) RegisterBuiltins() {
 }
 
 type walker struct {
+	ctx               *pipeline.PipelineContext // Pipeline context for cancellation
 	symbolTable       *symbols.SymbolTable
 	errorSet          map[string]*diagnostics.DiagnosticError // Key: "line:col:code" for deduplication
 	errors            []*diagnostics.DiagnosticError          // Temporary slice for compatibility with BuildType etc.
@@ -102,6 +104,7 @@ type walker struct {
 	currentModuleName string                            // Name of the module being analyzed (for OriginModule tracking)
 	currentFile       string                            // Current file being analyzed (for error reporting)
 	inFunctionBody    bool                              // Track if we are inside a function body (to skip redundant expression inference)
+	isLastStatement   bool                              // True if the current statement is the last in a block/program
 	returnTypeStack   []typesystem.Type                 // Stack of expected return types for nested functions
 	Program           *ast.Program                      // Reference to the program being analyzed (for AST injection)
 	importedModules   map[string]bool                   // Track imported modules by absolute path to detect duplicates
@@ -112,6 +115,13 @@ type walker struct {
 
 // addError adds an error to the walker, deduplicating by position and message
 func (w *walker) addError(err *diagnostics.DiagnosticError) {
+	if w.aborted {
+		return
+	}
+	if w.ctx != nil && w.ctx.Context != nil && w.ctx.Context.Err() != nil {
+		w.aborted = true
+		err = diagnostics.NewError(diagnostics.ErrP008, err.Token, "analyzer timeout")
+	}
 	if err.File == "" && w.currentFile != "" {
 		err.File = w.currentFile
 	}
@@ -163,9 +173,10 @@ const (
 )
 
 // AnalyzeNaming runs the naming pass (discovery)
-func (a *Analyzer) AnalyzeNaming(node ast.Node) []*diagnostics.DiagnosticError {
+func (a *Analyzer) AnalyzeNaming(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// Simple walker for naming only
 	w := &walker{
+		ctx:         ctx,
 		symbolTable: a.symbolTable,
 		errorSet:    make(map[string]*diagnostics.DiagnosticError),
 		errors:      []*diagnostics.DiagnosticError{},
@@ -177,7 +188,7 @@ func (a *Analyzer) AnalyzeNaming(node ast.Node) []*diagnostics.DiagnosticError {
 	return w.getErrors()
 }
 
-func (a *Analyzer) AnalyzeHeaders(node ast.Node) []*diagnostics.DiagnosticError {
+func (a *Analyzer) AnalyzeHeaders(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	typeMap := make(map[ast.Node]typesystem.Type)
 
 	// Create shared InferenceContext if not exists
@@ -194,6 +205,7 @@ func (a *Analyzer) AnalyzeHeaders(node ast.Node) []*diagnostics.DiagnosticError 
 	}()
 
 	w := &walker{
+		ctx:             ctx,
 		symbolTable:     a.symbolTable,
 		errorSet:        make(map[string]*diagnostics.DiagnosticError),
 		errors:          []*diagnostics.DiagnosticError{},
@@ -222,7 +234,7 @@ func (a *Analyzer) AnalyzeHeaders(node ast.Node) []*diagnostics.DiagnosticError 
 	return w.getErrors()
 }
 
-func (a *Analyzer) AnalyzeInstances(node ast.Node) []*diagnostics.DiagnosticError {
+func (a *Analyzer) AnalyzeInstances(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// Reuse existing TypeMap and InferenceContext from Headers pass
 	if a.TypeMap == nil {
 		a.TypeMap = make(map[ast.Node]typesystem.Type)
@@ -240,6 +252,7 @@ func (a *Analyzer) AnalyzeInstances(node ast.Node) []*diagnostics.DiagnosticErro
 	}()
 
 	w := &walker{
+		ctx:           ctx,
 		symbolTable:   a.symbolTable,
 		errorSet:      make(map[string]*diagnostics.DiagnosticError),
 		errors:        []*diagnostics.DiagnosticError{},
@@ -265,13 +278,13 @@ func (a *Analyzer) AnalyzeInstances(node ast.Node) []*diagnostics.DiagnosticErro
 		// This ensures they are visible to the subsequent Bodies pass and Evaluator
 		for _, stmt := range w.injectedStmts {
 			// Pass 1: Naming (Register symbol)
-			errs := a.AnalyzeNaming(stmt)
+			errs := a.AnalyzeNaming(stmt, ctx)
 			if len(errs) > 0 {
 				w.addErrors(errs)
 			}
 
 			// Pass 2: Headers (Resolve signature/type)
-			errs = a.AnalyzeHeaders(stmt)
+			errs = a.AnalyzeHeaders(stmt, ctx)
 			if len(errs) > 0 {
 				w.addErrors(errs)
 			}
@@ -281,7 +294,7 @@ func (a *Analyzer) AnalyzeInstances(node ast.Node) []*diagnostics.DiagnosticErro
 	return w.getErrors()
 }
 
-func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
+func (a *Analyzer) AnalyzeBodies(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// Reuse existing TypeMap if possible
 	if a.TypeMap == nil {
 		a.TypeMap = make(map[ast.Node]typesystem.Type)
@@ -315,6 +328,7 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node) []*diagnostics.DiagnosticError {
 	// so that Evaluator can see them.
 
 	w := &walker{
+		ctx:             ctx,
 		symbolTable:     a.symbolTable,
 		errorSet:        make(map[string]*diagnostics.DiagnosticError),
 		errors:          []*diagnostics.DiagnosticError{},
@@ -567,32 +581,33 @@ func ResolvePendingWitnesses(ctx *InferenceContext, subst typesystem.Subst, tabl
 }
 
 // Analyze performs semantic analysis on the given node.
-func (a *Analyzer) Analyze(node ast.Node) []*diagnostics.DiagnosticError {
+func (a *Analyzer) Analyze(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// If node is Program, use multi-pass analysis
 	if prog, ok := node.(*ast.Program); ok {
 		// Pass 1: Naming
-		errs := a.AnalyzeNaming(prog)
+		errs := a.AnalyzeNaming(prog, ctx)
 		if len(errs) > 0 {
 			return errs
 		}
 		// Pass 2: Headers
-		errs = a.AnalyzeHeaders(prog)
+		errs = a.AnalyzeHeaders(prog, ctx)
 		if len(errs) > 0 {
 			return errs
 		}
 		// Pass 3: Instances
-		errs = a.AnalyzeInstances(prog)
+		errs = a.AnalyzeInstances(prog, ctx)
 		if len(errs) > 0 {
 			return errs
 		}
 		// Pass 4: Bodies
-		return a.AnalyzeBodies(prog)
+		return a.AnalyzeBodies(prog, ctx)
 	}
 
 	// Fallback for partial nodes (Expressions, etc.) - ModeFull
 	typeMap := make(map[ast.Node]typesystem.Type)
 	resolutionMap := make(map[ast.Node]symbols.Symbol)
 	w := &walker{
+		ctx:             ctx,
 		symbolTable:     a.symbolTable,
 		errorSet:        make(map[string]*diagnostics.DiagnosticError),
 		errors:          []*diagnostics.DiagnosticError{},

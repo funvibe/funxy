@@ -1,0 +1,66 @@
+import "lib/test" (testRun, assertEquals, assertOk, assertFail, mockMailboxSend, mockMailboxOff)
+import "lib/mailbox" (send, requestWait, reply, replyWait)
+
+testRun("mockMailboxSend intercept send", \ -> {
+    mockMailboxSend("worker_1", \msg -> {
+        assertEquals("hello", msg)
+        return nil
+    })
+
+    result = send("worker_1", "hello")
+    assertOk(result)
+})
+
+testRun("mockMailboxSend intercept requestWait", \ -> {
+    mockMailboxSend("worker_2", \msg -> {
+        // requestWait wraps the payload in a message with an id
+        assertEquals("ping", msg.payload)
+
+        // Mock returns a well-formed reply Record that the requestWait predicate expects
+        return {
+            id: msg.id,
+            type: "reply",
+            payload: "pong"
+        }
+    })
+
+    result = requestWait("worker_2", "ping")
+    assertOk(result)
+
+    match result {
+        Ok(replyMsg) -> {
+            assertEquals("reply", replyMsg.type)
+            assertEquals("pong", replyMsg.payload)
+        }
+        Fail(e) -> {
+            assertEquals(true, false, "Should be Ok")
+        }
+    }
+})
+
+testRun("mockMailboxSend intercept reply", \ -> {
+    // A fake original message that we received from "worker_1"
+    origMsg = {
+        id: "msg-123",
+        from: "worker_1",
+        payload: "ping"
+    }
+
+    mockMailboxSend("worker_1", \msg -> {
+        assertEquals("reply", msg.type)
+        assertEquals("msg-123", msg.id)
+        assertEquals("pong", msg.payload)
+        return nil
+    })
+
+    result = reply(origMsg, "pong")
+    assertOk(result)
+})
+
+testRun("mockMailboxSend off", \ -> {
+    mockMailboxOff()
+
+    // Should fail because there is no host injected during standard test run
+    result = send("worker_1", "hello")
+    assertFail(result)
+})

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/symbols"
@@ -9,6 +10,7 @@ import (
 
 // PipelineContext holds all the data passed between pipeline stages.
 type PipelineContext struct {
+	Context       context.Context // System context for cancellation/timeouts
 	SourceCode    string
 	FilePath      string // Path to the source file (if any)
 	TokenStream   TokenStream
@@ -56,6 +58,7 @@ type PipelineContext struct {
 // NewPipelineContext creates and initializes a new PipelineContext.
 func NewPipelineContext(source string) *PipelineContext {
 	return &PipelineContext{
+		Context:              context.Background(),
 		SourceCode:           source,
 		SymbolTable:          symbols.NewSymbolTable(),
 		TypeMap:              make(map[ast.Node]typesystem.Type),

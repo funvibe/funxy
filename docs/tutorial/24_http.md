@@ -182,6 +182,25 @@ httpSetTimeout(5000)
 result = httpGet("https://slow-api.example.com/data")
 ```
 
+### Unix Socket Support (http+unix://)
+
+Use the `http+unix://` URL scheme to connect to Unix domain sockets. Format: `http+unix:///path/to/socket:/request/path?query`.
+
+```rust
+import "lib/http" (httpGet)
+
+// VMM admin API over Unix socket
+match httpGet("http+unix:///tmp/funxy_vmm.sock:/ps") {
+    Ok(resp) -> print("VMs: " ++ resp.body)
+    Fail(e) -> print("Error: " ++ e)
+}
+
+// With query parameters
+httpGet("http+unix:///var/run/vmm.sock:/stats?id=worker_1")
+```
+
+Works with `httpGet`, `httpPost`, `httpRequest`, and other client functions.
+
 ## Practical Examples
 
 ### Getting and Parsing JSON
@@ -311,7 +330,7 @@ fun fetchWithRetry(url: String, maxRetries: Int) -> Result<String, String> {
 
 | Function | Type | Description |
 |---------|-----|----------|
-| `httpGet` | `String -> Result<String, HttpResponse>` | GET request |
+| `httpGet` | `String -> Result<String, HttpResponse>` | GET request (supports `http+unix://` for Unix sockets) |
 | `httpPost` | `(String, String \| Bytes) -> Result<String, HttpResponse>` | POST with string or bytes |
 | `httpPostJson` | `(String, A) -> Result<String, HttpResponse>` | POST with JSON |
 | `httpPut` | `(String, String \| Bytes) -> Result<String, HttpResponse>` | PUT request |

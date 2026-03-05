@@ -67,59 +67,6 @@ func UuidBuiltins() map[string]*Builtin {
 }
 
 // SetUuidBuiltinTypes sets type information for uuid builtins
-func SetUuidBuiltinTypes(builtins map[string]*Builtin) {
-	uuidType := typesystem.TCon{Name: "Uuid"}
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	bytesType := typesystem.TCon{Name: "Bytes"}
-	intType := typesystem.Int
-	boolType := typesystem.Bool
-
-	resultUuid := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, uuidType},
-	}
-
-	types := map[string]typesystem.Type{
-		// Generation
-		"uuidNew": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-		"uuidV4":  typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-		"uuidV5":  typesystem.TFunc{Params: []typesystem.Type{uuidType, stringType}, ReturnType: uuidType},
-		"uuidV7":  typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-		"uuidNil": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-		"uuidMax": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-
-		// Namespaces
-		"uuidNamespaceDNS":  typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-		"uuidNamespaceURL":  typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-		"uuidNamespaceOID":  typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-		"uuidNamespaceX500": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: uuidType},
-
-		// Parsing
-		"uuidParse":     typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultUuid},
-		"uuidFromBytes": typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: resultUuid},
-
-		// Conversion
-		"uuidToString":        typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: stringType},
-		"uuidToStringCompact": typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: stringType},
-		"uuidToStringUrn":     typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: stringType},
-		"uuidToStringBraces":  typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: stringType},
-		"uuidToStringUpper":   typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: stringType},
-		"uuidToBytes":         typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: bytesType},
-
-		// Info
-		"uuidVersion": typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: intType},
-		"uuidIsNil":   typesystem.TFunc{Params: []typesystem.Type{uuidType}, ReturnType: boolType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // ===== Generation =====
 

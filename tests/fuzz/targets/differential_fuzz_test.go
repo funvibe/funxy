@@ -68,7 +68,7 @@ func FuzzDifferential(f *testing.F) {
 		symbolTable := symbols.NewSymbolTable()
 		a := analyzer.New(symbolTable)
 		a.RegisterBuiltins()
-		errs := a.Analyze(program)
+		errs := a.Analyze(program, ctx)
 		if len(errs) > 0 {
 			return
 		}

@@ -1,7 +1,5 @@
 package evaluator
 
-import "github.com/funvibe/funxy/internal/typesystem"
-
 // ResultBuiltins returns built-in functions for Result type
 func ResultBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
@@ -94,27 +92,3 @@ func builtinUnwrapResultOr(e *Evaluator, args ...Object) Object {
 }
 
 // SetResultBuiltinTypes sets type signatures for Result builtins
-func SetResultBuiltinTypes(builtins map[string]*Builtin) {
-	resultET := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{typesystem.TVar{Name: "E"}, typesystem.TVar{Name: "T"}},
-	}
-	T := typesystem.TVar{Name: "T"}
-	E := typesystem.TVar{Name: "E"}
-
-	if b, ok := builtins["isOk"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: typesystem.Bool}
-	}
-	if b, ok := builtins["isFail"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: typesystem.Bool}
-	}
-	if b, ok := builtins["unwrapResult"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: T}
-	}
-	if b, ok := builtins["unwrapError"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{resultET}, ReturnType: E}
-	}
-	if b, ok := builtins["unwrapResultOr"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{resultET, T}, ReturnType: T}
-	}
-}

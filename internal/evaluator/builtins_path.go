@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // PathBuiltins returns all path-related built-in functions
@@ -454,67 +452,3 @@ func builtinPathIsHidden(e *Evaluator, args ...Object) Object {
 }
 
 // SetPathBuiltinTypes sets up type information for path builtins
-func SetPathBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-
-	listString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-
-	resultString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, stringType},
-	}
-
-	resultBool := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, typesystem.Bool},
-	}
-
-	types := map[string]typesystem.Type{
-		// Parsing
-		"pathJoin":  typesystem.TFunc{Params: []typesystem.Type{listString}, ReturnType: stringType},
-		"pathSplit": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: listString},
-		"pathDir":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"pathBase":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"pathExt":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"pathStem":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-
-		// Manipulation
-		"pathWithExt":  typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
-		"pathWithBase": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
-
-		// Query
-		"pathIsAbs": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-		"pathIsRel": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-
-		// Normalization
-		"pathClean": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"pathAbs":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultString},
-		"pathRel":   typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultString},
-
-		// Matching
-		"pathMatch": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: resultBool},
-
-		// Separator
-		"pathSep": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
-
-		// Temp directory
-		"pathTemp": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: stringType},
-
-		// POSIX-style
-		"pathExtPosix":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"pathStemPosix": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"pathIsHidden":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

@@ -130,6 +130,28 @@ func isError(obj Object) bool {
 	return false
 }
 
+// UnwrapOption returns the inner value if obj is Some(x), otherwise (nil, false).
+// Use when handling Option<T> without panicking on None.
+func UnwrapOption(obj Object) (Object, bool) {
+	if di, ok := obj.(*DataInstance); ok &&
+		di.TypeName == config.OptionTypeName &&
+		di.Name == config.SomeCtorName &&
+		len(di.Fields) == 1 {
+		return di.Fields[0], true
+	}
+	return nil, false
+}
+
+// IsOptionNone returns true iff obj is Option's None constructor.
+func IsOptionNone(obj Object) bool {
+	if di, ok := obj.(*DataInstance); ok &&
+		di.TypeName == config.OptionTypeName &&
+		di.Name == config.NoneCtorName {
+		return true
+	}
+	return false
+}
+
 // pipeUnwrap unwraps Result/Option values for the |>> operator.
 // Ok(v) -> v, Fail(e) -> panic, Some(v) -> v, None -> panic, other -> pass through
 func pipeUnwrap(obj Object) Object {

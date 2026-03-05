@@ -133,6 +133,12 @@ func initMapPackage() {
 		Args:        []typesystem.Type{stringType, V},
 	}
 	recordType := typesystem.TVar{Name: "R"}
+	U := typesystem.TVar{Name: "U"}
+	V2 := typesystem.TVar{Name: "V2"}
+	mapKV2 := typesystem.TApp{
+		Constructor: typesystem.TCon{Name: config.MapTypeName},
+		Args:        []typesystem.Type{K, V2},
+	}
 	pkg := &VirtualPackage{
 		Name: "map",
 		Symbols: map[string]typesystem.Type{
@@ -194,6 +200,31 @@ func initMapPackage() {
 			// mapMerge: (Map<K, V>, Map<K, V>) -> Map<K, V>
 			"mapMerge": typesystem.TFunc{
 				Params:     []typesystem.Type{mapKV, mapKV},
+				ReturnType: mapKV,
+			},
+			// mapFold: ((U, K, V) -> U, U, Map<K, V>) -> U
+			"mapFold": typesystem.TFunc{
+				Params: []typesystem.Type{
+					typesystem.TFunc{Params: []typesystem.Type{U, K, V}, ReturnType: U},
+					U,
+					mapKV,
+				},
+				ReturnType: U,
+			},
+			// mapMap: ((K, V) -> V2, Map<K, V>) -> Map<K, V2>
+			"mapMap": typesystem.TFunc{
+				Params: []typesystem.Type{
+					typesystem.TFunc{Params: []typesystem.Type{K, V}, ReturnType: V2},
+					mapKV,
+				},
+				ReturnType: mapKV2,
+			},
+			// mapFilter: ((K, V) -> Bool, Map<K, V>) -> Map<K, V>
+			"mapFilter": typesystem.TFunc{
+				Params: []typesystem.Type{
+					typesystem.TFunc{Params: []typesystem.Type{K, V}, ReturnType: typesystem.Bool},
+					mapKV,
+				},
 				ReturnType: mapKV,
 			},
 		},

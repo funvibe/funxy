@@ -1,0 +1,32 @@
+import "lib/vmm" (setState)
+import "lib/time" (sleepMs)
+
+fun onInit(stateOpt: Option<Int>) -> Int {
+    print("[hooks_worker] onInit called")
+    match stateOpt {
+        Some(s) -> {
+            print("[hooks_worker] Resuming from state: " ++ show(s))
+            setState(s)
+            s
+        }
+        None -> {
+            print("[hooks_worker] Starting fresh")
+            setState(0)
+            0
+        }
+    }
+}
+
+fun onTerminate(currentState: Int?) -> Int {
+    print("[hooks_worker] onTerminate called! State: " ++ show(currentState))
+    // We expect currentState to be Int because we set it to Int
+    if currentState == nil {
+        currentState = 0
+    }
+    currentState + 1
+}
+
+fun onError(error: String) {
+    print("[hooks_worker] onError called! Reason: " ++ error)
+    // Could send a message, but we just print for the test to see it
+}

@@ -2443,6 +2443,38 @@ for a in args { print(a) }
 		}
 	})
 
+	// Test Interpreter Extension mode (--up)
+	t.Run("interpreter extension mode", func(t *testing.T) {
+		dir := filepath.Join(tmpDir, "up_mode")
+		os.MkdirAll(dir, 0755)
+		writeFile(t, filepath.Join(dir, "fmt.lang"), `print("running fmt")`)
+		writeFile(t, filepath.Join(dir, "lint.lang"), `print("running lint")`)
+		writeFile(t, filepath.Join(dir, "script.lang"), `print("running script")`)
+
+		outPath := filepath.Join(tmpDir, "funxy_up")
+		runCmd(t, binaryPath, projectRoot, nil, "build",
+			filepath.Join(dir, "fmt.lang"), filepath.Join(dir, "lint.lang"),
+			"--up", "-o", outPath)
+
+		// 1. Should run embedded command
+		got := runCmd(t, outPath, tmpDir, nil, "fmt")
+		if got != "running fmt" {
+			t.Errorf("Expected 'running fmt', got %q", got)
+		}
+
+		// 2. Should run normal script (acts as interpreter)
+		gotScript := runCmd(t, outPath, tmpDir, nil, filepath.Join(dir, "script.lang"))
+		if gotScript != "running script" {
+			t.Errorf("Expected 'running script', got %q", gotScript)
+		}
+
+		// 3. Should support eval mode (-e)
+		gotEval := runCmd(t, outPath, tmpDir, nil, "-pe", "1 + 2")
+		if gotEval != "3" {
+			t.Errorf("Expected '3', got %q", gotEval)
+		}
+	})
+
 	// #69: Symlink + args → sysArgs = [apiPath, "--port", "8080"] (multi-command)
 	t.Run("symlink sysArgs", func(t *testing.T) {
 		dir := filepath.Join(tmpDir, "symlink_args")

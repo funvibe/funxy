@@ -5,6 +5,7 @@ import (
 	"github.com/funvibe/funxy/internal/evaluator"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"reflect"
+	"sync/atomic"
 )
 
 // callValue dispatches call based on callee type
@@ -231,8 +232,21 @@ func (vm *VM) callClosure(closure *ObjClosure, argCount int) error {
 	}
 
 	// Check recursion limit
-	if vm.frameCount >= MaxFrameCount {
-		return vm.runtimeError("stack overflow: recursion depth limit exceeded")
+	limit := MaxFrameCount
+	if vm.MaxStackDepth > 0 {
+		limit = vm.MaxStackDepth
+	}
+	if vm.frameCount >= limit {
+		return vm.runtimeError("stack overflow: recursion depth limit exceeded (%w)", ErrStackLimitExceeded)
+	}
+
+	// Preemption safe point on function call
+	instrCount := atomic.LoadUint64(&vm.InstructionCount)
+	if vm.MaxInstructions > 0 && instrCount > vm.MaxInstructions {
+		return fmt.Errorf("%w: executed %d instructions, limit is %d", ErrGasLimitExceeded, instrCount, vm.MaxInstructions)
+	}
+	if vm.Context != nil && vm.Context.Err() != nil {
+		return vm.Context.Err()
 	}
 
 	// Grow frames array if needed

@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
 	"sync"
 	"time"
@@ -49,7 +48,38 @@ var (
 	wsServers   = make(map[int64]*wsServer)
 	wsServersMu sync.RWMutex
 	wsNextSrvID int64 = 1
+
+	wsMaxConnections int64 = 0
+	wsCurrentConns   int64 = 0
+	wsMaxConnsMu     sync.Mutex
 )
+
+// acquireWsConnSlot attempts to acquire a connection slot.
+// Returns true if acquired, false if max connections reached.
+func acquireWsConnSlot() bool {
+	wsMaxConnsMu.Lock()
+	defer wsMaxConnsMu.Unlock()
+
+	if wsMaxConnections <= 0 {
+		return true // unlimited
+	}
+
+	if wsCurrentConns >= wsMaxConnections {
+		return false // full
+	}
+
+	wsCurrentConns++
+	return true
+}
+
+func releaseWsConnSlot() {
+	wsMaxConnsMu.Lock()
+	defer wsMaxConnsMu.Unlock()
+
+	if wsMaxConnections > 0 && wsCurrentConns > 0 {
+		wsCurrentConns--
+	}
+}
 
 type wsServer struct {
 	listener net.Listener
@@ -62,79 +92,20 @@ type wsServer struct {
 // WsBuiltins returns WebSocket built-in functions
 func WsBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
-		"wsConnect":        {Fn: builtinWsConnect, Name: "wsConnect"},
-		"wsConnectTimeout": {Fn: builtinWsConnectTimeout, Name: "wsConnectTimeout"},
-		"wsSend":           {Fn: builtinWsSend, Name: "wsSend"},
-		"wsRecv":           {Fn: builtinWsRecv, Name: "wsRecv"},
-		"wsRecvTimeout":    {Fn: builtinWsRecvTimeout, Name: "wsRecvTimeout"},
-		"wsClose":          {Fn: builtinWsClose, Name: "wsClose"},
-		"wsServe":          {Fn: builtinWsServe, Name: "wsServe"},
-		"wsServeAsync":     {Fn: builtinWsServeAsync, Name: "wsServeAsync"},
-		"wsServerStop":     {Fn: builtinWsServerStop, Name: "wsServerStop"},
+		"wsConnect":           {Fn: builtinWsConnect, Name: "wsConnect"},
+		"wsConnectTimeout":    {Fn: builtinWsConnectTimeout, Name: "wsConnectTimeout"},
+		"wsSend":              {Fn: builtinWsSend, Name: "wsSend"},
+		"wsRecv":              {Fn: builtinWsRecv, Name: "wsRecv"},
+		"wsRecvTimeout":       {Fn: builtinWsRecvTimeout, Name: "wsRecvTimeout"},
+		"wsClose":             {Fn: builtinWsClose, Name: "wsClose"},
+		"wsServe":             {Fn: builtinWsServe, Name: "wsServe"},
+		"wsServeAsync":        {Fn: builtinWsServeAsync, Name: "wsServeAsync"},
+		"wsServerStop":        {Fn: builtinWsServerStop, Name: "wsServerStop"},
+		"wsSetMaxConnections": {Fn: builtinWsSetMaxConnections, Name: "wsSetMaxConnections"},
 	}
 }
 
 // SetWsBuiltinTypes sets type information for WebSocket builtins
-func SetWsBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-
-	// Result types
-	// Result<String, Int>
-	resultInt := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, typesystem.Int},
-	}
-	// Result<String, Nil>
-	resultNil := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, typesystem.Nil},
-	}
-	// Result<String, String>
-	resultString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, stringType},
-	}
-
-	// Option<String>
-	optionString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{stringType},
-	}
-
-	// Result<String, Option<String>>
-	resultOptionString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, optionString},
-	}
-
-	// Handler type: (Int, String) -> String
-	handlerType := typesystem.TFunc{
-		Params:     []typesystem.Type{typesystem.Int, stringType},
-		ReturnType: stringType,
-	}
-
-	types := map[string]typesystem.Type{
-		"wsConnect":        typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultInt},
-		"wsConnectTimeout": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.Int}, ReturnType: resultInt},
-		"wsSend":           typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, stringType}, ReturnType: resultNil},
-		"wsRecv":           typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultString},
-		"wsRecvTimeout":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, typesystem.Int}, ReturnType: resultOptionString},
-		"wsClose":          typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultNil},
-		"wsServe":          typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
-		"wsServeAsync":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultInt},
-		"wsServerStop":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: resultNil},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // builtinWsConnect connects to a WebSocket server
 // wsConnect(url: String) -> Result<String, Int>
@@ -659,6 +630,11 @@ func builtinWsServe(e *Evaluator, args ...Object) Object {
 			continue
 		}
 
+		if !acquireWsConnSlot() {
+			_ = conn.Close()
+			continue
+		}
+
 		// Create a fresh evaluator/VM for each connection
 		var connEval *Evaluator
 		if e.Fork != nil {
@@ -667,8 +643,31 @@ func builtinWsServe(e *Evaluator, args ...Object) Object {
 			connEval = e.Clone()
 		}
 
-		go handleWsConnection(conn, handler, connEval)
+		go func() {
+			defer releaseWsConnSlot()
+			handleWsConnection(conn, handler, connEval)
+		}()
 	}
+}
+
+// builtinWsSetMaxConnections sets max concurrent connections (0 = unlimited)
+func builtinWsSetMaxConnections(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("wsSetMaxConnections expects 1 argument, got %d", len(args))
+	}
+
+	maxConns, ok := args[0].(*Integer)
+	if !ok {
+		return newError("wsSetMaxConnections expects an Int, got %s", args[0].Type())
+	}
+	if maxConns.Value < 0 {
+		return newError("wsSetMaxConnections expects a non-negative integer")
+	}
+
+	wsMaxConnsMu.Lock()
+	wsMaxConnections = maxConns.Value
+	wsMaxConnsMu.Unlock()
+	return &Nil{}
 }
 
 // builtinWsServeAsync starts a non-blocking WebSocket server
@@ -728,6 +727,11 @@ func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 					return
 				}
 
+				if !acquireWsConnSlot() {
+					_ = conn.Close()
+					continue
+				}
+
 				// Create a fresh evaluator/VM for each connection to ensure thread safety
 				var connEval *Evaluator
 				if srv.eval.Fork != nil {
@@ -736,7 +740,10 @@ func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 					connEval = srv.eval.Clone()
 				}
 
-				go handleWsConnection(conn, srv.handler, connEval)
+				go func() {
+					defer releaseWsConnSlot()
+					handleWsConnection(conn, srv.handler, connEval)
+				}()
 			}
 		}
 	}()

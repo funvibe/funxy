@@ -1,0 +1,95 @@
+import "lib/test" (*)
+
+testRun("Record fields with keyword names", fun() -> {
+    // Define a record with fields named as keywords
+    r = {
+        type: "type",
+        alias: "alias",
+        if: "if",
+        else: "else",
+        true: "true",
+        false: "false",
+        nil: "nil",
+        match: "match",
+        fun: "fun",
+        operator: "operator",
+        trait: "trait",
+        instance: "instance",
+        for: "for",
+        in: "in",
+        break: "break",
+        continue: "continue",
+        return: "return",
+        package: "package",
+        import: "import",
+        as: "as",
+        while: "while",
+        do: "do",
+        const: "const",
+        forall: "forall",
+        directive: "directive"
+    }
+
+    // Verify access
+    assertEquals("type", r.type, "Field 'type'")
+    assertEquals("alias", r.alias, "Field 'alias'")
+    assertEquals("if", r.if, "Field 'if'")
+    assertEquals("else", r.else, "Field 'else'")
+    assertEquals("true", r.true, "Field 'true'")
+    assertEquals("false", r.false, "Field 'false'")
+    assertEquals("nil", r.nil, "Field 'nil'")
+    assertEquals("match", r.match, "Field 'match'")
+    assertEquals("fun", r.fun, "Field 'fun'")
+    assertEquals("operator", r.operator, "Field 'operator'")
+    assertEquals("trait", r.trait, "Field 'trait'")
+    assertEquals("instance", r.instance, "Field 'instance'")
+    assertEquals("for", r.for, "Field 'for'")
+    assertEquals("in", r.in, "Field 'in'")
+    assertEquals("break", r.break, "Field 'break'")
+    assertEquals("continue", r.continue, "Field 'continue'")
+    assertEquals("return", r.return, "Field 'return'")
+    assertEquals("package", r.package, "Field 'package'")
+    assertEquals("import", r.import, "Field 'import'")
+    assertEquals("as", r.as, "Field 'as'")
+    assertEquals("while", r.while, "Field 'while'")
+    assertEquals("do", r.do, "Field 'do'")
+    assertEquals("const", r.const, "Field 'const'")
+    assertEquals("forall", r.forall, "Field 'forall'")
+    assertEquals("directive", r.directive, "Field 'directive'")
+
+    // Verify modification (immutable update)
+    r = r.type = "TYPE"
+    assertEquals("TYPE", r.type, "Modified field 'type'")
+    
+    r = r.if = "IF"
+    assertEquals("IF", r.if, "Modified field 'if'")
+
+    r = r.return = "RETURN"
+    assertEquals("RETURN", r.return, "Modified field 'return'")
+})
+
+testRun("Record type definition with keyword fields", fun() -> {
+    // It's tricky to define a type alias inside a function or test block if it's not supported locally,
+    // but we can test anonymous records which is what we did above.
+    // If we want to test type alias, we might need to do it at top level, but unit tests usually run inside a function.
+    // Let's check if we can define a type alias here or if we should just rely on the runtime behavior of anonymous records.
+    // The prompt asked to check that we can use fields named as keywords.
+    
+    // Let's try a nested record with keywords
+    nested = {
+        type: {
+            alias: true,
+            trait: false
+        }
+    }
+    
+    assertEquals(true, nested.type.alias, "Nested keyword field 'alias'")
+    assertEquals(false, nested.type.trait, "Nested keyword field 'trait'")
+    
+    nested_keywords = {
+        if: {
+            else: "nested"
+        }
+    }
+    assertEquals("nested", nested_keywords.if.else, "Nested keyword fields")
+})

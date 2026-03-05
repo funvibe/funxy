@@ -111,24 +111,6 @@ func (r *RecordInstance) Put(key string, val Object) *RecordInstance {
 	return &RecordInstance{Fields: newFields, TypeName: r.TypeName, ModuleName: r.ModuleName}
 }
 
-// Set updates the value for a key in place, or adds it if not found.
-// This supports mutable assignment for records.
-func (r *RecordInstance) Set(key string, val Object) {
-	idx := sort.Search(len(r.Fields), func(i int) bool {
-		return r.Fields[i].Key >= key
-	})
-
-	if idx < len(r.Fields) && r.Fields[idx].Key == key {
-		r.Fields[idx].Value = val
-		return
-	}
-
-	// Insert new
-	r.Fields = append(r.Fields, RecordField{})
-	copy(r.Fields[idx+1:], r.Fields[idx:])
-	r.Fields[idx] = RecordField{Key: key, Value: val}
-}
-
 func (r *RecordInstance) Type() ObjectType { return RECORD_OBJ }
 func (r *RecordInstance) Inspect() string {
 	var out bytes.Buffer

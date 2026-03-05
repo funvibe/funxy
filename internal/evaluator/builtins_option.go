@@ -1,7 +1,5 @@
 package evaluator
 
-import "github.com/funvibe/funxy/internal/typesystem"
-
 // OptionBuiltins returns built-in functions for Option type
 func OptionBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
@@ -33,10 +31,8 @@ func builtinIsSome(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("isSome expects 1 argument, got %d", len(args))
 	}
-	if di, ok := args[0].(*DataInstance); ok {
-		if di.Name == "Some" && di.TypeName == "Option" {
-			return TRUE
-		}
+	if _, ok := UnwrapOption(args[0]); ok {
+		return TRUE
 	}
 	return FALSE
 }
@@ -46,10 +42,8 @@ func builtinIsNone(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("isNone expects 1 argument, got %d", len(args))
 	}
-	if di, ok := args[0].(*DataInstance); ok {
-		if di.Name == "None" && di.TypeName == "Option" {
-			return TRUE
-		}
+	if IsOptionNone(args[0]) {
+		return TRUE
 	}
 	return FALSE
 }
@@ -59,8 +53,8 @@ func builtinUnwrap(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("unwrap expects 1 argument, got %d", len(args))
 	}
-	if di, ok := args[0].(*DataInstance); ok && di.Name == "Some" && len(di.Fields) == 1 {
-		return di.Fields[0]
+	if inner, ok := UnwrapOption(args[0]); ok {
+		return inner
 	}
 	return newError("unwrap: expected Some, got None")
 }
@@ -70,8 +64,8 @@ func builtinUnwrapOr(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("unwrapOr expects 2 arguments, got %d", len(args))
 	}
-	if di, ok := args[0].(*DataInstance); ok && di.Name == "Some" && len(di.Fields) == 1 {
-		return di.Fields[0]
+	if inner, ok := UnwrapOption(args[0]); ok {
+		return inner
 	}
 	return args[1]
 }
@@ -81,35 +75,10 @@ func builtinUnwrapOrElse(e *Evaluator, args ...Object) Object {
 	if len(args) != 2 {
 		return newError("unwrapOrElse expects 2 arguments, got %d", len(args))
 	}
-	if di, ok := args[0].(*DataInstance); ok && di.Name == "Some" && len(di.Fields) == 1 {
-		return di.Fields[0]
+	if inner, ok := UnwrapOption(args[0]); ok {
+		return inner
 	}
-	// Call the fallback function
 	return e.ApplyFunction(args[1], []Object{})
 }
 
 // SetOptionBuiltinTypes sets type signatures for Option builtins
-func SetOptionBuiltinTypes(builtins map[string]*Builtin) {
-	optionT := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{typesystem.TVar{Name: "T"}},
-	}
-	T := typesystem.TVar{Name: "T"}
-
-	if b, ok := builtins["isSome"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{optionT}, ReturnType: typesystem.Bool}
-	}
-	if b, ok := builtins["isNone"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{optionT}, ReturnType: typesystem.Bool}
-	}
-	if b, ok := builtins["unwrap"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{optionT}, ReturnType: T}
-	}
-	if b, ok := builtins["unwrapOr"]; ok {
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{optionT, T}, ReturnType: T}
-	}
-	if b, ok := builtins["unwrapOrElse"]; ok {
-		fnType := typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: T}
-		b.TypeInfo = typesystem.TFunc{Params: []typesystem.Type{optionT, fnType}, ReturnType: T}
-	}
-}

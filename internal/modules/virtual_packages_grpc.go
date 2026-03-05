@@ -89,6 +89,10 @@ func initGrpcPackage() {
 				Params:     []typesystem.Type{grpcServerType},
 				ReturnType: resultNil,
 			},
+			"grpcSetMaxConnections": typesystem.TFunc{
+				Params:     []typesystem.Type{typesystem.Int},
+				ReturnType: resultNil,
+			},
 		},
 	}
 

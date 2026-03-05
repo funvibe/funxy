@@ -101,6 +101,8 @@ func initIOPackage() {
 			// Path type checks
 			"isDir":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
 			"isFile": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Bool},
+			// Bytecode execution (requires lib/io capability in sandbox)
+			"runBytecode": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultString},
 		},
 	}
 	RegisterVirtualPackage("lib/io", pkg)

@@ -198,34 +198,18 @@ func TestP006_UppercaseVariable(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// P007 — Index assignment not supported
+// Index assignment is now supported (compiles to OP_UPDATE_PATH)
 // ---------------------------------------------------------------------------
 
-func TestP007_ListIndexAssign(t *testing.T) {
-	e := expectError(t, "l = [1, 2, 3]\nl[0] = 10", diagnostics.ErrP007)
-	if !strings.Contains(e.Error(), "index assignment is not supported") {
-		t.Errorf("unexpected message: %s", e.Error())
-	}
+func TestValid_ListIndexAssign(t *testing.T) {
+	// P007 is no longer emitted for index assignment because it is now valid syntax.
+	// The semantic error for discarding the result (A003) is caught by the analyzer.
+	expectNoErrors(t, "l = [1, 2, 3]\nl[0] = 10")
 }
 
-func TestP007_ListIndexCompoundAssign(t *testing.T) {
-	// `l[0] += 5` — compound assignment on index is also index assignment
-	// This may trigger P002 (compound) or P007 (index) depending on path
-	errs := parseWithErrors("l = [1]\nl[0] += 5")
-	if len(errs) == 0 {
-		t.Fatal("expected an error for index compound assignment")
-	}
-	// Either P007 or P002 is acceptable
-	found := false
-	for _, e := range errs {
-		if e.Code == diagnostics.ErrP007 || e.Code == diagnostics.ErrP002 {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected P007 or P002, got: %s", errs[0].Error())
-	}
+func TestP002_ListIndexCompoundAssign(t *testing.T) {
+	// Compound assignment on an index is not supported (requires identifier on LHS).
+	expectError(t, "l = [1]\nl[0] += 5", diagnostics.ErrP002)
 }
 
 // ---------------------------------------------------------------------------

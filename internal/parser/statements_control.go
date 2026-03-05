@@ -113,6 +113,15 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 	p.nextToken()
 
 	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if p.ctx.Context != nil && p.ctx.Context.Err() != nil {
+			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+				diagnostics.ErrP008,
+				p.curToken,
+				"parser timeout",
+			))
+			break
+		}
+
 		// Skip leading newlines
 		if p.curTokenIs(token.NEWLINE) {
 			p.nextToken()

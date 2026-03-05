@@ -51,6 +51,11 @@ type Bundle struct {
 	// MainChunk, Modules, and TraitDefaults; Resources are shared from the parent.
 	Commands map[string]*Bundle
 
+	// IsInterpreterExtension indicates that this bundle contains commands that
+	// extend the interpreter (via 'funxy build --up'). When true, the binary
+	// acts as a normal interpreter, but exposes Commands as CLI subcommands.
+	IsInterpreterExtension bool
+
 	// IsLibraryOnly indicates that this bundle contains only libraries and no executable entry point.
 	// When true, the binary behaves as an interpreter (REPL/Script) with these libraries pre-loaded.
 	IsLibraryOnly bool

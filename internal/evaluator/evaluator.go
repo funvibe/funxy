@@ -9,6 +9,7 @@ import (
 	"github.com/funvibe/funxy/internal/typesystem"
 	"reflect"
 	"strings"
+	"sync/atomic"
 )
 
 // CallFrame represents a single frame in the call stack
@@ -24,6 +25,45 @@ type VMCallHandler func(closure Object, args []Object) Object
 
 // AsyncHandler is a callback for handling async function execution
 type AsyncHandler func(fn Object, args []Object) Object
+
+// SupervisorHandler handles VM lifecycle operations (Spawn, Kill, List)
+type SupervisorHandler struct {
+	SpawnVM              func(path string, config map[string]interface{}, state []byte) (string, error)
+	KillVM               func(id string, saveState bool, timeoutMs int) ([]byte, error)
+	StopVM               func(id string, saveState bool, timeoutMs int) ([]byte, error)
+	TraceOn              func(id string) error
+	TraceOff             func(id string) error
+	TraceOnAll           func()
+	TraceOffAll          func()
+	GetRPCCircuitStats   func(id string) (map[string]interface{}, error)
+	ListVMs              func() []string
+	GetStats             func(id string) (map[string]uint64, error)
+	ReceiveEvent         func() map[string]interface{}
+	ReceiveEventTimeout  func(timeoutMs int) (map[string]interface{}, bool)
+	RPCCall              func(targetID, method string, args []byte, timeoutMs int) ([]byte, error)
+	RPCCallFast          func(targetID, method string, args Object, timeoutMs int) (Object, error)
+	RPCCallGroup         func(group, method string, args []byte, timeoutMs int) ([]byte, error)
+	RPCCallGroupFast     func(group, method string, args Object, timeoutMs int) (Object, error)
+	RPCSerializationMode func() string
+}
+
+// StateHandler handles VM state operations (State Handoff)
+type StateHandler struct {
+	GetState func() Object
+	SetState func(Object)
+}
+
+// MailboxHandler handles asynchronous actor messaging between VMs
+type MailboxHandler struct {
+	Send          func(targetId string, msg Object) error
+	SendWait      func(targetId string, msg Object, timeoutMs int, ctx context.Context) error
+	Receive       func() (Object, error)
+	ReceiveWait   func(timeoutMs int, ctx context.Context) (Object, error)
+	ReceiveBy     func(predicate Object) (Object, error)
+	ReceiveByWait func(predicate Object, timeoutMs int, ctx context.Context) (Object, error)
+	Peek          func() (Object, error)
+	PeekBy        func(predicate Object) (Object, error)
+}
 
 type Evaluator struct {
 	// Context for cancellation
@@ -81,6 +121,15 @@ type Evaluator struct {
 	// CaptureHandler is a callback for safe capturing of closures for async execution
 	CaptureHandler func(Object) Object
 
+	// SupervisorHandler handles VM lifecycle operations for the supervisor pattern
+	SupervisorHandler *SupervisorHandler
+
+	// MailboxHandler handles asynchronous actor messaging between VMs
+	MailboxHandler *MailboxHandler
+
+	// StateHandler handles VM state operations (State Handoff)
+	StateHandler *StateHandler
+
 	// HostCallHandler handles calling reflection methods (injected from embed)
 	HostCallHandler func(reflect.Value, []Object) (Object, error)
 	// HostToValueHandler handles converting Go values to Objects (injected from embed)
@@ -103,6 +152,13 @@ type Evaluator struct {
 
 	// evalDepth tracks the current nesting depth of Eval calls to prevent stack overflow
 	evalDepth int
+
+	// Metrics for System Monitoring
+	InstructionCount uint64
+	AllocatedBytes   uint64
+
+	// RunBytecodeHandler handles running compiled bytecode (.fbc) from a file path.
+	RunBytecodeHandler func(path string) (Object, error)
 }
 
 // ModuleLoader interface (same as in Analyzer, should probably be in a common package)
@@ -235,6 +291,9 @@ func (e *Evaluator) Clone() *Evaluator {
 		TypeAliases:          e.TypeAliases,                           // shared, read-only
 		VMCallHandler:        e.VMCallHandler,                         // shared, for calling VM closures from builtins
 		CaptureHandler:       e.CaptureHandler,                        // shared
+		SupervisorHandler:    e.SupervisorHandler,                     // shared
+		StateHandler:         e.StateHandler,                          // shared
+		MailboxHandler:       e.MailboxHandler,                        // shared
 		HostCallHandler:      e.HostCallHandler,                       // shared
 		HostToValueHandler:   e.HostToValueHandler,                    // shared
 		EmbeddedResources:    e.EmbeddedResources,                     // shared, read-only
@@ -247,6 +306,8 @@ func (e *Evaluator) Clone() *Evaluator {
 const maxEvalDepth = 10000
 
 func (e *Evaluator) Eval(node ast.Node, env *Environment) Object {
+	atomic.AddUint64(&e.InstructionCount, 1)
+
 	// Check recursion depth to prevent Go stack overflow
 	e.evalDepth++
 	if e.evalDepth > maxEvalDepth {

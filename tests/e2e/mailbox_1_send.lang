@@ -1,0 +1,8 @@
+import "lib/mailbox" (send)
+
+fun sendMsg(target: String) -> String {
+    match send(target, { payload: "hello" }) {
+        Ok(_) -> "sent"
+        Fail(e) -> "failed: " ++ e
+    }
+}

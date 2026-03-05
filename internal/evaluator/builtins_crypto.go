@@ -9,8 +9,6 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
-
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // CryptoBuiltins returns built-in functions for lib/crypto virtual package
@@ -288,37 +286,3 @@ func builtinCryptoRandomHex(e *Evaluator, args ...Object) Object {
 }
 
 // SetCryptoBuiltinTypes sets type info for crypto builtins
-func SetCryptoBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-
-	// List<Int>
-	listInt := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Int},
-	}
-
-	types := map[string]typesystem.Type{
-		"base64Encode":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"base64Decode":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"hexEncode":         typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"hexDecode":         typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"md5":               typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"sha1":              typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"sha256":            typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"sha512":            typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"hmacSha256":        typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
-		"hmacSha512":        typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: stringType},
-		"cryptoRandomBytes": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: listInt},
-		"cryptoRandomHex":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: stringType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

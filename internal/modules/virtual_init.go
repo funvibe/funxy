@@ -44,6 +44,9 @@ func InitVirtualPackages() {
 		initTimePackage()
 		initIOPackage()
 		initSysPackage()
+		initSupervisorPackage()
+		initMailboxPackage()
+		initRpcPackage()
 		// Note: FP traits (Semigroup, Monoid, Functor, Applicative, Monad) are built-in
 		// and don't require import. See analyzer/builtins.go and evaluator/builtins_fp.go
 		initTuplePackage()

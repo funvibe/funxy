@@ -73,7 +73,7 @@ func (g *BytecodeGenerator) GenerateConstant() evaluator.Object {
 
 func (g *BytecodeGenerator) writeOperands(chunk *vm.Chunk, op vm.Opcode, line int, constCount int) {
 	switch op {
-	case vm.OP_CONST, vm.OP_GET_GLOBAL, vm.OP_SET_GLOBAL, vm.OP_MAKE_RECORD, vm.OP_GET_FIELD, vm.OP_SET_FIELD, vm.OP_CALL_METHOD:
+	case vm.OP_CONST, vm.OP_GET_GLOBAL, vm.OP_SET_GLOBAL, vm.OP_MAKE_RECORD, vm.OP_GET_FIELD, vm.OP_UPDATE_PATH, vm.OP_CALL_METHOD:
 		// 2-byte constant index
 		idx := g.Src().Intn(constCount)
 		chunk.Write(byte(idx>>8), line)

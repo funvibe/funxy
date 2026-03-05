@@ -71,7 +71,7 @@ func FuzzTypeChecker(f *testing.F) {
 
 			// Run analysis
 			// Analyze returns a list of errors, but shouldn't panic
-			_ = a.Analyze(program)
+			_ = a.Analyze(program, ctx)
 			analyzeDone <- true
 		}()
 

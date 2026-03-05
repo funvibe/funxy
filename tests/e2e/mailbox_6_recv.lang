@@ -1,0 +1,33 @@
+import "lib/mailbox" (receiveByWait, receive, Importance)
+import "lib/time" (sleepMs)
+import "lib/vmm" (setState)
+
+sleepMs(600)
+
+// 1. Find Critical message first
+predCrit = \m -> m.importance == Crit
+result_crit = match receiveByWait(predCrit, 2000) {
+    Ok(m) -> if m.payload == "crit" { "correct" } else { "wrong " ++ show(m.payload) }
+    Fail(e) -> "receiveByWait crit failed: " ++ e
+}
+
+// 2. Find Warning message
+predWarn = \m -> m.importance == Warn
+result_warn = match receiveByWait(predWarn, 2000) {
+    Ok(m) -> if m.payload == "warn" { "correct" } else { "wrong " ++ show(m.payload) }
+    Fail(e) -> "receiveByWait warn failed: " ++ e
+}
+
+// 3. Receive remaining (Low)
+result_low = match receive() {
+    Ok(m) -> if m.payload == "low" { "correct" } else { "wrong " ++ show(m.payload) }
+    Fail(e) -> "receive low failed: " ++ e
+}
+
+setState({
+    crit: result_crit,
+    warn: result_warn,
+    low: result_low
+})
+
+for true { sleepMs(100) }

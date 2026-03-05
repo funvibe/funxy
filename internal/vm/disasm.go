@@ -180,10 +180,8 @@ func disassembleInstruction(sb *strings.Builder, chunk *Chunk, offset int) int {
 		return simpleInstruction(sb, "UNWRAP_OR_PANIC", offset)
 	case OP_CHECK_TYPE:
 		return constantInstruction(sb, "CHECK_TYPE", chunk, offset)
-	case OP_SET_FIELD:
-		return constantInstruction(sb, "SET_FIELD", chunk, offset)
-	case OP_SET_INDEX:
-		return simpleInstruction(sb, "SET_INDEX", offset)
+	case OP_UPDATE_PATH:
+		return byteInstruction(sb, "UPDATE_PATH", chunk, offset)
 	case OP_CALL_METHOD:
 		// nameIdx (2) + argCount (1)
 		nameIdx := int(chunk.Code[offset+1])<<8 | int(chunk.Code[offset+2])

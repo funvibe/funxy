@@ -666,13 +666,13 @@ func (c *Compiler) compileAssignExpression(expr *ast.AssignExpression) error {
 	line := expr.Token.Line
 
 	// Check for MemberExpression assignment: record.field = value
-	if memberExpr, ok := expr.Left.(*ast.MemberExpression); ok {
-		return c.compileMemberAssign(memberExpr, expr.Value, line)
+	if _, ok := expr.Left.(*ast.MemberExpression); ok {
+		return c.compilePathUpdate(expr, line)
 	}
 
 	// Check for IndexExpression assignment: list[i] = value
-	if indexExpr, ok := expr.Left.(*ast.IndexExpression); ok {
-		return c.compileIndexAssign(indexExpr, expr.Value, line)
+	if _, ok := expr.Left.(*ast.IndexExpression); ok {
+		return c.compilePathUpdate(expr, line)
 	}
 
 	// Get type info from annotation if present
@@ -831,75 +831,73 @@ func (c *Compiler) isKnownGlobal(name string) bool {
 	return false
 }
 
-// compileMemberAssign compiles record.field = value
-func (c *Compiler) compileMemberAssign(member *ast.MemberExpression, value ast.Expression, line int) error {
-	// Compile record object
-	if err := c.compileExpression(member.Left); err != nil {
-		return err
+// compilePathUpdate compiles deep immutable updates like a.b.c = 1 or list[0].field = 1
+func (c *Compiler) compilePathUpdate(expr *ast.AssignExpression, line int) error {
+	// Collect path elements (fields and indices) from the left-hand side
+	type pathElement struct {
+		isField bool
+		field   string
+		index   ast.Expression
 	}
 
-	// Compile value
-	if err := c.compileExpression(value); err != nil {
-		return err
-	}
+	var path []pathElement
+	curr := expr.Left
 
-	// Emit SET_FIELD opcode
-	fieldIdx := c.currentChunk().AddConstant(&stringConstant{Value: member.Member.Value})
-	c.emit(OP_SET_FIELD, line)
-	c.currentChunk().Write(byte(fieldIdx>>8), line)
-	c.currentChunk().Write(byte(fieldIdx), line)
-	c.slotCount-- // consumes record and value, pushes new record
-
-	// Now store the new record back to the variable
-	// If Left is an identifier, store back to that variable
-	if ident, ok := member.Left.(*ast.Identifier); ok {
-		name := ident.Value
-
-		// Try local first
-		if local := c.resolveLocal(name); local != -1 {
-			c.emit(OP_SET_LOCAL, line)
-			c.currentChunk().Write(byte(local), line)
-			return nil
+	for {
+		if member, ok := curr.(*ast.MemberExpression); ok {
+			path = append([]pathElement{{isField: true, field: member.Member.Value}}, path...)
+			curr = member.Left
+		} else if indexExpr, ok := curr.(*ast.IndexExpression); ok {
+			path = append([]pathElement{{isField: false, index: indexExpr.Index}}, path...)
+			curr = indexExpr.Left
+		} else {
+			break
 		}
+	}
 
-		// Try upvalue
-		if upvalue := c.resolveUpvalue(name); upvalue != -1 {
-			c.emit(OP_SET_UPVALUE, line)
-			c.currentChunk().Write(byte(upvalue), line)
-			return nil
+	base := curr
+
+	// 1. Compile base
+	if err := c.compileExpression(base); err != nil {
+		return err
+	}
+
+	// 2. Compile path elements
+	for _, p := range path {
+		if p.isField {
+			idx := c.currentChunk().AddConstant(&stringConstant{Value: p.field})
+			c.emit(OP_CONST, line)
+			c.currentChunk().Write(byte(idx>>8), line)
+			c.currentChunk().Write(byte(idx), line)
+			c.slotCount++
+		} else {
+			if err := c.compileExpression(p.index); err != nil {
+				return err
+			}
 		}
-
-		// Global
-		globalIdx := c.currentChunk().AddConstant(&stringConstant{Value: name})
-		c.emit(OP_SET_GLOBAL, line)
-		c.currentChunk().Write(byte(globalIdx>>8), line)
-		c.currentChunk().Write(byte(globalIdx), line)
 	}
 
-	return nil
-}
-
-// compileIndexAssign compiles list[i] = value
-func (c *Compiler) compileIndexAssign(indexExpr *ast.IndexExpression, value ast.Expression, line int) error {
-	// Compile collection
-	if err := c.compileExpression(indexExpr.Left); err != nil {
+	// 3. Compile value
+	if err := c.compileExpression(expr.Value); err != nil {
 		return err
 	}
 
-	// Compile index
-	if err := c.compileExpression(indexExpr.Index); err != nil {
-		return err
+	// 4. Emit OP_UPDATE_PATH
+	if len(path) > 255 {
+		return fmt.Errorf("assignment path too deep: max 255 segments")
 	}
+	c.emit(OP_UPDATE_PATH, line)
+	c.currentChunk().Write(byte(len(path)), line)
 
-	// Compile value
-	if err := c.compileExpression(value); err != nil {
-		return err
-	}
+	// Adjust stack: popped base (1) + path elements + value (1), pushed new base (1)
+	c.slotCount -= (len(path) + 1)
 
-	// Emit SET_INDEX opcode
-	c.emit(OP_SET_INDEX, line)
-	c.slotCount -= 2 // consumes collection, index, value; pushes new collection
+	// If base is an identifier, we DO NOT automatically update the variable!
+	// According to the language design:
+	// `r.f = 1` evaluates to a new record but does NOT mutate `r`.
+	// To mutate `r`, one must write `r = r.f = 1`.
 
+	// So we simply leave the new object on the stack as the result of the expression.
 	return nil
 }
 

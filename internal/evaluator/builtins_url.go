@@ -4,8 +4,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-
-	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 // UrlBuiltins returns all URL-related built-in functions
@@ -352,7 +350,7 @@ func builtinUrlWithScheme(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Set("scheme", scheme)
+	newRec = newRec.Put("scheme", scheme)
 	return newRec
 }
 
@@ -373,7 +371,7 @@ func builtinUrlWithUserinfo(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Set("userinfo", userinfo)
+	newRec = newRec.Put("userinfo", userinfo)
 	return newRec
 }
 
@@ -394,7 +392,7 @@ func builtinUrlWithHost(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Set("host", host)
+	newRec = newRec.Put("host", host)
 	return newRec
 }
 
@@ -415,7 +413,7 @@ func builtinUrlWithPort(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Set("port", makeSome(port))
+	newRec = newRec.Put("port", makeSome(port))
 	return newRec
 }
 
@@ -436,7 +434,7 @@ func builtinUrlWithPath(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Set("path", path)
+	newRec = newRec.Put("path", path)
 	return newRec
 }
 
@@ -457,7 +455,7 @@ func builtinUrlWithQuery(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Set("query", query)
+	newRec = newRec.Put("query", query)
 	return newRec
 }
 
@@ -478,7 +476,7 @@ func builtinUrlWithFragment(e *Evaluator, args ...Object) Object {
 	}
 
 	newRec := copyRecord(rec)
-	newRec.Set("fragment", fragment)
+	newRec = newRec.Put("fragment", fragment)
 	return newRec
 }
 
@@ -514,7 +512,7 @@ func builtinUrlAddQueryParam(e *Evaluator, args ...Object) Object {
 	values.Add(key, value)
 
 	newRec := copyRecord(rec)
-	newRec.Set("query", stringToList(values.Encode()))
+	newRec = newRec.Put("query", stringToList(values.Encode()))
 	return newRec
 }
 
@@ -591,95 +589,3 @@ func copyRecord(rec *RecordInstance) *RecordInstance {
 }
 
 // SetUrlBuiltinTypes sets up type information for URL builtins
-func SetUrlBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-
-	optionInt := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{typesystem.Int}}
-
-	// Url record type
-	urlType := typesystem.TRecord{
-		Fields: map[string]typesystem.Type{
-			"scheme":   stringType,
-			"userinfo": stringType,
-			"host":     stringType,
-			"port":     optionInt,
-			"path":     stringType,
-			"query":    stringType,
-			"fragment": stringType,
-		},
-	}
-
-	// Result<String, Url>
-	resultUrl := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, urlType},
-	}
-
-	// Option<String>
-	optionString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{stringType},
-	}
-
-	// List<String>
-	listString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-
-	// Map<String, List<String>>
-	mapStringListString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Map"},
-		Args:        []typesystem.Type{stringType, listString},
-	}
-
-	// Result<String, String>
-	resultString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, stringType},
-	}
-
-	types := map[string]typesystem.Type{
-		// Parsing
-		"urlParse":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultUrl},
-		"urlToString": typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: stringType},
-
-		// Accessors
-		"urlScheme":   typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: stringType},
-		"urlUserinfo": typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: stringType},
-		"urlHost":     typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: stringType},
-		"urlPort":     typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: optionInt},
-		"urlPath":     typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: stringType},
-		"urlQuery":    typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: stringType},
-		"urlFragment": typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: stringType},
-
-		// Query params
-		"urlQueryParams":   typesystem.TFunc{Params: []typesystem.Type{urlType}, ReturnType: mapStringListString},
-		"urlQueryParam":    typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: optionString},
-		"urlQueryParamAll": typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: listString},
-
-		// Modifiers
-		"urlWithScheme":    typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: urlType},
-		"urlWithUserinfo":  typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: urlType},
-		"urlWithHost":      typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: urlType},
-		"urlWithPort":      typesystem.TFunc{Params: []typesystem.Type{urlType, typesystem.Int}, ReturnType: urlType},
-		"urlWithPath":      typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: urlType},
-		"urlWithQuery":     typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: urlType},
-		"urlWithFragment":  typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: urlType},
-		"urlAddQueryParam": typesystem.TFunc{Params: []typesystem.Type{urlType, stringType, stringType}, ReturnType: urlType},
-
-		// Utility
-		"urlJoin":   typesystem.TFunc{Params: []typesystem.Type{urlType, stringType}, ReturnType: resultUrl},
-		"urlEncode": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: stringType},
-		"urlDecode": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultString},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

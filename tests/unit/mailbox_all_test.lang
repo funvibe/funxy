@@ -1,0 +1,92 @@
+import "lib/test" (testRun, assertEquals, assertOk, assertFail, mockMailboxSend, mockMailboxOff)
+import "lib/mailbox" (send, sendWait, reply, replyWait, requestWait, receive, receiveWait, receiveBy, receiveByWait, peek, peekBy)
+
+testRun("mailbox types and basic send/reply", \ -> {
+    // We just want to make sure these type-check correctly
+    // Since we don't have a real mailbox injected in the unit test environment,
+    // we use mockMailboxSend for sending methods. For receive methods, we'll
+    // just assert they fail (which proves they compiled and executed).
+
+    mockMailboxSend("worker_1", \msg -> { return nil })
+
+    res1 = send("worker_1", "hello")
+    assertOk(res1)
+
+    res2 = sendWait("worker_1", "hello")
+    assertOk(res2)
+
+    res3 = sendWait("worker_1", "hello", 1000)
+    assertOk(res3)
+
+    origMsg = { id: "123", from: "worker_1" }
+    
+    // Test reply with standard payload
+    res4 = reply(origMsg, "pong")
+    assertOk(res4)
+
+    res5 = replyWait(origMsg, "pong")
+    assertOk(res5)
+
+    res6 = replyWait(origMsg, "pong", 2000)
+    assertOk(res6)
+})
+
+testRun("mailbox requestWait types", \ -> {
+    mockMailboxSend("worker_2", \msg -> {
+        return {
+            id: msg.id,
+            type: "custom_reply",
+            payload: "pong"
+        }
+    })
+
+    res1 = requestWait("worker_2", "ping")
+    assertOk(res1)
+
+    res2 = requestWait("worker_2", "ping", 3000)
+    assertOk(res2)
+})
+
+testRun("mailbox reply custom type", \ -> {
+    origMsg = { id: "123", from: "worker_1" }
+    
+    mockMailboxSend("worker_1", \msg -> {
+        assertEquals("custom_ack", msg.type)
+        assertEquals("123", msg.id)
+        // the payload field inside the envelope should still be the payload record
+        assertEquals("custom_ack", msg.payload.type)
+        return nil
+    })
+
+    res = reply(origMsg, { type: "custom_ack", data: 42 })
+    assertOk(res)
+})
+
+testRun("mailbox receive methods compile and run", \ -> {
+    // These will fail at runtime because the host mailbox API isn't injected,
+    // but the fact that they run means the analyzer accepted their types.
+
+    res1 = receive()
+    assertFail(res1)
+
+    res2 = receiveWait()
+    assertFail(res2)
+
+    res3 = receiveWait(1000)
+    assertFail(res3)
+
+    res4 = receiveBy(\msg -> true)
+    assertFail(res4)
+
+    res5 = receiveByWait(\msg -> true)
+    assertFail(res5)
+
+    res6 = receiveByWait(\msg -> true, 1000)
+    assertFail(res6)
+
+    res7 = peek()
+    assertFail(res7)
+
+    res8 = peekBy(\msg -> true)
+    assertFail(res8)
+})

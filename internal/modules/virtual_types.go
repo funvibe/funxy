@@ -61,6 +61,44 @@ func GetAllVirtualPackages() map[string]*VirtualPackage {
 	return virtualPackages
 }
 
+// IsPureVirtualPackage checks if a virtual package is safe to load without explicit capabilities
+func IsPureVirtualPackage(path string) bool {
+	// Only pure math/data structures/formatting are allowed by default.
+	// All I/O, network, OS interactons are dirty.
+	purePackages := map[string]bool{
+		"lib/bignum": true,
+		"lib/bits":   true,
+		"lib/bytes":  true,
+		"lib/char":   true,
+		"lib/crypto": true,
+		"lib/date":   true,
+		"lib/flag":   true,
+		"lib/json":   true,
+		"lib/list":   true,
+		"lib/map":    true,
+		"lib/math":   true,
+		"lib/path":   true,
+		"lib/rand":   true,
+		"lib/regex":  true,
+		"lib/string": true,
+		"lib/test":   true,
+		"lib/time":   true,
+		"lib/tuple":  true,
+		"lib/url":    true,
+		"lib/uuid":   true,
+		"lib/yaml":   true,
+	}
+
+	// 'lib' meta package is allowed to import pure sub-packages
+	if path == "lib" {
+		return true
+	}
+
+	// 'ext/*' are dirty by default unless we know them
+	// 'lib/*' are pure ONLY IF explicitly in purePackages
+	return purePackages[path]
+}
+
 // BuildFunctionToModuleIndex builds a reverse index: function_name -> "lib/module_name"
 // Used by -e mode for smart auto-import
 func BuildFunctionToModuleIndex() map[string]string {

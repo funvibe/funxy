@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -580,65 +579,4 @@ func builtinBytesJoin(e *Evaluator, args ...Object) Object {
 		parts[i] = b.ToSlice()
 	}
 	return bytesFromSlice(bytes.Join(parts, sep.ToSlice()))
-}
-
-func SetBytesBuiltinTypes(builtins map[string]*Builtin) {
-	bytesType := typesystem.TCon{Name: "Bytes"}
-	stringType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}}
-	intType := typesystem.TCon{Name: "Int"}
-	boolType := typesystem.TCon{Name: "Bool"}
-	floatType := typesystem.TCon{Name: "Float"}
-	listIntType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{intType}}
-	listBytesType := typesystem.TApp{Constructor: typesystem.TCon{Name: "List"}, Args: []typesystem.Type{bytesType}}
-
-	// Result types
-	resultBytesType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, bytesType}}
-	resultStringType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, stringType}}
-	resultFloatType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Result"}, Args: []typesystem.Type{stringType, floatType}}
-
-	// Option types
-	optionIntType := typesystem.TApp{Constructor: typesystem.TCon{Name: "Option"}, Args: []typesystem.Type{intType}}
-
-	types := map[string]typesystem.Type{
-		"bytesNew":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: bytesType},
-		"bytesFromString": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: bytesType},
-		"bytesFromList":   typesystem.TFunc{Params: []typesystem.Type{listIntType}, ReturnType: bytesType},
-		"bytesFromHex":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
-		"bytesFromBin":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
-		"bytesFromOct":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultBytesType},
-
-		"bytesSlice": typesystem.TFunc{Params: []typesystem.Type{bytesType, intType, intType}, ReturnType: bytesType},
-
-		"bytesToString": typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: resultStringType},
-		"bytesToList":   typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: listIntType},
-		"bytesToHex":    typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
-		"bytesToBin":    typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
-		"bytesToOct":    typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: stringType},
-
-		"bytesConcat": typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: bytesType},
-
-		"bytesEncodeInt":   typesystem.TFunc{Params: []typesystem.Type{intType, intType, stringType}, ReturnType: bytesType, DefaultCount: 1}, // endianness optional
-		"bytesDecodeInt":   typesystem.TFunc{Params: []typesystem.Type{bytesType, stringType}, ReturnType: intType, DefaultCount: 1},          // endianness optional
-		"bytesEncodeFloat": typesystem.TFunc{Params: []typesystem.Type{floatType, intType}, ReturnType: bytesType},
-		"bytesDecodeFloat": typesystem.TFunc{Params: []typesystem.Type{bytesType, intType}, ReturnType: resultFloatType},
-
-		"bytesContains":   typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: boolType},
-		"bytesIndexOf":    typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: optionIntType},
-		"bytesStartsWith": typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: boolType},
-		"bytesEndsWith":   typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: boolType},
-
-		"bytesSplit": typesystem.TFunc{Params: []typesystem.Type{bytesType, bytesType}, ReturnType: listBytesType},
-		"bytesJoin":  typesystem.TFunc{Params: []typesystem.Type{listBytesType, bytesType}, ReturnType: bytesType},
-	}
-
-	// Override decodeFloat return type if needed based on my analysis
-	types["bytesDecodeFloat"] = typesystem.TFunc{Params: []typesystem.Type{bytesType, intType}, ReturnType: floatType}
-	// Same for decodeInt
-	types["bytesDecodeInt"] = typesystem.TFunc{Params: []typesystem.Type{bytesType, stringType}, ReturnType: intType, DefaultCount: 1}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
 }

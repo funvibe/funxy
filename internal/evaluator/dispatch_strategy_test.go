@@ -47,7 +47,7 @@ func TestDispatchStrategy(t *testing.T) {
 	symbolTable.InitBuiltins()
 
 	a := analyzer.New(symbolTable)
-	errs := a.Analyze(program)
+	errs := a.Analyze(program, ctx)
 	if len(errs) > 0 {
 		for _, err := range errs {
 			t.Errorf("Analyzer error: %s", err.Error())
@@ -138,7 +138,7 @@ func TestMPTCDispatch(t *testing.T) {
 	symbolTable.InitBuiltins()
 
 	a := analyzer.New(symbolTable)
-	errs := a.Analyze(program)
+	errs := a.Analyze(program, ctx)
 	if len(errs) > 0 {
 		for _, err := range errs {
 			t.Errorf("Analyzer error: %s", err.Error())

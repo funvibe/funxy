@@ -186,6 +186,20 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 	}
 
 	// Handle assignment target
+	// Find root object for path assignments
+	getRoot := func(expr ast.Expression) ast.Expression {
+		curr := expr
+		for {
+			if ma, ok := curr.(*ast.MemberExpression); ok {
+				curr = ma.Left
+			} else if ie, ok := curr.(*ast.IndexExpression); ok {
+				curr = ie.Left
+			} else {
+				return curr
+			}
+		}
+	}
+
 	if ident, ok := n.Left.(*ast.Identifier); ok {
 		// If identifier is "_", do not define or check symbol.
 		// Just evaluate right side and return.
@@ -329,13 +343,78 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 				valType = injectImplicitConversion(n, fieldType, valType)
 
 				totalSubst = subst.Compose(totalSubst)
-				return valType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
+				// Assignment evaluates to the new base object (record)
+				rootType, s_root, err := inferFn(getRoot(n.Left), table)
+				if err != nil {
+					return nil, nil, err
+				}
+				totalSubst = s_root.Compose(totalSubst)
+				return rootType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
 			} else {
 				return nil, nil, inferErrorf(n, "record %s has no field '%s'", tRec, ma.Member.Value)
 			}
 		} else {
 			return nil, nil, inferErrorf(n, "assignment to member expects Record, got %s", objType)
 		}
+	} else if ie, ok := n.Left.(*ast.IndexExpression); ok {
+		// Assignment to index: collection[index] = val
+		leftType, sl, err := inferFn(ie.Left, table)
+		if err != nil {
+			return nil, nil, err
+		}
+		totalSubst = sl.Compose(totalSubst)
+
+		indexType, si, err := inferFn(ie.Index, table)
+		if err != nil {
+			return nil, nil, err
+		}
+		totalSubst = si.Compose(totalSubst)
+
+		leftType = leftType.Apply(ctx.GlobalSubst).Apply(totalSubst)
+		leftTypeExpanded := typesystem.ExpandTypeAlias(leftType)
+
+		var elemType typesystem.Type
+
+		// Map indexing
+		if tApp, ok := leftTypeExpanded.(typesystem.TApp); ok && tApp.Constructor.(typesystem.TCon).Name == config.MapTypeName && len(tApp.Args) == 2 {
+			keyType := tApp.Args[0]
+			valTypeMap := tApp.Args[1]
+
+			subst, err := typesystem.Unify(keyType, indexType)
+			if err != nil {
+				return nil, nil, inferErrorf(n, "map key type mismatch: expected %s, got %s", keyType, indexType)
+			}
+			totalSubst = subst.Compose(totalSubst)
+			elemType = valTypeMap
+		} else if tApp, ok := leftTypeExpanded.(typesystem.TApp); ok && tApp.Constructor.(typesystem.TCon).Name == config.ListTypeName && len(tApp.Args) == 1 {
+			// List indexing
+			subst, err := typesystem.Unify(typesystem.Int, indexType)
+			if err != nil {
+				return nil, nil, inferErrorf(n, "index must be Int, got %s", indexType)
+			}
+			totalSubst = subst.Compose(totalSubst)
+			elemType = tApp.Args[0]
+		} else {
+			return nil, nil, inferErrorf(n, "index assignment operator expects Map or List, got %s", leftType)
+		}
+
+		// Unify element type with value type
+		subst, err := typesystem.UnifyAllowExtraWithResolver(elemType, valType, table)
+		if err != nil {
+			return nil, nil, inferErrorf(n, "type mismatch in index assignment: expected %s, got %s", elemType, valType)
+		}
+
+		// Check for implicit conversion
+		valType = injectImplicitConversion(n, elemType, valType)
+
+		totalSubst = subst.Compose(totalSubst)
+		// Assignment evaluates to the new base object (collection)
+		rootType, s_root, err := inferFn(getRoot(n.Left), table)
+		if err != nil {
+			return nil, nil, err
+		}
+		totalSubst = s_root.Compose(totalSubst)
+		return rootType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
 	}
 	return nil, nil, inferError(n, "invalid assignment target")
 }

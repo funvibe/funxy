@@ -1,0 +1,55 @@
+import "lib/test" (testRun, assertEquals, assertOk, testSpawnVM, testSpawnLoad, assertFail)
+import "lib/rpc" (callWait)
+import "lib/time" (sleepMs)
+
+testRun("spawn load generator", \ -> {
+    // Spawn a dummy worker to receive the load
+    res = testSpawnVM("./tests/e2e/dummy_worker.lang", {
+        capabilities: ["lib/mailbox", "lib/rpc"]
+    })
+    assertOk(res)
+
+    match res {
+        Ok(vm_id) -> {
+            // Generate mailbox load towards the dummy worker
+            duration = 500
+            load_res = testSpawnLoad({
+                type: "mailbox",
+                target_vm: vm_id,
+                duration: duration,
+                rps: 1000,
+                threads: 2
+            })
+            assertOk(load_res)
+
+            cpu_res = testSpawnLoad({
+                type: "cpu",
+                duration: duration,
+                threads: 2
+            })
+            assertOk(cpu_res)
+
+            mem_res = testSpawnLoad({
+                type: "memory",
+                duration: duration,
+                threads: 1
+            })
+            assertOk(mem_res)
+
+            // Let the load generators spin up and start stressing the VM/engine
+            // We wait a bit to ensure they are actively running before our RPC test.
+            sleepMs(floatToInt(duration * 0.5))
+
+            // Now test that RPC still works and responds correctly even under heavy load.
+            // This happens while the load generators are still running (we slept for 30% of their duration).
+            pong = callWait(vm_id, "ping", "hello under load", 1000)
+            assertOk(pong)
+
+            match pong {
+                Ok(v) -> assertEquals("hello under load-PONG", v)
+                Fail(e) -> assertFail(pong)
+            }
+        }
+        Fail(e) -> assertFail(res)
+    }
+})

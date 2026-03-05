@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +19,11 @@ var httpTimeout = 30 * time.Second
 // When true, HTTP client does not follow redirects (3xx responses returned as-is)
 var httpNoRedirect = false
 
+// HTTP server max concurrent connections (0 = unlimited)
+var httpMaxConnections int64 = 0
+var httpCurrentConns int64 = 0
+var httpMaxConnsMu sync.Mutex
+
 // Default server stop timeout
 const DefaultServerStopTimeoutMs = 5000
 
@@ -27,22 +32,119 @@ var (
 	httpServers       = make(map[int64]*http.Server)
 	httpServersMu     sync.Mutex
 	httpServerCounter int64 = 0
+
+	sharedListeners   = make(map[int]*sharedListener)
+	sharedListenersMu sync.Mutex
 )
+
+type sharedListener struct {
+	net.Listener
+	port  int
+	conns chan net.Conn
+	mu    sync.Mutex
+	refs  int
+}
+
+func (sl *sharedListener) acceptLoop() {
+	for {
+		conn, err := sl.Listener.Accept()
+		if err != nil {
+			close(sl.conns)
+			return
+		}
+		// In Go, sending to a channel blocks until someone receives.
+		// If multiple virtual listeners are waiting, one will randomly receive it.
+		// If no virtual listeners are waiting, this blocks until one is ready.
+		sl.conns <- conn
+	}
+}
+
+type virtualListener struct {
+	sl        *sharedListener
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func (vl *virtualListener) Accept() (net.Conn, error) {
+	select {
+	case <-vl.closed:
+		return nil, net.ErrClosed
+	case conn, ok := <-vl.sl.conns:
+		if !ok {
+			return nil, net.ErrClosed
+		}
+		return conn, nil
+	}
+}
+
+func (vl *virtualListener) Close() error {
+	vl.closeOnce.Do(func() {
+		close(vl.closed)
+
+		sharedListenersMu.Lock()
+		defer sharedListenersMu.Unlock()
+
+		vl.sl.mu.Lock()
+		vl.sl.refs--
+		if vl.sl.refs <= 0 {
+			vl.sl.Listener.Close() // unblocks acceptLoop
+			delete(sharedListeners, vl.sl.port)
+		}
+		vl.sl.mu.Unlock()
+	})
+	return nil
+}
+
+func (vl *virtualListener) Addr() net.Addr {
+	return vl.sl.Listener.Addr()
+}
+
+// getSharedListener returns a shared virtual listener for the given port
+func getSharedListener(port int) (net.Listener, error) {
+	sharedListenersMu.Lock()
+	defer sharedListenersMu.Unlock()
+
+	sl, ok := sharedListeners[port]
+	if !ok {
+		l, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			return nil, err
+		}
+		sl = &sharedListener{
+			Listener: l,
+			port:     port,
+			conns:    make(chan net.Conn),
+			refs:     0,
+		}
+		sharedListeners[port] = sl
+		go sl.acceptLoop()
+	}
+
+	sl.mu.Lock()
+	sl.refs++
+	sl.mu.Unlock()
+
+	return &virtualListener{
+		sl:     sl,
+		closed: make(chan struct{}),
+	}, nil
+}
 
 // HttpBuiltins returns built-in functions for lib/http virtual package
 func HttpBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
-		"httpGet":           {Fn: builtinHttpGet, Name: "httpGet"},
-		"httpPost":          {Fn: builtinHttpPost, Name: "httpPost"},
-		"httpPostJson":      {Fn: builtinHttpPostJson, Name: "httpPostJson"},
-		"httpPut":           {Fn: builtinHttpPut, Name: "httpPut"},
-		"httpDelete":        {Fn: builtinHttpDelete, Name: "httpDelete"},
-		"httpRequest":       {Fn: builtinHttpRequest, Name: "httpRequest"},
-		"httpSetTimeout":    {Fn: builtinHttpSetTimeout, Name: "httpSetTimeout"},
-		"httpSetNoRedirect": {Fn: builtinHttpSetNoRedirect, Name: "httpSetNoRedirect"},
-		"httpServe":         {Fn: builtinHttpServe, Name: "httpServe"},
-		"httpServeAsync":    {Fn: builtinHttpServeAsync, Name: "httpServeAsync"},
-		"httpServerStop":    {Fn: builtinHttpServerStop, Name: "httpServerStop"},
+		"httpGet":               {Fn: builtinHttpGet, Name: "httpGet"},
+		"httpPost":              {Fn: builtinHttpPost, Name: "httpPost"},
+		"httpPostJson":          {Fn: builtinHttpPostJson, Name: "httpPostJson"},
+		"httpPut":               {Fn: builtinHttpPut, Name: "httpPut"},
+		"httpDelete":            {Fn: builtinHttpDelete, Name: "httpDelete"},
+		"httpRequest":           {Fn: builtinHttpRequest, Name: "httpRequest"},
+		"httpSetTimeout":        {Fn: builtinHttpSetTimeout, Name: "httpSetTimeout"},
+		"httpSetNoRedirect":     {Fn: builtinHttpSetNoRedirect, Name: "httpSetNoRedirect"},
+		"httpSetMaxConnections": {Fn: builtinHttpSetMaxConnections, Name: "httpSetMaxConnections"},
+		"httpServe":             {Fn: builtinHttpServe, Name: "httpServe"},
+		"httpServeAsync":        {Fn: builtinHttpServeAsync, Name: "httpServeAsync"},
+		"httpServerStop":        {Fn: builtinHttpServerStop, Name: "httpServerStop"},
 	}
 }
 
@@ -158,8 +260,8 @@ func builtinHttpDelete(e *Evaluator, args ...Object) Object {
 // httpRequest: (String, String, List<(String, String)>, String, Int) -> Result<String, HttpResponse>
 // timeout is in milliseconds, 0 or negative means use global default
 func builtinHttpRequest(e *Evaluator, args ...Object) Object {
-	if len(args) != 5 {
-		return newError("httpRequest expects 5 arguments, got %d", len(args))
+	if len(args) < 3 || len(args) > 5 {
+		return newError("httpRequest expects 3 to 5 arguments, got %d", len(args))
 	}
 
 	methodList, ok := args[0].(*List)
@@ -177,14 +279,24 @@ func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 		return newError("httpRequest expects a list of headers, got %s", args[2].Type())
 	}
 
-	bodyReader, err := getBodyReader(args[3])
-	if err != nil {
-		return newError("httpRequest: %s", err.Error())
+	var bodyReader io.Reader
+	var err error
+	if len(args) > 3 && args[3] != nil {
+		if _, isNil := args[3].(*Nil); !isNil {
+			bodyReader, err = getBodyReader(args[3])
+			if err != nil {
+				return newError("httpRequest: %s", err.Error())
+			}
+		}
 	}
 
-	timeoutInt, ok := args[4].(*Integer)
-	if !ok {
-		return newError("httpRequest expects an integer timeout (ms), got %s", args[4].Type())
+	var timeoutInt int64 = 0
+	if len(args) > 4 && args[4] != nil {
+		if t, ok := args[4].(*Integer); ok {
+			timeoutInt = t.Value
+		} else if _, isNil := args[4].(*Nil); !isNil {
+			return newError("httpRequest expects an integer timeout (ms), got %s", args[4].Type())
+		}
 	}
 
 	method := ListToString(methodList)
@@ -207,8 +319,8 @@ func builtinHttpRequest(e *Evaluator, args ...Object) Object {
 
 	// Use per-request timeout if specified, otherwise global
 	timeout := httpTimeout
-	if timeoutInt.Value > 0 {
-		timeout = time.Duration(timeoutInt.Value) * time.Millisecond
+	if timeoutInt > 0 {
+		timeout = time.Duration(timeoutInt) * time.Millisecond
 	}
 
 	return doHttpRequestWithTimeout(method, url, headers, bodyReader, timeout)
@@ -245,6 +357,75 @@ func builtinHttpSetNoRedirect(e *Evaluator, args ...Object) Object {
 	return &Nil{}
 }
 
+// httpSetMaxConnections: (Int) -> Nil
+// Sets the maximum number of concurrent HTTP server connections. 0 means unlimited.
+func builtinHttpSetMaxConnections(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("httpSetMaxConnections expects 1 argument, got %d", len(args))
+	}
+
+	maxConns, ok := args[0].(*Integer)
+	if !ok {
+		return newError("httpSetMaxConnections expects an Int, got %s", args[0].Type())
+	}
+	if maxConns.Value < 0 {
+		return newError("httpSetMaxConnections expects a non-negative integer")
+	}
+
+	httpMaxConnsMu.Lock()
+	httpMaxConnections = maxConns.Value
+	httpMaxConnsMu.Unlock()
+	return &Nil{}
+}
+
+// acquireHttpConnSlot attempts to acquire a connection slot.
+// Returns true if acquired, false if max connections reached.
+func acquireHttpConnSlot() bool {
+	httpMaxConnsMu.Lock()
+	defer httpMaxConnsMu.Unlock()
+
+	if httpMaxConnections <= 0 {
+		return true // unlimited
+	}
+
+	if httpCurrentConns >= httpMaxConnections {
+		return false // full
+	}
+
+	httpCurrentConns++
+	return true
+}
+
+func releaseHttpConnSlot() {
+	httpMaxConnsMu.Lock()
+	defer httpMaxConnsMu.Unlock()
+
+	if httpMaxConnections > 0 && httpCurrentConns > 0 {
+		httpCurrentConns--
+	}
+}
+
+// parseHttpUnixURL parses http+unix:///socket_path:/request_path and returns
+// (socketPath, requestURL, true) or ("", "", false) if not an http+unix URL.
+// Format: http+unix:///path/to/socket:/request/path?query
+func parseHttpUnixURL(rawURL string) (socketPath, requestURL string, ok bool) {
+	if !strings.HasPrefix(rawURL, "http+unix://") && !strings.HasPrefix(rawURL, "https+unix://") {
+		return "", "", false
+	}
+	rest := rawURL[strings.Index(rawURL, "://")+3:]
+	colonIdx := strings.Index(rest, ":/")
+	if colonIdx < 0 {
+		return "", "", false
+	}
+	socketPath = rest[:colonIdx]
+	requestPath := rest[colonIdx+1:]
+	if requestPath == "" {
+		requestPath = "/"
+	}
+	requestURL = "http://unix" + requestPath
+	return socketPath, requestURL, true
+}
+
 // doHttpRequest performs the actual HTTP request with global timeout
 func doHttpRequest(method, url string, headers [][2]string, body io.Reader) Object {
 	return doHttpRequestWithTimeout(method, url, headers, body, httpTimeout)
@@ -270,9 +451,24 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 		return makeFail(stringToList("HTTP request blocked: no mock found for " + url))
 	}
 
+	// Handle http+unix:// scheme for Unix socket connections
+	requestURL := url
+	var transport *http.Transport
+	if socketPath, unixRequestURL, ok := parseHttpUnixURL(url); ok {
+		requestURL = unixRequestURL
+		transport = &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		}
+	} else {
+		transport = http.DefaultTransport.(*http.Transport)
+	}
+
 	// Make real HTTP request
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout:   timeout,
+		Transport: transport,
 	}
 	if httpNoRedirect {
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -280,7 +476,7 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 		}
 	}
 
-	req, err := http.NewRequest(method, url, body)
+	req, err := http.NewRequest(method, requestURL, body)
 	if err != nil {
 		return makeFail(stringToList("failed to create request: " + err.Error()))
 	}
@@ -450,6 +646,13 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !acquireHttpConnSlot() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("503 Service Unavailable: Too Many Connections"))
+			return
+		}
+		defer releaseHttpConnSlot()
+
 		// Create a fresh evaluator/VM for each request from the snapshot
 		var reqEval *Evaluator
 		if serverEval.Fork != nil {
@@ -509,7 +712,11 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 					if tuple, ok := h.(*Tuple); ok && len(tuple.Elements) == 2 {
 						key := ListToString(tuple.Elements[0].(*List))
 						val := ListToString(tuple.Elements[1].(*List))
-						w.Header().Set(key, val)
+						if strings.EqualFold(key, "Set-Cookie") {
+							w.Header().Add(key, val)
+						} else {
+							w.Header().Set(key, val)
+						}
 					}
 				}
 			}
@@ -537,9 +744,15 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		Handler: mux,
 	}
 
-	// Start server (blocking)
-	err := server.ListenAndServe()
+	// Get shared listener
+	l, err := getSharedListener(port)
 	if err != nil {
+		return makeFail(stringToList(err.Error()))
+	}
+
+	// Start server (blocking)
+	err = server.Serve(l)
+	if err != nil && err != http.ErrServerClosed {
 		return makeFail(stringToList(err.Error()))
 	}
 
@@ -583,6 +796,13 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 	// Create HTTP server with same handler logic as httpServe
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if !acquireHttpConnSlot() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("503 Service Unavailable: Too Many Connections"))
+			return
+		}
+		defer releaseHttpConnSlot()
+
 		// Create a fresh evaluator/VM for each request from the snapshot
 		var reqEval *Evaluator
 		if serverEval.Fork != nil {
@@ -642,7 +862,11 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 					if tuple, ok := h.(*Tuple); ok && len(tuple.Elements) == 2 {
 						key := ListToString(tuple.Elements[0].(*List))
 						val := ListToString(tuple.Elements[1].(*List))
-						w.Header().Set(key, val)
+						if strings.EqualFold(key, "Set-Cookie") {
+							w.Header().Add(key, val)
+						} else {
+							w.Header().Set(key, val)
+						}
 					}
 				}
 			}
@@ -679,9 +903,15 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 	httpServers[serverId] = server
 	httpServersMu.Unlock()
 
+	// Get shared listener
+	l, err := getSharedListener(port)
+	if err != nil {
+		return makeFail(stringToList(err.Error()))
+	}
+
 	// Start server in background (non-blocking)
 	go func() {
-		err := server.ListenAndServe()
+		err := server.Serve(l)
 		if err != nil && err != http.ErrServerClosed {
 			// Log error but don't fail - server might have been stopped
 		}
@@ -744,107 +974,6 @@ func builtinHttpServerStop(e *Evaluator, args ...Object) Object {
 }
 
 // SetHttpBuiltinTypes sets type info for http builtins
-func SetHttpBuiltinTypes(builtins map[string]*Builtin) {
-	// String = List<Char>
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	stringOrBytes := typesystem.StringOrBytes
-
-	// (String, String) - header tuple
-	headerTuple := typesystem.TTuple{
-		Elements: []typesystem.Type{stringType, stringType},
-	}
-
-	// List<(String, String)> - headers
-	headersType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{headerTuple},
-	}
-
-	// HttpResponse = { status: Int, body: String, headers: List<(String, String)> }
-	responseType := typesystem.TRecord{
-		Fields: map[string]typesystem.Type{
-			"status":  typesystem.Int,
-			"body":    stringType,
-			"headers": headersType,
-		},
-	}
-
-	// Result<String, HttpResponse>
-	resultResponse := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, responseType},
-	}
-
-	// HttpRequest type for server
-	requestType := typesystem.TRecord{
-		Fields: map[string]typesystem.Type{
-			"method":  stringType,
-			"path":    stringType,
-			"query":   stringType,
-			"headers": headersType,
-			"body":    stringType,
-		},
-	}
-
-	// Handler function type: (HttpRequest) -> HttpResponse
-	handlerType := typesystem.TFunc{
-		Params:     []typesystem.Type{requestType},
-		ReturnType: responseType,
-	}
-
-	// Result<String, Nil>
-	resultNil := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, typesystem.Nil},
-	}
-
-	types := map[string]typesystem.Type{
-		"httpGet":      typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
-		"httpPost":     typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultResponse},
-		"httpPostJson": typesystem.TFunc{Params: []typesystem.Type{stringType, typesystem.TVar{Name: "A"}}, ReturnType: resultResponse},
-		"httpPut":      typesystem.TFunc{Params: []typesystem.Type{stringType, stringOrBytes}, ReturnType: resultResponse},
-		"httpDelete":   typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultResponse},
-		// httpRequest has 2 default params: body="" and timeout=0
-		"httpRequest": typesystem.TFunc{
-			Params:       []typesystem.Type{stringType, stringType, headersType, stringOrBytes, typesystem.Int},
-			ReturnType:   resultResponse,
-			DefaultCount: 2, // body and timeout have defaults
-		},
-		"httpSetTimeout":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"httpSetNoRedirect": typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool}, ReturnType: typesystem.Nil},
-		"httpServe":         typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: resultNil},
-		"httpServeAsync":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Int, handlerType}, ReturnType: typesystem.Int},
-		"httpServerStop": typesystem.TFunc{
-			Params:       []typesystem.Type{typesystem.Int, typesystem.Int},
-			ReturnType:   typesystem.Nil,
-			DefaultCount: 1, // timeout has default
-		},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-
-	// Set default arguments for httpRequest: body="" and timeout=0
-	if b, ok := builtins["httpRequest"]; ok {
-		b.DefaultArgs = []Object{
-			stringToList(""),   // body default = ""
-			&Integer{Value: 0}, // timeout default = 0
-		}
-	}
-
-	// Set default argument for httpServerStop: timeout=5000
-	if b, ok := builtins["httpServerStop"]; ok {
-		b.DefaultArgs = []Object{
-			&Integer{Value: int64(DefaultServerStopTimeoutMs)},
-		}
-	}
-}
 
 // httpIsCallable checks if an object is callable (Function, Builtin, PartialApplication, or VM Closure)
 func httpIsCallable(obj Object) bool {

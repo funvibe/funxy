@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -20,17 +21,18 @@ import (
 	"github.com/funvibe/funxy/internal/utils"
 )
 
-func (s *LanguageServer) analyzeModuleDocument(content string, uri string) (*pipeline.PipelineContext, bool) {
-	ctx := pipeline.NewPipelineContext(content)
-	ctx.FilePath = s.uriToPath(uri)
-	if ctx.FilePath == "" {
+func (s *LanguageServer) analyzeModuleDocument(content string, uri string, ctx context.Context) (*pipeline.PipelineContext, bool) {
+	pipeCtx := pipeline.NewPipelineContext(content)
+	pipeCtx.Context = ctx
+	pipeCtx.FilePath = s.uriToPath(uri)
+	if pipeCtx.FilePath == "" {
 		return nil, false
 	}
 
 	loader := newLspModuleLoader(s.rootPath)
-	ctx.Loader = loader
+	pipeCtx.Loader = loader
 
-	moduleDir := utils.GetModuleDir(ctx.FilePath)
+	moduleDir := utils.GetModuleDir(pipeCtx.FilePath)
 	openDocs := s.collectOpenDocuments(uri, content)
 
 	// Check if this is a standalone script (no package declaration)
@@ -53,37 +55,37 @@ func (s *LanguageServer) analyzeModuleDocument(content string, uri string) (*pip
 			return nil, false
 		}
 		var parseErrors []*diagnostics.DiagnosticError
-		mod, targetProgram, parseErrors = s.loadModuleWithOverlays(moduleDir, openDocs, ctx.FilePath, loader.base)
+		mod, targetProgram, parseErrors = s.loadModuleWithOverlays(moduleDir, openDocs, pipeCtx.FilePath, loader.base, ctx)
 		if len(parseErrors) > 0 {
-			ctx.Errors = append(ctx.Errors, parseErrors...)
+			pipeCtx.Errors = append(pipeCtx.Errors, parseErrors...)
 		}
 		if mod == nil {
 			return nil, false
 		}
 	} else {
-		targetProgram, _ = s.applyOpenDocumentOverlays(mod, openDocs, ctx.FilePath)
+		targetProgram, _ = s.applyOpenDocumentOverlays(mod, openDocs, pipeCtx.FilePath, ctx)
 	}
 
 	if mod != nil && len(mod.Files) == 0 {
 		var parseErrors []*diagnostics.DiagnosticError
-		mod, targetProgram, parseErrors = s.loadModuleWithOverlays(moduleDir, openDocs, ctx.FilePath, loader.base)
+		mod, targetProgram, parseErrors = s.loadModuleWithOverlays(moduleDir, openDocs, pipeCtx.FilePath, loader.base, ctx)
 		if len(parseErrors) > 0 {
-			ctx.Errors = append(ctx.Errors, parseErrors...)
+			pipeCtx.Errors = append(pipeCtx.Errors, parseErrors...)
 		}
 		if mod == nil {
 			return nil, false
 		}
 	}
 
-	ctx.Module = mod
-	ctx.SymbolTable = mod.SymbolTable
+	pipeCtx.Module = mod
+	pipeCtx.SymbolTable = mod.SymbolTable
 
 	if targetProgram != nil {
-		ctx.AstRoot = targetProgram
+		pipeCtx.AstRoot = targetProgram
 	}
 
-	analyzer.RegisterBuiltins(ctx.SymbolTable)
-	sem := analyzer.New(ctx.SymbolTable)
+	analyzer.RegisterBuiltins(pipeCtx.SymbolTable)
+	sem := analyzer.New(pipeCtx.SymbolTable)
 	sem.SetLoader(loader)
 	sem.BaseDir = mod.Dir
 
@@ -93,32 +95,32 @@ func (s *LanguageServer) analyzeModuleDocument(content string, uri string) (*pip
 	orderedFiles := mod.OrderedFiles()
 	var errors []*diagnostics.DiagnosticError
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, sem.AnalyzeNaming(fileAST)...)
+		errors = append(errors, sem.AnalyzeNaming(fileAST, pipeCtx)...)
 	}
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, sem.AnalyzeHeaders(fileAST)...)
+		errors = append(errors, sem.AnalyzeHeaders(fileAST, pipeCtx)...)
 	}
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, sem.AnalyzeInstances(fileAST)...)
+		errors = append(errors, sem.AnalyzeInstances(fileAST, pipeCtx)...)
 	}
 	for _, fileAST := range orderedFiles {
-		errors = append(errors, sem.AnalyzeBodies(fileAST)...)
+		errors = append(errors, sem.AnalyzeBodies(fileAST, pipeCtx)...)
 	}
 
-	ctx.TypeMap = sem.TypeMap
-	ctx.ResolutionMap = sem.ResolutionMap
-	ctx.TraitDefaults = sem.TraitDefaults
-	ctx.OperatorTraits = ctx.SymbolTable.GetAllOperatorTraits()
-	ctx.TraitImplementations = ctx.SymbolTable.GetAllImplementations()
+	pipeCtx.TypeMap = sem.TypeMap
+	pipeCtx.ResolutionMap = sem.ResolutionMap
+	pipeCtx.TraitDefaults = sem.TraitDefaults
+	pipeCtx.OperatorTraits = pipeCtx.SymbolTable.GetAllOperatorTraits()
+	pipeCtx.TraitImplementations = pipeCtx.SymbolTable.GetAllImplementations()
 
-	mod.SetTypeMap(ctx.TypeMap)
-	mod.SetTraitDefaults(ctx.TraitDefaults)
+	mod.SetTypeMap(pipeCtx.TypeMap)
+	mod.SetTraitDefaults(pipeCtx.TraitDefaults)
 
 	if len(errors) > 0 {
-		ctx.Errors = append(ctx.Errors, errors...)
+		pipeCtx.Errors = append(pipeCtx.Errors, errors...)
 	}
 
-	return ctx, true
+	return pipeCtx, true
 }
 
 func (s *LanguageServer) collectOpenDocuments(currentURI string, currentContent string) map[string]string {
@@ -139,7 +141,7 @@ func (s *LanguageServer) collectOpenDocuments(currentURI string, currentContent 
 	return documents
 }
 
-func (s *LanguageServer) applyOpenDocumentOverlays(mod *modules.Module, openDocs map[string]string, targetPath string) (*ast.Program, []*diagnostics.DiagnosticError) {
+func (s *LanguageServer) applyOpenDocumentOverlays(mod *modules.Module, openDocs map[string]string, targetPath string, ctx context.Context) (*ast.Program, []*diagnostics.DiagnosticError) {
 	if mod == nil {
 		return nil, nil
 	}
@@ -171,7 +173,7 @@ func (s *LanguageServer) applyOpenDocumentOverlays(mod *modules.Module, openDocs
 			continue
 		}
 
-		program, parseErrors := parseProgramFromContent(cleanPath, content)
+		program, parseErrors := parseProgramFromContent(cleanPath, content, ctx)
 		if len(parseErrors) > 0 {
 			errors = append(errors, parseErrors...)
 		}
@@ -202,22 +204,23 @@ func (s *LanguageServer) applyOpenDocumentOverlays(mod *modules.Module, openDocs
 	return targetProgram, errors
 }
 
-func parseProgramFromContent(filePath string, content string) (*ast.Program, []*diagnostics.DiagnosticError) {
-	ctx := pipeline.NewPipelineContext(content)
-	ctx.FilePath = filePath
+func parseProgramFromContent(filePath string, content string, ctx context.Context) (*ast.Program, []*diagnostics.DiagnosticError) {
+	pipeCtx := pipeline.NewPipelineContext(content)
+	pipeCtx.Context = ctx
+	pipeCtx.FilePath = filePath
 
 	processingPipeline := pipeline.New(
 		&lexer.LexerProcessor{},
 		&parser.ParserProcessor{},
 	)
 
-	finalCtx := processingPipeline.Run(ctx)
+	finalCtx := processingPipeline.Run(pipeCtx)
 	program, _ := finalCtx.AstRoot.(*ast.Program)
 
 	return program, finalCtx.Errors
 }
 
-func (s *LanguageServer) loadModuleWithOverlays(moduleDir string, openDocs map[string]string, targetPath string, loader *modules.Loader) (*modules.Module, *ast.Program, []*diagnostics.DiagnosticError) {
+func (s *LanguageServer) loadModuleWithOverlays(moduleDir string, openDocs map[string]string, targetPath string, loader *modules.Loader, ctx context.Context) (*modules.Module, *ast.Program, []*diagnostics.DiagnosticError) {
 	absDir, err := filepath.Abs(moduleDir)
 	if err != nil {
 		return nil, nil, []*diagnostics.DiagnosticError{
@@ -315,7 +318,7 @@ func (s *LanguageServer) loadModuleWithOverlays(moduleDir string, openDocs map[s
 			content = string(bytes)
 		}
 
-		program, parseErrors := parseProgramFromContent(filePath, content)
+		program, parseErrors := parseProgramFromContent(filePath, content, ctx)
 		if len(parseErrors) > 0 {
 			errors = append(errors, parseErrors...)
 		}

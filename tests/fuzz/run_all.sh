@@ -2,7 +2,7 @@
 #
 # Run all fuzz targets with controlled parallelism.
 #
-# Running all 22 fuzz tests simultaneously (as background jobs) causes severe
+# Running all 23 fuzz tests simultaneously (as background jobs) causes severe
 # CPU contention: each `go test -fuzz` spawns GOMAXPROCS workers by default,
 # so 22 tests × 12 cores = 264 workers competing for 12 cores. This leads to:
 #   - Baseline coverage gathering stalling for minutes
@@ -161,10 +161,13 @@ run_batch "Batch 5: LSP" \
 
 # ── Batch 6: Ext & Embed (config parsing, codegen, marshalling) ──
 run_batch "Batch 6: Ext & Embed" \
-    FuzzConfigParse FuzzCodegen FuzzMarshallerRoundTrip FuzzMarshallerToValue
+    FuzzConfigParse FuzzCodegen FuzzMarshallerToValue
 
 run_batch "Batch 6b: Embed Maps & Eval" \
-    FuzzMarshallerMapRoundTrip FuzzEmbedEval
+    FuzzMarshallerMapRoundTrip FuzzMarshallerRoundTrip FuzzEmbedEval
+
+run_batch "Batch 7: VMM, RPC & FDF" \
+    FuzzHypervisor FuzzRPC FuzzFDFDeserialize
 
 echo ""
 echo "══════════════════════════════════════════════════════════════"

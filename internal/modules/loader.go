@@ -78,19 +78,22 @@ func hasAnySourceFiles(dirPath string) bool {
 
 // Loader handles loading modules and their dependencies.
 type Loader struct {
-	LoadedModules map[string]*Module // Cache of loaded modules by path
-	ModulesByName map[string]*Module // Index by package name for quick lookup
-	Processing    map[string]bool    // Cycle detection during loading
-	GlobalBundle  interface{}        // Optional global bundle for library-only mode (*vm.Bundle)
+	LoadedModules  map[string]*Module // Cache of loaded modules by path
+	ModulesByName  map[string]*Module // Index by package name for quick lookup
+	Processing     map[string]bool    // Cycle detection during loading
+	GlobalBundle   interface{}        // Optional global bundle for library-only mode (*vm.Bundle)
+	SandboxMode    bool               // If true, restricts access to dirty virtual packages
+	AllowedModules map[string]bool    // Set of dirty modules explicitly allowed
 }
 
 func NewLoader() *Loader {
 	// Initialize virtual packages on first loader creation
 	InitVirtualPackages()
 	return &Loader{
-		LoadedModules: make(map[string]*Module),
-		ModulesByName: make(map[string]*Module),
-		Processing:    make(map[string]bool),
+		LoadedModules:  make(map[string]*Module),
+		ModulesByName:  make(map[string]*Module),
+		Processing:     make(map[string]bool),
+		AllowedModules: make(map[string]bool),
 	}
 }
 
@@ -117,6 +120,11 @@ func (l *Loader) GetModuleByPackageName(name string) interface{} {
 func (l *Loader) GetModule(path string) (interface{}, error) {
 	// Check for virtual packages first (e.g., "lib/list", "lib")
 	if vp := GetVirtualPackage(path); vp != nil {
+		// Check sandbox mode for dirty modules
+		if l.SandboxMode && !IsPureVirtualPackage(path) && !l.AllowedModules[path] {
+			return nil, fmt.Errorf("capability denied: module '%s' is not allowed in sandbox mode", path)
+		}
+
 		// Check if already created
 		if mod, ok := l.LoadedModules["virtual:"+path]; ok {
 			return mod, nil

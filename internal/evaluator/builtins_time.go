@@ -1,7 +1,6 @@
 package evaluator
 
 import (
-	"github.com/funvibe/funxy/internal/typesystem"
 	"time"
 )
 
@@ -56,7 +55,17 @@ func builtinSleep(e *Evaluator, args ...Object) Object {
 	if seconds.Value < 0 {
 		return newError("sleep: duration cannot be negative")
 	}
-	time.Sleep(time.Duration(seconds.Value) * time.Second)
+	if e.Context != nil {
+		select {
+		case <-time.After(time.Duration(seconds.Value) * time.Second):
+			// Normal completion
+		case <-e.Context.Done():
+			// Context cancelled
+			return newError("sleep cancelled: %v", e.Context.Err())
+		}
+	} else {
+		time.Sleep(time.Duration(seconds.Value) * time.Second)
+	}
 	return &Nil{}
 }
 
@@ -73,23 +82,18 @@ func builtinSleepMs(e *Evaluator, args ...Object) Object {
 	if ms.Value < 0 {
 		return newError("sleepMs: duration cannot be negative")
 	}
-	time.Sleep(time.Duration(ms.Value) * time.Millisecond)
+	if e.Context != nil {
+		select {
+		case <-time.After(time.Duration(ms.Value) * time.Millisecond):
+			// Normal completion
+		case <-e.Context.Done():
+			// Context cancelled
+			return newError("sleep cancelled: %v", e.Context.Err())
+		}
+	} else {
+		time.Sleep(time.Duration(ms.Value) * time.Millisecond)
+	}
 	return &Nil{}
 }
 
 // SetTimeBuiltinTypes sets type info for time builtins
-func SetTimeBuiltinTypes(builtins map[string]*Builtin) {
-	types := map[string]typesystem.Type{
-		"timeNow": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
-		"clockNs": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
-		"clockMs": typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Int},
-		"sleep":   typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-		"sleepMs": typesystem.TFunc{Params: []typesystem.Type{typesystem.Int}, ReturnType: typesystem.Nil},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}

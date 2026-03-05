@@ -1,0 +1,27 @@
+import "lib/mailbox" (receiveWait)
+import "lib/time" (sleepMs)
+
+var result = "waiting"
+
+fun getResult() -> String {
+    return result
+}
+
+msg = receiveWait(5000)
+match msg {
+    Ok(m) -> {
+        if m.payload == "hello" {
+            result = "correct"
+        } else {
+            result = "wrong payload " ++ show(m.payload)
+        }
+    }
+    Fail(e) -> {
+        result = "failed: " ++ e
+    }
+}
+
+// Keep alive for RPC
+for true {
+    sleepMs(100)
+}

@@ -1,0 +1,6 @@
+import "lib/time" (sleepMs)
+leak = []
+while true {
+    leak = [1, 2, 3, 4, 5] ++ leak // Append to list
+    sleepMs(10)
+}

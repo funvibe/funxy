@@ -1,0 +1,5 @@
+import "lib/time" (sleepMs)
+// Just sleep so supervisor can kill us
+while true {
+    sleepMs(100)
+}

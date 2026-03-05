@@ -1,0 +1,21 @@
+import "lib/mailbox" (receiveWait, receiveByWait)
+import "lib/time" (sleepMs)
+import "lib/vmm" (setState)
+
+// 1. Short wait for sender to send msg1, msg2, urgent
+sleepMs(500)
+
+// 2. Selective receive: find urgent by payload (skipping msg1 and msg2)
+pred = \m -> m.type == "urgent"
+msg2 = receiveByWait(pred, 5000)
+
+// 3. Read one more (msg1 or msg2)
+msg1 = receiveWait(1000)
+
+// 4. Set state that we did it
+setState("ready")
+
+// 5. Idle while sender spams (drops happen)
+for true {
+    sleepMs(500)
+}

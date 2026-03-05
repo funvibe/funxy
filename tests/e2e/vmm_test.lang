@@ -1,0 +1,290 @@
+import "lib/test" (testRun, assertEquals, assertOk, testSpawnVM, assertTrue)
+import "lib/vmm" (listVMs, killVM, receiveEventWait, stopVM, spawnVM)
+import "lib/time" (sleepMs, clockMs)
+import "lib/rpc" (callWait)
+import "lib/list" (contains)
+
+fun lifecycleEventVmId(evt) {
+    if evt.type == "exit" || evt.type == "crash" || evt.type == "vm_exit" {
+        evt.vmId
+    } else {
+        ""
+    }
+}
+
+fun waitLifecycleEventByVmId(id) {
+    evt = receiveEventWait(1500)
+    if evt.type == "timeout" {
+        evt
+    } else if lifecycleEventVmId(evt) == id {
+        evt
+    } else {
+        waitLifecycleEventByVmId(id)
+    }
+}
+
+testRun("receiveEventWait timeout with explicit timeoutMs", \ -> {
+    bootRes = testSpawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "timeout_bootstrap_1", capabilities: ["lib/time"] })
+    assertOk(bootRes)
+    match bootRes {
+        Ok(id) -> {
+            killVM(id)
+            _ = receiveEventWait(1000) // drain expected exit event
+        }
+        Fail(_) -> ()
+    }
+
+    started = clockMs()
+    evt = receiveEventWait(120)
+    elapsed = clockMs() - started
+
+    assertEquals("timeout", evt.type)
+    assertEquals(true, evt.timed_out)
+    assertTrue(elapsed < 2000, "custom timeout should not block too long")
+})
+
+testRun("Lifecycle status and cleanup on hard kill", \ -> {
+    res = spawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "lifecycle_kill_worker", capabilities: ["lib/time"] })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            killVM(id)
+            evt = waitLifecycleEventByVmId(id)
+            if evt.type == "timeout" {
+                assertTrue(false, "expected exit/crash event for hard kill")
+            } else {
+                assertEquals("crashed", evt.status)
+            }
+
+            vmsAfter = listVMs()
+            assertEquals(false, contains(vmsAfter, id))
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("Lifecycle status and cleanup on stopVM", \ -> {
+    res = spawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "lifecycle_stop_worker", capabilities: ["lib/time"] })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            stopRes = stopVM(id, Some({ saveState: true, timeoutMs: 2000 }))
+            assertOk(stopRes)
+
+            evt = waitLifecycleEventByVmId(id)
+            assertEquals("exit", evt.type)
+            assertEquals("stopped", evt.status)
+
+            vmsAfter = listVMs()
+            assertEquals(false, contains(vmsAfter, id))
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("receiveEventWait default timeout is ~5000ms", \ -> {
+    bootRes = testSpawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "timeout_bootstrap_2", capabilities: ["lib/time"] })
+    assertOk(bootRes)
+    match bootRes {
+        Ok(id) -> {
+            killVM(id)
+            _ = receiveEventWait(1000) // drain expected exit event
+        }
+        Fail(_) -> ()
+    }
+
+    started = clockMs()
+    evt = receiveEventWait()
+    elapsed = clockMs() - started
+
+    assertEquals("timeout", evt.type)
+    assertEquals(true, evt.timed_out)
+    assertTrue(elapsed >= 4500, "default timeout should be close to 5000ms")
+})
+
+testRun("receiveEventWait exposes monotonic seq watermark", \ -> {
+    bootRes = testSpawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "seq_bootstrap", capabilities: ["lib/time"] })
+    assertOk(bootRes)
+    match bootRes {
+        Ok(id) -> {
+            killVM(id)
+            _ = receiveEventWait(1000)
+        }
+        Fail(_) -> ()
+    }
+
+    firstRes = spawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "seq_worker_1", capabilities: ["lib/time"] })
+    assertOk(firstRes)
+    secondRes = spawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "seq_worker_2", capabilities: ["lib/time"] })
+    assertOk(secondRes)
+
+    match firstRes {
+        Ok(id1) -> {
+            match secondRes {
+                Ok(id2) -> {
+                    killVM(id1)
+                    evt1 = waitLifecycleEventByVmId(id1)
+                    killVM(id2)
+                    evt2 = waitLifecycleEventByVmId(id2)
+
+                    assertTrue(evt1.seq > 0, "first lifecycle event should include seq watermark")
+                    assertTrue(evt2.seq > evt1.seq, "seq watermark should be monotonic increasing")
+                }
+                Fail(_) -> ()
+            }
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("Basic Spawn and Lifecycle", \ -> {
+    config = { name: "worker_dummy", capabilities: ["lib/time"] }
+    spawnRes = testSpawnVM("./tests/e2e/vmm_worker_dummy.lang", config)
+    assertOk(spawnRes)
+    
+    match spawnRes {
+        Ok(id) -> {
+            vms = listVMs()
+            assertTrue(len(vms) > 0, "should have VMs running")
+            
+            killVM(id)
+            
+            event = receiveEventWait()
+            assertEquals("exit", event.type)
+            assertEquals(id, event.vmId)
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("State Handoff (Hot Reload)", \ -> {
+    config = { name: "stateful_worker", capabilities: ["lib/vmm", "lib/time"] }
+    
+    // Initial spawn
+    spawnRes1 = testSpawnVM("./tests/e2e/vmm_worker_state.lang", config)
+    assertOk(spawnRes1)
+    
+    match spawnRes1 {
+        Ok(id) -> {
+            sleepMs(500) // allow worker to init and set state
+            
+            stopRes = stopVM(id, Some({ saveState: true, timeoutMs: 2000 }))
+            assertOk(stopRes)
+            
+            match stopRes {
+                Ok(state) -> {
+                    assertEquals(1, state.count)
+                    
+                    // Respawn with captured state using regular spawnVM because testSpawnVM lacks 3rd arg
+                    spawnRes2 = spawnVM("./tests/e2e/vmm_worker_state.lang", { name: "stateful_worker_2", capabilities: ["lib/vmm", "lib/time"] }, Some(state))
+                    assertOk(spawnRes2)
+                    
+                    match spawnRes2 {
+                        Ok(id2) -> {
+                            sleepMs(500)
+                            stopRes2 = stopVM(id2, Some({ saveState: true, timeoutMs: 2000 }))
+                            assertOk(stopRes2)
+                            match stopRes2 {
+                                Ok(state2) -> assertEquals(2, state2.count)
+                                Fail(e) -> ()
+                            }
+                            // testSpawnVM tracks VMs for us, but since we used spawnVM here, stopVM already killed it.
+                        }
+                        Fail(e) -> ()
+                    }
+                }
+                Fail(e) -> ()
+            }
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("RPC Call Between VMs", \ -> {
+    config = { name: "rpc_server", capabilities: ["lib/time"] }
+    spawnRes = testSpawnVM("./tests/e2e/vmm_worker_rpc.lang", config)
+    assertOk(spawnRes)
+    
+    match spawnRes {
+        Ok(id) -> {
+            sleepMs(500) // wait for init
+            
+            res = callWait(id, "ping", "hello", 1000)
+            assertOk(res)
+            
+            match res {
+                Ok(v) -> assertEquals("pong: hello", v)
+                Fail(e) -> ()
+            }
+            
+            killVM(id)
+        }
+        Fail(e) -> ()
+    }
+})
+
+fun waitLimitEvent(id) {
+    evt = receiveEventWait()
+    print("waitLimitEvent got: " ++ show(evt))
+    if evt.type == "vm_exit" && evt.vmId == id {
+        evt
+    } else {
+        waitLimitEvent(id)
+    }
+}
+
+testRun("VM Limits (Gas, Memory, Stack)", \ -> {
+    // Gas limit test
+    id1Res = spawnVM("./tests/e2e/vmm_worker_gas_limit.lang", { name: "worker_gas", limits: { maxInstructions: 10000 } })
+    match id1Res {
+        Ok(id1) -> {
+            evt1 = waitLimitEvent(id1)
+            assertEquals("limit_exceeded", evt1.reason)
+        }
+        Fail(e) -> ()
+    }
+    
+    // Mem limit test
+    id2Res = spawnVM("./tests/e2e/vmm_worker_mem_limit.lang", { name: "worker_mem", limits: { maxMemoryMB: 1 } })
+    match id2Res {
+        Ok(id2) -> {
+            evt2 = waitLimitEvent(id2)
+            assertEquals("limit_exceeded", evt2.reason)
+        }
+        Fail(e) -> ()
+    }
+    
+    // Stack limit test
+    id3Res = spawnVM("./tests/e2e/vmm_worker_stack_limit.lang", { name: "worker_stack", limits: { maxStackDepth: 10 } })
+    match id3Res {
+        Ok(id3) -> {
+            evt3 = waitLimitEvent(id3)
+            assertEquals("limit_exceeded", evt3.reason)
+        }
+        Fail(e) -> ()
+    }
+})
+
+testRun("VM Limits (Rate Gas, Rate Mem)", \ -> {
+    // Rate Gas test
+    id4Res = spawnVM("./tests/e2e/vmm_worker_gas_limit.lang", { name: "worker_rate_gas", limits: { maxInstructionsPerSec: 10000 } })
+    match id4Res {
+        Ok(id4) -> {
+            evt4 = waitLimitEvent(id4)
+            assertEquals("limit_exceeded", evt4.reason)
+        }
+        Fail(e) -> ()
+    }
+    
+    // Rate Mem test
+    id5Res = spawnVM("./tests/e2e/vmm_worker_mem_limit.lang", { name: "worker_rate_mem", limits: { maxAllocationsPerSecond: 1 } })
+    match id5Res {
+        Ok(id5) -> {
+            evt5 = waitLimitEvent(id5)
+            assertEquals("limit_exceeded", evt5.reason)
+        }
+        Fail(e) -> ()
+    }
+})

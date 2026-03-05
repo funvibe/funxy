@@ -1,0 +1,23 @@
+import "lib/mailbox" (peek, receive)
+import "lib/time" (sleepMs)
+import "lib/vmm" (setState)
+
+sleepMs(600)
+p = peek()
+r = receive()
+
+match p {
+    Ok(pm) -> match r {
+        Ok(rm) -> {
+            if show(pm.payload) == show(rm.payload) { 
+                setState("correct") 
+            } else { 
+                setState("mismatch: " ++ show(pm.payload) ++ " vs " ++ show(rm.payload)) 
+            }
+        }
+        Fail(e) -> setState("receive failed: " ++ e)
+    }
+    Fail(e) -> setState("peek failed: " ++ e)
+}
+
+for true { sleepMs(100) }

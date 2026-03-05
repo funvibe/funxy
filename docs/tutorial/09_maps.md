@@ -85,27 +85,49 @@ len(scores)                  // 2 (built-in len also works)
 
 ### Modification (Immutable)
 
-All modification operations return a **new** Map, original is unchanged:
+Funxy maps are immutable. When you assign a value to a key via index assignment, or use map modification functions, the operation evaluates to a **new** Map. The original map remains unchanged:
 
 ```rust
 import "lib/map" (*)
 
 scores = %{ "Alice" => 100, "Bob" => 85 }
 
-// Add or update
-scores2 = mapPut(scores, "Charlie", 92)
-mapSize(scores)              // 2 (original unchanged)
-mapSize(scores2)             // 3
+// Index assignment returns a new map
+scores2 = scores["Charlie"] = 92
+print(scores)  // %{ "Alice" => 100, "Bob" => 85 } (original unchanged)
+print(scores2) // %{ "Alice" => 100, "Bob" => 85, "Charlie" => 92 }
 
-// Update existing
-scores3 = mapPut(scores, "Alice", 110)
+// To "mutate" a variable, reassign it:
+scores = scores["David"] = 80
+
+// Add or update using mapPut (equivalent to index assignment)
+scores3 = mapPut(scores, "Eve", 95)
+mapSize(scores)              // 3 (original unchanged)
+mapSize(scores3)             // 4
+
+// Update existing using mapPut
+scores4 = mapPut(scores, "Alice", 110)
 mapGet(scores, "Alice")      // Some(100)  — original
-mapGet(scores3, "Alice")     // Some(110)  — new
+mapGet(scores4, "Alice")     // Some(110)  — new
 
+// You can also use index assignment which creates a new map
+scores5 = scores["Alice"] = 110
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `scores["Alice"] = 100` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun addScore(scores: Map<String, Int>, name: String, val: Int) -> Map<String, Int> {
+    // Valid: implicitly returns the new map
+    scores[name] = val
+}
+```
+
+```rust
 // Remove key
-scores4 = mapRemove(scores, "Bob")
-mapSize(scores4)             // 1
-mapContains(scores4, "Bob")  // false
+scores6 = mapRemove(scores5, "Bob")
+mapSize(scores6)             // 1
+mapContains(scores6, "Bob")  // false
 ```
 
 ### Merging
@@ -174,7 +196,7 @@ import "lib/list" (foldl)
 fun countFreq(xs: List<Char>) -> Map<Char, Int> {
     foldl(fun(m, x) -> {
         count = mapGetOr(m, x, 0)
-        mapPut(m, x, count + 1)
+        m[x] = count + 1 // Returns a new map with the updated value
     }, %{}, xs)
 }
 
@@ -194,7 +216,7 @@ fun groupByLen(xs: List<String>) -> Map<Int, List<String>> {
     foldl(fun(m, x) -> {
         k = length(x)
         existing = mapGetOr(m, k, [])
-        mapPut(m, k, existing ++ [x])
+        m[k] = existing ++ [x]
     }, %{}, xs)
 }
 
@@ -238,7 +260,7 @@ import "lib/tuple" (fst, snd)
 // Swap keys and values
 fun invert(m: Map<String, Int>) -> Map<Int, String> {
     foldl(fun(acc, kv) -> {
-        mapPut(acc, snd(kv), fst(kv))
+        acc[snd(kv)] = fst(kv)
     }, %{}, mapItems(m))
 }
 
@@ -285,8 +307,11 @@ mapGet(userData, "name")     // Option<String>
 | mapPut | (Map K V, K, V) -> Map K V | Add/update |
 | mapRemove | (Map K V, K) -> Map K V | Remove key |
 | mapMerge | (Map K V, Map K V) -> Map K V | Merge |
+| mapMap | ((K, V) -> V2, Map K V) -> Map K V2 | Map values |
+| mapFilter | ((K, V) -> Bool, Map K V) -> Map K V | Filter pairs |
+| mapFold | ((U, K, V) -> U, U, Map K V) -> U | Reduce map |
 | mapKeys | (Map K V) -> List K | All keys |
 | mapValues | (Map K V) -> List V | All values |
 | mapItems | (Map K V) -> List (K, V) | All pairs |
 
-Built-in len(m) also works for size and m[key] for access.
+Built-in len(m) also works for size, m[key] for access, and m[key] = value for creating a new map with an updated value.

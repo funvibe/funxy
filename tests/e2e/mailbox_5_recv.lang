@@ -1,0 +1,16 @@
+import "lib/mailbox" (receiveWait)
+import "lib/time" (sleepMs)
+import "lib/vmm" (setState)
+
+sleepMs(2000)
+n = 0
+while n < 3 {
+    match receiveWait(500) {
+        Ok(_) -> n = n + 1
+        Fail(_) -> ()
+    }
+}
+
+setState("correct")
+
+for true { sleepMs(100) }

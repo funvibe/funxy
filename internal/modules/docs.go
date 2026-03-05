@@ -190,7 +190,7 @@ func PrintHelp() string {
 	sb.WriteString("  funxy -e '<expr>'           Evaluate expression\n")
 	sb.WriteString("  funxy -pe '<expr>'          Evaluate and print result\n")
 	sb.WriteString("  funxy -lpe '<expr>'         Process stdin line-by-line\n")
-	sb.WriteString("  funxy -help                 Show this help\n")
+	sb.WriteString("  funxy -help, -h             Show this help\n")
 	sb.WriteString("  funxy -help packages        Show lib packages\n")
 	sb.WriteString("  funxy -help <package>       Show package documentation\n")
 	sb.WriteString("  funxy -help search <term>   Search documentation\n")
@@ -205,13 +205,19 @@ func PrintHelp() string {
 	sb.WriteString("Examples:\n")
 	sb.WriteString("  funxy -pe '1 + 2 * 3'\n")
 	sb.WriteString("  echo 'hello' | funxy -pe 'stringToUpper(stdin)'\n")
-	sb.WriteString("  cat data.json | funxy -pe 'stdin |>> jsonDecode |> \\x -> x.name'\n")
+	sb.WriteString("  cat data.json | funxy -pe '|>> jsonDecode |> \\x -> x.name'\n")
 	sb.WriteString("  funxy -lpe 'stringToUpper(stdin)' < file.txt\n")
 	sb.WriteString("\n")
 	sb.WriteString("Build & Distribution:\n")
 	sb.WriteString("  funxy build <file> [-o out] [--host bin] [--embed path]  Build self-contained binary\n")
 	sb.WriteString("  funxy -c <file>                           Compile to bytecode bundle (.fbc)\n")
 	sb.WriteString("  funxy -r <file>                           Run compiled bytecode (.fbc)\n")
+	sb.WriteString("\n")
+	sb.WriteString("Packages:\n")
+	sb.WriteString("  funxy pkg build <pkg> [-o out]            Embed compiled library into binary\n")
+	sb.WriteString("  funxy pkg check <bin>                     Check embedded libraries in binary\n")
+	sb.WriteString("  funxy pkg list <bin>                      List embedded libraries in binary\n")
+	sb.WriteString("  funxy pkg stubs <bin>                     Generate .d.lang stubs for libraries\n")
 	sb.WriteString("\n")
 	sb.WriteString("Go Extensions:\n")
 	sb.WriteString("  funxy ext build [-o out]                  Build custom Funxy with Go bindings\n")
@@ -230,6 +236,7 @@ func PrintHelp() string {
 	sb.WriteString("  funxy build api.lang worker.lang -o myserver # multi-command binary\n")
 	sb.WriteString("  funxy build script.lang --host release-bin/funxy-linux-amd64 -o myapp\n")
 	sb.WriteString("                                               # cross-compile for Linux\n")
+	sb.WriteString("  funxy build cmd1.lang cmd2.lang --up -o funxy # build extended interpreter\n")
 	sb.WriteString("  funxy -c script.lang && funxy -r script.fbc  # compile + run\n")
 	sb.WriteString("\n")
 	sb.WriteString("Dual-mode: pass $ as first argument to switch to interpreter mode:\n")
@@ -239,6 +246,16 @@ func PrintHelp() string {
 	sb.WriteString("  ./myapp $ -e 'print(42)'                   # eval mode\n")
 	sb.WriteString("  ./myapp $ -pe '1 + 2'                      # eval with auto-print\n")
 	sb.WriteString("  ./myapp $ --help                           # shows help\n")
+	sb.WriteString("\n")
+	sb.WriteString("Virtual Machine Manager (VMM):\n")
+	sb.WriteString("  funxy vmm <script.lang>                   Run as supervisor and spawn a cluster\n")
+	sb.WriteString("  funxy vmm ps                              List running VMs in current cluster\n")
+	sb.WriteString("  funxy vmm inspect <id>                    Show stats and live stack trace of a VM\n")
+	sb.WriteString("  funxy vmm uptime <id>                     Show VM uptime\n")
+	sb.WriteString("  funxy vmm stats <id>                      Show resource metrics of a VM\n")
+	sb.WriteString("  funxy vmm stop <id>                       Gracefully stop a VM\n")
+	sb.WriteString("  funxy vmm kill <id>                       Forcefully kill a VM\n")
+	sb.WriteString("  funxy vmm reload [id]                     Trigger hot-reload for VM(s)\n")
 	return sb.String()
 }
 
@@ -348,6 +365,9 @@ func InitDocumentation() {
 	initTermDocs()
 	initGrpcDocs()
 	initProtoDocs()
+	initVmmDocs()
+	initRpcDocs()
+	initMailboxDocs()
 
 	// Auto-generate docs for any packages that were registered but not documented
 	autoGenerateMissingDocs()
@@ -359,15 +379,16 @@ func InitDocumentation() {
 
 func initGrpcDocs() {
 	meta := map[string]*DocMeta{
-		"grpcConnect":    {Description: "Connect to gRPC server (target)", Category: "Client"},
-		"grpcClose":      {Description: "Close gRPC connection", Category: "Client"},
-		"grpcInvoke":     {Description: "Invoke gRPC method (conn, method, request)", Category: "Client"},
-		"grpcLoadProto":  {Description: "Load .proto files (path)", Category: "Configuration"},
-		"grpcServer":     {Description: "Create a new gRPC server", Category: "Server"},
-		"grpcRegister":   {Description: "Register a service implementation (server, serviceName, impl)", Category: "Server"},
-		"grpcServe":      {Description: "Start serving requests (blocking) (server, address)", Category: "Server"},
-		"grpcServeAsync": {Description: "Start serving requests (async) (server, address)", Category: "Server"},
-		"grpcStop":       {Description: "Stop the server (server)", Category: "Server"},
+		"grpcConnect":           {Description: "Connect to gRPC server (target)", Category: "Client"},
+		"grpcClose":             {Description: "Close gRPC connection", Category: "Client"},
+		"grpcInvoke":            {Description: "Invoke gRPC method (conn, method, request)", Category: "Client"},
+		"grpcLoadProto":         {Description: "Load .proto files (path)", Category: "Configuration"},
+		"grpcServer":            {Description: "Create a new gRPC server", Category: "Server"},
+		"grpcRegister":          {Description: "Register a service implementation (server, serviceName, impl)", Category: "Server"},
+		"grpcServe":             {Description: "Start serving requests (blocking) (server, address)", Category: "Server"},
+		"grpcServeAsync":        {Description: "Start serving requests (async) (server, address)", Category: "Server"},
+		"grpcStop":              {Description: "Stop the server (server)", Category: "Server"},
+		"grpcSetMaxConnections": {Description: "Set max concurrent server connections (0=unlimited)", Category: "Config"},
 	}
 	types := []*DocEntry{
 		{Name: "GrpcConn", Signature: "opaque", Description: "gRPC client connection"},
@@ -670,6 +691,9 @@ func initMapDocs() {
 		"mapRemove": {Description: "Remove key", Category: "Modification"},
 		"mapMerge":  {Description: "Merge two maps (second wins on conflict)", Category: "Modification"},
 		// Iteration
+		"mapFold":   {Description: "Fold (reduce) over map items. Signature: ((U, K, V) -> U, U, Map<K, V>) -> U", Category: "Iteration"},
+		"mapMap":    {Description: "Create a new map by applying a function to each key-value pair", Category: "Iteration"},
+		"mapFilter": {Description: "Create a new map containing only items that satisfy the predicate", Category: "Iteration"},
 		"mapKeys":   {Description: "Get all keys as List", Category: "Iteration"},
 		"mapValues": {Description: "Get all values as List", Category: "Iteration"},
 		"mapItems":  {Description: "Get all key-value pairs as List<(K,V)>", Category: "Iteration"},
@@ -841,6 +865,9 @@ func initIODocs() {
 		// Path type checks
 		"isDir":  {Description: "Check if path is a directory", Category: "Path Check"},
 		"isFile": {Description: "Check if path is a regular file", Category: "Path Check"},
+
+		// Bytecode
+		"runBytecode": {Description: "Load and run compiled bytecode (.fbc) from file path. Requires lib/io capability in sandbox.", Category: "Bytecode"},
 	}
 	pkg := generatePackageDocs("lib/io", "File and stream I/O", meta, nil)
 	RegisterDocPackage(pkg)
@@ -1036,23 +1063,24 @@ func initRegexDocs() {
 
 func initHttpDocs() {
 	meta := map[string]*DocMeta{
-		"httpGet":           {Description: "HTTP GET request", Category: "Client"},
-		"httpPost":          {Description: "HTTP POST with body (String or Bytes)", Category: "Client"},
-		"httpPostJson":      {Description: "HTTP POST with JSON body (auto-encodes)", Category: "Client"},
-		"httpPut":           {Description: "HTTP PUT with body (String or Bytes)", Category: "Client"},
-		"httpDelete":        {Description: "HTTP DELETE request", Category: "Client"},
-		"httpRequest":       {Description: "Full control HTTP request (body: String or Bytes, defaults: body=\"\", timeout=0)", Category: "Client"},
-		"httpSetTimeout":    {Description: "Set request timeout (milliseconds)", Category: "Config"},
-		"httpSetNoRedirect": {Description: "When true, return 3xx responses without following redirects", Category: "Config"},
-		"httpServe":         {Description: "Start HTTP server (blocking)", Category: "Server"},
-		"httpServeAsync":    {Description: "Start HTTP server (non-blocking, returns server ID)", Category: "Server"},
-		"httpServerStop":    {Description: "Stop a running server by ID (timeout? default 5000ms)", Category: "Server"},
+		"httpGet":               {Description: "HTTP GET request. Supports http+unix:///path:/request for Unix sockets", Category: "Client"},
+		"httpPost":              {Description: "HTTP POST with body (String or Bytes)", Category: "Client"},
+		"httpPostJson":          {Description: "HTTP POST with JSON body (auto-encodes)", Category: "Client"},
+		"httpPut":               {Description: "HTTP PUT with body (String or Bytes)", Category: "Client"},
+		"httpDelete":            {Description: "HTTP DELETE request", Category: "Client"},
+		"httpRequest":           {Description: "Full control HTTP request (body: String or Bytes, defaults: body=\"\", timeout=0)", Category: "Client"},
+		"httpSetTimeout":        {Description: "Set request timeout (milliseconds)", Category: "Config"},
+		"httpSetNoRedirect":     {Description: "When true, return 3xx responses without following redirects", Category: "Config"},
+		"httpSetMaxConnections": {Description: "Set max concurrent server connections (0=unlimited)", Category: "Config"},
+		"httpServe":             {Description: "Start HTTP server (blocking)", Category: "Server"},
+		"httpServeAsync":        {Description: "Start HTTP server (non-blocking, returns server ID)", Category: "Server"},
+		"httpServerStop":        {Description: "Stop a running server by ID (timeout? default 5000ms)", Category: "Server"},
 	}
 	types := []*DocEntry{
 		{Name: "HttpResponse", Signature: "{ status: Int, body: String, headers: List<(String, String)> }", Description: "HTTP response type"},
 		{Name: "HttpRequest", Signature: "{ method: String, path: String, query: String, headers: List<(String, String)>, body: String }", Description: "HTTP request type (server)"},
 	}
-	pkg := generatePackageDocs("lib/http", "HTTP client and server", meta, types)
+	pkg := generatePackageDocs("lib/http", "HTTP client and server. Use http+unix:///socket:/path for Unix domain sockets", meta, types)
 	RegisterDocPackage(pkg)
 }
 
@@ -1067,14 +1095,15 @@ func initTestDocs() {
 		"testSkip":       {Description: "Skip current test with reason", Category: "Test Definition"},
 		"testExpectFail": {Description: "Test that is expected to fail (for known bugs)", Category: "Test Definition"},
 		// Assertions
-		"assert":       {Description: "Assert condition is true", Category: "Assertions"},
-		"assertTrue":   {Description: "Assert value is true", Category: "Assertions"},
-		"assertFalse":  {Description: "Assert value is false", Category: "Assertions"},
-		"assertEquals": {Description: "Assert two values are equal", Category: "Assertions"},
-		"assertOk":     {Description: "Assert Result is Ok", Category: "Assertions"},
-		"assertFail":   {Description: "Assert Result is Fail", Category: "Assertions"},
-		"assertSome":   {Description: "Assert Option is Some", Category: "Assertions"},
-		"assertNone":   {Description: "Assert Option is None", Category: "Assertions"},
+		"assert":          {Description: "Assert condition is true", Category: "Assertions"},
+		"assertTrue":      {Description: "Assert value is true", Category: "Assertions"},
+		"assertFalse":     {Description: "Assert value is false", Category: "Assertions"},
+		"assertEquals":    {Description: "Assert two values are equal", Category: "Assertions"},
+		"assertNotEquals": {Description: "Assert two values are not equal", Category: "Assertions"},
+		"assertOk":        {Description: "Assert Result is Ok", Category: "Assertions"},
+		"assertFail":      {Description: "Assert Result is Fail", Category: "Assertions"},
+		"assertSome":      {Description: "Assert Option is Some", Category: "Assertions"},
+		"assertNone":      {Description: "Assert Option is None", Category: "Assertions"},
 		// HTTP mocks
 		"mockHttp":       {Description: "Mock HTTP response for URL pattern", Category: "HTTP Mocks"},
 		"mockHttpError":  {Description: "Mock HTTP error for URL pattern", Category: "HTTP Mocks"},
@@ -1088,6 +1117,16 @@ func initTestDocs() {
 		"mockEnv":       {Description: "Mock environment variable", Category: "Env Mocks"},
 		"mockEnvOff":    {Description: "Disable all env mocks", Category: "Env Mocks"},
 		"mockEnvBypass": {Description: "Bypass env mocks for one call", Category: "Env Mocks"},
+		// Funxy VMM
+		"mockMailboxSend":        {Description: "Mock mailbox send for target VM", Category: "Funxy VMM"},
+		"mockMailboxOff":         {Description: "Disable all mailbox mocks", Category: "Funxy VMM"},
+		"mockSupervisorEvent":    {Description: "Mock supervisor receiveEventWait via callback(timeoutMs)", Category: "Funxy VMM"},
+		"mockSupervisorEventOff": {Description: "Disable mocked supervisor events", Category: "Funxy VMM"},
+		"mockRpc":                {Description: "Mock RPC call for target VM and method", Category: "Funxy VMM"},
+		"mockRpcOff":             {Description: "Disable all RPC mocks", Category: "Funxy VMM"},
+		"testSpawnVM":            {Description: "Spawn a cluster VM for integration testing", Category: "Funxy VMM"},
+		"testSpawnVMGroup":       {Description: "Spawn a group of identical cluster VMs for integration testing", Category: "Funxy VMM"},
+		"testSpawnLoad":          {Description: "Spawn a load generator for integration testing", Category: "Funxy VMM"},
 	}
 	pkg := generatePackageDocs("lib/test", "Testing framework with assertions and mocking", meta, nil)
 	RegisterDocPackage(pkg)
@@ -1180,9 +1219,10 @@ func initWsDocs() {
 		"wsClose":          {Description: "Close connection", Category: "Client"},
 
 		// Server
-		"wsServe":      {Description: "Start blocking WebSocket server", Category: "Server"},
-		"wsServeAsync": {Description: "Start non-blocking server (returns ID)", Category: "Server"},
-		"wsServerStop": {Description: "Stop async server by ID", Category: "Server"},
+		"wsServe":             {Description: "Start blocking WebSocket server", Category: "Server"},
+		"wsServeAsync":        {Description: "Start non-blocking server (returns ID)", Category: "Server"},
+		"wsServerStop":        {Description: "Stop async server by ID", Category: "Server"},
+		"wsSetMaxConnections": {Description: "Set max concurrent server connections (0=unlimited)", Category: "Config"},
 	}
 	pkg := generatePackageDocs("lib/ws", "WebSocket client and server (RFC 6455)", meta, nil)
 	RegisterDocPackage(pkg)
@@ -1545,17 +1585,18 @@ func initTermDocs() {
 		"termColors": {Description: "Detect color support: 0=none, 1=basic, 256=256-color, 16777216=truecolor", Category: "Utility"},
 		"cprint":     {Description: "Print with style: cprint(red, \"error\", \"message\")", Category: "Utility"},
 		// Terminal control
-		"termSize":      {Description: "Get terminal size as (cols, rows) tuple", Category: "Terminal"},
-		"termIsTTY":     {Description: "Check if stdout is a terminal (not piped/redirected)", Category: "Terminal"},
-		"termClear":     {Description: "Clear the terminal screen", Category: "Terminal"},
-		"termClearLine": {Description: "Clear the current line", Category: "Terminal"},
-		"cursorUp":      {Description: "Move cursor up by n lines", Category: "Cursor"},
-		"cursorDown":    {Description: "Move cursor down by n lines", Category: "Cursor"},
-		"cursorLeft":    {Description: "Move cursor left by n columns", Category: "Cursor"},
-		"cursorRight":   {Description: "Move cursor right by n columns", Category: "Cursor"},
-		"cursorTo":      {Description: "Move cursor to absolute position (col, row)", Category: "Cursor"},
-		"cursorHide":    {Description: "Hide the cursor", Category: "Cursor"},
-		"cursorShow":    {Description: "Show the cursor", Category: "Cursor"},
+		"termSize":       {Description: "Get terminal size as (cols, rows) tuple", Category: "Terminal"},
+		"termIsTTY":      {Description: "Check if stdout is a terminal (not piped/redirected)", Category: "Terminal"},
+		"termIsStdinTTY": {Description: "Check if stdin is a terminal (interactive input)", Category: "Terminal"},
+		"termClear":      {Description: "Clear the terminal screen", Category: "Terminal"},
+		"termClearLine":  {Description: "Clear the current line", Category: "Terminal"},
+		"cursorUp":       {Description: "Move cursor up by n lines", Category: "Cursor"},
+		"cursorDown":     {Description: "Move cursor down by n lines", Category: "Cursor"},
+		"cursorLeft":     {Description: "Move cursor left by n columns", Category: "Cursor"},
+		"cursorRight":    {Description: "Move cursor right by n columns", Category: "Cursor"},
+		"cursorTo":       {Description: "Move cursor to absolute position (col, row)", Category: "Cursor"},
+		"cursorHide":     {Description: "Hide the cursor", Category: "Cursor"},
+		"cursorShow":     {Description: "Show the cursor", Category: "Cursor"},
 		// Raw mode & key reading
 		"termRaw":     {Description: "Enter raw terminal mode (no echo, no line buffering). Required before readKey", Category: "Raw Input"},
 		"termRestore": {Description: "Restore terminal to normal mode. Always call this when done with raw input", Category: "Raw Input"},
@@ -1582,5 +1623,65 @@ func initTermDocs() {
 		"table": {Description: "Print formatted table with Unicode box-drawing. table(headers, rows)", Category: "Table"},
 	}
 	pkg := generatePackageDocs("lib/term", "Terminal UI: colors, styles, prompts, spinners, progress bars, tables. Auto-detects color support, respects $NO_COLOR.", meta, nil)
+	RegisterDocPackage(pkg)
+}
+
+// ============================================================================
+// lib/vmm
+// ============================================================================
+
+func initVmmDocs() {
+	meta := map[string]*DocMeta{
+		"spawnVM":          {Description: "Spawn a new isolated Funxy VM from a .fbc or .lang file path, with restricted capabilities defined in the config record", Category: "VMM"},
+		"spawnVMGroup":     {Description: "Spawn a group of identical isolated Funxy VMs", Category: "VMM"},
+		"killVM":           {Description: "Kill a running VM by its ID (hard stop)", Category: "VMM"},
+		"traceOn":          {Description: "Enable RPC trace stream; with vmId for one VM, without args for all VMs", Category: "VMM"},
+		"traceOff":         {Description: "Disable RPC trace stream; with vmId for one VM, without args to disable global/all", Category: "VMM"},
+		"stopVM":           {Description: "Stop a running VM gracefully by its ID, with optional state saving and timeout", Category: "VMM"},
+		"listVMs":          {Description: "List all running VM IDs managed by the hypervisor", Category: "VMM"},
+		"vmStats":          {Description: "Get CPU/Memory metrics for a specific VM", Category: "VMM"},
+		"rpcCircuitStats":  {Description: "Get hypervisor RPC circuit breaker diagnostics for a specific VM", Category: "VMM"},
+		"receiveEventWait": {Description: "Block and receive the next VM lifecycle event (optionally with timeoutMs); lifecycle events include vmId and monotonic seq watermark", Category: "VMM"},
+		"serialize":        {Description: "Serialize a value to bytes (format? default \"ephemeral\")", Category: "State"},
+		"deserialize":      {Description: "Deserialize bytes to a value", Category: "State"},
+		"getState":         {Description: "Get the current VM state. Returns Option<a>; use getState() ?? default for a default value when None", Category: "State"},
+		"setState":         {Description: "Set the current VM state", Category: "State"},
+	}
+	pkg := generatePackageDocs("lib/vmm", "Virtual Machine Manager and state orchestration", meta, nil)
+	RegisterDocPackage(pkg)
+}
+
+// ============================================================================
+// lib/rpc
+// ============================================================================
+
+func initRpcDocs() {
+	meta := map[string]*DocMeta{
+		"callWait":      {Description: "Synchronously call a function by name on another running VM", Category: "RPC"},
+		"callWaitGroup": {Description: "Synchronously call a function by name on another running VM in a specific group (Round Robin)", Category: "RPC"},
+	}
+	pkg := generatePackageDocs("lib/rpc", "RPC cross-VM communication", meta, nil)
+	RegisterDocPackage(pkg)
+}
+
+// ============================================================================
+// lib/mailbox
+// ============================================================================
+
+func initMailboxDocs() {
+	meta := map[string]*DocMeta{
+		"send":          {Description: "Send a message asynchronously to targetId (non-blocking if full, drops according to strategy)", Category: "Mailbox"},
+		"sendWait":      {Description: "Send a message, blocking if full (up to timeoutMs) if strategy is blockOrError", Category: "Mailbox"},
+		"reply":         {Description: "Reply to a received message using its 'from' and 'id' fields", Category: "Mailbox"},
+		"replyWait":     {Description: "Reply to a message, blocking if full (up to timeoutMs)", Category: "Mailbox"},
+		"requestWait":   {Description: "Send request and wait for a response matching the generated request ID (RPC style)", Category: "Mailbox"},
+		"receive":       {Description: "Extract the highest priority message from the queue, non-blocking", Category: "Mailbox"},
+		"receiveWait":   {Description: "Block until a message is available and extract it", Category: "Mailbox"},
+		"receiveBy":     {Description: "Extract the first message matching a predicate function, non-blocking", Category: "Mailbox"},
+		"receiveByWait": {Description: "Block until a message matching a predicate is available and extract it", Category: "Mailbox"},
+		"peek":          {Description: "Get the highest priority message without extracting it", Category: "Mailbox"},
+		"peekBy":        {Description: "Get the first message matching a predicate without extracting it", Category: "Mailbox"},
+	}
+	pkg := generatePackageDocs("lib/mailbox", "Asynchronous actor messaging and queuing", meta, nil)
 	RegisterDocPackage(pkg)
 }

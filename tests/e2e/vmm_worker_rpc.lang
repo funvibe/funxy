@@ -1,0 +1,9 @@
+import "lib/time" (sleepMs)
+
+fun ping(msg) {
+    "pong: " ++ msg
+}
+
+while true {
+    sleepMs(100)
+}

@@ -1,12 +1,24 @@
 package evaluator
 
 import (
+	"context"
 	"fmt"
-	"github.com/funvibe/funxy/internal/typesystem"
+	"os"
+	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
+
+// HypervisorInterface allows the test runner to interact with the real hypervisor without cyclical imports
+type HypervisorInterface interface {
+	SpawnVM(path string, config map[string]interface{}) (string, error)
+	KillVM(id string, saveState bool, timeoutMs int) ([]byte, error)
+	GetStats(id string) (map[string]uint64, error)
+	InjectHandlers(e *Evaluator)
+}
 
 // ============================================================================
 // Test Runner State (global for the test session)
@@ -27,6 +39,7 @@ type TestRunner struct {
 	Results     []TestResult
 	CurrentTest string
 	Evaluator   *Evaluator
+	Hypervisor  interface{} // Holds the Hypervisor instance
 
 	// HTTP mocks: pattern -> response or error
 	HttpMocks       map[string]Object // pattern -> HttpResponse record
@@ -43,6 +56,24 @@ type TestRunner struct {
 	EnvMocks       map[string]string
 	EnvMocksActive bool
 	EnvBypass      bool
+
+	// RPC mocks: "targetVm:method" -> callback function
+	RpcMocks       map[string]Object
+	RpcMocksActive bool
+
+	// Mailbox mocks: "targetVm" -> callback function
+	MailboxMocks       map[string]Object
+	MailboxMocksActive bool
+
+	// Supervisor event mock: callback(timeoutMs: Int) -> Record
+	SupervisorEventMock        Object
+	SupervisorEventMocksActive bool
+
+	// Cluster VMs spawned during the current test
+	SpawnedVMs []string
+
+	// Active load generators to clean up
+	ActiveLoads []context.CancelFunc
 }
 
 // Global test runner instance
@@ -52,23 +83,32 @@ var (
 )
 
 // InitTestRunner creates or resets the test runner
-func InitTestRunner(e *Evaluator) {
+func InitTestRunner(e *Evaluator, h interface{}) {
 	testRunnerOnce.Do(func() {
 		testRunner = &TestRunner{
-			Evaluator:       e,
-			HttpMocks:       make(map[string]Object),
-			HttpMockErrors:  make(map[string]string),
-			HttpMocksActive: false,
-			FileMocks:       make(map[string]Object),
-			FileMocksActive: false,
-			EnvMocks:        make(map[string]string),
-			EnvMocksActive:  false,
-			Results:         make([]TestResult, 0),
+			Evaluator:                  e,
+			Hypervisor:                 h,
+			HttpMocks:                  make(map[string]Object),
+			HttpMockErrors:             make(map[string]string),
+			HttpMocksActive:            false,
+			FileMocks:                  make(map[string]Object),
+			FileMocksActive:            false,
+			EnvMocks:                   make(map[string]string),
+			EnvMocksActive:             false,
+			RpcMocks:                   make(map[string]Object),
+			RpcMocksActive:             false,
+			MailboxMocks:               make(map[string]Object),
+			MailboxMocksActive:         false,
+			SupervisorEventMocksActive: false,
+			SpawnedVMs:                 make([]string, 0),
+			ActiveLoads:                make([]context.CancelFunc, 0),
+			Results:                    make([]TestResult, 0),
 		}
 	})
 	// If already initialized, update evaluator and reset state completely
 	if testRunner != nil {
 		testRunner.Evaluator = e
+		testRunner.Hypervisor = h
 		testRunner.ResetMocks()
 		testRunner.ClearResults() // Fix: Clear previous results to avoid pollution
 	}
@@ -78,11 +118,14 @@ func InitTestRunner(e *Evaluator) {
 func GetTestRunner() *TestRunner {
 	testRunnerOnce.Do(func() {
 		testRunner = &TestRunner{
-			HttpMocks:      make(map[string]Object),
-			HttpMockErrors: make(map[string]string),
-			FileMocks:      make(map[string]Object),
-			EnvMocks:       make(map[string]string),
-			Results:        make([]TestResult, 0),
+			HttpMocks:                  make(map[string]Object),
+			HttpMockErrors:             make(map[string]string),
+			FileMocks:                  make(map[string]Object),
+			EnvMocks:                   make(map[string]string),
+			RpcMocks:                   make(map[string]Object),
+			MailboxMocks:               make(map[string]Object),
+			Results:                    make([]TestResult, 0),
+			SupervisorEventMocksActive: false,
 		}
 	})
 	return testRunner
@@ -112,6 +155,30 @@ func (tr *TestRunner) ResetMocks() {
 	tr.EnvMocks = make(map[string]string)
 	tr.EnvMocksActive = false
 	tr.EnvBypass = false
+
+	tr.RpcMocks = make(map[string]Object)
+	tr.RpcMocksActive = false
+
+	tr.MailboxMocks = make(map[string]Object)
+	tr.MailboxMocksActive = false
+	tr.SupervisorEventMock = nil
+	tr.SupervisorEventMocksActive = false
+
+	// Clean up all VMs spawned during this test
+	if tr.Hypervisor != nil {
+		if hyp, ok := tr.Hypervisor.(HypervisorInterface); ok {
+			for _, id := range tr.SpawnedVMs {
+				_, _ = hyp.KillVM(id, false, 5) // Extremely short timeout, don't block tests
+			}
+		}
+	}
+	tr.SpawnedVMs = make([]string, 0)
+
+	// Stop any active load generators
+	for _, cancel := range tr.ActiveLoads {
+		cancel()
+	}
+	tr.ActiveLoads = make([]context.CancelFunc, 0)
 }
 
 // ============================================================================
@@ -257,6 +324,72 @@ func (tr *TestRunner) ShouldBlockEnv(key string) bool {
 	return true
 }
 
+// FindRpcMock looks for a matching RPC mock for the given target and method
+func (tr *TestRunner) FindRpcMock(targetVm, method string) (Object, bool) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	if !tr.RpcMocksActive {
+		return nil, false
+	}
+
+	key := fmt.Sprintf("%s:%s", targetVm, method)
+	if callback, ok := tr.RpcMocks[key]; ok {
+		return callback, true
+	}
+
+	// Check wildcard method
+	wildcardKey := fmt.Sprintf("%s:*", targetVm)
+	if callback, ok := tr.RpcMocks[wildcardKey]; ok {
+		return callback, true
+	}
+
+	// Check wildcard target
+	wildcardTargetKey := fmt.Sprintf("*:%s", method)
+	if callback, ok := tr.RpcMocks[wildcardTargetKey]; ok {
+		return callback, true
+	}
+
+	// Check full wildcard
+	if callback, ok := tr.RpcMocks["*:*"]; ok {
+		return callback, true
+	}
+
+	return nil, false
+}
+
+// FindMailboxMock looks for a matching Mailbox mock for the given target
+func (tr *TestRunner) FindMailboxMock(targetVm string) (Object, bool) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	if !tr.MailboxMocksActive {
+		return nil, false
+	}
+
+	if callback, ok := tr.MailboxMocks[targetVm]; ok {
+		return callback, true
+	}
+
+	// Check wildcard target
+	if callback, ok := tr.MailboxMocks["*"]; ok {
+		return callback, true
+	}
+
+	return nil, false
+}
+
+// FindSupervisorEventMock returns callback for mocked supervisor receiveEventWait.
+func (tr *TestRunner) FindSupervisorEventMock() (Object, bool) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	if !tr.SupervisorEventMocksActive || tr.SupervisorEventMock == nil {
+		return nil, false
+	}
+	return tr.SupervisorEventMock, true
+}
+
 // ============================================================================
 // Test Builtins
 // ============================================================================
@@ -270,14 +403,15 @@ func TestBuiltins() map[string]*Builtin {
 		"testExpectFail": {Fn: builtinTestExpectFail, Name: "testExpectFail"},
 
 		// Assertions
-		"assert":       {Fn: builtinAssert, Name: "assert"},
-		"assertTrue":   {Fn: builtinAssertTrue, Name: "assertTrue"},
-		"assertFalse":  {Fn: builtinAssertFalse, Name: "assertFalse"},
-		"assertEquals": {Fn: builtinAssertEquals, Name: "assertEquals"},
-		"assertOk":     {Fn: builtinAssertOk, Name: "assertOk"},
-		"assertFail":   {Fn: builtinAssertFail, Name: "assertFail"},
-		"assertSome":   {Fn: builtinAssertSome, Name: "assertSome"},
-		"assertNone":   {Fn: builtinAssertNone, Name: "assertNone"},
+		"assert":          {Fn: builtinAssert, Name: "assert"},
+		"assertTrue":      {Fn: builtinAssertTrue, Name: "assertTrue"},
+		"assertFalse":     {Fn: builtinAssertFalse, Name: "assertFalse"},
+		"assertEquals":    {Fn: builtinAssertEquals, Name: "assertEquals"},
+		"assertNotEquals": {Fn: builtinAssertNotEquals, Name: "assertNotEquals"},
+		"assertOk":        {Fn: builtinAssertOk, Name: "assertOk"},
+		"assertFail":      {Fn: builtinAssertFail, Name: "assertFail"},
+		"assertSome":      {Fn: builtinAssertSome, Name: "assertSome"},
+		"assertNone":      {Fn: builtinAssertNone, Name: "assertNone"},
 
 		// HTTP mocks
 		"mockHttp":       {Fn: builtinMockHttp, Name: "mockHttp"},
@@ -294,6 +428,21 @@ func TestBuiltins() map[string]*Builtin {
 		"mockEnv":       {Fn: builtinMockEnv, Name: "mockEnv"},
 		"mockEnvOff":    {Fn: builtinMockEnvOff, Name: "mockEnvOff"},
 		"mockEnvBypass": {Fn: builtinMockEnvBypass, Name: "mockEnvBypass"},
+
+		// RPC mocks
+		"mockRpc":    {Fn: builtinMockRpc, Name: "mockRpc"},
+		"mockRpcOff": {Fn: builtinMockRpcOff, Name: "mockRpcOff"},
+
+		// Mailbox mocks
+		"mockMailboxSend":        {Fn: builtinMockMailboxSend, Name: "mockMailboxSend"},
+		"mockMailboxOff":         {Fn: builtinMockMailboxOff, Name: "mockMailboxOff"},
+		"mockSupervisorEvent":    {Fn: builtinMockSupervisorEvent, Name: "mockSupervisorEvent"},
+		"mockSupervisorEventOff": {Fn: builtinMockSupervisorEventOff, Name: "mockSupervisorEventOff"},
+
+		// Cluster testing
+		"testSpawnVM":      {Fn: builtinTestSpawnVM, Name: "testSpawnVM"},
+		"testSpawnVMGroup": {Fn: builtinTestSpawnVMGroup, Name: "testSpawnVMGroup"},
+		"testSpawnLoad":    {Fn: builtinTestSpawnLoad, Name: "testSpawnLoad"},
 	}
 }
 
@@ -511,6 +660,26 @@ func builtinAssertEquals(e *Evaluator, args ...Object) Object {
 			return newError("assertion failed: %s (expected %s, got %s)", msg, expected.Inspect(), actual.Inspect())
 		}
 		return newError("assertion failed: expected %s, got %s", expected.Inspect(), actual.Inspect())
+	}
+
+	return &Nil{}
+}
+
+// assertNotEquals(expected: T, actual: T, msg?: String) -> Nil
+func builtinAssertNotEquals(e *Evaluator, args ...Object) Object {
+	if len(args) < 2 || len(args) > 3 {
+		return newError("assertNotEquals expects 2-3 arguments, got %d", len(args))
+	}
+
+	expected := args[0]
+	actual := args[1]
+
+	if objectsEqual(expected, actual) {
+		msg := extractMessage(args, 2)
+		if msg != "" {
+			return newError("assertion failed: %s (expected not %s, got %s)", msg, expected.Inspect(), actual.Inspect())
+		}
+		return newError("assertion failed: expected not %s, got %s", expected.Inspect(), actual.Inspect())
 	}
 
 	return &Nil{}
@@ -823,82 +992,415 @@ func builtinMockEnvBypass(e *Evaluator, args ...Object) Object {
 	return result
 }
 
-// SetTestBuiltinTypes sets type info for test builtins
-func SetTestBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
+// mockRpc(targetVm: String, method: String, callback: (Any) -> Any) -> Nil
+func builtinMockRpc(e *Evaluator, args ...Object) Object {
+	if len(args) != 3 {
+		return newError("mockRpc expects 3 arguments, got %d", len(args))
 	}
 
-	T := typesystem.TVar{Name: "T"}
-	A := typesystem.TVar{Name: "A"}
-	E := typesystem.TVar{Name: "E"}
+	targetVmList, ok := args[0].(*List)
+	if !ok {
+		return newError("mockRpc expects a string targetVm, got %s", args[0].Type())
+	}
+	targetVm := listToString(targetVmList)
 
-	optionT := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Option"},
-		Args:        []typesystem.Type{T},
+	methodList, ok := args[1].(*List)
+	if !ok {
+		return newError("mockRpc expects a string method, got %s", args[1].Type())
 	}
+	method := listToString(methodList)
 
-	resultTE := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{T, E},
-	}
+	callback := args[2]
 
-	resultAString := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{A, stringType},
-	}
+	tr := GetTestRunner()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
 
-	headerTuple := typesystem.TTuple{
-		Elements: []typesystem.Type{stringType, stringType},
-	}
-	headersType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{headerTuple},
-	}
-	responseType := typesystem.TRecord{
-		Fields: map[string]typesystem.Type{
-			"status":  typesystem.Int,
-			"body":    stringType,
-			"headers": headersType,
-		},
-	}
+	key := fmt.Sprintf("%s:%s", targetVm, method)
+	tr.RpcMocks[key] = callback
+	tr.RpcMocksActive = true
 
-	testBodyType := typesystem.TFunc{
-		Params:     []typesystem.Type{},
-		ReturnType: typesystem.Nil,
-	}
+	return &Nil{}
+}
 
-	types := map[string]typesystem.Type{
-		"testRun":        typesystem.TFunc{Params: []typesystem.Type{stringType, testBodyType}, ReturnType: typesystem.Nil},
-		"testSkip":       typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: typesystem.Nil},
-		"testExpectFail": typesystem.TFunc{Params: []typesystem.Type{stringType, testBodyType}, ReturnType: typesystem.Nil},
-		"assert":         typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertTrue":     typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertFalse":    typesystem.TFunc{Params: []typesystem.Type{typesystem.Bool, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertEquals":   typesystem.TFunc{Params: []typesystem.Type{T, T, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertOk":       typesystem.TFunc{Params: []typesystem.Type{resultTE, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertFail":     typesystem.TFunc{Params: []typesystem.Type{resultTE, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertSome":     typesystem.TFunc{Params: []typesystem.Type{optionT, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"assertNone":     typesystem.TFunc{Params: []typesystem.Type{optionT, stringType}, ReturnType: typesystem.Nil, IsVariadic: true},
-		"mockHttp":       typesystem.TFunc{Params: []typesystem.Type{stringType, responseType}, ReturnType: typesystem.Nil},
-		"mockHttpError":  typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Nil},
-		"mockHttpOff":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"mockHttpBypass": typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: A},
-		"mockFile":       typesystem.TFunc{Params: []typesystem.Type{stringType, resultAString}, ReturnType: typesystem.Nil},
-		"mockFileOff":    typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"mockFileBypass": typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: A},
-		"mockEnv":        typesystem.TFunc{Params: []typesystem.Type{stringType, stringType}, ReturnType: typesystem.Nil},
-		"mockEnvOff":     typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.Nil},
-		"mockEnvBypass":  typesystem.TFunc{Params: []typesystem.Type{A}, ReturnType: A},
+// mockRpcOff() -> Nil
+func builtinMockRpcOff(e *Evaluator, args ...Object) Object {
+	tr := GetTestRunner()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	tr.RpcMocks = make(map[string]Object)
+	tr.RpcMocksActive = false
+
+	return &Nil{}
+}
+
+// mockMailboxSend(targetVm: String, callback: (Any) -> Any) -> Nil
+func builtinMockMailboxSend(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("mockMailboxSend expects 2 arguments, got %d", len(args))
 	}
 
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
+	targetVmList, ok := args[0].(*List)
+	if !ok {
+		return newError("mockMailboxSend expects a string targetVm, got %s", args[0].Type())
+	}
+	targetVm := listToString(targetVmList)
+
+	callback := args[1]
+
+	tr := GetTestRunner()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	tr.MailboxMocks[targetVm] = callback
+	tr.MailboxMocksActive = true
+
+	return &Nil{}
+}
+
+// mockMailboxOff() -> Nil
+func builtinMockMailboxOff(e *Evaluator, args ...Object) Object {
+	tr := GetTestRunner()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	tr.MailboxMocks = make(map[string]Object)
+	tr.MailboxMocksActive = false
+
+	return &Nil{}
+}
+
+// mockSupervisorEvent(callback: (Int) -> Record) -> Nil
+func builtinMockSupervisorEvent(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("mockSupervisorEvent expects 1 argument, got %d", len(args))
+	}
+
+	tr := GetTestRunner()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	tr.SupervisorEventMock = args[0]
+	tr.SupervisorEventMocksActive = true
+	return &Nil{}
+}
+
+// mockSupervisorEventOff() -> Nil
+func builtinMockSupervisorEventOff(e *Evaluator, args ...Object) Object {
+	tr := GetTestRunner()
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	tr.SupervisorEventMock = nil
+	tr.SupervisorEventMocksActive = false
+	return &Nil{}
+}
+
+// builtinTestSpawnVM(path: String, config: Record) -> Result<String, String>
+func builtinTestSpawnVM(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("testSpawnVM expects 2 arguments: path and config")
+	}
+
+	pathObj, ok := args[0].(*List)
+	if !ok || !IsStringList(pathObj) {
+		return newError("testSpawnVM first argument must be a String")
+	}
+	path := ListToString(pathObj)
+
+	configObj, ok := args[1].(*RecordInstance)
+	if !ok {
+		return newError("testSpawnVM second argument must be a Record")
+	}
+
+	tr := GetTestRunner()
+	if tr == nil || tr.Hypervisor == nil {
+		return makeFailStr("Hypervisor is not available in this test environment")
+	}
+
+	// We use reflection/type assertion trick to avoid circular imports.
+	// We know Hypervisor is a *funxy.Hypervisor which has SpawnVM
+	var id string
+	var err error
+
+	// Convert RecordInstance to map[string]interface{} for Hypervisor
+	configMap := make(map[string]interface{})
+	for _, field := range configObj.Fields {
+		// Just basic mapping for now, assuming config has strings/ints
+		if strList, isStr := field.Value.(*List); isStr && IsStringList(strList) {
+			configMap[field.Key] = ListToString(strList)
+		} else if intObj, isInt := field.Value.(*Integer); isInt {
+			configMap[field.Key] = int(intObj.Value)
+		} else if boolObj, isBool := field.Value.(*Boolean); isBool {
+			configMap[field.Key] = boolObj.Value
+		} else {
+			// For complex types (capabilities array, mailbox map), we'd need a deeper conversion.
+			// Let's rely on standard Go map conversion logic if needed, or pass it raw for now.
+			configMap[field.Key] = field.Value
 		}
 	}
+
+	// Handle 'capabilities' specifically since Hypervisor expects []interface{} of strings
+	if capsObj, found := getRecordField(configObj, "capabilities"); found {
+		if capsList, ok := capsObj.(*List); ok {
+			var caps []interface{}
+			elements := capsList.ToSlice()
+			for _, item := range elements {
+				if str, ok := item.(*List); ok && IsStringList(str) {
+					caps = append(caps, ListToString(str))
+				}
+			}
+			configMap["capabilities"] = caps
+		}
+	}
+
+	// Handle 'mailbox' specifically since Hypervisor expects map[string]interface{}
+	if mbObj, found := getRecordField(configObj, "mailbox"); found {
+		if mbRec, ok := mbObj.(*RecordInstance); ok {
+			mbMap := make(map[string]interface{})
+			for _, f := range mbRec.Fields {
+				if intObj, isInt := f.Value.(*Integer); isInt {
+					mbMap[f.Key] = int(intObj.Value)
+				} else if strObj, isStr := f.Value.(*List); isStr && IsStringList(strObj) {
+					mbMap[f.Key] = ListToString(strObj)
+				} else if dataObj, isData := f.Value.(*DataInstance); isData {
+					// importance is a DataInstance
+					mbMap[f.Key] = dataObj.Name
+				}
+			}
+			configMap["mailbox"] = mbMap
+		}
+	}
+
+	// Helper function to resolve paths
+	resolvePath := func(p string) string {
+		if filepath.IsAbs(p) {
+			return p
+		}
+		// In tests, resolve relative to the current working directory
+		cwd, err := os.Getwd()
+		if err == nil {
+			return filepath.Join(cwd, p)
+		}
+		return p
+	}
+
+	if hyp, ok := tr.Hypervisor.(HypervisorInterface); ok {
+		id, err = hyp.SpawnVM(resolvePath(path), configMap)
+		// Inject handlers so test scripts can interact with spawned VMs
+		hyp.InjectHandlers(e)
+	} else {
+		// Try using reflection as a fallback if the interface doesn't match perfectly
+		val := reflect.ValueOf(tr.Hypervisor)
+		method := val.MethodByName("SpawnVM")
+		if method.IsValid() {
+			args := []reflect.Value{
+				reflect.ValueOf(path),
+				reflect.ValueOf(configMap),
+			}
+			results := method.Call(args)
+			id = results[0].String()
+			if !results[1].IsNil() {
+				err = results[1].Interface().(error)
+			}
+		} else {
+			return makeFailStr("Hypervisor object does not implement required interface")
+		}
+	}
+	if err != nil {
+		return makeFailStr(err.Error())
+	}
+
+	// Track the spawned VM
+	tr.mu.Lock()
+	tr.SpawnedVMs = append(tr.SpawnedVMs, id)
+	tr.mu.Unlock()
+
+	return makeOk(stringToList(id))
 }
+
+// builtinTestSpawnVMGroup(path: String, config: Record, size: Int) -> Result<String, List<String>>
+func builtinTestSpawnVMGroup(e *Evaluator, args ...Object) Object {
+	if len(args) != 3 {
+		return newError("testSpawnVMGroup expects 3 arguments: path, config, and size")
+	}
+
+	sizeArg, ok := args[2].(*Integer)
+	if !ok {
+		return newError("testSpawnVMGroup third argument must be an Integer")
+	}
+	size := int(sizeArg.Value)
+	if size <= 0 {
+		return makeFailStr("testSpawnVMGroup size must be > 0")
+	}
+
+	var ids []Object
+	for i := 0; i < size; i++ {
+		res := builtinTestSpawnVM(e, args[0], args[1])
+
+		if dataInst, ok := res.(*DataInstance); ok {
+			if dataInst.Name == "Fail" {
+				return res
+			} else if dataInst.Name == "Ok" {
+				ids = append(ids, dataInst.Fields[0])
+			}
+		} else {
+			return makeFailStr("testSpawnVM returned invalid result type")
+		}
+	}
+
+	return makeOk(newList(ids))
+}
+
+const (
+	defaultLoadDurationMs = 1000
+	defaultLoadThreads    = 1
+	defaultLoadType       = "cpu"
+	defaultMailboxRps     = 1000
+
+	// CPU load batch size (iterations per context check)
+	// We use a batch loop to avoid the overhead of select/ctx.Done() on every single operation,
+	// which would dominate the CPU profile instead of the actual math load.
+	cpuBatchSize = 1000
+
+	// Memory load defaults
+	memoryChunkSizeBytes = 1024 * 1024 // 1MB
+	memoryAllocDelayMs   = 10
+)
+
+// builtinTestSpawnLoad(config: Record) -> Result<String, String>
+func builtinTestSpawnLoad(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return makeFailStr(fmt.Sprintf("testSpawnLoad expects 1 argument (config), got %d", len(args)))
+	}
+
+	configRecord, ok := args[0].(*RecordInstance)
+	if !ok {
+		return makeFailStr("config must be a record")
+	}
+
+	loadTypeStr := defaultLoadType
+	if tObj, ok := getRecordField(configRecord, "type"); ok {
+		if tList, isList := tObj.(*List); isList {
+			loadTypeStr = listToString(tList)
+		}
+	}
+
+	durationMs := defaultLoadDurationMs
+	if dObj, ok := getRecordField(configRecord, "duration"); ok {
+		if dInt, isInt := dObj.(*Integer); isInt {
+			durationMs = int(dInt.Value)
+		}
+	}
+
+	threads := defaultLoadThreads
+	if tObj, ok := getRecordField(configRecord, "threads"); ok {
+		if tInt, isInt := tObj.(*Integer); isInt {
+			threads = int(tInt.Value)
+		}
+	}
+
+	jobId := fmt.Sprintf("loadjob_%d", time.Now().UnixNano())
+
+	// Grab a reference to MailboxHandler in case we need it
+	var mHandler *MailboxHandler
+	if e.MailboxHandler != nil {
+		mHandler = e.MailboxHandler
+	}
+
+	tr := GetTestRunner()
+	tr.mu.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(durationMs)*time.Millisecond)
+	tr.ActiveLoads = append(tr.ActiveLoads, cancel)
+	tr.mu.Unlock()
+
+	// We can spin up goroutines based on loadTypeStr
+	go func() {
+		defer cancel()
+
+		var wg sync.WaitGroup
+		for i := 0; i < threads; i++ {
+			wg.Add(1)
+			go func(threadId int) {
+				defer wg.Done()
+				switch loadTypeStr {
+				case "cpu":
+					// tight loop doing some math
+					dummy := 0.0
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+							for j := 0; j < cpuBatchSize; j++ {
+								dummy += 1.0
+							}
+						}
+					}
+				case "memory":
+					// allocate arrays
+					var allocations [][]byte
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+							allocations = append(allocations, make([]byte, memoryChunkSizeBytes))
+							time.Sleep(memoryAllocDelayMs * time.Millisecond)
+						}
+					}
+				case "mailbox":
+					targetVm := ""
+					if tObj, ok := getRecordField(configRecord, "target_vm"); ok {
+						if tList, isList := tObj.(*List); isList {
+							targetVm = listToString(tList)
+						}
+					}
+					if targetVm == "" || mHandler == nil {
+						return
+					}
+
+					rps := defaultMailboxRps
+					if rObj, ok := getRecordField(configRecord, "rps"); ok {
+						if rInt, isInt := rObj.(*Integer); isInt {
+							rps = int(rInt.Value)
+						}
+					}
+
+					// Sleep interval between messages
+					interval := time.Second / time.Duration(rps)
+					if interval < time.Microsecond {
+						interval = time.Microsecond
+					}
+
+					ticker := time.NewTicker(interval)
+					defer ticker.Stop()
+
+					msgObj := stringToList("load_ping")
+
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case <-ticker.C:
+							// Send a fire-and-forget message
+							_ = mHandler.Send(targetVm, msgObj)
+						}
+					}
+				default:
+					// unknown load type, just wait it out
+					<-ctx.Done()
+				}
+			}(i)
+		}
+		wg.Wait()
+	}()
+
+	return makeOk(stringToList(jobId))
+}
+
+// SetTestBuiltinTypes sets type info for test builtins
 
 // GetTestResults returns all test results
 func GetTestResults() []TestResult {

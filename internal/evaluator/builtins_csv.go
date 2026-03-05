@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"strings"
 )
 
@@ -268,74 +267,6 @@ func CsvBuiltins() map[string]*Builtin {
 }
 
 // SetCsvBuiltinTypes sets type info for CSV builtins
-func SetCsvBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-
-	resultType := func(t typesystem.Type) typesystem.Type {
-		return typesystem.TApp{
-			Constructor: typesystem.TCon{Name: "Result"},
-			Args:        []typesystem.Type{stringType, t},
-		}
-	}
-
-	recordType := typesystem.TRecord{Fields: map[string]typesystem.Type{}, IsOpen: true}
-	listRecordType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{recordType},
-	}
-	listStringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{stringType},
-	}
-	listListStringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{listStringType},
-	}
-
-	types := map[string]typesystem.Type{
-		"csvParse": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultType(listRecordType),
-		},
-		"csvParseRaw": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultType(listListStringType),
-		},
-		"csvRead": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultType(listRecordType),
-		},
-		"csvReadRaw": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType},
-			ReturnType: resultType(listListStringType),
-		},
-		"csvEncode": typesystem.TFunc{
-			Params:     []typesystem.Type{listRecordType},
-			ReturnType: stringType,
-		},
-		"csvEncodeRaw": typesystem.TFunc{
-			Params:     []typesystem.Type{listListStringType},
-			ReturnType: stringType,
-		},
-		"csvWrite": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType, listRecordType},
-			ReturnType: resultType(typesystem.Nil),
-		},
-		"csvWriteRaw": typesystem.TFunc{
-			Params:     []typesystem.Type{stringType, listListStringType},
-			ReturnType: resultType(typesystem.Nil),
-		},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // Builtin function implementations
 

@@ -1,0 +1,12 @@
+import "lib/vmm" (getState, setState)
+import "lib/time" (sleepMs)
+
+initialState = getState() ?? { count: 0 }
+count = initialState.count
+
+// We don't print, just run loop
+setState({ count: count + 1 })
+
+while true {
+    sleepMs(100)
+}

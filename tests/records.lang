@@ -7,7 +7,7 @@ print(p.x)
 print(p.y)
 
 // Mutation
-p.x = 100
+p = p.x = 100
 print(p.x)
 
 // Type checking should work
@@ -19,8 +19,8 @@ r = { tl: p, br: { x: 50, y: 60 } }
 print(r.br.y)
 
 // Mutation nested
-r.tl.y = 200
+r = r.tl.y = 200
 print(r.tl.y)
-// Check reference semantic (p was mutated via r.tl)
+// Check immutable semantic (p was NOT mutated via r.tl)
 print(p.y)
 

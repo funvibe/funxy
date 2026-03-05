@@ -1,0 +1,9 @@
+import "lib/mailbox" (send)
+import "lib/time" (sleepMs)
+
+sleepMs(400)
+send("worker_recv_by_3", { payload: "a", type: "normal" })
+send("worker_recv_by_3", { payload: "b", type: "normal" })
+send("worker_recv_by_3", { payload: "urgent", type: "urgent" })
+
+for true { sleepMs(100) }

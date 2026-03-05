@@ -1,0 +1,165 @@
+import "lib/test" (testRun, assertEquals, assertOk, assertTrue, testSpawnVM)
+import "lib/vmm" (spawnVM, killVM, receiveEventWait, rpcCircuitStats)
+import "lib/rpc" (callWait, callWaitGroup)
+import "lib/time" (clockMs, sleepMs)
+
+fun ensureSupervisorApi() {
+    bootRes = testSpawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "rpc_cb_bootstrap", capabilities: ["lib/time"] })
+    assertOk(bootRes)
+    match bootRes {
+        Ok(id) -> {
+            killVM(id)
+            _ = receiveEventWait(1000)
+        }
+        Fail(_) -> ()
+    }
+}
+
+testRun("rpc circuit per-VM override via spawnVM config", \ -> {
+    ensureSupervisorApi()
+
+    spawnRes = spawnVM("./tests/e2e/vmm_worker_rpc_slow.lang", {
+        name: "rpc_circuit_override_worker",
+        capabilities: ["lib/time"],
+        rpcCircuit: {
+            failureThreshold: 1,
+            failureWindowMs: 5000,
+            openTimeoutMs: 5000
+        }
+    })
+    assertOk(spawnRes)
+
+    match spawnRes {
+        Ok(id) -> {
+            sleepMs(150)
+
+            first = callWait(id, "ping", "hello", 10)
+            match first {
+                Ok(_) -> assertTrue(false, "first call must fail by timeout")
+                Fail(e) -> assertTrue(e != "", "first call should return timeout-like error")
+            }
+
+            started = clockMs()
+            second = callWait(id, "ping", "hello", 10)
+            elapsed = clockMs() - started
+            match second {
+                Ok(_) -> assertTrue(false, "second call must fail fast with CircuitOpen")
+                Fail(e) -> assertEquals("CircuitOpen", e)
+            }
+            assertTrue(elapsed < 80, "open circuit should fail fast")
+
+            stats = rpcCircuitStats(id)
+            assertEquals("open", stats.state)
+            assertTrue(stats.failureCount >= 1, "failureCount should be >= 1 after opening")
+            assertTrue(stats.fastFailTotal >= 1, "fastFailTotal should increase after fast-fail")
+
+            killVM(id)
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("rpc callWaitGroup skips open-circuit worker", \ -> {
+    ensureSupervisorApi()
+
+    slowRes = spawnVM("./tests/e2e/vmm_worker_rpc_slow.lang", {
+        name: "rpc_group_slow",
+        group: "rpc_group_workers",
+        capabilities: ["lib/time", "lib/rpc"],
+        rpcCircuit: {
+            failureThreshold: 1,
+            failureWindowMs: 5000,
+            openTimeoutMs: 5000
+        }
+    })
+    assertOk(slowRes)
+
+    fastRes = spawnVM("./tests/e2e/vmm_worker_rpc.lang", {
+        name: "rpc_group_fast",
+        group: "rpc_group_workers",
+        capabilities: ["lib/time", "lib/rpc"]
+    })
+    assertOk(fastRes)
+
+    match slowRes {
+        Ok(slowId) -> {
+            match fastRes {
+                Ok(fastId) -> {
+                    sleepMs(150)
+
+                    // Trip breaker for slow worker.
+                    first = callWait(slowId, "ping", "hello", 10)
+                    match first {
+                        Ok(_) -> assertTrue(false, "first slow call must fail")
+                        Fail(e) -> assertTrue(e != "", "slow call should fail with timeout-like error")
+                    }
+
+                    groupRes = callWaitGroup("rpc_group_workers", "ping", "hello", 100)
+                    assertOk(groupRes)
+                    match groupRes {
+                        Ok(v) -> assertEquals("pong: hello", v)
+                        Fail(_) -> assertTrue(false, "group call must succeed on healthy node")
+                    }
+
+                    killVM(slowId)
+                    killVM(fastId)
+                }
+                Fail(_) -> ()
+            }
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("rpc callWaitGroup returns CircuitOpen when all workers are open", \ -> {
+    ensureSupervisorApi()
+
+    slowARes = spawnVM("./tests/e2e/vmm_worker_rpc_slow.lang", {
+        name: "rpc_group_all_open_slow_a",
+        group: "rpc_group_all_open",
+        capabilities: ["lib/time"],
+        rpcCircuit: {
+            failureThreshold: 1,
+            failureWindowMs: 5000,
+            openTimeoutMs: 5000
+        }
+    })
+    assertOk(slowARes)
+
+    slowBRes = spawnVM("./tests/e2e/vmm_worker_rpc_slow.lang", {
+        name: "rpc_group_all_open_slow_b",
+        group: "rpc_group_all_open",
+        capabilities: ["lib/time"],
+        rpcCircuit: {
+            failureThreshold: 1,
+            failureWindowMs: 5000,
+            openTimeoutMs: 5000
+        }
+    })
+    assertOk(slowBRes)
+
+    match slowARes {
+        Ok(slowAId) -> {
+            match slowBRes {
+                Ok(slowBId) -> {
+                    sleepMs(150)
+
+                    // Trip both workers to open state.
+                    _ = callWait(slowAId, "ping", "hello", 10)
+                    _ = callWait(slowBId, "ping", "hello", 10)
+
+                    res = callWaitGroup("rpc_group_all_open", "ping", "hello", 30)
+                    match res {
+                        Ok(_) -> assertTrue(false, "group call must fail when all circuits are open")
+                        Fail(e) -> assertEquals("CircuitOpen", e)
+                    }
+
+                    killVM(slowAId)
+                    killVM(slowBId)
+                }
+                Fail(_) -> ()
+            }
+        }
+        Fail(_) -> ()
+    }
+})

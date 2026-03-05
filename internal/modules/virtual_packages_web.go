@@ -109,6 +109,10 @@ func initHttpPackage() {
 				Params:     []typesystem.Type{typesystem.Bool},
 				ReturnType: typesystem.Nil,
 			},
+			"httpSetMaxConnections": typesystem.TFunc{
+				Params:     []typesystem.Type{typesystem.Int},
+				ReturnType: typesystem.Nil,
+			},
 
 			// ========== Server functions ==========
 

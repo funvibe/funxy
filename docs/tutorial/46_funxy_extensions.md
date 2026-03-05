@@ -116,7 +116,26 @@ If you're building a CLI tool that depends on several Funxy libraries, you can e
 
 You can create specialized versions of the Funxy interpreter for your team or project. For example, a `data-funxy` binary could come pre-loaded with data analysis libraries (`pkg/dataframe`, `pkg/plot`), ready for use in scripts or REPL.
 
-### 3. Performance
+### 3. Interpreter Extension Mode (`--up`)
+
+You can extend the `funxy` interpreter itself by embedding your Funxy scripts as CLI subcommands using the `--up` flag. This creates a binary that acts as a normal Funxy interpreter by default, but also exposes your scripts as commands.
+
+```bash
+# Compile fmt.lang and lint.lang into an extended interpreter
+funxy build fmt.lang lint.lang --up -o myfunxy
+
+# Run embedded subcommands
+./myfunxy fmt          # runs fmt.lang
+./myfunxy lint         # runs lint.lang
+
+# It still acts as a normal interpreter for other tasks!
+./myfunxy script.lang  # runs an external script
+./myfunxy -pe '1+2'    # eval mode works too
+```
+
+This is the recommended way to build developer tools like linters, formatters, or package managers written in Funxy.
+
+### 4. Performance
 
 Embedded libraries are pre-compiled to bytecode. Importing them is instant, as it skips parsing and analysis. This can significantly improve startup time for scripts with many dependencies.
 

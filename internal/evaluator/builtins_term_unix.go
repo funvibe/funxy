@@ -336,6 +336,7 @@ var (
 	rawOldTermios  syscall.Termios
 	rawKeyChannel  chan string
 	rawStopChannel chan struct{}
+	rawDoneChannel chan struct{} // signaled when keyReaderLoop has fully exited
 )
 
 // enterRawMode puts the terminal into raw mode and starts a background key reader.
@@ -382,9 +383,10 @@ func enterRawMode() error {
 
 	rawKeyChannel = make(chan string, 32)
 	rawStopChannel = make(chan struct{})
+	rawDoneChannel = make(chan struct{})
 	rawModeActive = true
 
-	go keyReaderLoop(rawKeyChannel, rawStopChannel)
+	go keyReaderLoop(rawKeyChannel, rawStopChannel, rawDoneChannel)
 
 	return nil
 }
@@ -392,15 +394,19 @@ func enterRawMode() error {
 // exitRawMode restores the terminal to its original state.
 func exitRawMode() {
 	rawMu.Lock()
-	defer rawMu.Unlock()
-
 	if !rawModeActive {
+		rawMu.Unlock()
 		return
 	}
-
 	rawModeActive = false
 	close(rawStopChannel)
+	rawMu.Unlock()
 
+	// Wait for keyReaderLoop to fully exit before restoring terminal
+	<-rawDoneChannel
+
+	rawMu.Lock()
+	defer rawMu.Unlock()
 	fd := int(os.Stdin.Fd())
 	_, _, _ = syscall.Syscall6(
 		syscall.SYS_IOCTL,
@@ -409,11 +415,13 @@ func exitRawMode() {
 		uintptr(unsafe.Pointer(&rawOldTermios)),
 		0, 0, 0,
 	)
+	resetStdinReader()
 }
 
 // keyReaderLoop runs in a goroutine, reading raw bytes from stdin and sending
-// parsed key names to the channel. Exits when stop is closed.
-func keyReaderLoop(ch chan<- string, stop <-chan struct{}) {
+// parsed key names to the channel. Exits when stop is closed. Signals done when exiting.
+func keyReaderLoop(ch chan<- string, stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
 	buf := make([]byte, 16)
 	for {
 		select {
@@ -466,6 +474,8 @@ func readKeyImpl(timeoutMs int) string {
 		}
 	}
 
+	// Note: This function doesn't have access to evaluator context
+	// The builtin wrapper should handle context cancellation
 	select {
 	case key := <-rawKeyChannel:
 		return key

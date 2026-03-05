@@ -115,22 +115,78 @@ func (e *Evaluator) evalAssignExpression(node *ast.AssignExpression, env *Enviro
 		}
 	}
 
+	// Actually we need to implement deep update for the tree-walk evaluator
+	// otherwise tests will fail in tree-walk mode.
+	if _, isMember := node.Left.(*ast.MemberExpression); isMember {
+		return e.evalDeepUpdate(node.Left, val, env)
+	} else if _, isIndex := node.Left.(*ast.IndexExpression); isIndex {
+		return e.evalDeepUpdate(node.Left, val, env)
+	}
+
 	if ident, ok := node.Left.(*ast.Identifier); ok {
 		if !env.Update(ident.Value, val) {
 			env.Set(ident.Value, val)
 		}
 		return val
-	} else if ma, ok := node.Left.(*ast.MemberExpression); ok {
-		obj := e.Eval(ma.Left, env)
-		if isError(obj) {
-			return obj
-		}
-
-		if record, ok := obj.(*RecordInstance); ok {
-			record.Set(ma.Member.Value, val)
-			return val
-		}
-		return newError("assignment to member expects Record, got %s", obj.Type())
 	}
 	return newError("invalid assignment target")
+}
+
+// evalDeepUpdate implements recursive path updating for tree-walk evaluator (similar to OP_UPDATE_PATH)
+func (e *Evaluator) evalDeepUpdate(pathExpr ast.Expression, val Object, env *Environment) Object {
+	switch n := pathExpr.(type) {
+	case *ast.MemberExpression:
+		// e.g. r.b.c = val -> base = r.b, member = c
+		base := e.Eval(n.Left, env)
+		if isError(base) {
+			return base
+		}
+		if record, ok := base.(*RecordInstance); ok {
+			newRec := record.Put(n.Member.Value, val)
+			// Now we need to update the parent if n.Left is also a Member/Index
+			if isPathNode(n.Left) {
+				return e.evalDeepUpdate(n.Left, newRec, env)
+			}
+			return newRec
+		}
+		return newError("assignment to member expects Record, got %s", base.Type())
+
+	case *ast.IndexExpression:
+		base := e.Eval(n.Left, env)
+		if isError(base) {
+			return base
+		}
+		indexObj := e.Eval(n.Index, env)
+		if isError(indexObj) {
+			return indexObj
+		}
+
+		var newContainer Object
+		switch coll := base.(type) {
+		case *List:
+			if idx, ok := indexObj.(*Integer); ok {
+				newContainer = coll.Set(int(idx.Value), val)
+			} else {
+				return newError("list index must be integer, got %s", indexObj.Type())
+			}
+		case *Map:
+			newContainer = coll.Put(indexObj, val)
+		default:
+			return newError("index assignment expects List or Map, got %s", base.Type())
+		}
+
+		if isPathNode(n.Left) {
+			return e.evalDeepUpdate(n.Left, newContainer, env)
+		}
+		return newContainer
+	}
+	return newError("invalid path expression")
+}
+
+func isPathNode(node ast.Expression) bool {
+	switch node.(type) {
+	case *ast.MemberExpression, *ast.IndexExpression:
+		return true
+	}
+	return false
 }

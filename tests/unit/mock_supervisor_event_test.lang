@@ -1,0 +1,20 @@
+import "lib/test" (testRun, testExpectFail, assertEquals, mockSupervisorEvent, mockSupervisorEventOff)
+import "lib/vmm" (receiveEventWait)
+
+testRun("mockSupervisorEvent intercept receiveEventWait", \ -> {
+    mockSupervisorEvent(\timeoutMs -> {
+        { type: "exit", vmId: "worker_mocked", status: "stopped", seenTimeout: timeoutMs }
+    })
+
+    evt = receiveEventWait(1234)
+    assertEquals("exit", evt.type)
+    assertEquals("worker_mocked", evt.vmId)
+    assertEquals("stopped", evt.status)
+    assertEquals(1234, evt.seenTimeout)
+})
+
+testExpectFail("mockSupervisorEvent off restores real behavior", \ -> {
+    mockSupervisorEvent(\timeoutMs -> { type: "exit", vmId: "x", status: "stopped" })
+    mockSupervisorEventOff()
+    _ = receiveEventWait(10)
+})

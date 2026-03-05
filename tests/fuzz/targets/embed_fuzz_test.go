@@ -33,7 +33,7 @@ func FuzzMarshallerRoundTrip(f *testing.F) {
 			return
 		}
 
-		m := funxy.NewMarshaller()
+		m := funxy.NewMarshaller(nil)
 
 		// Generate a Go value from the fuzz data
 		val := fuzzGoValue(data)
@@ -64,7 +64,7 @@ func FuzzMarshallerToValue(f *testing.F) {
 		if len(data) == 0 {
 			return
 		}
-		m := funxy.NewMarshaller()
+		m := funxy.NewMarshaller(nil)
 		val := fuzzGoValue(data)
 		// Must not panic
 		_, _ = m.ToValue(val)
@@ -80,7 +80,7 @@ func FuzzMarshallerMapRoundTrip(f *testing.F) {
 	f.Add(uint8(10), []byte("hello world foo bar"))
 
 	f.Fuzz(func(t *testing.T, size uint8, data []byte) {
-		m := funxy.NewMarshaller()
+		m := funxy.NewMarshaller(nil)
 
 		// Build map[string]int from fuzz data.
 		// Use ASCII letters for keys to avoid UTF-8 encoding collisions

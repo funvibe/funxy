@@ -52,10 +52,10 @@ print(r)
 type alias Counter = { value: Int }
 
 c: Counter = { value: 0 }
-c.value += 10
+c = c.value += 10
 print(c.value)
 
-c.value *= 5
+c = c.value *= 5
 print(c.value)
 
 print(getType(c))

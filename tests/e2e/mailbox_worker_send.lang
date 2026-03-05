@@ -1,0 +1,10 @@
+import "lib/mailbox" (send)
+import "lib/time" (sleepMs)
+
+sleepMs(300)
+send("worker_recv", { payload: "hello" })
+
+// Keep alive
+for true {
+    sleepMs(100)
+}

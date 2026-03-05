@@ -27,6 +27,30 @@ xs[2]      // 30
 xs[-1]     // 40 (from end)
 ```
 
+### Modification (Immutable)
+
+Funxy lists are immutable. When you assign to an index, the expression evaluates to a new list with the updated element. The original list remains unchanged.
+
+```rust
+xs = [10, 20, 30]
+xs2 = xs[1] = 99 // Returns a new list
+
+print(xs)  // [10, 20, 30] (original is unchanged)
+print(xs2) // [10, 99, 30]
+
+// To "mutate" a variable, reassign it:
+xs = xs[1] = 99
+```
+
+> **Warning:** Discarding the result of an immutable update expression (e.g. `xs[0] = 10` as a standalone statement without assignment) will result in a compilation error: `type error: pure expression result discarded`. However, it is perfectly legal to use it as a return value:
+
+```rust
+fun updateFirst(lst: List<Int>, val: Int) -> List<Int> {
+    // Valid: implicitly returns the new list
+    lst[0] = val
+}
+```
+
 ### Concatenation and Cons
 
 ```rust

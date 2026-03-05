@@ -1,0 +1,186 @@
+import "lib/test" (testRun, assertEquals, assertTrue, mockSupervisorEvent, mockSupervisorEventOff)
+import "kit/vmm" (defaultRestartPolicy, restartBackoffMs, recordRestartAt, waitLifecycleEventForVm, consumeEventWithGap, consumeAndReconcile, waitLifecycleEventForVmWithReconcile, waitVmExit, waitVmCrash, awaitLifecycle)
+
+testRun("kit/vmm backoff grows and caps", \ -> {
+    p = defaultRestartPolicy()
+    assertEquals(0, restartBackoffMs(1, p.initialBackoffMs, p.maxBackoffMs))
+    b2 = restartBackoffMs(2, p.initialBackoffMs, p.maxBackoffMs)
+    b5 = restartBackoffMs(5, p.initialBackoffMs, p.maxBackoffMs)
+    assertTrue(b2 > 0, "second restart should back off")
+    assertTrue(b5 >= b2, "backoff should not decrease")
+    assertTrue(b5 <= p.maxBackoffMs, "backoff should cap at maxBackoffMs")
+})
+
+testRun("kit/vmm restart window keeps only recent timestamps", \ -> {
+    p = {
+        maxRestarts: 5,
+        windowMs: 1000,
+        initialBackoffMs: 200,
+        maxBackoffMs: 5000,
+        stateProbeMs: 500,
+        eventStepTimeoutMs: 5000
+    }
+    xs1 = recordRestartAt(1000, [], p.windowMs)
+    xs2 = recordRestartAt(1500, xs1, p.windowMs)
+    xs3 = recordRestartAt(2601, xs2, p.windowMs)
+    assertEquals(2, len(xs2))
+    assertEquals(1, len(xs3))
+    assertEquals(2601, xs3[0])
+})
+
+testRun("kit/vmm waitLifecycleEventForVm filters unrelated events", \ -> {
+    calls = 0
+    mockSupervisorEvent(\timeoutMs -> {
+        calls = calls + 1
+        if calls == 1 {
+            { type: "exit", vmId: "other", status: "stopped" }
+        } else {
+            { type: "crash", vmId: "target", status: "crashed" }
+        }
+    })
+
+    evt = waitLifecycleEventForVm("target", 1000)
+    assertEquals("target", evt.vmId)
+    assertEquals("crash", evt.type)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm consumeEventWithGap detects seq gaps", \ -> {
+    mockSupervisorEvent(\timeoutMs -> {
+        { type: "exit", vmId: "target", status: "stopped", seq: 15 }
+    })
+
+    res = consumeEventWithGap(10, 1000)
+    assertEquals(true, res.gap)
+    assertEquals(4, res.gapCount)
+    assertEquals(15, res.lastSeq)
+    assertEquals("target", res.event.vmId)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm consumeEventWithGap keeps seq on timeout", \ -> {
+    mockSupervisorEvent(\timeoutMs -> {
+        { type: "timeout", timed_out: true }
+    })
+
+    res = consumeEventWithGap(42, 1000)
+    assertEquals(false, res.gap)
+    assertEquals(0, res.gapCount)
+    assertEquals(42, res.lastSeq)
+    assertEquals("timeout", res.event.type)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm consumeAndReconcile calls callback on gap", \ -> {
+    seenGapCount = 0
+    mockSupervisorEvent(\timeoutMs -> {
+        { type: "exit", vmId: "target", status: "stopped", seq: 20 }
+    })
+
+    res = consumeAndReconcile(10, 1000, \gapCount -> {
+        seenGapCount = gapCount
+        ()
+    })
+
+    assertEquals(true, res.gap)
+    assertEquals(9, seenGapCount)
+    assertEquals(20, res.lastSeq)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm consumeAndReconcile does not call callback without gap", \ -> {
+    called = false
+    mockSupervisorEvent(\timeoutMs -> {
+        { type: "exit", vmId: "target", status: "stopped", seq: 11 }
+    })
+
+    res = consumeAndReconcile(10, 1000, \gapCount -> {
+        called = true
+        ()
+    })
+
+    assertEquals(false, res.gap)
+    assertEquals(false, called)
+    assertEquals(11, res.lastSeq)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm waitLifecycleEventForVmWithReconcile tracks seq and gaps", \ -> {
+    seenGapCount = 0
+    calls = 0
+    mockSupervisorEvent(\timeoutMs -> {
+        calls = calls + 1
+        if calls == 1 {
+            { type: "exit", vmId: "other", status: "stopped", seq: 5 }
+        } else {
+            { type: "crash", vmId: "target", status: "crashed", seq: 8 }
+        }
+    })
+
+    res = waitLifecycleEventForVmWithReconcile("target", 1000, 4, \gapCount -> {
+        seenGapCount = gapCount
+        ()
+    })
+
+    assertEquals("target", res.event.vmId)
+    assertEquals("crash", res.event.type)
+    assertEquals(8, res.lastSeq)
+    assertEquals(2, seenGapCount)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm waitVmExit waits for exit of target VM", \ -> {
+    calls = 0
+    mockSupervisorEvent(\timeoutMs -> {
+        calls = calls + 1
+        if calls == 1 {
+            { type: "crash", vmId: "target", status: "crashed" }
+        } else {
+            { type: "exit", vmId: "target", status: "stopped" }
+        }
+    })
+
+    evt = waitVmExit("target", 1000)
+    assertEquals("exit", evt.type)
+    assertEquals("target", evt.vmId)
+    assertEquals(2, calls)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm waitVmCrash waits for crash of target VM", \ -> {
+    calls = 0
+    mockSupervisorEvent(\timeoutMs -> {
+        calls = calls + 1
+        if calls == 1 {
+            { type: "exit", vmId: "target", status: "stopped" }
+        } else {
+            { type: "crash", vmId: "target", status: "crashed" }
+        }
+    })
+
+    evt = waitVmCrash("target", 1000)
+    assertEquals("crash", evt.type)
+    assertEquals("target", evt.vmId)
+    assertEquals(2, calls)
+
+    mockSupervisorEventOff()
+})
+
+testRun("kit/vmm awaitLifecycle aliases lifecycle wait", \ -> {
+    mockSupervisorEvent(\timeoutMs -> {
+        { type: "vm_exit", vmId: "target", status: "crashed", reason: "limit_exceeded" }
+    })
+
+    evt = awaitLifecycle("target", 1000)
+    assertEquals("vm_exit", evt.type)
+    assertEquals("target", evt.vmId)
+
+    mockSupervisorEventOff()
+})

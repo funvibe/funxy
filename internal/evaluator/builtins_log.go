@@ -133,65 +133,6 @@ func LogBuiltins() map[string]*Builtin {
 }
 
 // SetLogBuiltinTypes sets type information for log builtins
-func SetLogBuiltinTypes(builtins map[string]*Builtin) {
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "List"},
-		Args:        []typesystem.Type{typesystem.Char},
-	}
-	loggerType := typesystem.TCon{Name: "Logger"}
-	nilType := typesystem.Nil
-	boolType := typesystem.Bool
-
-	// Map<String, a> for fields
-	mapStringAny := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Map"},
-		Args:        []typesystem.Type{stringType, typesystem.TVar{Name: "a"}},
-	}
-
-	resultNil := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: "Result"},
-		Args:        []typesystem.Type{stringType, nilType},
-	}
-
-	types := map[string]typesystem.Type{
-		// Basic logging
-		"logDebug": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-		"logInfo":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-		"logWarn":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-		"logError": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-		"logFatal": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-
-		// Fatal with exit
-		"logFatalExit": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-
-		// Configuration
-		"logLevel":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-		"logFormat": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: nilType},
-		"logOutput": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultNil},
-		"logColor":  typesystem.TFunc{Params: []typesystem.Type{boolType}, ReturnType: nilType},
-
-		// Structured logging
-		"logWithFields": typesystem.TFunc{Params: []typesystem.Type{stringType, stringType, mapStringAny}, ReturnType: nilType},
-
-		// Prefixed logger
-		"logWithPrefix": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: loggerType},
-
-		// Logger methods
-		"loggerDebug":      typesystem.TFunc{Params: []typesystem.Type{loggerType, stringType}, ReturnType: nilType},
-		"loggerInfo":       typesystem.TFunc{Params: []typesystem.Type{loggerType, stringType}, ReturnType: nilType},
-		"loggerWarn":       typesystem.TFunc{Params: []typesystem.Type{loggerType, stringType}, ReturnType: nilType},
-		"loggerError":      typesystem.TFunc{Params: []typesystem.Type{loggerType, stringType}, ReturnType: nilType},
-		"loggerFatal":      typesystem.TFunc{Params: []typesystem.Type{loggerType, stringType}, ReturnType: nilType},
-		"loggerFatalExit":  typesystem.TFunc{Params: []typesystem.Type{loggerType, stringType}, ReturnType: nilType},
-		"loggerWithFields": typesystem.TFunc{Params: []typesystem.Type{loggerType, stringType, stringType, mapStringAny}, ReturnType: nilType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // doLogWithPrefix logs with the global config but a custom prefix
 func doLogWithPrefix(prefix string, level int, msg string, fields map[string]interface{}) {

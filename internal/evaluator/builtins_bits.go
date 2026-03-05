@@ -4,8 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"github.com/funvibe/funxy/internal/config"
-	"github.com/funvibe/funxy/internal/typesystem"
 	"unsafe"
 )
 
@@ -47,72 +45,6 @@ func BitsBuiltins() map[string]*Builtin {
 }
 
 // SetBitsBuiltinTypes sets type information for bits builtins
-func SetBitsBuiltinTypes(builtins map[string]*Builtin) {
-	bitsType := typesystem.TCon{Name: config.BitsTypeName}
-	bytesType := typesystem.TCon{Name: config.BytesTypeName}
-	intType := typesystem.TCon{Name: "Int"}
-	charType := typesystem.TCon{Name: "Char"}
-	stringType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ListTypeName},
-		Args:        []typesystem.Type{charType},
-	}
-
-	optionInt := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.OptionTypeName},
-		Args:        []typesystem.Type{intType},
-	}
-
-	resultStringBits := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ResultTypeName},
-		Args:        []typesystem.Type{stringType, bitsType},
-	}
-
-	recordType := typesystem.TRecord{IsOpen: true, Fields: map[string]typesystem.Type{}}
-	specListType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ListTypeName},
-		Args:        []typesystem.Type{recordType},
-	}
-	resultMapType := typesystem.TApp{
-		Constructor: typesystem.TCon{Name: config.ResultTypeName},
-		Args:        []typesystem.Type{stringType, typesystem.TCon{Name: "Map"}},
-	}
-
-	sizeType := typesystem.TUnion{Types: []typesystem.Type{intType, stringType}}
-
-	types := map[string]typesystem.Type{
-		"bitsNew":        typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: bitsType},
-		"bitsFromBytes":  typesystem.TFunc{Params: []typesystem.Type{bytesType}, ReturnType: bitsType},
-		"bitsFromBinary": typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBits},
-		"bitsFromHex":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBits},
-		"bitsFromOctal":  typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: resultStringBits},
-
-		"bitsToBytes":  typesystem.TFunc{Params: []typesystem.Type{bitsType, stringType}, ReturnType: bytesType, DefaultCount: 1},
-		"bitsToBinary": typesystem.TFunc{Params: []typesystem.Type{bitsType}, ReturnType: stringType},
-		"bitsToHex":    typesystem.TFunc{Params: []typesystem.Type{bitsType}, ReturnType: stringType},
-
-		"bitsSlice": typesystem.TFunc{Params: []typesystem.Type{bitsType, intType, intType}, ReturnType: bitsType},
-		"bitsGet":   typesystem.TFunc{Params: []typesystem.Type{bitsType, intType}, ReturnType: optionInt},
-
-		"bitsConcat":   typesystem.TFunc{Params: []typesystem.Type{bitsType, bitsType}, ReturnType: bitsType},
-		"bitsSet":      typesystem.TFunc{Params: []typesystem.Type{bitsType, intType, intType}, ReturnType: bitsType},
-		"bitsPadLeft":  typesystem.TFunc{Params: []typesystem.Type{bitsType, intType}, ReturnType: bitsType},
-		"bitsPadRight": typesystem.TFunc{Params: []typesystem.Type{bitsType, intType}, ReturnType: bitsType},
-
-		"bitsAddInt":   typesystem.TFunc{Params: []typesystem.Type{bitsType, intType, intType, stringType}, ReturnType: bitsType, DefaultCount: 1},
-		"bitsAddFloat": typesystem.TFunc{Params: []typesystem.Type{bitsType, typesystem.Float, intType}, ReturnType: bitsType},
-
-		"bitsExtract": typesystem.TFunc{Params: []typesystem.Type{bitsType, specListType}, ReturnType: resultMapType},
-		"bitsInt":     typesystem.TFunc{Params: []typesystem.Type{stringType, intType, stringType}, ReturnType: recordType, DefaultCount: 1},
-		"bitsBytes":   typesystem.TFunc{Params: []typesystem.Type{stringType, sizeType}, ReturnType: recordType},
-		"bitsRest":    typesystem.TFunc{Params: []typesystem.Type{stringType}, ReturnType: recordType},
-	}
-
-	for name, typ := range types {
-		if b, ok := builtins[name]; ok {
-			b.TypeInfo = typ
-		}
-	}
-}
 
 // === Creation ===
 

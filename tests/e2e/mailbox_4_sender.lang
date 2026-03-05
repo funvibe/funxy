@@ -1,0 +1,7 @@
+import "lib/mailbox" (send)
+import "lib/time" (sleepMs)
+
+sleepMs(300)
+send("worker_peek_recv_4", { payload: "peeked" })
+
+for true { sleepMs(100) }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -14,30 +15,43 @@ import (
 
 // DocumentState stores the state of a single open document
 type DocumentState struct {
-	Content string                    // Current file content
-	Context *pipeline.PipelineContext // Result of the last analysis (AST, types, symbols)
-	Mu      sync.RWMutex              // Mutex to protect access to state
+	Content    string                    // Current file content
+	Context    *pipeline.PipelineContext // Result of the last analysis (AST, types, symbols)
+	Mu         sync.RWMutex              // Mutex to protect access to state
+	CancelFunc context.CancelFunc        // Cancel function for the current analysis
+	AnalysisID int                       // ID to track current analysis run
 }
 
 func (s *LanguageServer) handleDidOpen(params DidOpenTextDocumentParams) error {
 	uri := params.TextDocument.URI
 	content := params.TextDocument.Text
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Create new DocumentState
 	docState := &DocumentState{
-		Content: content,
+		Content:    content,
+		CancelFunc: cancel,
+		AnalysisID: 1, // First analysis
 	}
 
-	// Analyze the document
-	finalCtx := s.analyzeDocument(content, uri)
-
-	// Store the analysis result
-	docState.Context = finalCtx
-
-	// Save to documents map
+	// Save to documents map BEFORE analysis so that didChange can cancel it if needed
 	s.mu.Lock()
 	s.documents[uri] = docState
 	s.mu.Unlock()
+
+	// Analyze the document
+	finalCtx := s.analyzeDocument(content, uri, ctx)
+
+	// Check if this analysis was cancelled
+	if ctx.Err() != nil {
+		return nil // Don't store or publish diagnostics for cancelled analysis
+	}
+
+	// Store the analysis result
+	docState.Mu.Lock()
+	docState.Context = finalCtx
+	docState.Mu.Unlock()
 
 	log.Printf("Opened file: %s", uri)
 
@@ -60,15 +74,35 @@ func (s *LanguageServer) handleDidChange(params DidChangeTextDocumentParams) err
 			return fmt.Errorf("document %s not found", uri)
 		}
 
-		// Update content
+		// Cancel previous analysis
 		docState.Mu.Lock()
+		if docState.CancelFunc != nil {
+			docState.CancelFunc()
+		}
+
+		// Create new context and cancel function for this analysis run
+		ctx, cancel := context.WithCancel(context.Background())
+		docState.CancelFunc = cancel
+		docState.AnalysisID++
+		currentAnalysisID := docState.AnalysisID
+
+		// Update content
 		docState.Content = newContent
 		docState.Mu.Unlock()
 
 		// Re-analyze the document
-		finalCtx := s.analyzeDocument(newContent, uri)
+		finalCtx := s.analyzeDocument(newContent, uri, ctx)
+
+		// Check if this analysis was cancelled by a newer change
+		if ctx.Err() != nil {
+			return nil // Don't store or publish diagnostics for cancelled analysis
+		}
+
 		docState.Mu.Lock()
-		docState.Context = finalCtx
+		// Only update context if we weren't cancelled (double check)
+		if docState.AnalysisID == currentAnalysisID {
+			docState.Context = finalCtx
+		}
 		docState.Mu.Unlock()
 
 		log.Printf("Changed file: %s", uri)
@@ -80,21 +114,33 @@ func (s *LanguageServer) handleDidChange(params DidChangeTextDocumentParams) err
 }
 
 func (s *LanguageServer) handleDidClose(params DidCloseTextDocumentParams) error {
+	uri := params.TextDocument.URI
+
 	s.mu.Lock()
-	delete(s.documents, params.TextDocument.URI)
+	docState, exists := s.documents[uri]
+	if exists {
+		docState.Mu.Lock()
+		if docState.CancelFunc != nil {
+			docState.CancelFunc()
+		}
+		docState.Mu.Unlock()
+		delete(s.documents, uri)
+	}
 	s.mu.Unlock()
-	log.Printf("Closed file: %s", params.TextDocument.URI)
+
+	log.Printf("Closed file: %s", uri)
 	return nil
 }
 
-func (s *LanguageServer) analyzeDocument(content string, uri string) *pipeline.PipelineContext {
-	if ctx, ok := s.analyzeModuleDocument(content, uri); ok {
-		return ctx
+func (s *LanguageServer) analyzeDocument(content string, uri string, ctx context.Context) *pipeline.PipelineContext {
+	if pipeCtx, ok := s.analyzeModuleDocument(content, uri, ctx); ok {
+		return pipeCtx
 	}
 
 	// Create pipeline context
-	ctx := pipeline.NewPipelineContext(content)
-	ctx.FilePath = s.uriToPath(uri)
+	pipeCtx := pipeline.NewPipelineContext(content)
+	pipeCtx.Context = ctx
+	pipeCtx.FilePath = s.uriToPath(uri)
 
 	// Create processing pipeline (lexer -> parser -> analyzer)
 	processingPipeline := pipeline.New(
@@ -104,7 +150,7 @@ func (s *LanguageServer) analyzeDocument(content string, uri string) *pipeline.P
 	)
 
 	// Run pipeline
-	finalCtx := processingPipeline.Run(ctx)
+	finalCtx := processingPipeline.Run(pipeCtx)
 	return finalCtx
 }
 

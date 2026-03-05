@@ -1,0 +1,27 @@
+import "lib/mailbox" (receiveWait, reply)
+import "lib/vmm" (setState)
+import "lib/time" (sleepMs)
+
+fun handleRequest() {
+    msg = receiveWait(10000)
+    match msg {
+        Ok(m) -> {
+            // we use m.payload because we sent {payload: "ping"}
+            if show(m.payload) == "{payload: \"ping\"}" {
+                match reply(m, { payload: "pong" }) {
+                    Ok(_) -> setState("correct")
+                    Fail(e) -> setState("reply failed: " ++ e)
+                }
+            } else {
+                setState("wrong payload: " ++ show(m.payload))
+            }
+        }
+        Fail(e) -> setState("receive failed: " ++ e)
+    }
+}
+
+// Call it directly
+handleRequest()
+
+// Stay alive
+for true { sleepMs(100) }

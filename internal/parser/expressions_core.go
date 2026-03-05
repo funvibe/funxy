@@ -189,7 +189,11 @@ func (p *Parser) parseGroupedExpression() ast.Expression {
 		return &ast.OperatorAsFunction{Token: startToken, Operator: op}
 	}
 
+	oldForbidAssignments := p.forbidAssignments
+	p.forbidAssignments = false
 	exp := p.parseExpression(LOWEST)
+	p.forbidAssignments = oldForbidAssignments
+
 	if exp == nil {
 		// Recover: consume a closing paren if present, or bail out at a boundary.
 		for !p.curTokenIs(token.RPAREN) &&

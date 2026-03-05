@@ -93,7 +93,7 @@ func TestAnalyzer_Exhaustiveness(t *testing.T) {
 			}
 
 			a := analyzer.New(symbols.NewSymbolTable())
-			errs := a.Analyze(prog)
+			errs := a.Analyze(prog, ctx)
 
 			if len(tt.expected) == 0 {
 				if len(errs) > 0 {

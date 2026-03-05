@@ -1,0 +1,159 @@
+import "lib/test" (testRun, assertEquals, assertOk, assertTrue, testSpawnVM)
+import "lib/vmm" (spawnVM, stopVM, killVM, listVMs, receiveEventWait)
+import "lib/list" (contains)
+import "lib/time" (sleepMs)
+
+fun waitLifecycleEventByVmId(vmId) {
+    evt = receiveEventWait(2000)
+    if evt.type == "timeout" {
+        evt
+    } else if evt.type == "exit" || evt.type == "crash" || evt.type == "vm_exit" {
+        if evt.vmId == vmId {
+            evt
+        } else {
+            waitLifecycleEventByVmId(vmId)
+        }
+    } else {
+        waitLifecycleEventByVmId(vmId)
+    }
+}
+
+fun ensureSupervisorApi() {
+    bootRes = testSpawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "lc_bootstrap", capabilities: ["lib/time"] })
+    assertOk(bootRes)
+    match bootRes {
+        Ok(id) -> {
+            killVM(id)
+            _ = receiveEventWait(1000)
+        }
+        Fail(_) -> ()
+    }
+}
+
+testRun("lifecycle: panic worker emits crash event with vmId", \ -> {
+    ensureSupervisorApi()
+    res = spawnVM("./tests/e2e/vmm_worker_panic.lang", { name: "lc_panic_worker" })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            evt = waitLifecycleEventByVmId(id)
+            if evt.type == "timeout" {
+                assertTrue(false, "expected crash event for panic worker")
+            } else {
+                assertEquals("crash", evt.type)
+                assertEquals(id, evt.vmId)
+                assertEquals("crashed", evt.status)
+                assertTrue(evt.error != "", "crash event should include error")
+            }
+            assertEquals(false, contains(listVMs(), id))
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("lifecycle: graceful stop(saveState=true) returns state and stopped event", \ -> {
+    ensureSupervisorApi()
+    res = spawnVM("./tests/e2e/vmm_worker_state.lang", { name: "lc_state_worker", capabilities: ["lib/vmm", "lib/time"] })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            sleepMs(300)
+            stopRes = stopVM(id, Some({ saveState: true, timeoutMs: 2000 }))
+            assertOk(stopRes)
+
+            match stopRes {
+                Ok(state) -> assertTrue(state.count >= 1, "state should be serialized on graceful stop")
+                Fail(_) -> ()
+            }
+
+            evt = waitLifecycleEventByVmId(id)
+            if evt.type == "timeout" {
+                assertTrue(false, "expected exit event after graceful stop")
+            } else {
+                assertEquals("exit", evt.type)
+                assertEquals("stopped", evt.status)
+                assertEquals(id, evt.vmId)
+            }
+
+            assertEquals(false, contains(listVMs(), id))
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("lifecycle: stop(saveState=false) returns Ok and stopped exit event", \ -> {
+    ensureSupervisorApi()
+    res = spawnVM("./tests/e2e/vmm_worker_dummy.lang", { name: "lc_stop_no_state", capabilities: ["lib/time"] })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            stopRes = stopVM(id, Some({ saveState: false, timeoutMs: 2000 }))
+            assertOk(stopRes)
+
+            evt = waitLifecycleEventByVmId(id)
+            if evt.type == "timeout" {
+                assertTrue(false, "expected exit event after stop without state")
+            } else {
+                assertEquals("exit", evt.type)
+                assertEquals("stopped", evt.status)
+                assertEquals(id, evt.vmId)
+            }
+
+            assertEquals(false, contains(listVMs(), id))
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("lifecycle: stop timeout on onTerminate hang returns Fail and cleans VM", \ -> {
+    ensureSupervisorApi()
+    res = spawnVM("./tests/e2e/vmm_worker_terminate_hang.lang", { name: "lc_terminate_hang", capabilities: ["lib/time"] })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            stopRes = stopVM(id, Some({ saveState: true, timeoutMs: 100 }))
+            match stopRes {
+                Ok(_) -> assertTrue(false, "stopVM should fail on graceful timeout")
+                Fail(e) -> assertTrue(e != "", "timeout path should return error")
+            }
+
+            evt = waitLifecycleEventByVmId(id)
+            if evt.type == "timeout" {
+                assertTrue(false, "expected lifecycle event even on graceful timeout")
+            } else {
+                assertEquals("exit", evt.type)
+                assertEquals("stopped", evt.status)
+                assertEquals(id, evt.vmId)
+            }
+
+            assertEquals(false, contains(listVMs(), id))
+        }
+        Fail(_) -> ()
+    }
+})
+
+testRun("lifecycle: limit exceeded emits vm_exit with vmId and reason", \ -> {
+    ensureSupervisorApi()
+    res = spawnVM("./tests/e2e/vmm_worker_gas_limit.lang", { name: "lc_limit_worker", limits: { maxInstructions: 10000 } })
+    assertOk(res)
+
+    match res {
+        Ok(id) -> {
+            evt = waitLifecycleEventByVmId(id)
+            if evt.type == "timeout" {
+                assertTrue(false, "expected vm_exit event for limit exceeded")
+            } else {
+                assertEquals("vm_exit", evt.type)
+                assertEquals("limit_exceeded", evt.reason)
+                assertEquals("crashed", evt.status)
+                assertEquals(id, evt.vmId)
+            }
+            assertEquals(false, contains(listVMs(), id))
+        }
+        Fail(_) -> ()
+    }
+})
