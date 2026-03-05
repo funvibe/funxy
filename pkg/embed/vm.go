@@ -70,14 +70,8 @@ func (v *VM) SetInitialState(data []byte) {
 // GetMetrics returns VM monitoring statistics (CPU instructions, memory allocations).
 // GetMetrics returns memory, instruction, and rate metrics for this VM instance
 func (v *VM) GetMetrics() map[string]uint64 {
-	evalMetrics := v.machine.GetEvaluatorMetrics()
-	vmInstr := atomic.LoadUint64(&v.machine.InstructionCount)
-	vmAlloc := atomic.LoadUint64(&v.machine.AllocatedBytes)
-
-	metrics := map[string]uint64{
-		"instructions": evalMetrics["instructions"] + vmInstr,
-		"allocations":  evalMetrics["allocations"] + vmAlloc,
-	}
+	// machine.GetMetrics already includes both VM and evaluator counters.
+	metrics := v.machine.GetMetrics()
 
 	// Add rates
 	metrics["current_instructions_per_sec"] = atomic.LoadUint64(&v.machine.CurrentInstructionsPerSec)
@@ -105,6 +99,12 @@ func (v *VM) GetMetrics() map[string]uint64 {
 
 // RegisterSupervisor enables Supervisor API capabilities in this VM.
 func (v *VM) RegisterSupervisor(h *Hypervisor) {
+	// Enable supervisor-related stdlib modules in sandbox mode.
+	// These modules rely on the injected Supervisor/Mailbox handlers.
+	v.AllowModule("lib/vmm")
+	v.AllowModule("lib/rpc")
+	v.AllowModule("lib/mailbox")
+
 	// Let the evaluator know about the supervisor handler so builtins can use it
 	eval := v.machine.GetEvaluator()
 	if eval != nil {
@@ -403,6 +403,9 @@ func (v *VM) RunChunk(chunk *vm.Chunk, dir string) error {
 	v.machine.GetEvaluator()
 
 	v.machine.SetBaseDir(dir)
+	if chunk.File != "" {
+		v.machine.SetCurrentFile(chunk.File)
+	}
 	if err := v.machine.ProcessImports(chunk.PendingImports); err != nil {
 		return fmt.Errorf("import error: %w", err)
 	}

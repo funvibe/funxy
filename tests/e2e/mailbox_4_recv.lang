@@ -1,9 +1,24 @@
 import "lib/mailbox" (peek, receive)
-import "lib/time" (sleepMs)
+import "lib/time" (sleepMs, clockMs)
 import "lib/vmm" (setState)
 
-sleepMs(600)
-p = peek()
+fun waitPeek(deadlineMs) {
+    p = peek()
+    match p {
+        Ok(_) -> p
+        Fail(_) -> {
+            if clockMs() >= deadlineMs {
+                p
+            } else {
+                sleepMs(20)
+                waitPeek(deadlineMs)
+            }
+        }
+    }
+}
+
+deadline = clockMs() + 2000
+p = waitPeek(deadline)
 r = receive()
 
 match p {

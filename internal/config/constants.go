@@ -2,7 +2,7 @@ package config
 
 // Version is the current Funxy version.
 // Set at build time by prepare_release.sh via -ldflags or by writing to this file.
-var Version = "0.7.0"
+var Version = "0.7.1"
 
 const SourceFileExt = ".lang"
 

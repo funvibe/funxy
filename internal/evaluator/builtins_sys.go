@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"github.com/funvibe/funxy/internal/config"
 	"path/filepath"
+	"strings"
 )
 
 // SysBuiltins returns built-in functions for lib/sys virtual package
@@ -174,13 +176,43 @@ func builtinSysScriptDir(e *Evaluator, args ...Object) Object {
 		return stringToList("")
 	}
 
-	// Try to get the script path from sysArgs (first arg is the script path)
+	// Prefer runtime evaluation context when available.
+	// This is reliable for modes like `funxy vmm ...` where os.Args[1] is a subcommand.
+	currentFile := strings.TrimSpace(e.CurrentFile)
+	baseDir := strings.TrimSpace(e.BaseDir)
+	if currentFile != "" && currentFile != "<stdin>" && currentFile != "<eval>" && currentFile != "<script>" {
+		if filepath.IsAbs(currentFile) {
+			return stringToList(filepath.Dir(currentFile))
+		}
+		if baseDir != "" {
+			if absBase, err := filepath.Abs(baseDir); err == nil {
+				return stringToList(absBase)
+			}
+			return stringToList(filepath.Clean(baseDir))
+		}
+		if absFile, err := filepath.Abs(currentFile); err == nil {
+			return stringToList(filepath.Dir(absFile))
+		}
+	}
+	if baseDir != "" && baseDir != "." {
+		if absBase, err := filepath.Abs(baseDir); err == nil {
+			return stringToList(absBase)
+		}
+		return stringToList(filepath.Clean(baseDir))
+	}
+
+	// Fallback to argv parsing for contexts where evaluator metadata is unavailable.
+	// Pick the first source/bytecode script-like argument.
 	osArgs := os.Args
-	if len(osArgs) > 1 {
-		scriptPath := osArgs[1]
-		absPath, err := filepath.Abs(scriptPath)
-		if err == nil {
-			return stringToList(filepath.Dir(absPath))
+	for _, arg := range osArgs[1:] {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(strings.TrimSpace(arg)))
+		if isKnownScriptExt(ext) {
+			if absPath, err := filepath.Abs(arg); err == nil {
+				return stringToList(filepath.Dir(absPath))
+			}
 		}
 	}
 
@@ -195,6 +227,18 @@ func builtinSysScriptDir(e *Evaluator, args ...Object) Object {
 	}
 
 	return stringToList(filepath.Dir(exePath))
+}
+
+func isKnownScriptExt(ext string) bool {
+	if ext == ".fbc" {
+		return true
+	}
+	for _, srcExt := range config.SourceFileExtensions {
+		if ext == strings.ToLower(srcExt) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetSysBuiltinTypes sets type info for sys builtins

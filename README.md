@@ -29,7 +29,7 @@ users = "users.json" |>> fileRead |>> jsonDecode
 fileWrite("users.csv", csvEncode(users))
 ```
 
-## Install
+## Install & Update
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/funvibe/funxy/main/install.sh | bash

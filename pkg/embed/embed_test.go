@@ -298,6 +298,33 @@ fun process_user(name, score) {
 	}
 }
 
+func TestRegisterSupervisorAllowsVmmModules(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "funxy_supervisor_modules_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	script := filepath.Join(tmpDir, "supervisor.lang")
+	if err := ioutil.WriteFile(script, []byte(`
+import "lib/vmm" (listVMs)
+import "lib/rpc" (callWait)
+import "lib/mailbox" (send)
+
+vms = listVMs()
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := funxy.NewHypervisor()
+	vm := funxy.New()
+	vm.RegisterSupervisor(h)
+
+	if err := vm.LoadFile(script); err != nil {
+		t.Fatalf("expected supervisor modules to be allowed, got error: %v", err)
+	}
+}
+
 // TestCallNonExistentFunction verifies error handling for calling an undefined function.
 func TestCallNonExistentFunction(t *testing.T) {
 	vm := funxy.New()

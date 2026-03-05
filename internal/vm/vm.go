@@ -578,11 +578,17 @@ func (vm *VM) compileTraitDefault(fn *ast.FunctionStatement, traitName, typeName
 // SetBaseDir sets the base directory for resolving relative imports
 func (vm *VM) SetBaseDir(dir string) {
 	vm.baseDir = dir
+	if vm.eval != nil {
+		vm.eval.BaseDir = dir
+	}
 }
 
 // SetCurrentFile sets the current file name for error messages
 func (vm *VM) SetCurrentFile(file string) {
 	vm.currentFile = file
+	if vm.eval != nil {
+		vm.eval.CurrentFile = file
+	}
 }
 
 // GetDebugger returns the debugger instance
@@ -640,8 +646,8 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 		vm.eval = evaluator.New()
 		vm.eval.Out = vm.out
 		vm.eval.Context = vm.Context // Propagate context
-		vm.eval.BaseDir = "."
-		vm.eval.CurrentFile = "<vm>"
+		vm.eval.BaseDir = vm.baseDir
+		vm.eval.CurrentFile = vm.currentFile
 		// Set VMCallHandler to allow builtins to call VM closures
 		vm.eval.VMCallHandler = vm.vmCallHandler
 		vm.eval.AsyncHandler = vm.asyncHandler
@@ -1155,9 +1161,10 @@ func (vm *VM) executeWithDebugger() (Value, error) {
 					vm.MetricsHandler.RecordInstructionsPerSec(vm.instrsSinceCheck)
 				}
 
-				// Update current rates for metrics endpoint
-				vm.CurrentAllocationsPerSec = vm.allocsSinceCheck
-				vm.CurrentInstructionsPerSec = vm.instrsSinceCheck
+				// Update current rates for metrics endpoint.
+				// Use atomic stores because stats are read concurrently from other goroutines.
+				atomic.StoreUint64(&vm.CurrentAllocationsPerSec, vm.allocsSinceCheck)
+				atomic.StoreUint64(&vm.CurrentInstructionsPerSec, vm.instrsSinceCheck)
 
 				vm.lastLimitCheck = now
 				vm.instrsSinceCheck = 0
