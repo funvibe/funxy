@@ -244,6 +244,12 @@ func handleVmm() bool {
 	id, err := h.SpawnVM(scriptPath, config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error spawning supervisor VM: %v\n", err)
+		// Spawn failure happens before the normal shutdown path. Clean up pid/socket explicitly
+		// because os.Exit bypasses deferred cleanup.
+		if data, readErr := os.ReadFile(pidFile); readErr == nil && strings.TrimSpace(string(data)) == fmt.Sprintf("%d", pid) {
+			_ = os.Remove(pidFile)
+		}
+		_ = os.Remove(socketPath)
 		os.Exit(1)
 	}
 

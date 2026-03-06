@@ -1,0 +1,391 @@
+import "lib/vmm" (spawnVM, spawnVMGroup, stopVM, killVM)
+import "lib/rpc" (callWait, callWaitGroup)
+import "lib/mailbox" (requestWait)
+import "lib/time" (clockMs, sleepMs)
+import "lib/sys" (sysScriptDir, sysCPUCount)
+import "lib/path" (pathJoin)
+import "lib/flag" (flagSet, flagParse, flagGet)
+import "lib/term" (
+    tableOnly, bold, green, red,
+    progressNew, progressTick, progressDone
+)
+import "lib/task" (async, awaitAll)
+
+fun mustOk(result, context) {
+    match result {
+        Ok(v) -> v
+        Fail(e) -> panic(context ++ ": " ++ e ++ " (hint: run via `funxy vmm examples/savina/suite.lang`)")
+    }
+}
+
+fun safeOpsPerSec(ops, elapsedMs) {
+    ms = if elapsedMs > 0 { elapsedMs } else { 1 }
+    (ops * 1000) / ms
+}
+
+fun errorPct(errors, ops) {
+    if ops <= 0 {
+        0
+    } else {
+        (errors * 100) / ops
+    }
+}
+
+fun makeRow(scenario, ops, ok, errors, elapsedMs) {
+    {
+        scenario: scenario,
+        ops: ops,
+        ok: ok,
+        errors: errors,
+        elapsedMs: elapsedMs,
+        opsPerSec: safeOpsPerSec(ops, elapsedMs),
+        okOpsPerSec: safeOpsPerSec(ok, elapsedMs),
+        errorPct: errorPct(errors, ops)
+    }
+}
+
+fun printRow(row) {
+    print(
+        row.scenario ++ "," ++
+        show(row.ops) ++ "," ++
+        show(row.ok) ++ "," ++
+        show(row.errors) ++ "," ++
+        show(row.elapsedMs) ++ "," ++
+        show(row.opsPerSec) ++ "," ++
+        show(row.okOpsPerSec) ++ "," ++
+        show(row.errorPct)
+    )
+}
+
+fun rowToTableCells(row) {
+    [
+        row.scenario,
+        show(row.ops),
+        show(row.ok),
+        show(row.errors),
+        show(row.errorPct) ++ "%",
+        show(row.elapsedMs),
+        show(row.opsPerSec),
+        show(row.okOpsPerSec),
+        if row.errors == 0 { green("OK") } else { red("ERR") }
+    ]
+}
+
+fun printResults(rows, outFmt) {
+    if outFmt == "csv" {
+        print("scenario,ops,ok,errors,elapsed_ms,ops_per_sec,ok_ops_per_sec,error_pct")
+        for row in rows {
+            printRow(row)
+        }
+    } else if outFmt == "table" {
+        tableRows = []
+        for row in rows {
+            tableRows = tableRows ++ [rowToTableCells(row)]
+        }
+        tableOnly(
+            [
+                bold("scenario"),
+                bold("ops"),
+                bold("ok"),
+                bold("err"),
+                bold("err %"),
+                bold("t ms"),
+                bold("ops/s"),
+                bold("ok ops/s"),
+                bold("status")
+            ],
+            tableRows
+        )
+    } else {
+        panic("invalid --format, expected table|csv")
+    }
+}
+
+fun shutdownVM(vmId) {
+    stopRes = stopVM(vmId, Some({ saveState: false, timeoutMs: 1000 }))
+    match stopRes {
+        Ok(_) -> {}
+        Fail(_) -> killVM(vmId)
+    }
+    // Give supervisor loop a moment to process lifecycle events.
+    sleepMs(20)
+}
+
+fun benchRPCRoundtrip(workerPath, messages, warmup) {
+    vmId = mustOk(spawnVM(workerPath, {
+        name: "savina_rpc_single",
+        capabilities: ["lib/rpc"]
+    }), "spawn rpc worker")
+
+    sleepMs(100)
+    i = 0
+    while i < warmup {
+        _ = mustOk(callWait(vmId, "echo", i, 5000), "rpc warmup failed")
+        i = i + 1
+    }
+
+    start = clockMs()
+    n = 0
+    ok = 0
+    errors = 0
+    while n < messages {
+        res = callWait(vmId, "echo", n, 5000)
+        match res {
+            Ok(_) -> ok = ok + 1
+            Fail(_) -> errors = errors + 1
+        }
+        n = n + 1
+    }
+    elapsed = clockMs() - start
+    shutdownVM(vmId)
+
+    makeRow("rpc_roundtrip", messages, ok, errors, elapsed)
+}
+
+fun benchRPCGroupRoundtrip(workerPath, actors, messages, warmup) {
+    ids = mustOk(spawnVMGroup(workerPath, {
+        group: "savina_rpc_group",
+        capabilities: ["lib/rpc"]
+    }, actors), "spawn rpc group")
+
+    sleepMs(150)
+    i = 0
+    while i < warmup {
+        _ = mustOk(callWaitGroup("savina_rpc_group", "echo", i, 5000), "rpc group warmup failed")
+        i = i + 1
+    }
+
+    start = clockMs()
+    n = 0
+    ok = 0
+    errors = 0
+    while n < messages {
+        res = callWaitGroup("savina_rpc_group", "echo", n, 5000)
+        match res {
+            Ok(_) -> ok = ok + 1
+            Fail(_) -> errors = errors + 1
+        }
+        n = n + 1
+    }
+    elapsed = clockMs() - start
+
+    for vmId in ids {
+        shutdownVM(vmId)
+    }
+
+    makeRow("rpc_group_roundtrip", messages, ok, errors, elapsed)
+}
+
+fun benchRPCFanoutFanin(workerPath, actors, messages, warmup) {
+    ids = mustOk(spawnVMGroup(workerPath, {
+        group: "savina_rpc_fanout",
+        capabilities: ["lib/rpc"]
+    }, actors), "spawn fanout group")
+
+    sleepMs(150)
+    totalOps = messages * len(ids)
+
+    i = 0
+    while i < warmup {
+        for vmId in ids {
+            _ = callWait(vmId, "echo", i, 5000)
+        }
+        i = i + 1
+    }
+
+    start = clockMs()
+    batch = 0
+    ok = 0
+    errors = 0
+    while batch < messages {
+        tasks = []
+        for vmId in ids {
+            // Because Funxy closes over variable references and loops mutate the same variable,
+            // we have to use a factory function to capture the current values.
+            factory = fun(vid, b) {
+                async(fun() {
+                    callWait(vid, "echo", b, 5000)
+                })
+            }
+            tasks = tasks ++ [factory(vmId, batch)]
+        }
+
+        match awaitAll(tasks) {
+            Ok(results) -> {
+                for res in results {
+                    match res {
+                        Ok(_) -> ok = ok + 1
+                        Fail(_) -> errors = errors + 1
+                    }
+                }
+            }
+            Fail(err) -> {
+                print("awaitAll fail: " ++ err)
+                errors = errors + len(tasks)
+            }
+        }
+        batch = batch + 1
+    }
+    elapsed = clockMs() - start
+
+    for vmId in ids {
+        shutdownVM(vmId)
+    }
+
+    makeRow("rpc_fanout_fanin", totalOps, ok, errors, elapsed)
+}
+
+fun spawnRing(ringPath, actors) {
+    ids = []
+    i = 0
+    while i < actors {
+        workerId = mustOk(spawnVM(ringPath, {
+            name: "savina_ring_" ++ show(i),
+            capabilities: ["lib/rpc"]
+        }), "spawn ring worker")
+        ids = ids ++ [workerId]
+        i = i + 1
+    }
+    ids
+}
+
+fun benchRingToken(ringPath, actors, hops) {
+    ids = spawnRing(ringPath, actors)
+    sleepMs(200)
+
+    start = clockMs()
+    outRes = callWait(ids[0], "pass", {
+        remaining: hops,
+        ring: ids,
+        idx: 0
+    }, 60000)
+    elapsed = clockMs() - start
+    ok = hops
+    errors = 0
+
+    match outRes {
+        Ok(out) -> {
+            if out.remaining != 0 {
+                errors = 1
+                ok = 0
+            }
+        }
+        Fail(_) -> {
+            errors = 1
+            ok = 0
+        }
+    }
+    for vmId in ids {
+        shutdownVM(vmId)
+    }
+
+    makeRow("ring_token", hops, ok, errors, elapsed)
+}
+
+fun benchMailboxRequestReply(responderPath, messages, warmup) {
+    responderId = mustOk(spawnVM(responderPath, {
+        name: "savina_mailbox_responder",
+        capabilities: ["lib/mailbox"]
+    }), "spawn mailbox responder")
+
+    sleepMs(100)
+    i = 0
+    while i < warmup {
+        _ = mustOk(requestWait(responderId, { seq: i }, 5000), "mailbox warmup failed")
+        i = i + 1
+    }
+
+    start = clockMs()
+    n = 0
+    ok = 0
+    errors = 0
+    while n < messages {
+        res = requestWait(responderId, { seq: n }, 5000)
+        match res {
+            Ok(_) -> ok = ok + 1
+            Fail(_) -> errors = errors + 1
+        }
+        n = n + 1
+    }
+    elapsed = clockMs() - start
+    shutdownVM(responderId)
+
+    makeRow("mailbox_request_reply", messages, ok, errors, elapsed)
+}
+
+fun selectedScenarios(scenario) {
+    xs = []
+    if scenario == "all" || scenario == "rpc_roundtrip" { xs = xs ++ ["rpc_roundtrip"] }
+    if scenario == "all" || scenario == "rpc_group_roundtrip" { xs = xs ++ ["rpc_group_roundtrip"] }
+    if scenario == "all" || scenario == "rpc_fanout_fanin" { xs = xs ++ ["rpc_fanout_fanin"] }
+    if scenario == "all" || scenario == "ring_token" { xs = xs ++ ["ring_token"] }
+    if scenario == "all" || scenario == "mailbox_request_reply" { xs = xs ++ ["mailbox_request_reply"] }
+    xs
+}
+
+fun runScenario(name, rpcWorkerPath, ringWorkerPath, mailboxResponderPath, actors, messages, warmup, hops) {
+    if name == "rpc_roundtrip" {
+        benchRPCRoundtrip(rpcWorkerPath, messages, warmup)
+    } else if name == "rpc_group_roundtrip" {
+        benchRPCGroupRoundtrip(rpcWorkerPath, actors, messages, warmup)
+    } else if name == "rpc_fanout_fanin" {
+        benchRPCFanoutFanin(rpcWorkerPath, actors, messages, warmup)
+    } else if name == "ring_token" {
+        benchRingToken(ringWorkerPath, actors, hops)
+    } else if name == "mailbox_request_reply" {
+        benchMailboxRequestReply(mailboxResponderPath, messages, warmup)
+    } else {
+        panic("unknown scenario: " ++ name)
+    }
+}
+
+flagSet("scenario", "all", "benchmark scenario: all|rpc_roundtrip|rpc_group_roundtrip|rpc_fanout_fanin|ring_token|mailbox_request_reply")
+flagSet("messages", 5000, "requests for rpc/mailbox scenarios")
+flagSet("actors", sysCPUCount(), "actor count for group/ring scenarios")
+flagSet("hops", 2000, "token hops for ring benchmark")
+flagSet("warmup", 500, "warmup iterations")
+flagSet("format", "table", "output format: table|csv")
+flagParse()
+
+scenario = flagGet("scenario")
+messages = flagGet("messages")
+actors = flagGet("actors")
+hops = flagGet("hops")
+warmup = flagGet("warmup")
+outFmt = flagGet("format")
+
+if messages <= 0 { panic("messages must be > 0") }
+if actors <= 0 { panic("actors must be > 0") }
+if hops <= 0 { panic("hops must be > 0") }
+if warmup < 0 { panic("warmup must be >= 0") }
+
+baseDir = sysScriptDir()
+rpcWorkerPath = pathJoin([baseDir, "rpc_echo_worker.lang"])
+ringWorkerPath = pathJoin([baseDir, "ring_worker.lang"])
+mailboxResponderPath = pathJoin([baseDir, "mailbox_responder_worker.lang"])
+
+rows = []
+selected = selectedScenarios(scenario)
+showProgress = outFmt == "table"
+if showProgress {
+    total = len(selected)
+    bar = progressNew(total, "running benchmarks")
+    idx = 0
+    for name in selected {
+        row = runScenario(name, rpcWorkerPath, ringWorkerPath, mailboxResponderPath, actors, messages, warmup, hops)
+        rows = rows ++ [row]
+        progressTick(bar)
+    }
+    progressDone(bar)
+} else {
+    for name in selected {
+        row = runScenario(name, rpcWorkerPath, ringWorkerPath, mailboxResponderPath, actors, messages, warmup, hops)
+        rows = rows ++ [row]
+    }
+}
+
+printResults(rows, outFmt)
+
+// Explicitly stop the supervisor VM so the host always gets a deterministic exit path.
+_ = stopVM("supervisor", Some({ saveState: false, timeoutMs: 1000 }))
+

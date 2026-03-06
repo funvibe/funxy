@@ -52,12 +52,11 @@ func (e *Evaluator) evalImportStatement(node *ast.ImportStatement, env *Environm
 
 		// Import trait implementations from the module
 		for traitName, typeImpls := range mod.ClassImplementations {
-			if e.ClassImplementations[traitName] == nil {
-				e.ClassImplementations[traitName] = make(map[string]Object)
-			}
 			for typeName, impl := range typeImpls {
 				if obj, ok := impl.(Object); ok {
-					e.ClassImplementations[traitName][typeName] = obj
+					if methodTable, ok := obj.(*MethodTable); ok {
+						e.AddClassImplementation(traitName, typeName, methodTable)
+					}
 				}
 			}
 		}
@@ -440,12 +439,11 @@ func (e *Evaluator) importPackageGroup(node *ast.ImportStatement, mod *modules.M
 
 		// Import trait implementations from sub-module
 		for traitName, typeImpls := range subMod.ClassImplementations {
-			if e.ClassImplementations[traitName] == nil {
-				e.ClassImplementations[traitName] = make(map[string]Object)
-			}
 			for typeName, impl := range typeImpls {
 				if obj, ok := impl.(Object); ok {
-					e.ClassImplementations[traitName][typeName] = obj
+					if methodTable, ok := obj.(*MethodTable); ok {
+						e.AddClassImplementation(traitName, typeName, methodTable)
+					}
 				}
 			}
 		}
@@ -516,9 +514,13 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 
 	// Save current ClassImplementations to detect what was added by this module
 	oldClassImpls := make(map[string]map[string]Object)
-	for trait, impls := range e.ClassImplementations {
+	for _, traitMapObj := range e.ClassImplementations.Items() {
+		trait := traitMapObj.Key.(*StringKey).Value
+		impls := traitMapObj.Value.(*PersistentMap)
 		oldClassImpls[trait] = make(map[string]Object)
-		for typeName, impl := range impls {
+		for _, typeMapObj := range impls.Items() {
+			typeName := typeMapObj.Key.(*StringKey).Value
+			impl := typeMapObj.Value
 			oldClassImpls[trait][typeName] = impl
 		}
 	}
@@ -552,8 +554,9 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 			// Check if it's an extension method
 			// Extension methods are stored in e.ExtensionMethods[typeName][methodName]
 			// We need to find them and export them as regular functions
-			for _, methods := range e.ExtensionMethods {
-				if fn, ok := methods[name]; ok {
+			for _, methodsObj := range e.ExtensionMethods.Items() {
+				methods := methodsObj.Value.(*PersistentMap)
+				if fn := methods.Get(&StringKey{Value: name}); fn != nil {
 					// Found the extension method, export it as a regular function
 					exports[name] = fn
 					break
@@ -569,10 +572,14 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 
 	// Copy newly added ClassImplementations to module
 	mod.ClassImplementations = make(map[string]map[string]interface{})
-	for trait, impls := range e.ClassImplementations {
+	for _, traitMapObj := range e.ClassImplementations.Items() {
+		trait := traitMapObj.Key.(*StringKey).Value
+		impls := traitMapObj.Value.(*PersistentMap)
 		if oldImpls, had := oldClassImpls[trait]; had {
 			// Copy only new implementations for this trait
-			for typeName, impl := range impls {
+			for _, typeMapObj := range impls.Items() {
+				typeName := typeMapObj.Key.(*StringKey).Value
+				impl := typeMapObj.Value
 				if _, wasOld := oldImpls[typeName]; !wasOld {
 					if mod.ClassImplementations[trait] == nil {
 						mod.ClassImplementations[trait] = make(map[string]interface{})
@@ -583,7 +590,9 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 		} else {
 			// Copy all implementations for new trait
 			mod.ClassImplementations[trait] = make(map[string]interface{})
-			for typeName, impl := range impls {
+			for _, typeMapObj := range impls.Items() {
+				typeName := typeMapObj.Key.(*StringKey).Value
+				impl := typeMapObj.Value
 				mod.ClassImplementations[trait][typeName] = impl
 			}
 		}

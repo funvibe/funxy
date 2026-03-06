@@ -179,8 +179,9 @@ func (e *Evaluator) tryUserDefinedOperator(operator string, left, right Object) 
 
 	findImplementation := func(targetType string) Object {
 		// Search all traits for this operator
-		for _, typesMap := range e.ClassImplementations {
-			if methodTableObj, ok := typesMap[targetType]; ok {
+		for _, typesMapObj := range e.ClassImplementations.Items() {
+			typesMap := typesMapObj.Value.(*PersistentMap)
+			if methodTableObj := typesMap.Get(&StringKey{Value: targetType}); methodTableObj != nil {
 				if methodTable, ok := methodTableObj.(*MethodTable); ok {
 					if method, ok := methodTable.Methods[methodName]; ok {
 						oldContainer := e.ContainerContext
@@ -248,8 +249,8 @@ func (e *Evaluator) tryOperatorDispatch(traitName, operator string, left, right 
 	methodName := "(" + operator + ")"
 
 	// Look for implementation in ClassImplementations
-	if typesMap, ok := e.ClassImplementations[traitName]; ok {
-		if methodTableObj, ok := typesMap[typeName]; ok {
+	if typesMap, ok := e.GetTraitImplementations(traitName); ok {
+		if methodTableObj := typesMap.Get(&StringKey{Value: typeName}); methodTableObj != nil {
 			if methodTable, ok := methodTableObj.(*MethodTable); ok {
 				if method, ok := methodTable.Methods[methodName]; ok {
 					// Set container context so methods like pure/mempty can dispatch correctly
@@ -274,8 +275,8 @@ func (e *Evaluator) tryOperatorDispatch(traitName, operator string, left, right 
 	}
 
 	if contextTypeName != "" && contextTypeName != typeName {
-		if typesMap, ok := e.ClassImplementations[traitName]; ok {
-			if methodTableObj, ok := typesMap[contextTypeName]; ok {
+		if typesMap, ok := e.GetTraitImplementations(traitName); ok {
+			if methodTableObj := typesMap.Get(&StringKey{Value: contextTypeName}); methodTableObj != nil {
 				if methodTable, ok := methodTableObj.(*MethodTable); ok {
 					if method, ok := methodTable.Methods[methodName]; ok {
 						oldContainer := e.ContainerContext
@@ -289,7 +290,7 @@ func (e *Evaluator) tryOperatorDispatch(traitName, operator string, left, right 
 				if underlying, ok := e.TypeAliases[contextTypeName]; ok {
 					underlyingName := ExtractTypeConstructorName(underlying)
 					if underlyingName != "" && underlyingName != contextTypeName {
-						if methodTableObj, ok := typesMap[underlyingName]; ok {
+						if methodTableObj := typesMap.Get(&StringKey{Value: underlyingName}); methodTableObj != nil {
 							if methodTable, ok := methodTableObj.(*MethodTable); ok {
 								if method, ok := methodTable.Methods[methodName]; ok {
 									oldContainer := e.ContainerContext

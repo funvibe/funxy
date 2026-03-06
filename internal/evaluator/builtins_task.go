@@ -157,6 +157,24 @@ func builtinAsync(e *Evaluator, args ...Object) Object {
 	// Clone evaluator for goroutine
 	evalClone := e.Clone()
 
+	if capProvider := e.SupervisorHandler; capProvider != nil {
+		if capProvider.RPCCallFast != nil {
+			evalClone.SupervisorHandler = &SupervisorHandler{
+				RPCCallFast:          capProvider.RPCCallFast,
+				RPCCall:              capProvider.RPCCall,
+				RPCCallGroupFast:     capProvider.RPCCallGroupFast,
+				RPCCallGroup:         capProvider.RPCCallGroup,
+				RPCSerializationMode: capProvider.RPCSerializationMode,
+			}
+		} else {
+			evalClone.SupervisorHandler = capProvider
+		}
+	}
+
+	if capProvider := e.MailboxHandler; capProvider != nil {
+		evalClone.MailboxHandler = capProvider
+	}
+
 	go func() {
 		AcquirePoolSlot()
 		defer ReleasePoolSlot()

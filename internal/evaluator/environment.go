@@ -68,3 +68,17 @@ func (e *Environment) GetStore() map[string]Object {
 	}
 	return copy
 }
+
+// Clone creates a thread-safe copy of the environment
+func (e *Environment) Clone() *Environment {
+	if e == nil {
+		return nil
+	}
+	clone := NewEnvironment()
+	clone.store = e.GetStore()
+	if e.outer != nil {
+		clone.outer = e.outer.Clone()
+	}
+	clone.SymbolTable = e.SymbolTable
+	return clone
+}

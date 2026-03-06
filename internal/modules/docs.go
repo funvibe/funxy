@@ -1621,7 +1621,8 @@ func initTermDocs() {
 		"progressSet":   {Description: "Set progress bar to specific value", Category: "Progress"},
 		"progressDone":  {Description: "Complete progress bar (sets to 100%)", Category: "Progress"},
 		// Table
-		"table": {Description: "Print formatted table with Unicode box-drawing. table(headers, rows)", Category: "Table"},
+		"table":     {Description: "Print formatted table with Unicode box-drawing. table(headers, rows)", Category: "Table"},
+		"tableOnly": {Description: "Print formatted table with Unicode box-drawing, clearing line first. tableOnly(headers, rows)", Category: "Table"},
 	}
 	pkg := generatePackageDocs("lib/term", "Terminal UI: colors, styles, prompts, spinners, progress bars, tables. Auto-detects color support, respects $NO_COLOR.", meta, nil)
 	RegisterDocPackage(pkg)

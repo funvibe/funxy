@@ -64,10 +64,8 @@ func registerEqualInstances(e *Evaluator) {
 
 	types := []string{"Int", "Float", "Bool", "Char", "String", "BigInt", "Rational", "Bytes", "Bits", "Uuid", "Nil"}
 	for _, t := range types {
-		if _, ok := e.ClassImplementations["Equal"]; !ok {
-			e.ClassImplementations["Equal"] = make(map[string]Object)
-		}
-		e.ClassImplementations["Equal"][t] = &MethodTable{Methods: methods}
+		// Map init removed
+		e.AddClassImplementation("Equal", t, &MethodTable{Methods: methods})
 	}
 
 	// Register generic instances handled by runtime reflection or builtins?
@@ -76,7 +74,7 @@ func registerEqualInstances(e *Evaluator) {
 	// So we can register the same implementation for them.
 	genericTypes := []string{"List", "Map", "Option", "Result", "Tuple"}
 	for _, t := range genericTypes {
-		e.ClassImplementations["Equal"][t] = &MethodTable{Methods: methods}
+		e.AddClassImplementation("Equal", t, &MethodTable{Methods: methods})
 	}
 }
 
@@ -144,16 +142,14 @@ func registerOrderInstances(e *Evaluator) {
 	// Order is implemented for primitives + String + Bytes
 	types := []string{"Int", "Float", "Bool", "Char", "String", "BigInt", "Rational", "Bytes"}
 	for _, t := range types {
-		if _, ok := e.ClassImplementations["Order"]; !ok {
-			e.ClassImplementations["Order"] = make(map[string]Object)
-		}
-		e.ClassImplementations["Order"][t] = &MethodTable{Methods: methods}
+		// Map init removed
+		e.AddClassImplementation("Order", t, &MethodTable{Methods: methods})
 	}
 
 	// List and Tuple implement Order lexicographically?
 	// EvalInfixExpression/CompareValues supports them.
-	e.ClassImplementations["Order"]["List"] = &MethodTable{Methods: methods}
-	e.ClassImplementations["Order"]["Tuple"] = &MethodTable{Methods: methods}
+	e.AddClassImplementation("Order", "List", &MethodTable{Methods: methods})
+	e.AddClassImplementation("Order", "Tuple", &MethodTable{Methods: methods})
 }
 
 func registerNumericInstances(e *Evaluator) {
@@ -202,10 +198,8 @@ func registerNumericInstances(e *Evaluator) {
 
 	types := []string{"Int", "Float", "BigInt", "Rational"}
 	for _, t := range types {
-		if _, ok := e.ClassImplementations["Numeric"]; !ok {
-			e.ClassImplementations["Numeric"] = make(map[string]Object)
-		}
-		e.ClassImplementations["Numeric"][t] = &MethodTable{Methods: methods}
+		// Map init removed
+		e.AddClassImplementation("Numeric", t, &MethodTable{Methods: methods})
 	}
 }
 
@@ -239,10 +233,8 @@ func registerBitwiseInstances(e *Evaluator) {
 
 	types := []string{"Int", "BigInt"} // Bitwise usually only for Integers
 	for _, t := range types {
-		if _, ok := e.ClassImplementations["Bitwise"]; !ok {
-			e.ClassImplementations["Bitwise"] = make(map[string]Object)
-		}
-		e.ClassImplementations["Bitwise"][t] = &MethodTable{Methods: methods}
+		// Map init removed
+		e.AddClassImplementation("Bitwise", t, &MethodTable{Methods: methods})
 	}
 }
 
@@ -276,10 +268,8 @@ func registerConcatInstances(e *Evaluator) {
 	// List (and String), Bytes, Bits support concat
 	types := []string{"List", "String", "Bytes", "Bits"}
 	for _, t := range types {
-		if _, ok := e.ClassImplementations["Concat"]; !ok {
-			e.ClassImplementations["Concat"] = make(map[string]Object)
-		}
-		e.ClassImplementations["Concat"][t] = &MethodTable{Methods: methods}
+		// Map init removed
+		e.AddClassImplementation("Concat", t, &MethodTable{Methods: methods})
 	}
 }
 
@@ -288,9 +278,7 @@ func registerDefaultInstances(e *Evaluator) {
 	// We need to implement this for each type.
 	// Since we are registering instances, we can provide a specific function for each.
 
-	if _, ok := e.ClassImplementations["Default"]; !ok {
-		e.ClassImplementations["Default"] = make(map[string]Object)
-	}
+	// Map init removed
 
 	reg := func(typeName string, val Object) {
 		m := map[string]Object{
@@ -303,7 +291,7 @@ func registerDefaultInstances(e *Evaluator) {
 				Fn:   func(eval *Evaluator, args ...Object) Object { return val },
 			},
 		}
-		e.ClassImplementations["Default"][typeName] = &MethodTable{Methods: m}
+		e.AddClassImplementation("Default", typeName, &MethodTable{Methods: m})
 	}
 
 	reg("Int", &Integer{Value: 0})

@@ -6,7 +6,7 @@ package evaluator
 
 func registerMonadInstances(e *Evaluator) {
 	// List<T>: (>>=) = flatMap/concatMap
-	e.ClassImplementations["Monad"]["List"] = &MethodTable{
+	e.AddClassImplementation("Monad", "List", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -43,10 +43,10 @@ func registerMonadInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Option<T>: (>>=) = flatMap
-	e.ClassImplementations["Monad"]["Option"] = &MethodTable{
+	e.AddClassImplementation("Monad", "Option", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -73,10 +73,10 @@ func registerMonadInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Result<E, A>: (>>=) = flatMap
-	e.ClassImplementations["Monad"]["Result"] = &MethodTable{
+	e.AddClassImplementation("Monad", "Result", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -105,5 +105,5 @@ func registerMonadInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }

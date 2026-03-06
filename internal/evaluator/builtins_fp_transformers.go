@@ -10,7 +10,7 @@ import (
 
 func registerReaderInstances(e *Evaluator) {
 	// Functor: fmap f (Reader g) = Reader (f . g)
-	e.ClassImplementations["Functor"]["Reader"] = &MethodTable{
+	e.AddClassImplementation("Functor", "Reader", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -55,10 +55,10 @@ func registerReaderInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Applicative
-	e.ClassImplementations["Applicative"]["Reader"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "Reader", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -134,10 +134,10 @@ func registerReaderInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Monad
-	e.ClassImplementations["Monad"]["Reader"] = &MethodTable{
+	e.AddClassImplementation("Monad", "Reader", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -192,11 +192,11 @@ func registerReaderInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 func registerOptionalInstances(e *Evaluator) {
 	// Option<T>
-	e.ClassImplementations["Optional"]["Option"] = &MethodTable{
+	e.AddClassImplementation("Optional", "Option", &MethodTable{
 		Methods: map[string]Object{
 			"isEmpty": &Builtin{
 				Name: "isEmpty",
@@ -241,10 +241,10 @@ func registerOptionalInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Result<E, A>
-	e.ClassImplementations["Optional"]["Result"] = &MethodTable{
+	e.AddClassImplementation("Optional", "Result", &MethodTable{
 		Methods: map[string]Object{
 			"isEmpty": &Builtin{
 				Name: "isEmpty",
@@ -289,7 +289,7 @@ func registerOptionalInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 
 // ============================================================================
@@ -298,7 +298,7 @@ func registerOptionalInstances(e *Evaluator) {
 
 func registerIdentityInstances(e *Evaluator) {
 	// Functor
-	e.ClassImplementations["Functor"]["Identity"] = &MethodTable{
+	e.AddClassImplementation("Functor", "Identity", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -320,9 +320,9 @@ func registerIdentityInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 	// Applicative
-	e.ClassImplementations["Applicative"]["Identity"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "Identity", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -367,9 +367,9 @@ func registerIdentityInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 	// Monad
-	e.ClassImplementations["Monad"]["Identity"] = &MethodTable{
+	e.AddClassImplementation("Monad", "Identity", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -387,7 +387,7 @@ func registerIdentityInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 
 // ============================================================================
@@ -396,7 +396,7 @@ func registerIdentityInstances(e *Evaluator) {
 
 func registerStateInstances(e *Evaluator) {
 	// Functor
-	e.ClassImplementations["Functor"]["State"] = &MethodTable{
+	e.AddClassImplementation("Functor", "State", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -440,9 +440,9 @@ func registerStateInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 	// Applicative
-	e.ClassImplementations["Applicative"]["State"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "State", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -527,9 +527,9 @@ func registerStateInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 	// Monad
-	e.ClassImplementations["Monad"]["State"] = &MethodTable{
+	e.AddClassImplementation("Monad", "State", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -576,7 +576,7 @@ func registerStateInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 
 // ============================================================================
@@ -585,7 +585,7 @@ func registerStateInstances(e *Evaluator) {
 
 func registerWriterInstances(e *Evaluator) {
 	// Functor
-	e.ClassImplementations["Functor"]["Writer"] = &MethodTable{
+	e.AddClassImplementation("Functor", "Writer", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -611,9 +611,9 @@ func registerWriterInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 	// Applicative - pure is skipped or errors
-	e.ClassImplementations["Applicative"]["Writer"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "Writer", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -770,9 +770,9 @@ func registerWriterInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 	// Monad
-	e.ClassImplementations["Monad"]["Writer"] = &MethodTable{
+	e.AddClassImplementation("Monad", "Writer", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -829,7 +829,7 @@ func registerWriterInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 
 // ============================================================================
@@ -849,7 +849,7 @@ func registerOptionTInstances(e *Evaluator) {
 	}
 
 	// Functor: fmap f (OptionT m)
-	e.ClassImplementations["Functor"]["OptionT"] = &MethodTable{
+	e.AddClassImplementation("Functor", "OptionT", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -934,10 +934,10 @@ func registerOptionTInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Applicative
-	e.ClassImplementations["Applicative"]["OptionT"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "OptionT", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -1116,10 +1116,10 @@ func registerOptionTInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Monad
-	e.ClassImplementations["Monad"]["OptionT"] = &MethodTable{
+	e.AddClassImplementation("Monad", "OptionT", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -1233,7 +1233,7 @@ func registerOptionTInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 
 // ============================================================================
@@ -1250,7 +1250,7 @@ func registerResultTInstances(e *Evaluator) {
 	}
 
 	// Functor: fmap f (ResultT m)
-	e.ClassImplementations["Functor"]["ResultT"] = &MethodTable{
+	e.AddClassImplementation("Functor", "ResultT", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -1332,10 +1332,10 @@ func registerResultTInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Applicative (skipping pure logic for now as it needs type hint, similar to OptionT)
-	e.ClassImplementations["Applicative"]["ResultT"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "ResultT", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -1497,10 +1497,10 @@ func registerResultTInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Monad
-	e.ClassImplementations["Monad"]["ResultT"] = &MethodTable{
+	e.AddClassImplementation("Monad", "ResultT", &MethodTable{
 		Methods: map[string]Object{
 			"(>>=)": &Builtin{
 				Name: "(>>=)",
@@ -1596,5 +1596,5 @@ func registerResultTInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }

@@ -597,15 +597,19 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 
 		var contextCandidate Object
 		if contextTypeName != "" {
-			if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
+			if typesMap, ok := e.GetTraitImplementations(fn.ClassName); ok {
 				findCandidate := func(targetType string) Object {
-					for key, methodTableObj := range typesMap {
+					var candidate Object
+					for _, item := range typesMap.Items() {
+						keyObj, methodTableObj := item.Key, item.Value
+						key := keyObj.(*StringKey).Value
 						if key == targetType {
 							if methodTable, ok := methodTableObj.(*MethodTable); ok {
 								if method, ok := methodTable.Methods[fn.Name]; ok {
 									// We can't check args match easily here as args might have dicts
 									// But for context candidate, we usually ignore args or check leniently
-									return method
+									candidate = method
+									break
 								}
 							}
 						}
@@ -620,12 +624,13 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 						if match {
 							if methodTable, ok := methodTableObj.(*MethodTable); ok {
 								if method, ok := methodTable.Methods[fn.Name]; ok {
-									return method
+									candidate = method
+									break
 								}
 							}
 						}
 					}
-					return nil
+					return candidate
 				}
 				contextCandidate = findCandidate(contextTypeName)
 				if contextCandidate == nil && e.TypeAliases != nil {
@@ -714,8 +719,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				// Try to find method with constructed key
 				key := strings.Join(keyParts, "_")
 
-				if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
-					if methodTableObj, ok := typesMap[key]; ok {
+				if typesMap, ok := e.GetTraitImplementations(fn.ClassName); ok {
+					if methodTableObj := typesMap.Get(&StringKey{Value: key}); methodTableObj != nil {
 						if methodTable, ok := methodTableObj.(*MethodTable); ok {
 							if method, ok := methodTable.Methods[fn.Name]; ok {
 								// Found via strategy!
@@ -792,10 +797,11 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 		var argTypeName string
 		var argCandidateIsExact bool
 
-		if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
+		if typesMap, ok := e.GetTraitImplementations(fn.ClassName); ok {
 			// Strategy 0a: Exact Key Match (Priority)
 			var traitArity int = -1
-			for k := range typesMap {
+			for _, item := range typesMap.Items() {
+				k := item.Key.(*StringKey).Value
 				traitArity = strings.Count(k, "_") + 1
 				break
 			}
@@ -816,7 +822,7 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 					exactKey = exactKey + "_" + contextType
 				}
 
-				if methodTableObj, ok := typesMap[exactKey]; ok {
+				if methodTableObj := typesMap.Get(&StringKey{Value: exactKey}); methodTableObj != nil {
 					if methodTable, ok := methodTableObj.(*MethodTable); ok {
 						if method, ok := methodTable.Methods[fn.Name]; ok {
 							if e.checkArgsMatch(method, args) {
@@ -840,7 +846,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 					contextType = e.TypeContextStack[len(e.TypeContextStack)-1]
 				}
 
-				for key := range typesMap {
+				for _, item := range typesMap.Items() {
+					key := item.Key.(*StringKey).Value
 					parts := strings.Split(key, "_")
 					match := true
 					score := 0
@@ -882,7 +889,7 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 							// 4. Constraint/Trait Skip (e.g. "Numeric" in "a_Numeric_b")
 							// If the part is a known trait (and didn't match the arg), assume it's a constraint
 							// and skip it without consuming an argument.
-							if _, isTrait := e.ClassImplementations[part]; isTrait {
+							if _, isTrait := e.GetTraitImplementations(part); isTrait {
 								continue
 							}
 
@@ -905,7 +912,7 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 							}
 
 							// 3. If part is a trait, we can skip it
-							if _, isTrait := e.ClassImplementations[part]; isTrait {
+							if _, isTrait := e.GetTraitImplementations(part); isTrait {
 								continue
 							}
 
@@ -973,8 +980,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 					witnessTypeName = strings.Join(typeNames, "_")
 				}
 
-				if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
-					if methodTableObj, ok := typesMap[witnessTypeName]; ok {
+				if typesMap, ok := e.GetTraitImplementations(fn.ClassName); ok {
+					if methodTableObj := typesMap.Get(&StringKey{Value: witnessTypeName}); methodTableObj != nil {
 						if methodTable, ok := methodTableObj.(*MethodTable); ok {
 							if method, ok := methodTable.Methods[fn.Name]; ok {
 								// Found via witness!
@@ -995,8 +1002,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				expectedTypeName := ExtractTypeConstructorName(expectedType)
 
 				// Check if the trait is implemented for this expected type
-				if typesMap, ok := e.ClassImplementations[fn.ClassName]; ok {
-					if methodTableObj, ok := typesMap[expectedTypeName]; ok {
+				if typesMap, ok := e.GetTraitImplementations(fn.ClassName); ok {
+					if methodTableObj := typesMap.Get(&StringKey{Value: expectedTypeName}); methodTableObj != nil {
 						if methodTable, ok := methodTableObj.(*MethodTable); ok {
 							if method, ok := methodTable.Methods[fn.Name]; ok {
 								// Found via generic context dispatch!
@@ -1116,26 +1123,20 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 			if fnStmt, ok := e.TraitDefaults[key]; ok {
 				// JIT register default implementation in ClassImplementations (similar to VM mode)
 				if dispatchTypeName != "" && dispatchTypeName != "unknown" {
-					// Ensure trait map exists
-					if _, ok := e.ClassImplementations[fn.ClassName]; !ok {
-						e.ClassImplementations[fn.ClassName] = make(map[string]Object)
-					}
-
-					// Get or create method table for this type
 					var table *MethodTable
-					if existing, ok := e.ClassImplementations[fn.ClassName][dispatchTypeName]; ok {
-						if mt, ok := existing.(*MethodTable); ok {
-							table = mt
-						} else {
-							// If it's not a MethodTable, create new one
-							table = &MethodTable{Methods: make(map[string]Object)}
-						}
+					if existingTable, ok := e.GetClassImplementation(fn.ClassName, dispatchTypeName); ok {
+						table = existingTable
 					} else {
 						table = &MethodTable{Methods: make(map[string]Object)}
 					}
 
 					// Add default method if not already present
 					if _, exists := table.Methods[fn.Name]; !exists {
+						newMethods := make(map[string]Object, len(table.Methods)+1)
+						for k, v := range table.Methods {
+							newMethods[k] = v
+						}
+
 						defaultFn := &Function{
 							Name:       fn.Name,
 							Parameters: fnStmt.Parameters,
@@ -1144,8 +1145,9 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 							Line:       fnStmt.Token.Line,
 							Column:     fnStmt.Token.Column,
 						}
-						table.Methods[fn.Name] = defaultFn
-						e.ClassImplementations[fn.ClassName][dispatchTypeName] = table
+						newMethods[fn.Name] = defaultFn
+
+						e.AddClassImplementation(fn.ClassName, dispatchTypeName, &MethodTable{Methods: newMethods})
 					}
 				}
 

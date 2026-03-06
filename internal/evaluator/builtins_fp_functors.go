@@ -6,7 +6,7 @@ package evaluator
 
 func registerFunctorInstances(e *Evaluator) {
 	// List<T>: fmap = map
-	e.ClassImplementations["Functor"]["List"] = &MethodTable{
+	e.AddClassImplementation("Functor", "List", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -34,10 +34,10 @@ func registerFunctorInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Option<T>: fmap over Some, None stays None
-	e.ClassImplementations["Functor"]["Option"] = &MethodTable{
+	e.AddClassImplementation("Functor", "Option", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -65,10 +65,10 @@ func registerFunctorInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Result<E, A>: fmap over Ok, Fail stays Fail
-	e.ClassImplementations["Functor"]["Result"] = &MethodTable{
+	e.AddClassImplementation("Functor", "Result", &MethodTable{
 		Methods: map[string]Object{
 			"fmap": &Builtin{
 				Name: "fmap",
@@ -97,5 +97,5 @@ func registerFunctorInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }

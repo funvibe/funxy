@@ -735,9 +735,6 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 	}
 	// Sync VM trait methods to evaluator's ClassImplementations
 	vm.traitMethods.Range(func(traitName string, typeMapObj evaluator.Object) bool {
-		if vm.eval.ClassImplementations[traitName] == nil {
-			vm.eval.ClassImplementations[traitName] = make(map[string]evaluator.Object)
-		}
 		typeMap := typeMapObj.(*PersistentMap)
 		typeMap.Range(func(typeName string, methodMapObj evaluator.Object) bool {
 			methodMap := methodMapObj.(*PersistentMap)
@@ -754,14 +751,14 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 			// This prevents empty entries in vm.traitMethods (from unknown source)
 			// from clobbering builtin instances.
 			if len(methodTable.Methods) == 0 {
-				if existing, ok := vm.eval.ClassImplementations[traitName][typeName]; ok {
-					if mt, ok := existing.(*evaluator.MethodTable); ok && len(mt.Methods) > 0 {
+				if existing, ok := vm.eval.GetClassImplementation(traitName, typeName); ok {
+					if len(existing.Methods) > 0 {
 						return true
 					}
 				}
 			}
 
-			vm.eval.ClassImplementations[traitName][typeName] = methodTable
+			vm.eval.AddClassImplementation(traitName, typeName, methodTable)
 			return true
 		})
 		return true
@@ -1793,6 +1790,20 @@ func (vm *VM) captureHandler(obj evaluator.Object) evaluator.Object {
 	return obj
 }
 
+// cloneEvaluatorTo creates a thread-safe copy of the evaluator for a new VM
+func (vm *VM) cloneEvaluatorTo(newVM *VM) {
+	vm.evalMu.Lock()
+	if vm.eval != nil {
+		newVM.evalMu.Lock()
+		newVM.eval = vm.eval.Clone()
+		newVM.eval.VMCallHandler = newVM.vmCallHandler
+		newVM.eval.AsyncHandler = newVM.asyncHandler
+		newVM.eval.CaptureHandler = newVM.captureHandler
+		newVM.evalMu.Unlock()
+	}
+	vm.evalMu.Unlock()
+}
+
 // ForkVM creates a thread-safe copy of the VM for isolated execution
 func (vm *VM) ForkVM() *VM {
 	newVM := New()
@@ -1812,6 +1823,8 @@ func (vm *VM) ForkVM() *VM {
 	newVM.baseDir = vm.baseDir
 	newVM.typeAliases = vm.typeAliases
 	newVM.typeMap = vm.typeMap
+
+	vm.cloneEvaluatorTo(newVM)
 
 	// Create safe copies of mutable maps
 	newVM.traitMethods = vm.traitMethods               // PersistentMap is safe to share
@@ -1863,8 +1876,10 @@ func (vm *VM) asyncHandler(fn evaluator.Object, args []evaluator.Object) evaluat
 	newVM.baseDir = vm.baseDir
 	newVM.typeAliases = vm.typeAliases
 
+	vm.cloneEvaluatorTo(newVM)
+
 	// Create safe copies of mutable maps for async execution
-	// This prevents data races when JIT compilation writes to these maps
+	// This prevents data races when compilation/loading writes to these maps
 	newVM.traitMethods = vm.traitMethods                   // PersistentMap is safe to share
 	newVM.builtinTraitMethods = vm.builtinTraitMethods     // PersistentMap is safe to share
 	newVM.extensionMethods = vm.extensionMethods           // PersistentMap is safe to share
@@ -1961,7 +1976,10 @@ func (vm *VM) RegisterFPTraits() {
 	}
 
 	// Copy trait implementations from evaluator to VM
-	for traitName, typesMap := range e.ClassImplementations {
+	for _, traitMapObj := range e.ClassImplementations.Items() {
+		traitName := traitMapObj.Key.(*evaluator.StringKey).Value
+		typesMap := traitMapObj.Value.(*evaluator.PersistentMap)
+
 		// traitMethods[traitName]
 		var typeMap *PersistentMap
 		if val := vm.traitMethods.Get(traitName); val != nil {
@@ -1970,7 +1988,9 @@ func (vm *VM) RegisterFPTraits() {
 			typeMap = EmptyMap()
 		}
 
-		for typeName, methodTableObj := range typesMap {
+		for _, typeMapObj := range typesMap.Items() {
+			typeName := typeMapObj.Key.(*evaluator.StringKey).Value
+			methodTableObj := typeMapObj.Value
 			if methodTable, ok := methodTableObj.(*evaluator.MethodTable); ok {
 				// traitMethods[traitName][typeName]
 				var methodMap *PersistentMap

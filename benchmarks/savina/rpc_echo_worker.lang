@@ -1,0 +1,9 @@
+import "lib/time" (sleepMs)
+
+fun echo(v) {
+    v
+}
+
+while true {
+    sleepMs(1000)
+}

@@ -380,9 +380,12 @@ func (e *Evaluator) evalExpressions(exps []ast.Expression, env *Environment) []O
 // This is used for identifier lookup (e.g., when calling `fmap(...)` directly).
 func (e *Evaluator) lookupTraitMethodByName(methodName string) Object {
 	// Check if any trait has this method registered (explicit implementation)
-	for traitName, typesMap := range e.ClassImplementations {
+	for _, typesMapObj := range e.ClassImplementations.Items() {
+		traitName := typesMapObj.Key.(*StringKey).Value
+		typesMap := typesMapObj.Value.(*PersistentMap)
 		// If at least one type has an implementation, return a ClassMethod dispatcher
-		for _, methodTableObj := range typesMap {
+		for _, typeItem := range typesMap.Items() {
+			methodTableObj := typeItem.Value
 			if methodTable, ok := methodTableObj.(*MethodTable); ok {
 				if _, ok := methodTable.Methods[methodName]; ok {
 					// Found! Return a ClassMethod dispatcher

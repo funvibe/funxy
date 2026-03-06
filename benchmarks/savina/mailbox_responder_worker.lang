@@ -1,0 +1,11 @@
+import "lib/mailbox" (receiveWait, reply)
+
+while true {
+    msg = receiveWait(60000)
+    match msg {
+        Ok(m) -> {
+            _ = reply(m, { payload: "ok" })
+        }
+        Fail(_) -> {}
+    }
+}

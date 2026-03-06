@@ -9,11 +9,7 @@ import (
 // This includes trait methods: (<>), mempty, fmap, pure, (<*>), (>>=), (??)
 func RegisterFPTraits(e *Evaluator, env *Environment) {
 	// Initialize ClassImplementations maps
-	for _, traitName := range []string{"Show", "Empty", "Semigroup", "Monoid", "Functor", "Applicative", "Monad", "Optional"} {
-		if _, ok := e.ClassImplementations[traitName]; !ok {
-			e.ClassImplementations[traitName] = make(map[string]Object)
-		}
-	}
+	// Map init removed
 
 	// Register trait methods as ClassMethod dispatchers
 	// Arity: 0 = nullary (auto-call in type context), 1+ = needs explicit call
@@ -192,24 +188,24 @@ func registerShowInstances(e *Evaluator) {
 	}
 
 	for _, typeName := range builtinTypes {
-		e.ClassImplementations["Show"][typeName] = &MethodTable{
+		e.AddClassImplementation("Show", typeName, &MethodTable{
 			Methods: map[string]Object{
 				"show": defaultShowMethod,
 			},
-		}
+		})
 	}
 
 	// String and List use the special show that returns content without quotes
-	e.ClassImplementations["Show"]["String"] = &MethodTable{
+	e.AddClassImplementation("Show", "String", &MethodTable{
 		Methods: map[string]Object{
 			"show": stringShowMethod,
 		},
-	}
-	e.ClassImplementations["Show"]["List"] = &MethodTable{
+	})
+	e.AddClassImplementation("Show", "List", &MethodTable{
 		Methods: map[string]Object{
 			"show": stringShowMethod,
 		},
-	}
+	})
 }
 
 // ============================================================================
@@ -218,7 +214,7 @@ func registerShowInstances(e *Evaluator) {
 
 func registerEmptyInstances(e *Evaluator) {
 	// List<T>
-	e.ClassImplementations["Empty"]["List"] = &MethodTable{
+	e.AddClassImplementation("Empty", "List", &MethodTable{
 		Methods: map[string]Object{
 			"isEmpty": &Builtin{
 				Name: "isEmpty",
@@ -239,10 +235,10 @@ func registerEmptyInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Option<T>
-	e.ClassImplementations["Empty"]["Option"] = &MethodTable{
+	e.AddClassImplementation("Empty", "Option", &MethodTable{
 		Methods: map[string]Object{
 			"isEmpty": &Builtin{
 				Name: "isEmpty",
@@ -260,10 +256,10 @@ func registerEmptyInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Result<E, A>
-	e.ClassImplementations["Empty"]["Result"] = &MethodTable{
+	e.AddClassImplementation("Empty", "Result", &MethodTable{
 		Methods: map[string]Object{
 			"isEmpty": &Builtin{
 				Name: "isEmpty",
@@ -281,7 +277,7 @@ func registerEmptyInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 }
 
@@ -291,7 +287,7 @@ func registerEmptyInstances(e *Evaluator) {
 
 func registerSemigroupInstances(e *Evaluator) {
 	// List<T>: (<>) = concat
-	e.ClassImplementations["Semigroup"]["List"] = &MethodTable{
+	e.AddClassImplementation("Semigroup", "List", &MethodTable{
 		Methods: map[string]Object{
 			"(<>)": &Builtin{
 				Name: "(<>)",
@@ -314,10 +310,10 @@ func registerSemigroupInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Option<T>: (<>) = first Some wins (like First monoid)
-	e.ClassImplementations["Semigroup"]["Option"] = &MethodTable{
+	e.AddClassImplementation("Semigroup", "Option", &MethodTable{
 		Methods: map[string]Object{
 			"(<>)": &Builtin{
 				Name: "(<>)",
@@ -336,7 +332,7 @@ func registerSemigroupInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 
 // ============================================================================
@@ -345,7 +341,7 @@ func registerSemigroupInstances(e *Evaluator) {
 
 func registerMonoidInstances(e *Evaluator) {
 	// List<T>: mempty = []
-	e.ClassImplementations["Monoid"]["List"] = &MethodTable{
+	e.AddClassImplementation("Monoid", "List", &MethodTable{
 		Methods: map[string]Object{
 			"mempty": &Builtin{
 				Name: "mempty",
@@ -357,10 +353,10 @@ func registerMonoidInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Option<T>: mempty = None
-	e.ClassImplementations["Monoid"]["Option"] = &MethodTable{
+	e.AddClassImplementation("Monoid", "Option", &MethodTable{
 		Methods: map[string]Object{
 			"mempty": &Builtin{
 				Name: "mempty",
@@ -372,7 +368,7 @@ func registerMonoidInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }
 
 // Helper function for checking None

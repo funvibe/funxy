@@ -25,20 +25,16 @@ func init() {
 func (e *Evaluator) RegisterExtensionMethods() {
 	// Option
 	optionMethods := OptionBuiltins()
-	if _, ok := e.ExtensionMethods["Option"]; !ok {
-		e.ExtensionMethods["Option"] = make(map[string]Object)
-	}
+
 	for name, builtin := range optionMethods {
-		e.ExtensionMethods["Option"][name] = builtin
+		e.AddExtensionMethod("Option", name, builtin)
 	}
 
 	// Result
 	resultMethods := ResultBuiltins()
-	if _, ok := e.ExtensionMethods["Result"]; !ok {
-		e.ExtensionMethods["Result"] = make(map[string]Object)
-	}
+
 	for name, builtin := range resultMethods {
-		e.ExtensionMethods["Result"][name] = builtin
+		e.AddExtensionMethod("Result", name, builtin)
 	}
 }
 

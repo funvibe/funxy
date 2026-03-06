@@ -72,10 +72,12 @@ type Evaluator struct {
 	Out io.Writer
 	// Registry for class implementations.
 	// Map: ClassName -> TypeName -> FunctionObject
-	ClassImplementations map[string]map[string]Object
+	// Now backed by PersistentMap for fast thread-safe cloning
+	ClassImplementations *PersistentMap
 	// Registry for extension methods.
 	// Map: TypeName -> MethodName -> Object (Function or Builtin)
-	ExtensionMethods map[string]map[string]Object
+	// Now backed by PersistentMap for fast thread-safe cloning
+	ExtensionMethods *PersistentMap
 	// Loader for modules
 	Loader ModuleLoader
 	// BaseDir for import resolution (optional)
@@ -173,8 +175,8 @@ type LoadedModule interface {
 func New() *Evaluator {
 	e := &Evaluator{
 		Out:                  os.Stdout,
-		ClassImplementations: make(map[string]map[string]Object),
-		ExtensionMethods:     make(map[string]map[string]Object),
+		ClassImplementations: EmptyMap(),
+		ExtensionMethods:     EmptyMap(),
 		ModuleCache:          make(map[string]Object),
 		TraitSuperTraits:     make(map[string][]string),
 		TypeMap:              make(map[ast.Node]typesystem.Type),
@@ -189,6 +191,71 @@ func New() *Evaluator {
 	}
 
 	return e
+}
+
+// AddClassImplementation adds a method table for a type to a trait in the PersistentMap
+func (e *Evaluator) AddClassImplementation(traitName, typeName string, methods *MethodTable) {
+	traitKey := &StringKey{Value: traitName}
+	typeKey := &StringKey{Value: typeName}
+
+	var typeMap *PersistentMap
+	if existing := e.ClassImplementations.Get(traitKey); existing != nil {
+		typeMap = existing.(*PersistentMap)
+	} else {
+		typeMap = EmptyMap()
+	}
+
+	typeMap = typeMap.Put(typeKey, methods)
+	e.ClassImplementations = e.ClassImplementations.Put(traitKey, typeMap)
+}
+
+// GetClassImplementation gets a method table for a trait and type
+func (e *Evaluator) GetClassImplementation(traitName, typeName string) (*MethodTable, bool) {
+	traitKey := &StringKey{Value: traitName}
+	if typeMapObj := e.ClassImplementations.Get(traitKey); typeMapObj != nil {
+		typeKey := &StringKey{Value: typeName}
+		if methodTableObj := typeMapObj.(*PersistentMap).Get(typeKey); methodTableObj != nil {
+			return methodTableObj.(*MethodTable), true
+		}
+	}
+	return nil, false
+}
+
+// GetTraitImplementations gets all type implementations for a trait
+func (e *Evaluator) GetTraitImplementations(traitName string) (*PersistentMap, bool) {
+	traitKey := &StringKey{Value: traitName}
+	if typeMapObj := e.ClassImplementations.Get(traitKey); typeMapObj != nil {
+		return typeMapObj.(*PersistentMap), true
+	}
+	return nil, false
+}
+
+// AddExtensionMethod adds an extension method to a type in the PersistentMap
+func (e *Evaluator) AddExtensionMethod(typeName, methodName string, method Object) {
+	typeKey := &StringKey{Value: typeName}
+	methodKey := &StringKey{Value: methodName}
+
+	var methodMap *PersistentMap
+	if existing := e.ExtensionMethods.Get(typeKey); existing != nil {
+		methodMap = existing.(*PersistentMap)
+	} else {
+		methodMap = EmptyMap()
+	}
+
+	methodMap = methodMap.Put(methodKey, method)
+	e.ExtensionMethods = e.ExtensionMethods.Put(typeKey, methodMap)
+}
+
+// GetExtensionMethod gets an extension method for a type
+func (e *Evaluator) GetExtensionMethod(typeName, methodName string) (Object, bool) {
+	typeKey := &StringKey{Value: typeName}
+	if methodMapObj := e.ExtensionMethods.Get(typeKey); methodMapObj != nil {
+		methodKey := &StringKey{Value: methodName}
+		if methodObj := methodMapObj.(*PersistentMap).Get(methodKey); methodObj != nil {
+			return methodObj, true
+		}
+	}
+	return nil, false
 }
 
 // lookupTraitMethod looks up a method for a type (or types) in a trait, including super traits.
@@ -207,13 +274,9 @@ func (e *Evaluator) lookupTraitMethod(traitName, methodName string, typeNames ..
 	}
 
 	// Check the trait itself
-	if typesMap, ok := e.ClassImplementations[traitName]; ok {
-		if methodTableObj, ok := typesMap[key]; ok {
-			if methodTable, ok := methodTableObj.(*MethodTable); ok {
-				if method, ok := methodTable.Methods[methodName]; ok {
-					return method, true
-				}
-			}
+	if methodTable, ok := e.GetClassImplementation(traitName, key); ok {
+		if method, ok := methodTable.Methods[methodName]; ok {
+			return method, true
 		}
 	}
 
@@ -273,14 +336,14 @@ func (e *Evaluator) Clone() *Evaluator {
 	return &Evaluator{
 		Context:              e.Context,
 		Out:                  e.Out,
-		ClassImplementations: e.ClassImplementations, // shared, read-only in tasks
-		ExtensionMethods:     e.ExtensionMethods,     // shared, read-only in tasks
+		ClassImplementations: e.ClassImplementations, // Immutable PersistentMap
+		ExtensionMethods:     e.ExtensionMethods,     // Immutable PersistentMap
 		Loader:               e.Loader,
 		BaseDir:              e.BaseDir,
 		ModuleCache:          e.ModuleCache, // shared
 		TraitDefaults:        e.TraitDefaults,
 		BuiltinTraitDefaults: e.BuiltinTraitDefaults,
-		GlobalEnv:            e.GlobalEnv,
+		GlobalEnv:            e.GlobalEnv.Clone(),
 		OperatorTraits:       e.OperatorTraits,
 		TypeMap:              e.TypeMap,
 		CurrentCallNode:      nil,                  // new per goroutine
@@ -972,8 +1035,8 @@ func (e *Evaluator) getTypeNameForDefault(t typesystem.Type) string {
 
 func (e *Evaluator) tryDefaultMethod(typeName string) Object {
 	// Look for Default trait implementation with getDefault method
-	if typesMap, ok := e.ClassImplementations["Default"]; ok {
-		if methodTableObj, ok := typesMap[typeName]; ok {
+	if typesMap, ok := e.GetTraitImplementations("Default"); ok {
+		if methodTableObj := typesMap.Get(&StringKey{Value: typeName}); methodTableObj != nil {
 			if methodTable, ok := methodTableObj.(*MethodTable); ok {
 				if method, ok := methodTable.Methods["getDefault"]; ok {
 					// getDefault needs a dummy argument - create nil as placeholder

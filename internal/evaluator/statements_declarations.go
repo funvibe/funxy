@@ -91,10 +91,6 @@ func (e *Evaluator) evalTraitDeclaration(node *ast.TraitDeclaration, env *Enviro
 		}
 	}
 
-	if _, ok := e.ClassImplementations[node.Name.Value]; !ok {
-		e.ClassImplementations[node.Name.Value] = make(map[string]Object)
-	}
-
 	return &Nil{}
 }
 
@@ -119,10 +115,6 @@ func (e *Evaluator) evalInstanceDeclaration(node *ast.InstanceDeclaration, env *
 		return newError("instance declaration missing arguments")
 	}
 
-	if _, ok := e.ClassImplementations[className]; !ok {
-		e.ClassImplementations[className] = make(map[string]Object)
-	}
-
 	methods := make(map[string]Object)
 	for _, method := range node.Methods {
 		fn := &Function{
@@ -139,7 +131,7 @@ func (e *Evaluator) evalInstanceDeclaration(node *ast.InstanceDeclaration, env *
 	}
 
 	table := &MethodTable{Methods: methods}
-	e.ClassImplementations[className][typeKey] = table
+	e.AddClassImplementation(className, typeKey, table)
 
 	// Register constructor for generic instances (Tree-walk mode support for dictionary passing)
 	if len(node.AnalyzedRequirements) > 0 || len(node.TypeParams) > 0 {

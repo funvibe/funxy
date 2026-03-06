@@ -1003,9 +1003,9 @@ func renderProgressBar(e *Evaluator, state *progressState) {
 	pctStr := fmt.Sprintf("%3d%%", int(pct*100))
 
 	if getColorLevel() > 0 {
-		_, _ = fmt.Fprintf(e.Out, "\r\033[2K%s \033[36m[%s]\033[39m %s", label, bar, pctStr)
+		_, _ = fmt.Fprintf(e.Out, "\033[2K\r%s \033[36m[%s]\033[39m %s", label, bar, pctStr)
 	} else {
-		_, _ = fmt.Fprintf(e.Out, "\r\033[2K%s [%s] %s", label, bar, pctStr)
+		_, _ = fmt.Fprintf(e.Out, "\033[2K\r%s [%s] %s", label, bar, pctStr)
 	}
 }
 
@@ -1014,6 +1014,14 @@ func renderProgressBar(e *Evaluator, state *progressState) {
 // =============================================================================
 
 func builtinTable(e *Evaluator, args ...Object) Object {
+	return renderTableHelper(e, args, false)
+}
+
+func builtinTableOnly(e *Evaluator, args ...Object) Object {
+	return renderTableHelper(e, args, true)
+}
+
+func renderTableHelper(e *Evaluator, args []Object, clearLine bool) Object {
 	if len(args) != 2 {
 		return newError("table expects 2 arguments (headers, rows), got %d", len(args))
 	}
@@ -1106,10 +1114,17 @@ func builtinTable(e *Evaluator, args ...Object) Object {
 		return vertical + strings.Join(parts, vertical) + vertical
 	}
 
+	writeLine := func(sb *strings.Builder, content string) {
+		if clearLine {
+			sb.WriteString("\r\033[2K")
+		}
+		sb.WriteString(content)
+		sb.WriteByte('\n')
+	}
+
 	// Render
 	var sb strings.Builder
-	sb.WriteString(buildSep(topLeft, teeDown, topRight))
-	sb.WriteByte('\n')
+	writeLine(&sb, buildSep(topLeft, teeDown, topRight))
 
 	// Header
 	if getColorLevel() > 0 {
@@ -1117,21 +1132,21 @@ func builtinTable(e *Evaluator, args ...Object) Object {
 		for i, h := range headers {
 			boldHeaders[i] = "\033[1m" + h + "\033[22m"
 		}
-		sb.WriteString(buildRow(boldHeaders))
+		writeLine(&sb, buildRow(boldHeaders))
 	} else {
-		sb.WriteString(buildRow(headers))
+		writeLine(&sb, buildRow(headers))
 	}
-	sb.WriteByte('\n')
 
-	sb.WriteString(buildSep(teeRight, cross, teeLeft))
-	sb.WriteByte('\n')
+	writeLine(&sb, buildSep(teeRight, cross, teeLeft))
 
 	// Data rows
 	for _, row := range rows {
-		sb.WriteString(buildRow(row))
-		sb.WriteByte('\n')
+		writeLine(&sb, buildRow(row))
 	}
 
+	if clearLine {
+		sb.WriteString("\r\033[2K")
+	}
 	sb.WriteString(buildSep(bottomLeft, teeUp, bottomRight))
 
 	_, _ = fmt.Fprintln(e.Out, sb.String())
@@ -1330,7 +1345,8 @@ func TermBuiltins() map[string]*Builtin {
 		"progressDone":  {Fn: builtinProgressDone, Name: "progressDone"},
 
 		// Phase 6: Table
-		"table": {Fn: builtinTable, Name: "table"},
+		"table":     {Fn: builtinTable, Name: "table"},
+		"tableOnly": {Fn: builtinTableOnly, Name: "tableOnly"},
 
 		// Phase 7: Raw mode & key reading
 		"termRaw":     {Fn: builtinTermRaw, Name: "termRaw"},

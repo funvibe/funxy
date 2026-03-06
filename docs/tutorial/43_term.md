@@ -216,7 +216,7 @@ Arrow keys (↑↓) to navigate, Enter to confirm:
 ```rust
 import "lib/term" (select)
 
-lang = select("Favorite language", ["Funxy", "Go", "Rust", "Haskell", "Python"])
+lang = select("Favorite language", ["Go", "Rust", "Haskell", "Python"])
 print("You chose: " ++ lang)
 ```
 
@@ -224,8 +224,7 @@ Terminal output:
 
 ```
 ? Favorite language
-  ▸ Funxy
-    Go
+  ▸ Go
     Rust
     Haskell
     Python
@@ -317,7 +316,7 @@ import "lib/term" (table)
 table(
     ["Name", "Language", "Stars"],
     [
-        ["Funxy", "Go", "1000"],
+        ["Go", "Go", "1000"],
         ["Haskell", "Haskell", "999"],
         ["Rust", "Rust", "500"]
     ]
@@ -330,7 +329,7 @@ Output:
 ┌─────────┬──────────┬───────┐
 │ Name    │ Language │ Stars │
 ├─────────┼──────────┼───────┤
-│ Funxy   │ Go       │ 1000  │
+│ Go      │ Go       │ 1000  │
 │ Haskell │ Haskell  │ 999   │
 │ Rust    │ Rust     │ 500   │
 └─────────┴──────────┴───────┘
@@ -469,3 +468,4 @@ if env == "prod" && !confirm(bold(yellow("⚠ Deploy to PRODUCTION?")), false) {
 | `progressSet` | `Handle, Int -> Nil` | Set value |
 | `progressDone` | `Handle -> Nil` | Complete |
 | `table` | `List<String>, List<List<String>> -> Nil` | Print table |
+| `tableOnly` | `List<String>, List<List<String>> -> Nil` | Print table clearing prefix |

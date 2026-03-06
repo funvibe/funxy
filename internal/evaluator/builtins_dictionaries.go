@@ -33,7 +33,10 @@ func RegisterDictionaryGlobals(e *Evaluator, env *Environment) {
 	// Used from package-level variable TraitMethods
 
 	// 2. Iterate over all registered implementations
-	for traitName, types := range e.ClassImplementations {
+	for _, typesMapObj := range e.ClassImplementations.Items() {
+		traitName := typesMapObj.Key.(*StringKey).Value
+		types := typesMapObj.Value.(*PersistentMap)
+
 		// Get expected method order
 		expectedMethods, ok := TraitMethods[traitName]
 		if !ok {
@@ -50,7 +53,9 @@ func RegisterDictionaryGlobals(e *Evaluator, env *Environment) {
 			isHKT = true
 		}
 
-		for typeName, methodTable := range types {
+		for _, typeItem := range types.Items() {
+			typeName := typeItem.Key.(*StringKey).Value
+			methodTable := typeItem.Value
 			// Determine if we need a Constructor ($ctor) or Constant ($impl)
 			// Rule:
 			// - If Trait is *, and Type is a Container (Generic), use Constructor.
@@ -208,9 +213,9 @@ func resolveSupers(e *Evaluator, traitName, typeName string, isHKT bool) []*Dict
 		// We can reuse the same logic to find/construct the dictionary
 		// Since we are inside the loop, we might need to construct it on demand or look it up.
 
-		// Ideally we look up in e.ClassImplementations again.
-		if types, ok := e.ClassImplementations[superName]; ok {
-			if _, ok := types[typeName]; ok {
+		// Ideally we look up in e.GetTraitImplementations again.
+		if superTypes, ok := e.GetTraitImplementations(superName); ok {
+			if superMethodTableObj := superTypes.Get(&StringKey{Value: typeName}); superMethodTableObj != nil {
 				// Found it. But we need the Dictionary object.
 				// Since we haven't finished registering, it might not be in env.
 				// But we can RECURSIVELY call a helper to build the dictionary.
@@ -235,12 +240,12 @@ func buildDictionary(e *Evaluator, traitName, typeName string) *Dictionary {
 		return &Dictionary{TraitName: traitName} // Empty
 	}
 
-	types, ok := e.ClassImplementations[traitName]
+	types, ok := e.GetTraitImplementations(traitName)
 	if !ok {
 		return &Dictionary{TraitName: traitName}
 	}
-	methodTableObj, ok := types[typeName]
-	if !ok {
+	methodTableObj := types.Get(&StringKey{Value: typeName})
+	if methodTableObj == nil {
 		return &Dictionary{TraitName: traitName}
 	}
 

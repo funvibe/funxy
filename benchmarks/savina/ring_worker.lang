@@ -1,0 +1,29 @@
+import "lib/rpc" (callWait)
+import "lib/time" (sleepMs)
+
+fun pass(token) {
+    remaining = token.remaining
+    if remaining <= 0 {
+        token
+    } else {
+        ring = token.ring
+        idx = token.idx
+        total = len(ring)
+        nextIdx = if idx + 1 < total { idx + 1 } else { 0 }
+        nextId = ring[nextIdx]
+
+        res = callWait(nextId, "pass", {
+            remaining: remaining - 1,
+            ring: ring,
+            idx: nextIdx
+        }, 60000)
+        match res {
+            Ok(v) -> v
+            Fail(e) -> panic("ring pass failed: " ++ e)
+        }
+    }
+}
+
+while true {
+    sleepMs(1000)
+}

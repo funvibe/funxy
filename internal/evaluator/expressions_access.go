@@ -74,9 +74,11 @@ func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Enviro
 	// Try Extension Method lookup
 	typeName := getRuntimeTypeName(left)
 
-	if methods, ok := e.ExtensionMethods[typeName]; ok {
-		if fn, ok := methods[node.Member.Value]; ok {
-			return &BoundMethod{Receiver: left, Function: fn}
+	if methodObj := e.ExtensionMethods.Get(&StringKey{Value: typeName}); methodObj != nil {
+		if methods, ok := methodObj.(*PersistentMap); ok {
+			if fn := methods.Get(&StringKey{Value: node.Member.Value}); fn != nil {
+				return &BoundMethod{Receiver: left, Function: fn}
+			}
 		}
 	}
 
@@ -164,9 +166,11 @@ func (e *Evaluator) accessMember(obj Object, node *ast.MemberExpression, env *En
 
 	// Try Extension Method lookup
 	typeName := getRuntimeTypeName(obj)
-	if methods, ok := e.ExtensionMethods[typeName]; ok {
-		if fn, ok := methods[node.Member.Value]; ok {
-			return &BoundMethod{Receiver: obj, Function: fn}
+	if methodObj := e.ExtensionMethods.Get(&StringKey{Value: typeName}); methodObj != nil {
+		if methods, ok := methodObj.(*PersistentMap); ok {
+			if fn := methods.Get(&StringKey{Value: node.Member.Value}); fn != nil {
+				return &BoundMethod{Receiver: obj, Function: fn}
+			}
 		}
 	}
 

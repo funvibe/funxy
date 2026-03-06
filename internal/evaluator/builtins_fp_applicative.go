@@ -6,7 +6,7 @@ package evaluator
 
 func registerApplicativeInstances(e *Evaluator) {
 	// List<T>
-	e.ClassImplementations["Applicative"]["List"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "List", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -49,10 +49,10 @@ func registerApplicativeInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Option<T>
-	e.ClassImplementations["Applicative"]["Option"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "Option", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -106,10 +106,10 @@ func registerApplicativeInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 
 	// Result<E, A>
-	e.ClassImplementations["Applicative"]["Result"] = &MethodTable{
+	e.AddClassImplementation("Applicative", "Result", &MethodTable{
 		Methods: map[string]Object{
 			"pure": &Builtin{
 				Name: "pure",
@@ -167,5 +167,5 @@ func registerApplicativeInstances(e *Evaluator) {
 				},
 			},
 		},
-	}
+	})
 }

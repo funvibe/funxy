@@ -892,7 +892,8 @@ func initTermPackage() {
 			"progressSet":   typesystem.TFunc{Params: []typesystem.Type{handleType, typesystem.Int}, ReturnType: typesystem.Nil},
 			"progressDone":  typesystem.TFunc{Params: []typesystem.Type{handleType}, ReturnType: typesystem.Nil},
 			// Table
-			"table": typesystem.TFunc{Params: []typesystem.Type{listString, listListString}, ReturnType: typesystem.Nil},
+			"table":     typesystem.TFunc{Params: []typesystem.Type{listString, listListString}, ReturnType: typesystem.Nil},
+			"tableOnly": typesystem.TFunc{Params: []typesystem.Type{listString, listListString}, ReturnType: typesystem.Nil},
 		},
 	}
 	RegisterVirtualPackage("lib/term", pkg)

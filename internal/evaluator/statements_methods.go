@@ -25,10 +25,7 @@ func (e *Evaluator) evalExtensionMethod(node *ast.FunctionStatement, env *Enviro
 	newParams := append([]*ast.Parameter{node.Receiver}, node.Parameters...)
 	fn.Parameters = newParams
 
-	if _, ok := e.ExtensionMethods[typeName]; !ok {
-		e.ExtensionMethods[typeName] = make(map[string]Object)
-	}
-	e.ExtensionMethods[typeName][methodName] = fn
+	e.AddExtensionMethod(typeName, methodName, fn)
 
 	return &Nil{}
 }

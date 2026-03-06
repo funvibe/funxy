@@ -16,9 +16,7 @@ func registerShowTrait(e *Evaluator, env *Environment) {
 	methodName := "show"
 
 	// Ensure trait exists
-	if _, ok := e.ClassImplementations[traitName]; !ok {
-		e.ClassImplementations[traitName] = make(map[string]Object)
-	}
+	// Map init removed
 
 	// Register trait method dispatcher in environment
 	// This makes 'show' a ClassMethod, enabling dynamic dispatch
@@ -60,11 +58,11 @@ func registerShowTrait(e *Evaluator, env *Environment) {
 	// For example, "Option" covers Some/None if RuntimeType() returns Option.
 
 	for _, typeName := range types {
-		e.ClassImplementations[traitName][typeName] = &MethodTable{
+		e.AddClassImplementation(traitName, typeName, &MethodTable{
 			Methods: map[string]Object{
 				methodName: genericShow,
 			},
-		}
+		})
 	}
 
 	// Register Dictionary Evidence for Show
