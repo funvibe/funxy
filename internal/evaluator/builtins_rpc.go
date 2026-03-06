@@ -73,7 +73,7 @@ func builtinRpcCallWait(e *Evaluator, args ...Object) Object {
 
 	// Check capabilities before allowing RPCCallFast
 	if e.SupervisorHandler == nil {
-		return makeFailStr("RPC API not injected by host")
+		return makeFailStr("RPC API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	// Try Fast Path (Zero-Copy RPC) if the host supports it
@@ -163,7 +163,7 @@ func builtinRpcCallWaitGroup(e *Evaluator, args ...Object) Object {
 
 	// Check capabilities before allowing RPCCallGroupFast
 	if e.SupervisorHandler == nil {
-		return makeFailStr("RPC API not injected by host")
+		return makeFailStr("RPC API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	// Try Fast Path (Zero-Copy RPC) if the host supports it

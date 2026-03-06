@@ -692,9 +692,9 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 			return
 		}
 
-		if errObj, ok := result.(*Error); ok {
+		if result != nil && result.Type() == ERROR_OBJ {
 			w.WriteHeader(500)
-			_, _ = w.Write([]byte(errObj.Message))
+			_, _ = w.Write([]byte(result.(*Error).Message))
 			return
 		}
 
@@ -842,9 +842,9 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 			return
 		}
 
-		if errObj, ok := result.(*Error); ok {
+		if result != nil && result.Type() == ERROR_OBJ {
 			w.WriteHeader(500)
-			_, _ = w.Write([]byte(errObj.Message))
+			_, _ = w.Write([]byte(result.(*Error).Message))
 			return
 		}
 

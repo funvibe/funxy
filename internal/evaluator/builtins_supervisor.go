@@ -107,7 +107,7 @@ func builtinSpawnVM(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.SupervisorHandler == nil || e.SupervisorHandler.SpawnVM == nil {
-		return makeFailStr("supervisor API not injected by host")
+		return makeFailStr("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	id, err := e.SupervisorHandler.SpawnVM(path, config, stateData)
@@ -182,7 +182,7 @@ func builtinKillVM(e *Evaluator, args ...Object) Object {
 	id := ListToString(idList)
 
 	if e.SupervisorHandler == nil || e.SupervisorHandler.KillVM == nil {
-		return newError("supervisor API not injected by host")
+		return newError("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	// killVM is a hard kill, so no state is saved. We give it a short timeout (e.g., 1000ms) to clean up.
@@ -231,7 +231,7 @@ func builtinStopVM(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.SupervisorHandler == nil || e.SupervisorHandler.StopVM == nil {
-		return makeFailStr("supervisor API not injected by host")
+		return makeFailStr("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	stateData, err := e.SupervisorHandler.StopVM(id, saveState, timeoutMs)
@@ -256,7 +256,7 @@ func builtinTraceOn(e *Evaluator, args ...Object) Object {
 		return newError("traceOn expects 0 or 1 arguments, got %d", len(args))
 	}
 	if e.SupervisorHandler == nil {
-		return newError("supervisor API not injected by host")
+		return newError("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 	if len(args) == 0 {
 		if e.SupervisorHandler.TraceOnAll == nil {
@@ -285,7 +285,7 @@ func builtinTraceOff(e *Evaluator, args ...Object) Object {
 		return newError("traceOff expects 0 or 1 arguments, got %d", len(args))
 	}
 	if e.SupervisorHandler == nil {
-		return newError("supervisor API not injected by host")
+		return newError("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 	if len(args) == 0 {
 		if e.SupervisorHandler.TraceOffAll == nil {
@@ -315,7 +315,7 @@ func builtinListVMs(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.SupervisorHandler == nil || e.SupervisorHandler.ListVMs == nil {
-		return newError("supervisor API not injected by host")
+		return newError("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	vms := e.SupervisorHandler.ListVMs()
@@ -350,7 +350,7 @@ func builtinVMStats(e *Evaluator, args ...Object) Object {
 	id := ListToString(idList)
 
 	if e.SupervisorHandler == nil || e.SupervisorHandler.GetStats == nil {
-		return newError("supervisor API not injected by host")
+		return newError("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	stats, err := e.SupervisorHandler.GetStats(id)
@@ -378,7 +378,7 @@ func builtinRPCCircuitStats(e *Evaluator, args ...Object) Object {
 	id := ListToString(idList)
 
 	if e.SupervisorHandler == nil || e.SupervisorHandler.GetRPCCircuitStats == nil {
-		return newError("supervisor API not injected by host")
+		return newError("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	stats, err := e.SupervisorHandler.GetRPCCircuitStats(id)
@@ -448,7 +448,7 @@ func builtinReceiveEventWait(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.SupervisorHandler == nil || e.SupervisorHandler.ReceiveEventTimeout == nil {
-		return newError("supervisor API not injected by host")
+		return newError("supervisor API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	var evt map[string]interface{}

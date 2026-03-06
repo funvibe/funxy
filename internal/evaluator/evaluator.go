@@ -361,6 +361,7 @@ func (e *Evaluator) Clone() *Evaluator {
 		HostToValueHandler:   e.HostToValueHandler,                    // shared
 		EmbeddedResources:    e.EmbeddedResources,                     // shared, read-only
 		IsBundleMode:         e.IsBundleMode,                          // shared
+		Fork:                 e.Fork,                                  // shared
 	}
 }
 

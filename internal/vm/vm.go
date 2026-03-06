@@ -856,7 +856,15 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 	savedFrameCount := vm.frameCount
 	savedSp := vm.sp
 
-	// Push arguments onto stack (closure is NOT pushed - callClosureDirect handles it)
+	// In vmCallHandler, we are calling a VM closure from an external source (e.g. builtin or host).
+	// Normally, callClosure expects the stack to be: [closure, arg1, arg2, ...].
+	// Here, we just push the arguments. So frame.base will be exactly where the first arg is,
+	// which is savedSp.
+	// This means that when the function returns, performReturn will set sp to frame.base + 1.
+	// But frame.base is savedSp! So sp will become savedSp + 1, and pop() will return the result
+	// and restore sp to savedSp. This perfectly matches the caller's expectations.
+
+	// Push arguments onto stack (closure is NOT pushed)
 	for _, arg := range args {
 		vm.push(ObjectToValue(arg))
 	}
@@ -886,7 +894,8 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 	frame.closure = vmClosure
 	frame.chunk = fn.Chunk
 	frame.ip = 0
-	frame.base = vm.sp - len(args)
+	// Base is exactly savedSp because we didn't push the closure, only args
+	frame.base = savedSp
 
 	// Inherit implicit context from current frame (caller)
 	if vm.frame != nil {
@@ -926,9 +935,10 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 
 					// Restore stack pointer to before arguments were pushed
 					// performReturn sets sp to frame.base + 1 (result)
-					// frame.base is usually savedSp
-					// So sp is savedSp + 1. pop() makes it savedSp.
-					vm.sp = savedSp
+					// Since frame.base is savedSp, sp is now savedSp + 1.
+					// We pop the result, which makes sp exactly savedSp!
+					// We do not need to explicitly set vm.sp = savedSp, but we can do it to be safe.
+					// vm.sp = savedSp (done by performReturn + pop)
 					// Restore frame safely (handle slice growth)
 					if savedFrameCount > 0 {
 						vm.frame = &vm.frames[savedFrameCount-1]

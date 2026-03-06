@@ -122,7 +122,7 @@ func builtinMailboxSend(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.Send == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	if err := e.MailboxHandler.Send(targetId, args[1]); err != nil {
@@ -156,7 +156,7 @@ func builtinMailboxSendWait(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.SendWait == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	if err := e.MailboxHandler.SendWait(targetId, args[1], timeoutMs, e.Context); err != nil {
@@ -218,7 +218,7 @@ func builtinMailboxReply(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.Send == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	if err := e.MailboxHandler.Send(fromStr, replyMsg); err != nil {
@@ -275,7 +275,7 @@ func builtinMailboxReplyWait(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.SendWait == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	if err := e.MailboxHandler.SendWait(fromStr, replyMsg, timeoutMs, e.Context); err != nil {
@@ -329,7 +329,7 @@ func builtinMailboxRequestWait(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.Send == nil || e.MailboxHandler.ReceiveByWait == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	// Send message
@@ -373,7 +373,7 @@ func builtinMailboxReceive(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.Receive == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	res, err := e.MailboxHandler.Receive()
@@ -399,7 +399,7 @@ func builtinMailboxReceiveWait(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.ReceiveWait == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	res, err := e.MailboxHandler.ReceiveWait(timeoutMs, e.Context)
@@ -416,7 +416,7 @@ func builtinMailboxReceiveBy(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.ReceiveBy == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	res, err := e.MailboxHandler.ReceiveBy(args[0])
@@ -442,7 +442,7 @@ func builtinMailboxReceiveByWait(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.ReceiveByWait == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	res, err := e.MailboxHandler.ReceiveByWait(args[0], timeoutMs, e.Context)
@@ -459,7 +459,7 @@ func builtinMailboxPeek(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.Peek == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	res, err := e.MailboxHandler.Peek()
@@ -476,7 +476,7 @@ func builtinMailboxPeekBy(e *Evaluator, args ...Object) Object {
 	}
 
 	if e.MailboxHandler == nil || e.MailboxHandler.PeekBy == nil {
-		return makeFailStr("mailbox API not injected by host")
+		return makeFailStr("mailbox API not injected by host (hint: run via `funxy vmm <script>`)")
 	}
 
 	res, err := e.MailboxHandler.PeekBy(args[0])
