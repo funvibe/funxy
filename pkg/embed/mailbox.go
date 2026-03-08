@@ -548,7 +548,7 @@ func (mb *Mailbox) PeekBy(e *evaluator.Evaluator, predicate evaluator.Object) (e
 // If it's a pure data object, we can safely return it without actual copying (Zero-Copy Fast Path).
 func DeepCopy(obj evaluator.Object) (evaluator.Object, error) {
 	if err := evaluator.CheckSerializable(obj); err != nil {
-		return nil, fmt.Errorf("message is not transferrable (contains closures or host objects): %v", err)
+		return nil, fmt.Errorf("cannot pass mutable or non-serializable object via mailbox: %v", err)
 	}
 	// Zero-copy: object is immutable, safe to share directly!
 	return obj, nil

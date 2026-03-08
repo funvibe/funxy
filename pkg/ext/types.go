@@ -22,8 +22,13 @@ type Boolean = evaluator.Boolean
 type Bytes = evaluator.Bytes
 type RecordInstance = evaluator.RecordInstance
 
-// RegisterExtBuiltins registers a map of builtins for a given extension module.
-func RegisterExtBuiltins(moduleName string, builtins map[string]Object) {
+// Type aliases for HAMT
+type StringMap = evaluator.StringMap
+
+var EmptyStringMap = evaluator.EmptyStringMap
+
+// RegisterExtBuiltins registers builtins for a given extension module.
+func RegisterExtBuiltins(moduleName string, builtins *StringMap) {
 	evaluator.RegisterExtBuiltins(moduleName, builtins)
 }
 

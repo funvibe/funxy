@@ -74,6 +74,18 @@ func NewRecord(fieldMap map[string]Object) *RecordInstance {
 	return &RecordInstance{Fields: fields}
 }
 
+func NewRecordFromStringMap(m *StringMap) *RecordInstance {
+	fields := make([]RecordField, 0, m.Len())
+	m.Range(func(k string, v Object) bool {
+		fields = append(fields, RecordField{Key: k, Value: v})
+		return true
+	})
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].Key < fields[j].Key
+	})
+	return &RecordInstance{Fields: fields}
+}
+
 // Get returns the value for a key, or nil if not found.
 func (r *RecordInstance) Get(key string) Object {
 	idx := sort.Search(len(r.Fields), func(i int) bool {

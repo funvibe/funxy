@@ -8,39 +8,43 @@ import "sync"
 // Thread-safe: registration happens once at startup; reads happen from multiple VMs.
 var extBuiltinsRegistry = struct {
 	mu       sync.RWMutex
-	registry map[string]map[string]Object
+	registry *StringMap
 }{
-	registry: make(map[string]map[string]Object),
+	registry: EmptyStringMap(),
 }
 
 // RegisterExtBuiltins registers runtime builtins for an ext/* virtual module.
 // The name should be the module name without the "ext/" prefix (e.g. "redis").
-// The builtins map is name → Object (typically *Builtin functions).
 //
 // This function is called by generated binding code at startup.
 // It is safe to call from init() functions.
-func RegisterExtBuiltins(name string, builtins map[string]Object) {
+func RegisterExtBuiltins(name string, builtins *StringMap) {
 	extBuiltinsRegistry.mu.Lock()
 	defer extBuiltinsRegistry.mu.Unlock()
-	extBuiltinsRegistry.registry[name] = builtins
+	extBuiltinsRegistry.registry = extBuiltinsRegistry.registry.Put(name, builtins)
 }
 
 // GetExtBuiltins returns the registered builtins for an ext/* module.
 // Returns nil if no builtins are registered for the given name.
-func GetExtBuiltins(name string) map[string]Object {
+func GetExtBuiltins(name string) *StringMap {
 	extBuiltinsRegistry.mu.RLock()
 	defer extBuiltinsRegistry.mu.RUnlock()
-	return extBuiltinsRegistry.registry[name]
+	obj := extBuiltinsRegistry.registry.Get(name)
+	if obj == nil {
+		return nil
+	}
+	return obj.(*StringMap)
 }
 
 // GetAllExtModules returns the names of all registered ext modules.
 func GetAllExtModules() []string {
 	extBuiltinsRegistry.mu.RLock()
 	defer extBuiltinsRegistry.mu.RUnlock()
-	names := make([]string, 0, len(extBuiltinsRegistry.registry))
-	for name := range extBuiltinsRegistry.registry {
+	names := make([]string, 0, extBuiltinsRegistry.registry.Len())
+	extBuiltinsRegistry.registry.Range(func(name string, _ Object) bool {
 		names = append(names, name)
-	}
+		return true
+	})
 	return names
 }
 
@@ -48,8 +52,7 @@ func GetAllExtModules() []string {
 func IsExtModuleRegistered(name string) bool {
 	extBuiltinsRegistry.mu.RLock()
 	defer extBuiltinsRegistry.mu.RUnlock()
-	_, ok := extBuiltinsRegistry.registry[name]
-	return ok
+	return extBuiltinsRegistry.registry.Get(name) != nil
 }
 
 // ClearExtBuiltins removes all registered ext builtins.
@@ -57,5 +60,5 @@ func IsExtModuleRegistered(name string) bool {
 func ClearExtBuiltins() {
 	extBuiltinsRegistry.mu.Lock()
 	defer extBuiltinsRegistry.mu.Unlock()
-	extBuiltinsRegistry.registry = make(map[string]map[string]Object)
+	extBuiltinsRegistry.registry = EmptyStringMap()
 }

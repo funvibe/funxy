@@ -248,9 +248,9 @@ Useful runtime flags:
 funxy vmm supervisor.lang --rpc-serialization auto
 ```
 
-- `auto` (default): fast object path when available, stable `fdf` for byte fallback.
-- `fdf`: stable wire format for slow RPC path.
-- `ephemeral`: `gob` on slow path (faster in some cases, version-coupled).
+- `auto` (default): fast zero-copy object path for RPC when available, stable `fdf` for byte fallback and state handoff.
+- `fdf`: stable wire format for all byte serialization (version-agnostic).
+- `ephemeral`: `gob` for all byte serialization (faster, version-coupled).
 
 Supervisor utilities:
 - `kit/vmm` — restart intensity/backoff, state-validation fallback, lifecycle helpers.

@@ -672,7 +672,7 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 
 	// For ext/* modules, only check the ext builtins registry.
 	// This avoids collision with lib/* modules of the same name (e.g. lib/uuid vs ext/uuid).
-	var builtins map[string]evaluator.Object
+	var builtins *evaluator.StringMap
 	if isExtModule {
 		builtins = evaluator.GetExtBuiltins(pkgName)
 	} else {
@@ -683,41 +683,34 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 	}
 
 	if imp.Alias != "" {
-		fields := make(map[string]evaluator.Object)
-		for name, fn := range builtins {
-			fields[name] = fn
-		}
-		modObj := evaluator.NewRecord(fields)
+		modObj := evaluator.NewRecordFromStringMap(builtins)
 		modObj.ModuleName = pkgName
 		vm.globals.Globals = vm.globals.Globals.Put(imp.Alias, modObj)
 	} else if imp.ImportAll {
-		// Create a set of excluded symbols for efficient lookup
 		excluded := make(map[string]bool)
 		for _, sym := range imp.ExcludeSymbols {
 			excluded[sym] = true
 		}
-
-		// Import all symbols except excluded ones
-		for name, fn := range builtins {
+		builtins.Range(func(name string, fn evaluator.Object) bool {
 			if !excluded[name] {
 				vm.globals.Globals = vm.globals.Globals.Put(name, fn)
 			}
-		}
+			return true
+		})
 	} else if len(imp.ExcludeSymbols) > 0 {
-		// import "lib/module" !(a, b, c) - import all except specified
 		excluded := make(map[string]bool)
 		for _, sym := range imp.ExcludeSymbols {
 			excluded[sym] = true
 		}
-
-		for name, fn := range builtins {
+		builtins.Range(func(name string, fn evaluator.Object) bool {
 			if !excluded[name] {
 				vm.globals.Globals = vm.globals.Globals.Put(name, fn)
 			}
-		}
+			return true
+		})
 	} else if len(imp.Symbols) > 0 {
 		for _, sym := range imp.Symbols {
-			if fn, ok := builtins[sym]; ok {
+			if fn := builtins.Get(sym); fn != nil {
 				vm.evalMu.Lock()
 				vm.globals.Globals = vm.globals.Globals.Put(sym, fn)
 				if vm.eval != nil && vm.eval.GlobalEnv != nil {
@@ -725,11 +718,10 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 				}
 				vm.evalMu.Unlock()
 
-				// Auto-import ADT constructors if present
 				if pkg := modules.GetVirtualPackage("lib/" + pkgName); pkg != nil {
 					if variants, ok := pkg.Variants[sym]; ok {
 						for _, variantName := range variants {
-							if variantFn, exists := builtins[variantName]; exists {
+							if variantFn := builtins.Get(variantName); variantFn != nil {
 								vm.evalMu.Lock()
 								vm.globals.Globals = vm.globals.Globals.Put(variantName, variantFn)
 								if vm.eval != nil && vm.eval.GlobalEnv != nil {
@@ -745,11 +737,7 @@ func (vm *VM) importVirtualModule(imp PendingImport) error {
 			}
 		}
 	} else {
-		fields := make(map[string]evaluator.Object)
-		for name, fn := range builtins {
-			fields[name] = fn
-		}
-		modObj := evaluator.NewRecord(fields)
+		modObj := evaluator.NewRecordFromStringMap(builtins)
 		modObj.ModuleName = pkgName
 		vm.evalMu.Lock()
 		vm.globals.Globals = vm.globals.Globals.Put(pkgName, modObj)
@@ -775,35 +763,39 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 
 		for _, pkg := range packages {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
-			for name, fn := range builtins {
-				if !excluded[name] {
-					vm.evalMu.Lock()
-					vm.globals.Globals = vm.globals.Globals.Put(name, fn)
-					if vm.eval != nil && vm.eval.GlobalEnv != nil {
-						vm.eval.GlobalEnv.Set(name, fn)
+			if builtins != nil {
+				builtins.Range(func(name string, fn evaluator.Object) bool {
+					if !excluded[name] {
+						vm.evalMu.Lock()
+						vm.globals.Globals = vm.globals.Globals.Put(name, fn)
+						if vm.eval != nil && vm.eval.GlobalEnv != nil {
+							vm.eval.GlobalEnv.Set(name, fn)
+						}
+						vm.evalMu.Unlock()
 					}
-					vm.evalMu.Unlock()
-				}
+					return true
+				})
 			}
 		}
 	} else if len(imp.ExcludeSymbols) > 0 {
-		// import "lib" !(a, b, c) - import all except specified
 		excluded := make(map[string]bool)
 		for _, sym := range imp.ExcludeSymbols {
 			excluded[sym] = true
 		}
-
 		for _, pkg := range packages {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
-			for name, fn := range builtins {
-				if !excluded[name] {
-					vm.evalMu.Lock()
-					vm.globals.Globals = vm.globals.Globals.Put(name, fn)
-					if vm.eval != nil && vm.eval.GlobalEnv != nil {
-						vm.eval.GlobalEnv.Set(name, fn)
+			if builtins != nil {
+				builtins.Range(func(name string, fn evaluator.Object) bool {
+					if !excluded[name] {
+						vm.evalMu.Lock()
+						vm.globals.Globals = vm.globals.Globals.Put(name, fn)
+						if vm.eval != nil && vm.eval.GlobalEnv != nil {
+							vm.eval.GlobalEnv.Set(name, fn)
+						}
+						vm.evalMu.Unlock()
 					}
-					vm.evalMu.Unlock()
-				}
+					return true
+				})
 			}
 		}
 	} else if imp.Alias != "" {
@@ -811,11 +803,7 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 		for _, pkg := range packages {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
 			if builtins != nil {
-				pkgFields := make(map[string]evaluator.Object)
-				for name, fn := range builtins {
-					pkgFields[name] = fn
-				}
-				pkgObj := evaluator.NewRecord(pkgFields)
+				pkgObj := evaluator.NewRecordFromStringMap(builtins)
 				pkgObj.ModuleName = pkg
 				libFields[pkg] = pkgObj
 			}
@@ -832,11 +820,7 @@ func (vm *VM) importAllLibPackages(imp PendingImport) error {
 		for _, pkg := range packages {
 			builtins := evaluator.GetVirtualModuleBuiltins(pkg)
 			if builtins != nil {
-				pkgFields := make(map[string]evaluator.Object)
-				for name, fn := range builtins {
-					pkgFields[name] = fn
-				}
-				pkgObj := evaluator.NewRecord(pkgFields)
+				pkgObj := evaluator.NewRecordFromStringMap(builtins)
 				pkgObj.ModuleName = pkg
 				libFields[pkg] = pkgObj
 			}

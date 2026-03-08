@@ -1981,9 +1981,10 @@ func (vm *VM) RegisterFPTraits() {
 	evaluator.RegisterDictionaryGlobals(e, env)
 
 	// Copy symbols from env to globals
-	for name, val := range env.GetStore() {
+	env.GetStore().Range(func(name string, val evaluator.Object) bool {
 		vm.globals.Globals = vm.globals.Globals.Put(name, val)
-	}
+		return true
+	})
 
 	// Copy trait implementations from evaluator to VM
 	for _, traitMapObj := range e.ClassImplementations.Items() {

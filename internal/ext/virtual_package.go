@@ -103,13 +103,14 @@ func RegisterVirtualPackagesFromRegistry() {
 			Symbols: make(map[string]typesystem.Type),
 		}
 
-		for funcName := range builtins {
+		builtins.Range(func(funcName string, _ evaluator.Object) bool {
 			pkg.Symbols[funcName] = typesystem.TFunc{
 				Params:     []typesystem.Type{typesystem.TVar{Name: "_ext_arg_" + funcName}},
 				ReturnType: typesystem.TVar{Name: "_ext_ret_" + funcName},
 				IsVariadic: true,
 			}
-		}
+			return true
+		})
 
 		modules.RegisterVirtualPackage("ext/"+modName, pkg)
 	}

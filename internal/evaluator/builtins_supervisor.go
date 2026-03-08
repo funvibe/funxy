@@ -51,7 +51,7 @@ func builtinSpawnVM(e *Evaluator, args ...Object) Object {
 			if inner, ok := UnwrapOption(stateArg); ok {
 				stateArg = inner
 			}
-			stateData, err = SerializeValue(stateArg, "ephemeral")
+			stateData, err = SerializeValue(stateArg, rpcSerializationMode(e))
 			if err != nil {
 				return makeFailStr(fmt.Sprintf("failed to serialize state: %v", err))
 			}
@@ -501,7 +501,7 @@ func builtinSerialize(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 && len(args) != 2 {
 		return newError("serialize expects 1 or 2 arguments")
 	}
-	mode := "ephemeral"
+	mode := rpcSerializationMode(e)
 	if len(args) == 2 {
 		if list, ok := args[1].(*List); ok && IsStringList(list) {
 			mode = ListToString(list)

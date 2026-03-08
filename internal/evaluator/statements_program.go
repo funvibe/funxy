@@ -163,23 +163,22 @@ func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.
 
 	// Handle import specifications
 	if node.ImportAll {
-		for name, fn := range builtins {
+		builtins.Range(func(name string, fn Object) bool {
 			env.Set(name, fn)
-		}
+			return true
+		})
 		return &Nil{}
 	}
 
 	if len(node.Symbols) > 0 {
 		for _, sym := range node.Symbols {
-			if fn, ok := builtins[sym.Value]; ok {
+			if fn := builtins.Get(sym.Value); fn != nil {
 				env.Set(sym.Value, fn)
 
-				// Auto-import ADT constructors if present
-				// For virtual modules, we need to check the VirtualPackage definition
 				if pkg := modules.GetVirtualPackage("lib/" + mod.Name); pkg != nil {
 					if variants, ok := pkg.Variants[sym.Value]; ok {
 						for _, variantName := range variants {
-							if variantFn, exists := builtins[variantName]; exists {
+							if variantFn := builtins.Get(variantName); variantFn != nil {
 								env.Set(variantName, variantFn)
 							}
 						}
@@ -197,20 +196,17 @@ func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.
 		for _, sym := range node.Exclude {
 			excludeSet[sym.Value] = true
 		}
-		for name, fn := range builtins {
+		builtins.Range(func(name string, fn Object) bool {
 			if !excludeSet[name] {
 				env.Set(name, fn)
 			}
-		}
+			return true
+		})
 		return &Nil{}
 	}
 
 	// Default: import as module object
-	fields := make(map[string]Object)
-	for name, fn := range builtins {
-		fields[name] = fn
-	}
-	modObj := NewRecord(fields)
+	modObj := NewRecordFromStringMap(builtins)
 	modObj.ModuleName = mod.Name
 
 	name := ""
@@ -225,12 +221,12 @@ func (e *Evaluator) importVirtualModule(node *ast.ImportStatement, mod *modules.
 }
 
 // getVirtualModuleBuiltins returns builtins for a virtual module by name
-func (e *Evaluator) getVirtualModuleBuiltins(name string) map[string]Object {
+func (e *Evaluator) getVirtualModuleBuiltins(name string) *StringMap {
 	return GetVirtualModuleBuiltins(name)
 }
 
 // GetVirtualModuleBuiltins returns builtins for a virtual module by name (exported for VM use)
-func GetVirtualModuleBuiltins(name string) map[string]Object {
+func GetVirtualModuleBuiltins(name string) *StringMap {
 	env := NewEnvironment()
 	var builtins map[string]*Builtin
 
@@ -355,28 +351,30 @@ func GetVirtualModuleBuiltins(name string) map[string]Object {
 // importAllLibPackages handles import "lib" - imports all lib/* packages
 func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environment) Object {
 	// Collect all builtins from all lib/* packages
-	allBuiltins := make(map[string]Object)
+	allBuiltins := EmptyStringMap()
 
 	for _, pkgName := range modules.GetLibSubPackages() {
 		builtins := e.getVirtualModuleBuiltins(pkgName)
-		for name, fn := range builtins {
-			allBuiltins[name] = fn
+		if builtins != nil {
+			builtins.Range(func(name string, fn Object) bool {
+				allBuiltins = allBuiltins.Put(name, fn)
+				return true
+			})
 		}
 	}
 
 	// Handle import specifications
 	if node.ImportAll {
-		// import "lib" (*) - import all symbols from all packages
-		for name, fn := range allBuiltins {
+		allBuiltins.Range(func(name string, fn Object) bool {
 			env.Set(name, fn)
-		}
+			return true
+		})
 		return &Nil{}
 	}
 
 	if len(node.Symbols) > 0 {
-		// import "lib" (symbol1, symbol2) - import specific symbols
 		for _, sym := range node.Symbols {
-			if fn, ok := allBuiltins[sym.Value]; ok {
+			if fn := allBuiltins.Get(sym.Value); fn != nil {
 				env.Set(sym.Value, fn)
 			} else {
 				return newError("symbol '%s' not found in lib packages", sym.Value)
@@ -386,16 +384,16 @@ func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environ
 	}
 
 	if len(node.Exclude) > 0 {
-		// import "lib" !(symbol1, symbol2) - import all except specified
 		excludeSet := make(map[string]bool)
 		for _, sym := range node.Exclude {
 			excludeSet[sym.Value] = true
 		}
-		for name, fn := range allBuiltins {
+		allBuiltins.Range(func(name string, fn Object) bool {
 			if !excludeSet[name] {
 				env.Set(name, fn)
 			}
-		}
+			return true
+		})
 		return &Nil{}
 	}
 
@@ -404,11 +402,7 @@ func (e *Evaluator) importAllLibPackages(node *ast.ImportStatement, env *Environ
 	for _, pkgName := range modules.GetLibSubPackages() {
 		builtins := e.getVirtualModuleBuiltins(pkgName)
 		if builtins != nil {
-			pkgFields := make(map[string]Object)
-			for name, fn := range builtins {
-				pkgFields[name] = fn
-			}
-			pkgObj := NewRecord(pkgFields)
+			pkgObj := NewRecordFromStringMap(builtins)
 			pkgObj.ModuleName = pkgName
 			libFields[pkgName] = pkgObj
 		}
@@ -602,16 +596,17 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 }
 
 // applyVirtualPackageTypes applies types from VirtualPackages to builtins
-func applyVirtualPackageTypes(name string, m map[string]Object) {
+func applyVirtualPackageTypes(name string, m *StringMap) {
 	pkg := modules.GetVirtualPackage("lib/" + name)
 	if pkg == nil {
 		return
 	}
-	for bName, obj := range m {
+	m.Range(func(bName string, obj Object) bool {
 		if b, ok := obj.(*Builtin); ok {
 			if sym, exists := pkg.Symbols[bName]; exists && sym != nil {
 				b.TypeInfo = sym
 			}
 		}
-	}
+		return true
+	})
 }

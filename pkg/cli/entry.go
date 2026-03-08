@@ -98,11 +98,7 @@ func evaluateModule(mod *modules.Module, loader *modules.Loader) (evaluator.Obje
 				if builtins == nil {
 					return nil, fmt.Errorf("unknown virtual module: %s", depMod.Name)
 				}
-				fields := make(map[string]evaluator.Object)
-				for name, fn := range builtins {
-					fields[name] = fn
-				}
-				rec := evaluator.NewRecord(fields)
+				rec := evaluator.NewRecordFromStringMap(builtins)
 				rec.ModuleName = depMod.Name
 				depObj = rec
 			} else if depMod.IsPackageGroup {
@@ -2496,10 +2492,13 @@ func addAutoImports(sourceCode string) string {
 	// lib/* takes priority over ext/* — don't overwrite existing entries.
 	for _, modName := range evaluator.GetAllExtModules() {
 		builtins := evaluator.GetExtBuiltins(modName)
-		for funcName := range builtins {
-			if _, exists := index[funcName]; !exists {
-				index[funcName] = "ext/" + modName
-			}
+		if builtins != nil {
+			builtins.Range(func(funcName string, _ evaluator.Object) bool {
+				if _, exists := index[funcName]; !exists {
+					index[funcName] = "ext/" + modName
+				}
+				return true
+			})
 		}
 	}
 

@@ -6,6 +6,22 @@ import (
 	"fmt"
 )
 
+const (
+	SerializeModeAuto      = "auto"
+	SerializeModeFDF       = "fdf"
+	SerializeModeEphemeral = "ephemeral"
+	DefaultSerializeMode   = SerializeModeFDF
+)
+
+// ResolveSerializationMode returns the concrete serialization format.
+// Explicit "fdf"/"ephemeral" pass through; everything else (including "auto") resolves to DefaultSerializeMode.
+func ResolveSerializationMode(mode string) string {
+	if mode == SerializeModeEphemeral || mode == SerializeModeFDF {
+		return mode
+	}
+	return DefaultSerializeMode
+}
+
 // CheckSerializable recursively checks if a Funxy object can be safely serialized.
 // It rejects HostObjects, closures, and other non-data types.
 func CheckSerializable(obj Object) error {
@@ -92,7 +108,7 @@ func SerializeValue(val Object, mode string) ([]byte, error) {
 		return nil, err
 	}
 
-	if mode == "fdf" {
+	if mode == SerializeModeFDF {
 		return SerializeFDF(val)
 	}
 

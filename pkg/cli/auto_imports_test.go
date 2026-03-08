@@ -34,10 +34,9 @@ func TestAddAutoImports_ExtShadowing(t *testing.T) {
 
 	// Register ext/uuid builtins with overlapping names
 	evaluator.ClearExtBuiltins()
-	evaluator.RegisterExtBuiltins("uuid", map[string]evaluator.Object{
-		"uuidNew":   &evaluator.Builtin{}, // Same name as lib/uuid.uuidNew
-		"uuidParse": &evaluator.Builtin{}, // Same name as lib/uuid.uuidParse
-	})
+	evaluator.RegisterExtBuiltins("uuid", evaluator.EmptyStringMap().
+		Put("uuidNew", &evaluator.Builtin{}).
+		Put("uuidParse", &evaluator.Builtin{}))
 	defer evaluator.ClearExtBuiltins()
 
 	code := `show(uuidNew())`
@@ -61,11 +60,10 @@ func TestAddAutoImports_ExtOnlyFunction(t *testing.T) {
 
 	// Register ext/redis with unique function names (no lib/* overlap)
 	evaluator.ClearExtBuiltins()
-	evaluator.RegisterExtBuiltins("redis", map[string]evaluator.Object{
-		"redisConnect": &evaluator.Builtin{},
-		"redisGet":     &evaluator.Builtin{},
-		"redisSet":     &evaluator.Builtin{},
-	})
+	evaluator.RegisterExtBuiltins("redis", evaluator.EmptyStringMap().
+		Put("redisConnect", &evaluator.Builtin{}).
+		Put("redisGet", &evaluator.Builtin{}).
+		Put("redisSet", &evaluator.Builtin{}))
 	defer evaluator.ClearExtBuiltins()
 
 	code := `conn = redisConnect("localhost:6379")`
@@ -88,9 +86,8 @@ func TestAddAutoImports_MixedLibAndExt(t *testing.T) {
 	modules.InitVirtualPackages()
 
 	evaluator.ClearExtBuiltins()
-	evaluator.RegisterExtBuiltins("redis", map[string]evaluator.Object{
-		"redisGet": &evaluator.Builtin{},
-	})
+	evaluator.RegisterExtBuiltins("redis", evaluator.EmptyStringMap().
+		Put("redisGet", &evaluator.Builtin{}))
 	defer evaluator.ClearExtBuiltins()
 
 	// Uses uuidNew (lib/uuid) and redisGet (ext/redis)
@@ -136,11 +133,10 @@ func TestAddAutoImports_PartialShadowing(t *testing.T) {
 	modules.InitVirtualPackages()
 
 	evaluator.ClearExtBuiltins()
-	evaluator.RegisterExtBuiltins("uuid", map[string]evaluator.Object{
-		"uuidNew":     &evaluator.Builtin{}, // Shadows lib/uuid
-		"uuidParse":   &evaluator.Builtin{}, // Shadows lib/uuid
-		"extOnlyFunc": &evaluator.Builtin{}, // Unique to ext
-	})
+	evaluator.RegisterExtBuiltins("uuid", evaluator.EmptyStringMap().
+		Put("uuidNew", &evaluator.Builtin{}).
+		Put("uuidParse", &evaluator.Builtin{}).
+		Put("extOnlyFunc", &evaluator.Builtin{}))
 	defer evaluator.ClearExtBuiltins()
 
 	code := `a = uuidNew()

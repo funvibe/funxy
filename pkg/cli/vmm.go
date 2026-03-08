@@ -73,7 +73,7 @@ func handleVmm() bool {
 	pidFile := ".vmm.pid"
 	socketPath := filepath.Join(os.TempDir(), "funxy_vmm.sock")
 	metricsPort := "9090"
-	rpcSerialization := "auto"
+	rpcSerialization := evaluator.SerializeModeAuto
 
 	for i := 2; i < len(os.Args); i++ {
 		if os.Args[i] == "--pidfile" {
@@ -138,7 +138,7 @@ func handleVmm() bool {
 		os.Exit(1)
 	}
 
-	if rpcSerialization != "auto" && rpcSerialization != "fdf" && rpcSerialization != "ephemeral" {
+	if rpcSerialization != evaluator.SerializeModeAuto && rpcSerialization != evaluator.SerializeModeFDF && rpcSerialization != evaluator.SerializeModeEphemeral {
 		fmt.Fprintf(os.Stderr, "Error: invalid --rpc-serialization mode '%s' (expected auto|fdf|ephemeral)\n", rpcSerialization)
 		os.Exit(1)
 	}

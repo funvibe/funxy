@@ -16,20 +16,23 @@ testRun("Complex data structures serialization", fun() -> {
         err: Fail("failure")
     }
 
-    // Test GOB serialization (default)
-    print("Testing GOB serialization...")
-    bytes_gob = serialize(record)
-    assertEquals(Ok(record), deserialize(bytes_gob), "GOB serialization failed")
+    // Test default serialization (FDF)
+    print("Testing default serialization...")
+    bytes_default = serialize(record)
+    assertEquals(Ok(record), deserialize(bytes_default), "Default serialization failed")
 
-    // Test FDF serialization
+    // Test explicit FDF serialization
     print("Testing FDF serialization...")
     bytes_fdf = serialize(record, "fdf")
     assertEquals(Ok(record), deserialize(bytes_fdf), "FDF serialization failed")
 
+    // Default should match explicit FDF
+    assertEquals(bytes_default, bytes_fdf, "Default and explicit FDF should be identical")
+
     // Test explicit GOB serialization
     print("Testing explicit GOB serialization...")
-    bytes_gob_explicit = serialize(record, "gob")
-    assertEquals(Ok(record), deserialize(bytes_gob_explicit), "Explicit GOB serialization failed")
+    bytes_gob = serialize(record, "ephemeral")
+    assertEquals(Ok(record), deserialize(bytes_gob), "Explicit GOB serialization failed")
 
     // Verify formats are different
     assertNotEquals(bytes_gob, bytes_fdf, "GOB and FDF formats should be different")
@@ -38,31 +41,31 @@ testRun("Complex data structures serialization", fun() -> {
 testRun("Large integer serialization", fun() -> {
     print("Testing large integer...")
     large_int = 9223372036854775807
-    bytes_large_gob = serialize(large_int)
-    assertEquals(Ok(large_int), deserialize(bytes_large_gob), "Large int GOB failed")
+    bytes_large = serialize(large_int)
+    assertEquals(Ok(large_int), deserialize(bytes_large), "Large int default failed")
 
-    bytes_large_fdf = serialize(large_int, "fdf")
-    assertEquals(Ok(large_int), deserialize(bytes_large_fdf), "Large int FDF failed")
+    bytes_large_ephemeral = serialize(large_int, "ephemeral")
+    assertEquals(Ok(large_int), deserialize(bytes_large_ephemeral), "Large int ephemeral failed")
 })
 
 testRun("Float serialization", fun() -> {
     print("Testing float...")
     flt = 3.14159
-    bytes_flt_gob = serialize(flt)
-    assertEquals(Ok(flt), deserialize(bytes_flt_gob), "Float GOB failed")
+    bytes_flt = serialize(flt)
+    assertEquals(Ok(flt), deserialize(bytes_flt), "Float default failed")
 
-    bytes_flt_fdf = serialize(flt, "fdf")
-    assertEquals(Ok(flt), deserialize(bytes_flt_fdf), "Float FDF failed")
+    bytes_flt_ephemeral = serialize(flt, "ephemeral")
+    assertEquals(Ok(flt), deserialize(bytes_flt_ephemeral), "Float ephemeral failed")
 })
 
 testRun("Boolean serialization", fun() -> {
     print("Testing boolean...")
     b = true
-    bytes_bool_gob = serialize(b)
-    assertEquals(Ok(b), deserialize(bytes_bool_gob), "Boolean GOB failed")
+    bytes_bool = serialize(b)
+    assertEquals(Ok(b), deserialize(bytes_bool), "Boolean default failed")
 
-    bytes_bool_fdf = serialize(b, "fdf")
-    assertEquals(Ok(b), deserialize(bytes_bool_fdf), "Boolean FDF failed")
+    bytes_bool_ephemeral = serialize(b, "ephemeral")
+    assertEquals(Ok(b), deserialize(bytes_bool_ephemeral), "Boolean ephemeral failed")
 })
 
 testRun("Type serialization", fun() -> {

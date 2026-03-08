@@ -200,7 +200,7 @@ func NewHypervisorWithRPCCircuitConfig(cfg RPCCircuitConfig) *Hypervisor {
 		rpcCircuits:             make(map[string]*rpcCircuit),
 		rpcDefaultCircuitConfig: cfg,
 		rpcCircuitConfigByVM:    make(map[string]RPCCircuitConfig),
-		rpcSerializationMode:    "auto",
+		rpcSerializationMode:    evaluator.SerializeModeAuto,
 		traceEnabled:            make(map[string]bool),
 		traceSubs:               make(map[chan RPCTraceEvent]struct{}),
 		traceHistory:            make([]RPCTraceEvent, defaultTraceHistoryCapacity),
@@ -217,12 +217,12 @@ func (h *Hypervisor) SetRPCSerializationMode(mode string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "fdf":
-		h.rpcSerializationMode = "fdf"
-	case "ephemeral":
-		h.rpcSerializationMode = "ephemeral"
+	case evaluator.SerializeModeFDF:
+		h.rpcSerializationMode = evaluator.SerializeModeFDF
+	case evaluator.SerializeModeEphemeral:
+		h.rpcSerializationMode = evaluator.SerializeModeEphemeral
 	default:
-		h.rpcSerializationMode = "auto"
+		h.rpcSerializationMode = evaluator.SerializeModeAuto
 	}
 }
 
@@ -230,9 +230,13 @@ func (h *Hypervisor) GetRPCSerializationMode() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	if h.rpcSerializationMode == "" {
-		return "auto"
+		return evaluator.SerializeModeAuto
 	}
 	return h.rpcSerializationMode
+}
+
+func (h *Hypervisor) resolveSerializationMode() string {
+	return evaluator.ResolveSerializationMode(h.GetRPCSerializationMode())
 }
 
 // SetRPCCircuitConfig updates global circuit breaker settings.
@@ -1231,13 +1235,13 @@ func (h *Hypervisor) terminateVM(id string, saveState bool, timeoutMs int, stopR
 				if callErr != nil {
 					shutDownErr = fmt.Errorf("onTerminate failed: %v", callErr)
 				} else {
-					stateData, shutDownErr = evaluator.SerializeValue(res, "ephemeral")
+					stateData, shutDownErr = evaluator.SerializeValue(res, h.resolveSerializationMode())
 				}
 			} else {
 				// If no onTerminate, just serialize the current state from StateHandler
 				if entry.VM.machine.GetEvaluator().StateHandler != nil {
 					if st := entry.VM.machine.GetEvaluator().StateHandler.GetState(); st != nil {
-						stateData, shutDownErr = evaluator.SerializeValue(st, "ephemeral")
+						stateData, shutDownErr = evaluator.SerializeValue(st, h.resolveSerializationMode())
 					}
 				}
 			}
@@ -1521,7 +1525,7 @@ func (h *Hypervisor) rpcCallRaw(targetID, method string, args []byte, timeoutMs 
 	}
 
 	// Serialize the result back to bytes
-	return evaluator.SerializeValue(res, "ephemeral")
+	return evaluator.SerializeValue(res, h.resolveSerializationMode())
 }
 
 // RPCCallFast is the zero-copy Fast Path for RPC when both VMs are in the same process.
@@ -1574,6 +1578,10 @@ func (h *Hypervisor) RPCCallFastFrom(callerID, targetID, method string, argsObj 
 }
 
 func (h *Hypervisor) rpcCallFastRaw(targetID, method string, argsObj evaluator.Object, timeoutMs int) (evaluator.Object, error) {
+	if err := evaluator.CheckSerializable(argsObj); err != nil {
+		return nil, fmt.Errorf("cannot pass mutable or non-serializable object via RPC: %v", err)
+	}
+
 	obj := h.getVMs().Get(targetID)
 	if obj == nil {
 		return nil, fmt.Errorf("VM '%s' not found", targetID)

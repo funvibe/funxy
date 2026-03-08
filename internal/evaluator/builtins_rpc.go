@@ -8,14 +8,9 @@ const defaultRPCTimeoutMs = 5000
 
 func rpcSerializationMode(e *Evaluator) string {
 	if e == nil || e.SupervisorHandler == nil || e.SupervisorHandler.RPCSerializationMode == nil {
-		return "fdf"
+		return DefaultSerializeMode
 	}
-	mode := e.SupervisorHandler.RPCSerializationMode()
-	if mode == "ephemeral" || mode == "fdf" {
-		return mode
-	}
-	// "auto" and unknown values default to stable wire format.
-	return "fdf"
+	return ResolveSerializationMode(e.SupervisorHandler.RPCSerializationMode())
 }
 
 // RpcBuiltins returns built-in functions for lib/rpc virtual package

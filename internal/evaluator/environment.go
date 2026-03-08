@@ -12,7 +12,6 @@ func NewEnvironment() *Environment {
 func NewEnclosedEnvironment(outer *Environment) *Environment {
 	env := NewEnvironment()
 	env.outer = outer
-	// Inherit SymbolTable from outer environment
 	if outer != nil {
 		env.SymbolTable = outer.SymbolTable
 	}
@@ -23,7 +22,7 @@ type Environment struct {
 	mu          sync.RWMutex
 	store       map[string]Object
 	outer       *Environment
-	SymbolTable *symbols.SymbolTable // Reference to static symbol table
+	SymbolTable *symbols.SymbolTable
 }
 
 func (e *Environment) Get(name string) (Object, bool) {
@@ -58,24 +57,29 @@ func (e *Environment) Update(name string, val Object) bool {
 	return false
 }
 
-// GetStore returns a copy of the store (exported for VM)
-func (e *Environment) GetStore() map[string]Object {
+// GetStore returns the environment bindings as a StringMap.
+func (e *Environment) GetStore() *StringMap {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	copy := make(map[string]Object)
+	sm := EmptyStringMap()
 	for k, v := range e.store {
-		copy[k] = v
+		sm = sm.Put(k, v)
 	}
-	return copy
+	return sm
 }
 
-// Clone creates a thread-safe copy of the environment
+// Clone creates a thread-safe copy of the environment.
 func (e *Environment) Clone() *Environment {
 	if e == nil {
 		return nil
 	}
-	clone := NewEnvironment()
-	clone.store = e.GetStore()
+	e.mu.RLock()
+	storeCopy := make(map[string]Object, len(e.store))
+	for k, v := range e.store {
+		storeCopy[k] = v
+	}
+	e.mu.RUnlock()
+	clone := &Environment{store: storeCopy}
 	if e.outer != nil {
 		clone.outer = e.outer.Clone()
 	}

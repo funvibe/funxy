@@ -75,7 +75,7 @@ func TestVirtualModulesConsistency(t *testing.T) {
 		}
 
 		// 1. Check that every implemented builtin is defined in the virtual package
-		for name := range impls {
+		impls.Range(func(name string, _ Object) bool {
 			found := false
 			if _, ok := vp.Symbols[name]; ok {
 				found = true
@@ -84,19 +84,18 @@ func TestVirtualModulesConsistency(t *testing.T) {
 			} else if _, ok := vp.Constructors[name]; ok {
 				found = true
 			}
-
 			if !found {
 				t.Errorf("Function %q implemented in %s but not defined in virtual package symbols, types or constructors", name, pkgPath)
 			}
-		}
+			return true
+		})
 
 		// 2. Check that every symbol in virtual package has an implementation
 		for name := range vp.Symbols {
-			if _, ok := impls[name]; !ok {
+			if impls.Get(name) == nil {
 				t.Errorf("Function %q defined in %s symbols but missing implementation", name, pkgPath)
 			}
-			// Check type consistency
-			if obj, ok := impls[name]; ok {
+			if obj := impls.Get(name); obj != nil {
 				if builtin, ok := obj.(*Builtin); ok && builtin.TypeInfo == nil {
 					t.Errorf("Builtin %q in %s has no TypeInfo", name, pkgPath)
 				}
@@ -105,14 +104,14 @@ func TestVirtualModulesConsistency(t *testing.T) {
 
 		// Check types are implemented
 		for name := range vp.Types {
-			if _, ok := impls[name]; !ok {
+			if impls.Get(name) == nil {
 				t.Errorf("Type %q defined in %s types but missing implementation", name, pkgPath)
 			}
 		}
 
 		// Check constructors are implemented
 		for name := range vp.Constructors {
-			if _, ok := impls[name]; !ok {
+			if impls.Get(name) == nil {
 				t.Errorf("Constructor %q defined in %s constructors but missing implementation", name, pkgPath)
 			}
 		}

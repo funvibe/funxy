@@ -45,12 +45,12 @@ funxy vmm examples/vmm/sql_state_supervisor_daemon.lang
 - `--pidfile`: Where to write the host process ID (default: `.vmm.pid`).
 - `--socket`: Path to the UNIX socket for admin commands (default: `/tmp/funxy_vmm.sock`).
 - `--metrics-port`: Port for Prometheus metrics (default: `9090`).
-- `--rpc-serialization`: Slow-path RPC serialization mode: `auto|fdf|ephemeral` (default: `auto`).
+- `--rpc-serialization`: Serialization format for all cross-VM byte transfers (RPC slow path, state handoff on start/stop): `auto|fdf|ephemeral` (default: `auto`).
 
-For RPC serialization mode:
-- `auto` (default): use fast object path where available; for byte fallback, use stable `fdf`.
-- `fdf`: always use stable `fdf` on slow byte RPC path.
-- `ephemeral`: use `encoding/gob` on slow byte RPC path (fastest, but version-coupled).
+For serialization mode:
+- `auto` (default): use fast zero-copy object path for RPC where available; for byte fallback and state handoff, use stable `fdf`.
+- `fdf`: always use stable `fdf` for byte serialization (version-agnostic, safe for persistence).
+- `ephemeral`: use `encoding/gob` for byte serialization (fastest, but version-coupled — not safe for long-term persistence).
 
 While running, you can send a `SIGUSR1` signal to the host process to trigger a graceful hot-reload:
 ```bash
@@ -492,9 +492,9 @@ reply(msg, { result: "pong" })
 
 ## Persistent State (FDF format)
 
-While the default state handoff serialization (ephemeral) is fast and perfect for zero-downtime hot-reloads within the *same* process, it is not safe to save to a database. If the Go host binary is upgraded, the internal memory representation might change.
+By default, state handoff and serialization use the Funxy Data Format (`fdf`). `FDF` is a stable, version-agnostic format that retains 100% of Funxy's type semantics (differentiating between `Tuple` and `List`, ADT variant tags, etc.) and is safe to save to a database or persist across host binary upgrades.
 
-For persisting state across host upgrades, the VMM provides the Funxy Data Format (FDF). FDF is version-agnostic and retains 100% of Funxy's type semantics (differentiating between `Tuple` and `List`, ADT variant tags, etc.).
+For maximum performance during zero-downtime hot-reloads within the *same* process, you can opt into `ephemeral` serialization mode. Note that `ephemeral` is version-coupled and is not safe for long-term persistence.
 
 ```rust
 import "lib/vmm" (serialize, deserialize)
@@ -678,7 +678,7 @@ This section is the complete operator/developer reference. Use it as the source 
 | `vmStats` | `(vmId: String) -> Map<String, Int>` | Per-VM low-level counters |
 | `rpcCircuitStats` | `(vmId: String) -> Record` | Per-VM RPC circuit diagnostics (`state`, counters, thresholds) |
 | `receiveEventWait` | `(timeoutMs?: Int = 5000) -> Record` | Blocking hypervisor event stream read |
-| `serialize` | `(value: a, mode?: String = "ephemeral") -> Bytes` | Encode state/value to bytes |
+| `serialize` | `(value: a, mode?: String = "fdf") -> Bytes` | Encode state/value to bytes |
 | `deserialize` | `(bytes: Bytes) -> Result<String, a>` | Decode bytes back to value |
 | `getState` | `() -> Option<a>` | Read current VM state snapshot |
 | `setState` | `(value: a) -> Nil` | Update current VM state snapshot |
@@ -745,8 +745,8 @@ Use `rpcCircuitStats(vmId)` from supervisor code when you need live breaker diag
 
 #### `serialize` modes
 
-- `"ephemeral"` (default): optimized for same-host/same-runtime handoff.
-- `"fdf"`: durable format for persistence across host upgrades.
+- `"fdf"` (default): durable format for persistence across host upgrades.
+- `"ephemeral"`: optimized for same-host/same-runtime handoff.
 
 ---
 

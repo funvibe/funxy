@@ -1238,22 +1238,22 @@ import (
 var _ = context.Background
 var _ = fmt.Sprintf
 
-// register_{{.Identifier}} returns the builtins map for the "ext/{{.Alias}}" module.
-func register_{{.Identifier}}() map[string]ext.Object {
-	builtins := make(map[string]ext.Object)
+// register_{{.Identifier}} returns the builtins for the "ext/{{.Alias}}" module.
+func register_{{.Identifier}}() *ext.StringMap {
+	builtins := ext.EmptyStringMap()
 {{- range .Values}}
 
-	builtins["{{.FunxyName}}"] = {{.GoExpr}}
+	builtins = builtins.Put("{{.FunxyName}}", {{.GoExpr}})
 {{- end}}
 
 {{- range .Funcs}}
 
-	builtins["{{.FunxyName}}"] = &ext.Builtin{
+	builtins = builtins.Put("{{.FunxyName}}", &ext.Builtin{
 		Name: "{{.FunxyName}}",
 		Fn: func(ev *ext.Evaluator, args ...ext.Object) ext.Object {
 {{.GoCode}}
 		},
-	}
+	})
 {{- end}}
 
 	return builtins

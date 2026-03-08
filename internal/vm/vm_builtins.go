@@ -279,7 +279,8 @@ func (vm *VM) registerBuiltinTraitMethod(traitName, typeName, methodName string,
 // importBuiltinsFromEnv imports builtins from an Environment
 func (vm *VM) importBuiltinsFromEnv(env *evaluator.Environment) {
 	builtins := evaluator.GetBuiltinsList()
-	for name, obj := range builtins {
+	builtins.Range(func(name string, obj evaluator.Object) bool {
 		vm.globals.Globals = vm.globals.Globals.Put(name, obj)
-	}
+		return true
+	})
 }

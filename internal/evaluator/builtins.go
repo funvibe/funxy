@@ -811,9 +811,9 @@ func checkType(val Object, expected typesystem.Type) bool {
 	}
 }
 
-// GetBuiltinsList returns a map of all builtin names to their objects
-// This is used by the VM to register builtins
-func GetBuiltinsList() map[string]Object {
+// GetBuiltinsList returns a StringMap of all builtin names to their objects.
+// Used by the VM to register builtins.
+func GetBuiltinsList() *StringMap {
 	env := NewEnvironment()
 	RegisterBuiltins(env)
 

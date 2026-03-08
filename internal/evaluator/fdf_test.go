@@ -495,7 +495,7 @@ func BenchmarkSerializeValue_Ephemeral(b *testing.B) {
 	ensureGobBenchTypesRegistered()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := SerializeValue(obj, "ephemeral"); err != nil {
+		if _, err := SerializeValue(obj, SerializeModeEphemeral); err != nil {
 			b.Fatalf("SerializeValue(ephemeral) failed: %v", err)
 		}
 	}
