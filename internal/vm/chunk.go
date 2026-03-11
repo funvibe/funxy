@@ -31,6 +31,7 @@ func init() {
 	gob.Register(&evaluator.Rational{})
 	gob.Register(&evaluator.DataInstance{})
 	gob.Register(&evaluator.Constructor{})
+	gob.Register(&evaluator.Builtin{}) // Register Builtin for serialization
 	gob.Register(&evaluator.ClassMethod{})
 	gob.Register(&evaluator.TypeObject{})
 	gob.Register(&evaluator.Error{}) // Register Error type for serialization

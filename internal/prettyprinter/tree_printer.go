@@ -880,6 +880,38 @@ func (p *TreePrinter) VisitListComprehension(n *ast.ListComprehension) {
 	p.indent--
 }
 
+func (p *TreePrinter) VisitMapComprehension(n *ast.MapComprehension) {
+	p.write("MapComprehension\n")
+	p.indent++
+	p.writeIndent()
+	p.write("Key: ")
+	n.Key.Accept(p)
+	p.write("\n")
+	p.writeIndent()
+	p.write("Value: ")
+	n.Value.Accept(p)
+	p.write("\n")
+	p.writeIndent()
+	p.write("Clauses:\n")
+	p.indent++
+	for _, clause := range n.Clauses {
+		p.writeIndent()
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			p.write("Generator: ")
+			c.Pattern.Accept(p)
+			p.write(" <- ")
+			c.Iterable.Accept(p)
+		case *ast.CompFilter:
+			p.write("Filter: ")
+			c.Condition.Accept(p)
+		}
+		p.write("\n")
+	}
+	p.indent--
+	p.indent--
+}
+
 func (p *TreePrinter) VisitRangeExpression(n *ast.RangeExpression) {
 	p.write("Range\n")
 	p.indent++

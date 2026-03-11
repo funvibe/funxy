@@ -1,0 +1,41 @@
+import "lib/rpc" (callWait, callWaitFast)
+import "lib/time" (clockMs, sleepMs)
+
+fun benchmark(args) {
+    targetId = args.targetId
+    largeMap = args.largeMap
+    iters = args.iters
+    mode = args.mode
+
+    // Warmup
+    if mode == "fast" {
+        _ = callWaitFast(targetId, "mutateMap", largeMap)
+    } else {
+        _ = callWait(targetId, "mutateMap", largeMap)
+    }
+
+    start = clockMs()
+    for i in 1..(iters - 1) {
+        if mode == "fast" {
+            _ = callWaitFast(targetId, "mutateMap", largeMap)
+        } else {
+            _ = callWait(targetId, "mutateMap", largeMap)
+        }
+    }
+    
+    if mode == "fast" {
+        match callWaitFast(targetId, "mutateMap", largeMap) {
+            Ok(res) -> { time: clockMs() - start, lastMap: res }
+            Fail(e) -> { time: clockMs() - start, lastMap: largeMap }
+        }
+    } else {
+        match callWait(targetId, "mutateMap", largeMap) {
+            Ok(res) -> { time: clockMs() - start, lastMap: res }
+            Fail(e) -> { time: clockMs() - start, lastMap: largeMap }
+        }
+    }
+}
+
+while true {
+    sleepMs(1000)
+}

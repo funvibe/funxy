@@ -382,6 +382,11 @@ func (v *VM) CompileFile(path string) (*vm.Chunk, error) {
 		return nil, fmt.Errorf("%s", errMsg)
 	}
 
+	// Capture trait defaults from analysis
+	if ctx.TraitDefaults != nil {
+		v.machine.SetTraitDefaults(ctx.TraitDefaults)
+	}
+
 	if ctx.BytecodeChunk == nil {
 		return nil, nil // No code to run
 	}
@@ -441,6 +446,13 @@ func (cp *CompilerProcessor) Process(ctx *pipeline.PipelineContext) *pipeline.Pi
 	compiler := vm.NewCompiler()
 	// Pass TypeMap
 	compiler.SetTypeMap(ctx.TypeMap)
+	// Pass SymbolTable and ResolutionMap for trait dispatch and optimization
+	if ctx.SymbolTable != nil {
+		compiler.SetSymbolTable(ctx.SymbolTable)
+	}
+	if ctx.ResolutionMap != nil {
+		compiler.SetResolutionMap(ctx.ResolutionMap)
+	}
 	// Set BaseDir for compiler if available
 	if ctx.FilePath != "" {
 		compiler.SetBaseDir(filepath.Dir(ctx.FilePath))

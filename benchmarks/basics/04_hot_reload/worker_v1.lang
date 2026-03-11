@@ -1,0 +1,24 @@
+import "lib/vmm" (getState, setState)
+import "lib/time" (sleep)
+
+// Get initial state (None on first run) or use default
+initialState = getState() ?? { count: 0, version: "v1" }
+setState(initialState)
+
+print("[v1] Booting up. Current state: " ++ show(initialState))
+
+// Main loop
+for i in 1..10 {
+    // Update state
+    current = getState() ?? { count: 0, version: "v1" }
+    newState = { count: current.count + 1, version: current.version }
+    setState(newState)
+    print("[v1] Tick " ++ show(newState.count))
+    sleep(1)
+}
+
+// Global hook for graceful termination
+fun onTerminate(finalState) {
+    print("[v1] Terminating gracefully... Returning final state.")
+    return finalState
+}

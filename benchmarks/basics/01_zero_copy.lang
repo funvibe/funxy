@@ -1,0 +1,82 @@
+// Proof #1: Zero-Copy and Immutable Structural Sharing
+// Demonstrates that large data structures can be passed between workers instantly
+// without serialization overhead, and that mutations are thread-safe (Structural Sharing).
+
+import "lib/time" (clockMs)
+import "lib/vmm" (spawnVM, stopVM)
+import "lib/rpc" (callWait)
+import "lib/map" (mapPut, mapGet)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+
+print("Proof #1: Zero-Copy and Immutability")
+print("-----------------------------------")
+
+const numItems = 100000
+const numItemsK = numItems / 1000
+
+print("1. Generating ${numItemsK}k element map in Supervisor...")
+start = clockMs()
+largeMap: Map<String, Int> = %{ "key_" ++ show(i) => i | i <- 1..numItems }
+
+genTime = clockMs() - start
+print("   Done in " ++ show(genTime) ++ "ms")
+
+match spawnVM(pathJoin([sysScriptDir(), "worker_zero_copy.lang"]), { name: "target_worker", capabilities: ["lib/rpc"] }) {
+    Ok(targetId) -> {
+        
+        match spawnVM(pathJoin([sysScriptDir(), "worker_zero_copy_caller.lang"]), { name: "checked_caller", capabilities: ["lib/rpc"] }) {
+            Ok(checkedCallerId) -> {
+                match spawnVM(pathJoin([sysScriptDir(), "worker_zero_copy_caller.lang"]), { name: "trusted_caller", capabilities: ["lib/rpc"] }) {
+                    Ok(trustedCallerId) -> {
+                        
+                        iters = 20
+                        
+                        print("\n2. Worker-to-Worker: Sending ${numItemsK}k map from checked_caller (safe RPC) to target_worker " ++ show(iters) ++ " times...")
+                        match callWait(checkedCallerId, "benchmark", { targetId: targetId, largeMap: largeMap, iters: iters, mode: "safe" }, 30000) {
+                            Ok(res) -> {
+                                checkedTime = res.time
+                                print("   Avg round-trip: " ++ show(checkedTime / iters) ++ "ms")
+                                
+                                print("\n3. Worker-to-Worker: Sending ${numItemsK}k map from trusted_caller (callWaitFast) to target_worker " ++ show(iters) ++ " times...")
+                                match callWait(trustedCallerId, "benchmark", { targetId: targetId, largeMap: largeMap, iters: iters, mode: "fast" }, 30000) {
+                                    Ok(resTrusted) -> {
+                                        trustedTime = resTrusted.time
+                                        lastMapTrusted = resTrusted.lastMap
+                                        print("   Avg round-trip: " ++ show(trustedTime / iters) ++ "ms")
+
+                                        diff = (checkedTime - trustedTime) / iters
+                                        print("\nDifference per call: " ++ show(diff) ++ "ms")
+                                        print("   The O(N) security validation in the hypervisor adds about " ++ show(diff) ++ "ms overhead for ${numItemsK}k elements.")
+                                        print("   When `callWaitFast` is used, this check is skipped, saving CPU cycles.")
+
+                                        print("\n4. Verifying immutability (Structural Sharing)...")
+                                        if mapGet(largeMap, "mutated_by_worker") == None {
+                                            print("   [SUCCESS] Original map in Supervisor is unmodified.")
+                                        } else {
+                                            print("   [FAIL] Original map was modified!")
+                                        }
+
+
+                                        if mapGet(lastMapTrusted, "mutated_by_worker") != None {
+                                            print("   [SUCCESS] Returned map has the new key from worker.")
+                                        } else {
+                                            print("   [FAIL] Returned map doesn't have the new key!")
+                                        }
+                                    }
+                                    Fail(e) -> print("RPC to trusted caller failed: " ++ e)
+                                }
+                            }
+                            Fail(e) -> print("RPC to checked caller failed: " ++ e)
+                        }
+                    }
+                    Fail(e) -> print("Failed to spawn trusted caller VM: " ++ e)
+                }
+            }
+            Fail(e) -> print("Failed to spawn checked caller VM: " ++ e)
+        }
+    }
+    Fail(e) -> print("Failed to spawn target VM: " ++ e)
+}
+
+stopVM("supervisor", Some({ saveState: false, timeoutMs: 1000 }))

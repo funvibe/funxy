@@ -209,6 +209,9 @@ func (c *Compiler) compileExpression(expr ast.Expression) error {
 	case *ast.ListComprehension:
 		return c.compileListComprehension(e)
 
+	case *ast.MapComprehension:
+		return c.compileMapComprehension(e)
+
 	case *ast.RangeExpression:
 		return c.compileRangeExpression(e)
 

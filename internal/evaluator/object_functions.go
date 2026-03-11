@@ -154,6 +154,40 @@ func (b *Builtin) Hash() uint32 {
 	return hashString(b.Name)
 }
 
+// GobEncode implements custom serialization for Builtin - encodes Name and DefaultArgs
+func (b *Builtin) GobEncode() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	if err := enc.Encode(b.Name); err != nil {
+		return nil, err
+	}
+	if err := enc.Encode(b.DefaultArgs); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// GobDecode implements custom deserialization for Builtin - restores Name, DefaultArgs and Fn from registry
+func (b *Builtin) GobDecode(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := gob.NewDecoder(buf)
+	if err := dec.Decode(&b.Name); err != nil {
+		return err
+	}
+	if err := dec.Decode(&b.DefaultArgs); err != nil {
+		return err
+	}
+
+	// Restore function pointer from global registry
+	if builtin, ok := Builtins[b.Name]; ok {
+		b.Fn = builtin.Fn
+		b.TypeInfo = builtin.TypeInfo
+	} else {
+		return fmt.Errorf("builtin function %q not found in registry", b.Name)
+	}
+	return nil
+}
+
 // PartialApplication represents a function with some arguments already applied.
 type PartialApplication struct {
 	Function        *Function    // User-defined function (nil if builtin/constructor)

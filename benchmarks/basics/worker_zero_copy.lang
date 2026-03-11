@@ -1,0 +1,15 @@
+import "lib/time" (sleepMs)
+import "lib/map" (mapPut)
+
+fun mutateMap(m: Map<String, Int>) -> Map<String, Int> {
+    // We add a key to the map.
+    // In a mutable world, this would modify the supervisor's map (Data Race)
+    // or require expensive deep copying before sending.
+    // In Funxy, this simply creates a new HAMT node sharing the rest of the tree.
+    return mapPut(m, "mutated_by_worker", 999)
+}
+
+// Keep worker alive
+while true {
+    sleepMs(1000)
+}

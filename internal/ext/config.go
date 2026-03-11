@@ -138,16 +138,25 @@ func LoadConfig(path string) (*Config, error) {
 
 // ParseConfig parses funxy.yaml content from bytes.
 // The path argument is used only for error messages.
-func ParseConfig(data []byte, path string) (*Config, error) {
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+func ParseConfig(data []byte, path string) (cfg *Config, err error) {
+	// yaml.v3 has a known issue where it can panic on malformed merge keys
+	// like "? <<\n? ?". We catch the panic to prevent crashing the whole program
+	// or Language Server.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("parsing %s failed due to malformed yaml: %v", path, r)
+		}
+	}()
+
+	var c Config
+	if err = yaml.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
-	if err := cfg.validate(path); err != nil {
+	if err = c.validate(path); err != nil {
 		return nil, err
 	}
-	cfg.setDefaults()
-	return &cfg, nil
+	c.setDefaults()
+	return &c, nil
 }
 
 // FindConfig searches for funxy.yaml starting from dir and walking up

@@ -16,8 +16,10 @@ func rpcSerializationMode(e *Evaluator) string {
 // RpcBuiltins returns built-in functions for lib/rpc virtual package
 func RpcBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
-		"callWait":      {Fn: builtinRpcCallWait, Name: "callWait"},
-		"callWaitGroup": {Fn: builtinRpcCallWaitGroup, Name: "callWaitGroup"},
+		"callWait":          {Fn: builtinRpcCallWait, Name: "callWait"},
+		"callWaitFast":      {Fn: builtinRpcCallWaitFast, Name: "callWaitFast"},
+		"callWaitGroup":     {Fn: builtinRpcCallWaitGroup, Name: "callWaitGroup"},
+		"callWaitGroupFast": {Fn: builtinRpcCallWaitGroupFast, Name: "callWaitGroupFast"},
 	}
 }
 
@@ -111,6 +113,99 @@ func builtinRpcCallWait(e *Evaluator, args ...Object) Object {
 	return makeOk(val)
 }
 
+// callWaitFast: <a, b>(String, String, a, timeoutMs: Int? = 5000) -> Result<String, b>
+// Unsafe version: skips serialization checks for Fast Path RPC.
+func builtinRpcCallWaitFast(e *Evaluator, args ...Object) Object {
+	if len(args) < 3 || len(args) > 4 {
+		return newError("rpc.callWaitFast expects 3-4 arguments, got %d", len(args))
+	}
+
+	targetList, ok := args[0].(*List)
+	if !ok || !IsStringList(targetList) {
+		return newError("rpc.callWaitFast first argument (targetVM) must be a String")
+	}
+	targetVM := ListToString(targetList)
+
+	methodList, ok := args[1].(*List)
+	if !ok || !IsStringList(methodList) {
+		return newError("rpc.callWaitFast second argument (method) must be a String")
+	}
+	method := ListToString(methodList)
+
+	methodArgs := args[2]
+
+	timeoutMs := defaultRPCTimeoutMs
+	if len(args) == 4 {
+		timeoutObj := args[3]
+		if timeoutObj != nil {
+			timeoutInt, ok := timeoutObj.(*Integer)
+			if !ok {
+				return newError("rpc.callWaitFast fourth argument (timeoutMs) must be an Int")
+			}
+			timeoutMs = int(timeoutInt.Value)
+		}
+	}
+
+	// Mock support (same as callWait)
+	if tr := GetTestRunner(); tr != nil {
+		if callback, ok := tr.FindRpcMock(targetVM, method); ok {
+			res := e.ApplyFunction(callback, []Object{methodArgs})
+			if isError(res) {
+				return makeFailStr(res.(*Error).Message)
+			}
+			return makeOk(res)
+		}
+	}
+
+	if e.SupervisorHandler == nil {
+		return makeFailStr("RPC API not injected by host (hint: run via `funxy vmm <script>`)")
+	}
+
+	// Try Unsafe Fast Path
+	if e.SupervisorHandler.RPCCallFastUnsafe != nil {
+		resObj, err := e.SupervisorHandler.RPCCallFastUnsafe(targetVM, method, methodArgs, timeoutMs)
+		if err != nil {
+			return makeFailStr(err.Error())
+		}
+		return makeOk(resObj)
+	}
+
+	// Fallback to Safe Fast Path (which does checks)
+	if e.SupervisorHandler.RPCCallFast != nil {
+		resObj, err := e.SupervisorHandler.RPCCallFast(targetVM, method, methodArgs, timeoutMs)
+		if err != nil {
+			return makeFailStr(err.Error())
+		}
+		return makeOk(resObj)
+	}
+
+	// Fallback to Slow Path
+	if e.SupervisorHandler.RPCCall == nil {
+		return makeFailStr("RPC API not fully injected by host")
+	}
+
+	argData, err := SerializeValue(methodArgs, rpcSerializationMode(e))
+	if err != nil {
+		return makeFailStr(fmt.Sprintf("failed to serialize args: %v", err))
+	}
+
+	resData, err := e.SupervisorHandler.RPCCall(targetVM, method, argData, timeoutMs)
+	if err != nil {
+		return makeFailStr(err.Error())
+	}
+
+	if len(resData) == 0 {
+		return makeOk(&Nil{})
+	}
+
+	val, err := DeserializeValue(resData)
+	if err != nil {
+		return makeFailStr(fmt.Sprintf("failed to deserialize result: %v", err))
+	}
+
+	return makeOk(val)
+}
+
 // callWaitGroup: <a, b>(String, String, a, timeoutMs: Int? = 5000) -> Result<String, b>
 func builtinRpcCallWaitGroup(e *Evaluator, args ...Object) Object {
 	if len(args) < 3 || len(args) > 4 {
@@ -189,6 +284,99 @@ func builtinRpcCallWaitGroup(e *Evaluator, args ...Object) Object {
 	}
 
 	// Deserialize result
+	if len(resData) == 0 {
+		return makeOk(&Nil{})
+	}
+
+	val, err := DeserializeValue(resData)
+	if err != nil {
+		return makeFailStr(fmt.Sprintf("failed to deserialize result: %v", err))
+	}
+
+	return makeOk(val)
+}
+
+// callWaitGroupFast: <a, b>(String, String, a, timeoutMs: Int? = 5000) -> Result<String, b>
+// Unsafe version: skips serialization checks for Group Fast Path RPC.
+func builtinRpcCallWaitGroupFast(e *Evaluator, args ...Object) Object {
+	if len(args) < 3 || len(args) > 4 {
+		return newError("rpc.callWaitGroupFast expects 3-4 arguments, got %d", len(args))
+	}
+
+	groupList, ok := args[0].(*List)
+	if !ok || !IsStringList(groupList) {
+		return newError("rpc.callWaitGroupFast first argument (group) must be a String")
+	}
+	group := ListToString(groupList)
+
+	methodList, ok := args[1].(*List)
+	if !ok || !IsStringList(methodList) {
+		return newError("rpc.callWaitGroupFast second argument (method) must be a String")
+	}
+	method := ListToString(methodList)
+
+	methodArgs := args[2]
+
+	timeoutMs := defaultRPCTimeoutMs
+	if len(args) == 4 {
+		timeoutObj := args[3]
+		if timeoutObj != nil {
+			timeoutInt, ok := timeoutObj.(*Integer)
+			if !ok {
+				return newError("rpc.callWaitGroupFast fourth argument (timeoutMs) must be an Int")
+			}
+			timeoutMs = int(timeoutInt.Value)
+		}
+	}
+
+	// Mock support
+	if tr := GetTestRunner(); tr != nil {
+		if callback, ok := tr.FindRpcMock(group, method); ok {
+			res := e.ApplyFunction(callback, []Object{methodArgs})
+			if isError(res) {
+				return makeFailStr(res.(*Error).Message)
+			}
+			return makeOk(res)
+		}
+	}
+
+	if e.SupervisorHandler == nil {
+		return makeFailStr("RPC API not injected by host (hint: run via `funxy vmm <script>`)")
+	}
+
+	// Try Unsafe Group Fast Path
+	if e.SupervisorHandler.RPCCallGroupFastUnsafe != nil {
+		resObj, err := e.SupervisorHandler.RPCCallGroupFastUnsafe(group, method, methodArgs, timeoutMs)
+		if err != nil {
+			return makeFailStr(err.Error())
+		}
+		return makeOk(resObj)
+	}
+
+	// Fallback to Safe Group Fast Path
+	if e.SupervisorHandler.RPCCallGroupFast != nil {
+		resObj, err := e.SupervisorHandler.RPCCallGroupFast(group, method, methodArgs, timeoutMs)
+		if err != nil {
+			return makeFailStr(err.Error())
+		}
+		return makeOk(resObj)
+	}
+
+	// Fallback to Slow Path
+	if e.SupervisorHandler.RPCCallGroup == nil {
+		return makeFailStr("RPC API not fully injected by host")
+	}
+
+	argData, err := SerializeValue(methodArgs, rpcSerializationMode(e))
+	if err != nil {
+		return makeFailStr(fmt.Sprintf("failed to serialize args: %v", err))
+	}
+
+	resData, err := e.SupervisorHandler.RPCCallGroup(group, method, argData, timeoutMs)
+	if err != nil {
+		return makeFailStr(err.Error())
+	}
+
 	if len(resData) == 0 {
 		return makeOk(&Nil{})
 	}

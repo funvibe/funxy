@@ -47,9 +47,9 @@ fun myMethod(arg) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	// We can test RPC using an evaluator directly
+	// We can test RPC using an evaluator directly. We use an untrusted caller ID.
 	eval := evaluator.New()
-	eval.SupervisorHandler = hyp.SupervisorHandler()
+	eval.SupervisorHandler = hyp.SupervisorHandlerFor("untrusted_caller")
 
 	// 1. Try to send HostObject
 	hostObj := &evaluator.HostObject{Value: make(map[string]interface{})}

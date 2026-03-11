@@ -296,15 +296,14 @@ func (p *Parser) parseExpressionStatementOrConstDecl() ast.Statement {
 			return nil
 		}
 
-		// Constants cannot be MemberExpressions (e.g. obj.prop :- val is invalid)
-		if _, isMember := target.(*ast.MemberExpression); isMember {
-			p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP001, expr.GetToken(), "constant name cannot be a member expression", expr.GetToken().Type))
-			return nil
-		}
-
 		var name *ast.Identifier
 		if target != nil {
-			name = target.(*ast.Identifier)
+			id, isIdent := target.(*ast.Identifier)
+			if !isIdent {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(diagnostics.ErrP001, expr.GetToken(), "constant name must be an identifier", expr.GetToken().Type))
+				return nil
+			}
+			name = id
 		}
 
 		val := p.parseExpression(LOWEST)

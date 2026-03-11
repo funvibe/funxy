@@ -271,3 +271,18 @@ mapKeys(scores)    // ["Alice", "Bob"]
 mapValues(scores)  // [100, 85]
 mapItems(scores)   // [("Alice", 100), ("Bob", 85)]
 ```
+
+### Map Comprehensions
+
+Similar to list comprehensions, you can concisely generate maps without intermediate allocations:
+
+```rust
+// Basic map comprehension
+m1 = %{ "key_" ++ show(i) => i * 2 | i <- 1..5 }
+
+// With filter
+m2 = %{ "key_" ++ show(i) => i | i <- 1..10, i % 2 == 0 }
+
+// From map items
+m3 = %{ k => v * 10 | (k, v) <- mapItems(scores) }
+```

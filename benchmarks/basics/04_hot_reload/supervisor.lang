@@ -1,0 +1,50 @@
+// Proof #4: VMM Hot Reload & State Handoff
+// Demonstrates that a worker can be gracefully stopped, its internal state
+// captured, and a new version spawned with that exact state without data loss.
+
+import "lib/vmm" (spawnVM, stopVM, receiveEventWait)
+import "lib/time" (sleep)
+import "lib/sys" (sysScriptDir)
+import "lib/path" (pathJoin)
+
+print("Proof #4: Hot Reload & State Handoff")
+print("------------------------------------")
+print("Starting worker v1...")
+
+match spawnVM(pathJoin([sysScriptDir(), "worker_v1.lang"]), { name: "demo_worker", capabilities: ["lib/time", "lib/vmm"] }) {
+    Ok(id) -> {
+        print("Worker v1 started.")
+        print("Waiting 3 seconds for it to accumulate state...")
+        sleep(3)
+
+        print("\nInitiating Hot Reload to worker v2...")
+        
+        // Gracefully stop v1 and ask for its state
+        match stopVM(id, Some({ saveState: true, timeoutMs: 2000 })) {
+            Ok(state) -> {
+                print("Captured state from v1: " ++ show(state))
+                print("Spawning worker v2 with captured state...")
+                
+                match spawnVM(pathJoin([sysScriptDir(), "worker_v2.lang"]), { name: "demo_worker", capabilities: ["lib/time", "lib/vmm"] }, state) {
+                    Ok(newId) -> {
+                        print("Worker v2 started successfully!")
+                        sleep(3)
+                        print("\nStopping worker v2 gracefully...")
+                        match stopVM(newId, Some({ saveState: true, timeoutMs: 2000 })) {
+                            Ok(finalState) -> {
+                                print("Final state extracted from v2: " ++ show(finalState))
+                                print("[SUCCESS] State survived the upgrade from v1 to v2.")
+                            }
+                            Fail(e) -> print("Failed to stop v2: " ++ e)
+                        }
+                    }
+                    Fail(e) -> print("Failed to spawn v2: " ++ e)
+                }
+            }
+            Fail(e) -> print("Failed to stop v1: " ++ e)
+        }
+    }
+    Fail(e) -> print("Failed to spawn v1: " ++ e)
+}
+
+stopVM("supervisor", Some({ saveState: false, timeoutMs: 1000 }))

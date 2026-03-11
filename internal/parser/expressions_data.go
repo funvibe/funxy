@@ -46,8 +46,24 @@ func (p *Parser) parseMapLiteral() ast.Expression {
 		p.nextToken()
 	}
 
-	// Value uses PIPE_PREC to stop before , or }
-	value := p.parseExpression(PIPE_PREC)
+	// Value uses BITWISE_OR to stop before | (for Map Comprehensions)
+	value := p.parseExpression(BITWISE_OR)
+
+	// Check for Map Comprehension: %{ key => value | generator... }
+	if p.peekTokenIs(token.PIPE) {
+		return p.parseMapComprehension(mapLit.Token, key, value)
+	}
+
+	// Not a comprehension - if we stopped at |, we need to continue parsing
+	// the expression with full precedence
+	for p.peekPrecedence() > LOWEST {
+		p.nextToken()
+		infix := p.infixParseFns[p.curToken.Type]
+		if infix != nil {
+			value = infix(value)
+		}
+	}
+
 	mapLit.Pairs = append(mapLit.Pairs, struct{ Key, Value ast.Expression }{key, value})
 
 	// Skip newlines after value
@@ -104,6 +120,61 @@ func (p *Parser) parseMapLiteral() ast.Expression {
 	}
 
 	return mapLit
+}
+
+// parseMapComprehension parses the rest of a map comprehension after %{ key => value
+func (p *Parser) parseMapComprehension(startToken token.Token, keyExpr ast.Expression, valExpr ast.Expression) ast.Expression {
+	comp := &ast.MapComprehension{
+		Token:   startToken,
+		Key:     keyExpr,
+		Value:   valExpr,
+		Clauses: []ast.CompClause{},
+	}
+
+	p.nextToken() // consume |
+
+	for {
+		// Skip newlines before clause
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
+
+		p.nextToken() // move to start of clause
+
+		// Skip newlines at start of clause
+		for p.curTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
+
+		// Check for end of comprehension
+		if p.curTokenIs(token.RBRACE) {
+			break
+		}
+
+		// Try to parse as generator: pattern <- iterable
+		clause := p.parseCompClause()
+		if clause == nil {
+			return nil
+		}
+		comp.Clauses = append(comp.Clauses, clause)
+
+		// Skip newlines after clause
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
+
+		// Check for more clauses
+		if !p.peekTokenIs(token.COMMA) {
+			break
+		}
+		p.nextToken() // consume comma
+	}
+
+	if !p.expectPeek(token.RBRACE) {
+		return nil
+	}
+
+	return comp
 }
 
 func (p *Parser) parseRecordLiteralOrBlock() ast.Expression {

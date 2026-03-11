@@ -43,6 +43,29 @@ intMap = %{ 1 => "one", 2 => "two", 3 => "three" }
 tupleMap = %{ (0, 0) => "origin", (1, 0) => "x-axis" }
 ```
 
+### Map Comprehensions
+
+Map comprehensions provide a concise and highly efficient way to construct maps declaratively. They use the `%{ keyExpr => valExpr | generator, filter... }` syntax, similar to list comprehensions.
+
+Under the hood, map comprehensions are optimized using a transient builder pattern. Instead of generating intermediate maps and causing allocations in a loop, they accumulate entries into a fast, mutable builder on the VM stack and freeze it into an immutable map at the end. This makes map creation up to 4-5x faster than using a `for` loop with `mapPut`!
+
+```rust
+import "lib/map" (*)
+
+// Basic map comprehension
+m1 = %{ "key_" ++ show(i) => i * 2 | i <- 1..5 }
+// %{ "key_1" => 2, "key_2" => 4, "key_3" => 6, "key_4" => 8, "key_5" => 10 }
+
+// Map comprehension with filtering
+m2 = %{ "key_" ++ show(i) => i | i <- 1..10, i % 2 == 0 }
+// %{ "key_2" => 2, "key_4" => 4, "key_6" => 6, "key_8" => 8, "key_10" => 10 }
+
+// Iterating over existing map items
+baseMap = %{ "a" => 1, "b" => 2 }
+m3 = %{ k ++ "_new" => v * 10 | (k, v) <- mapItems(baseMap) }
+// %{ "a_new" => 10, "b_new" => 20 }
+```
+
 ## lib/map Module
 
 ```rust

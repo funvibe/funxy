@@ -12,6 +12,11 @@ import (
 func TestPreludeDocsConsistency(t *testing.T) {
 	// 1. Get all evaluator builtins (prelude)
 	for name := range Builtins {
+		// Ignore internal builtins
+		if strings.HasPrefix(name, "__") || name == "get_state" || name == "put_state" {
+			continue
+		}
+
 		found := false
 		for _, fn := range config.BuiltinFunctions {
 			if fn.Name == name {

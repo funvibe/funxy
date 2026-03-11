@@ -1,0 +1,25 @@
+import "lib/vmm" (getState, setState)
+import "lib/time" (sleep)
+
+// V2 logic: resumes from the state handed off by V1
+initialState = getState() ?? { count: 0, version: "v2" }
+
+// Upgrade the version field in the state
+upgradedState = { count: initialState.count, version: "v2" }
+setState(upgradedState)
+
+print("[v2] Booted successfully! Resumed from state: " ++ show(upgradedState))
+
+// Main loop continues from where V1 left off
+for i in 1..10 {
+    current = getState() ?? { count: 0, version: "v2" }
+    newState = { count: current.count + 1, version: current.version }
+    setState(newState)
+    print("[v2] Tick " ++ show(newState.count))
+    sleep(1)
+}
+
+fun onTerminate(finalState) {
+    print("[v2] Terminating gracefully... Returning final state.")
+    return finalState
+}

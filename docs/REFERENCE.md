@@ -896,6 +896,20 @@ filtered = mapFilter(\k, v -> v > 90, scores)    // Map<String, Int>
 total = mapFold(\acc, k, v -> acc + v, 0, scores) // Int
 ```
 
+#### Map Comprehensions
+```rust
+// Basic
+m1 = %{ "key_" ++ show(i) => i * 2 | i <- 1..5 }
+// %{ "key_1" => 2, "key_2" => 4, "key_3" => 6, "key_4" => 8, "key_5" => 10 }
+
+// With filter
+m2 = %{ "key_" ++ show(i) => i | i <- 1..10, i % 2 == 0 }
+
+// Destructuring from another map
+baseMap = %{ "a" => 1, "b" => 2 }
+m3 = %{ k ++ "_new" => v * 10 | (k, v) <- mapItems(baseMap) }
+```
+
 ---
 
 ## 9. Pattern Matching

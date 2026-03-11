@@ -528,9 +528,28 @@ func (h *Hypervisor) nextTraceID() string {
 	return fmt.Sprintf("rpc-%d-%d", time.Now().UnixMilli(), n)
 }
 
+func (h *Hypervisor) shouldTrace(from, to string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.traceAllEnabled || h.traceEnabled[from] || h.traceEnabled[to]
+}
+
 func traceArgPreviewFromObject(obj evaluator.Object) string {
 	if obj == nil {
 		return "nil"
+	}
+	// For collections, avoid expensive full inspection
+	switch o := obj.(type) {
+	case *evaluator.List:
+		return fmt.Sprintf("List(len=%d)", o.Len())
+	case *evaluator.Map:
+		return fmt.Sprintf("Map(len=%d)", o.Len())
+	case *evaluator.RecordInstance:
+		return fmt.Sprintf("Record(fields=%d)", len(o.Fields))
+	case *evaluator.Tuple:
+		return fmt.Sprintf("Tuple(len=%d)", len(o.Elements))
+	case *evaluator.Bytes:
+		return fmt.Sprintf("Bytes(len=%d)", o.Len())
 	}
 	preview := obj.Inspect()
 	if len(preview) > 256 {
@@ -1450,14 +1469,17 @@ func (h *Hypervisor) BroadcastEvent(event map[string]interface{}) {
 // RPCCall executes a function in another VM's context synchronously.
 // The result is serialized and returned.
 func (h *Hypervisor) RPCCall(targetID, method string, args []byte, timeoutMs int) ([]byte, error) {
-	return h.RPCCallFrom("host", targetID, method, args, timeoutMs)
+	return h.RPCCallFrom(CallerIDHost, targetID, method, args, timeoutMs)
 }
 
 // RPCCallFrom executes an RPC call with explicit caller identity for tracing.
 func (h *Hypervisor) RPCCallFrom(callerID, targetID, method string, args []byte, timeoutMs int) ([]byte, error) {
 	traceID := h.nextTraceID()
 	started := time.Now()
-	argPreview := traceArgPreviewFromBytes(args)
+	var argPreview string
+	if h.shouldTrace(callerID, targetID) {
+		argPreview = traceArgPreviewFromBytes(args)
+	}
 	if err := h.beforeRPCCall(targetID); err != nil {
 		h.emitRPCTrace(RPCTraceEvent{
 			TsMs:       time.Now().UnixMilli(),
@@ -1528,17 +1550,26 @@ func (h *Hypervisor) rpcCallRaw(targetID, method string, args []byte, timeoutMs 
 	return evaluator.SerializeValue(res, h.resolveSerializationMode())
 }
 
+const CallerIDHost = "host"
+
 // RPCCallFast is the zero-copy Fast Path for RPC when both VMs are in the same process.
 // It skips serialization entirely since Funxy collections are strictly immutable.
 func (h *Hypervisor) RPCCallFast(targetID, method string, argsObj evaluator.Object, timeoutMs int) (evaluator.Object, error) {
-	return h.RPCCallFastFrom("host", targetID, method, argsObj, timeoutMs)
+	// Fast path from host is trusted
+	return h.RPCCallFastFrom(CallerIDHost, targetID, method, argsObj, timeoutMs)
 }
 
 // RPCCallFastFrom executes fast-path RPC with explicit caller identity for tracing.
 func (h *Hypervisor) RPCCallFastFrom(callerID, targetID, method string, argsObj evaluator.Object, timeoutMs int) (evaluator.Object, error) {
 	traceID := h.nextTraceID()
 	started := time.Now()
-	argPreview := traceArgPreviewFromObject(argsObj)
+	if err := evaluator.CheckSerializable(argsObj); err != nil {
+		return nil, fmt.Errorf("cannot pass mutable or non-serializable object via RPC: %v", err)
+	}
+	var argPreview string
+	if h.shouldTrace(callerID, targetID) {
+		argPreview = traceArgPreviewFromObject(argsObj)
+	}
 	if err := h.beforeRPCCall(targetID); err != nil {
 		h.emitRPCTrace(RPCTraceEvent{
 			TsMs:       time.Now().UnixMilli(),
@@ -1577,11 +1608,53 @@ func (h *Hypervisor) RPCCallFastFrom(callerID, targetID, method string, argsObj 
 	return res, err
 }
 
-func (h *Hypervisor) rpcCallFastRaw(targetID, method string, argsObj evaluator.Object, timeoutMs int) (evaluator.Object, error) {
-	if err := evaluator.CheckSerializable(argsObj); err != nil {
-		return nil, fmt.Errorf("cannot pass mutable or non-serializable object via RPC: %v", err)
+// RPCCallFastUnsafeFrom executes fast-path RPC with explicit caller identity for tracing, skipping serialization check.
+func (h *Hypervisor) RPCCallFastUnsafeFrom(callerID, targetID, method string, argsObj evaluator.Object, timeoutMs int) (evaluator.Object, error) {
+	traceID := h.nextTraceID()
+	started := time.Now()
+	var argPreview string
+	if h.shouldTrace(callerID, targetID) {
+		argPreview = traceArgPreviewFromObject(argsObj)
 	}
+	if err := h.beforeRPCCall(targetID); err != nil {
+		h.emitRPCTrace(RPCTraceEvent{
+			TsMs:       time.Now().UnixMilli(),
+			TraceID:    traceID,
+			FromVM:     callerID,
+			ToVM:       targetID,
+			Method:     method,
+			ArgPreview: argPreview,
+			Status:     "fast_fail",
+			Error:      err.Error(),
+			DurationMs: 0,
+			Transport:  "rpc_fast_unsafe",
+		})
+		return nil, err
+	}
+	res, err := h.rpcCallFastRaw(targetID, method, argsObj, timeoutMs)
+	h.afterRPCCall(targetID, err)
+	status := "ok"
+	errMsg := ""
+	if err != nil {
+		status = "error"
+		errMsg = err.Error()
+	}
+	h.emitRPCTrace(RPCTraceEvent{
+		TsMs:       time.Now().UnixMilli(),
+		TraceID:    traceID,
+		FromVM:     callerID,
+		ToVM:       targetID,
+		Method:     method,
+		ArgPreview: argPreview,
+		Status:     status,
+		Error:      errMsg,
+		DurationMs: time.Since(started).Milliseconds(),
+		Transport:  "rpc_fast_unsafe",
+	})
+	return res, err
+}
 
+func (h *Hypervisor) rpcCallFastRaw(targetID, method string, argsObj evaluator.Object, timeoutMs int) (evaluator.Object, error) {
 	obj := h.getVMs().Get(targetID)
 	if obj == nil {
 		return nil, fmt.Errorf("VM '%s' not found", targetID)
@@ -1640,8 +1713,20 @@ func (h *Hypervisor) rpcCallFastRaw(targetID, method string, argsObj evaluator.O
 	}()
 
 	if timeoutMs > 0 {
+		// Priority check for context timeout
+		select {
+		case <-rpcEvalContext.Done():
+			return nil, fmt.Errorf("RPC call to '%s'.'%s' timed out after %dms", targetID, method, timeoutMs)
+		default:
+		}
+
 		select {
 		case r := <-resCh:
+			// If context also expired simultaneously, prioritize the timeout error
+			// to ensure deterministic behavior under heavy system load.
+			if rpcEvalContext.Err() != nil {
+				return nil, fmt.Errorf("RPC call to '%s'.'%s' timed out after %dms", targetID, method, timeoutMs)
+			}
 			if r.err != nil {
 				return nil, r.err
 			}
@@ -1655,6 +1740,7 @@ func (h *Hypervisor) rpcCallFastRaw(targetID, method string, argsObj evaluator.O
 	if r.err != nil {
 		return nil, r.err
 	}
+
 	return r.res, nil
 }
 
@@ -1681,7 +1767,7 @@ func (h *Hypervisor) getNextVMInGroup(group string) (string, error) {
 
 // RPCCallGroup executes a function in another VM's context synchronously, picking a VM from the given group via Round Robin.
 func (h *Hypervisor) RPCCallGroup(group, method string, args []byte, timeoutMs int) ([]byte, error) {
-	return h.RPCCallGroupFrom("host", group, method, args, timeoutMs)
+	return h.RPCCallGroupFrom(CallerIDHost, group, method, args, timeoutMs)
 }
 
 // RPCCallGroupFrom executes group RPC with explicit caller identity for tracing.
@@ -1693,13 +1779,18 @@ func (h *Hypervisor) RPCCallGroupFrom(callerID, group, method string, args []byt
 		return nil, fmt.Errorf("no VMs available in group '%s'", group)
 	}
 	var lastErr error
-	argPreview := traceArgPreviewFromBytes(args)
+	var argPreview string
+	previewCalculated := false
 	for i := 0; i < groupSize; i++ {
 		traceID := h.nextTraceID()
 		started := time.Now()
 		targetID, err := h.getNextVMInGroup(group)
 		if err != nil {
 			return nil, err
+		}
+		if h.shouldTrace(callerID, targetID) && !previewCalculated {
+			argPreview = traceArgPreviewFromBytes(args)
+			previewCalculated = true
 		}
 		if err := h.beforeRPCCall(targetID); err != nil {
 			h.emitRPCTrace(RPCTraceEvent{
@@ -1752,7 +1843,7 @@ func (h *Hypervisor) RPCCallGroupFrom(callerID, group, method string, args []byt
 
 // RPCCallGroupFast is the zero-copy Fast Path for RPC when both VMs are in the same process, picking a VM from the given group via Round Robin.
 func (h *Hypervisor) RPCCallGroupFast(group, method string, args evaluator.Object, timeoutMs int) (evaluator.Object, error) {
-	return h.RPCCallGroupFastFrom("host", group, method, args, timeoutMs)
+	return h.RPCCallGroupFastFrom(CallerIDHost, group, method, args, timeoutMs)
 }
 
 // RPCCallGroupFastFrom executes group fast-path RPC with explicit caller identity for tracing.
@@ -1763,14 +1854,22 @@ func (h *Hypervisor) RPCCallGroupFastFrom(callerID, group, method string, args e
 	if groupSize == 0 {
 		return nil, fmt.Errorf("no VMs available in group '%s'", group)
 	}
+	if err := evaluator.CheckSerializable(args); err != nil {
+		return nil, fmt.Errorf("cannot pass mutable or non-serializable object via RPC: %v", err)
+	}
 	var lastErr error
-	argPreview := traceArgPreviewFromObject(args)
+	var argPreview string
+	previewCalculated := false
 	for i := 0; i < groupSize; i++ {
 		traceID := h.nextTraceID()
 		started := time.Now()
 		targetID, err := h.getNextVMInGroup(group)
 		if err != nil {
 			return nil, err
+		}
+		if h.shouldTrace(callerID, targetID) && !previewCalculated {
+			argPreview = traceArgPreviewFromObject(args)
+			previewCalculated = true
 		}
 		if err := h.beforeRPCCall(targetID); err != nil {
 			h.emitRPCTrace(RPCTraceEvent{
@@ -1809,6 +1908,77 @@ func (h *Hypervisor) RPCCallGroupFastFrom(callerID, group, method string, args e
 			Error:      errMsg,
 			DurationMs: time.Since(started).Milliseconds(),
 			Transport:  "rpc_group_fast",
+		})
+		if callErr == nil {
+			return res, nil
+		}
+		lastErr = callErr
+	}
+	if lastErr == nil {
+		lastErr = ErrRPCCircuitOpen
+	}
+	return nil, lastErr
+}
+
+// RPCCallGroupFastUnsafeFrom executes group fast-path RPC with explicit caller identity for tracing, skipping serialization checks.
+func (h *Hypervisor) RPCCallGroupFastUnsafeFrom(callerID, group, method string, args evaluator.Object, timeoutMs int) (evaluator.Object, error) {
+	h.mu.RLock()
+	groupSize := len(h.groups[group])
+	h.mu.RUnlock()
+	if groupSize == 0 {
+		return nil, fmt.Errorf("no VMs available in group '%s'", group)
+	}
+	var lastErr error
+	var argPreview string
+	previewCalculated := false
+	for i := 0; i < groupSize; i++ {
+		traceID := h.nextTraceID()
+		started := time.Now()
+		targetID, err := h.getNextVMInGroup(group)
+		if err != nil {
+			return nil, err
+		}
+		if h.shouldTrace(callerID, targetID) && !previewCalculated {
+			argPreview = traceArgPreviewFromObject(args)
+			previewCalculated = true
+		}
+		if err := h.beforeRPCCall(targetID); err != nil {
+			h.emitRPCTrace(RPCTraceEvent{
+				TsMs:       time.Now().UnixMilli(),
+				TraceID:    traceID,
+				FromVM:     callerID,
+				ToVM:       targetID,
+				Group:      group,
+				Method:     method,
+				ArgPreview: argPreview,
+				Status:     "fast_fail",
+				Error:      err.Error(),
+				DurationMs: 0,
+				Transport:  "rpc_group_fast_unsafe",
+			})
+			lastErr = err
+			continue
+		}
+		res, callErr := h.rpcCallFastRaw(targetID, method, args, timeoutMs)
+		h.afterRPCCall(targetID, callErr)
+		status := "ok"
+		errMsg := ""
+		if callErr != nil {
+			status = "error"
+			errMsg = callErr.Error()
+		}
+		h.emitRPCTrace(RPCTraceEvent{
+			TsMs:       time.Now().UnixMilli(),
+			TraceID:    traceID,
+			FromVM:     callerID,
+			ToVM:       targetID,
+			Group:      group,
+			Method:     method,
+			ArgPreview: argPreview,
+			Status:     status,
+			Error:      errMsg,
+			DurationMs: time.Since(started).Milliseconds(),
+			Transport:  "rpc_group_fast_unsafe",
 		})
 		if callErr == nil {
 			return res, nil
@@ -1909,7 +2079,7 @@ func (h *Hypervisor) MailboxHandler(callerId string) *evaluator.MailboxHandler {
 	}
 }
 func (h *Hypervisor) SupervisorHandler() *evaluator.SupervisorHandler {
-	return h.SupervisorHandlerFor("host")
+	return h.SupervisorHandlerFor(CallerIDHost)
 }
 
 func (h *Hypervisor) SupervisorHandlerFor(callerID string) *evaluator.SupervisorHandler {
@@ -1975,11 +2145,17 @@ func (h *Hypervisor) SupervisorHandlerFor(callerID string) *evaluator.Supervisor
 		RPCCallFast: func(targetID, method string, args evaluator.Object, timeoutMs int) (evaluator.Object, error) {
 			return h.RPCCallFastFrom(callerID, targetID, method, args, timeoutMs)
 		},
+		RPCCallFastUnsafe: func(targetID, method string, args evaluator.Object, timeoutMs int) (evaluator.Object, error) {
+			return h.RPCCallFastUnsafeFrom(callerID, targetID, method, args, timeoutMs)
+		},
 		RPCCallGroup: func(group, method string, args []byte, timeoutMs int) ([]byte, error) {
 			return h.RPCCallGroupFrom(callerID, group, method, args, timeoutMs)
 		},
 		RPCCallGroupFast: func(group, method string, args evaluator.Object, timeoutMs int) (evaluator.Object, error) {
 			return h.RPCCallGroupFastFrom(callerID, group, method, args, timeoutMs)
+		},
+		RPCCallGroupFastUnsafe: func(group, method string, args evaluator.Object, timeoutMs int) (evaluator.Object, error) {
+			return h.RPCCallGroupFastUnsafeFrom(callerID, group, method, args, timeoutMs)
 		},
 		RPCSerializationMode: func() string {
 			return h.GetRPCSerializationMode()

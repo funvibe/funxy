@@ -88,10 +88,15 @@ testRun("rpc callWaitGroup skips open-circuit worker", \ -> {
                     sleepMs(150)
 
                     // Trip breaker for slow worker.
-                    first = callWait(slowId, "ping", "hello", 10)
+                    // Use a slightly larger timeout for the first call to make sure the slow worker 
+                    // has a chance to actually receive the call and start sleeping, causing a timeout
+                    // from the caller side rather than failing fast because the VM is still initializing.
+                    // But we still want it to timeout before the worker finishes (which takes 120ms).
+                    first = callWait(slowId, "ping", "hello", 50)
+                    print("First call result in group test: " ++ show(first))
                     match first {
-                        Ok(_) -> assertTrue(false, "first slow call must fail")
-                        Fail(e) -> assertTrue(e != "", "slow call should fail with timeout-like error")
+                        Ok(_) -> assertTrue(false, "first slow call must fail, got: " ++ show(first))
+                        Fail(e) -> assertTrue(e != "", "slow call should fail with timeout-like error, got " ++ show(e))
                     }
 
                     groupRes = callWaitGroup("rpc_group_workers", "ping", "hello", 100)

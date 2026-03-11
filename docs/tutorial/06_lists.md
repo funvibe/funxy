@@ -316,7 +316,9 @@ ys = [4, 5]
 
 ## List Comprehensions
 
-List comprehensions provide a concise, declarative way to create lists. The syntax is inspired by Haskell and mathematical set notation.
+List comprehensions provide a concise, declarative, and highly efficient way to create lists. The syntax is inspired by Haskell and mathematical set notation.
+
+Under the hood, list comprehensions are optimized using a transient builder pattern. They accumulate entries into a fast, mutable builder on the VM stack and freeze it into an immutable list at the end. This avoids creating intermediate garbage and makes list comprehensions up to 5x faster than using a `for` loop with the `++` operator or `append` function!
 
 ### Basic Syntax
 

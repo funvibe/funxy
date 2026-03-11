@@ -51,6 +51,36 @@ func MapFrom(pairs []struct{ Key, Value Object }) *PersistentMap {
 	return m
 }
 
+// MapBuilder is used for fast transient construction of a PersistentMap
+type MapBuilder struct {
+	entries []struct{ Key, Value Object }
+}
+
+func NewMapBuilder() *MapBuilder {
+	// Pre-allocate a reasonable capacity to avoid small reallocations
+	return &MapBuilder{
+		entries: make([]struct{ Key, Value Object }, 0, 64),
+	}
+}
+
+func (mb *MapBuilder) Put(key, value Object) {
+	mb.entries = append(mb.entries, struct{ Key, Value Object }{key, value})
+}
+
+func (mb *MapBuilder) Freeze() *PersistentMap {
+	// Construct the actual persistent map from accumulated entries.
+	// Since MapFrom iterates over the entries and calls Put on the HAMT,
+	// it is still an O(N log N) operation, but it skips the VM interpretation overhead,
+	// which is the main bottleneck.
+	return MapFrom(mb.entries)
+}
+
+// Implement Object interface for MapBuilder so it can live on the VM stack safely
+func (m *MapBuilder) Type() ObjectType             { return "MAP_BUILDER" }
+func (m *MapBuilder) Inspect() string              { return fmt.Sprintf("<map builder %d>", len(m.entries)) }
+func (m *MapBuilder) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "MapBuilder"} }
+func (m *MapBuilder) Hash() uint32                 { return uint32(uintptr(unsafe.Pointer(m))) }
+
 // Implement Object interface for PersistentMap so it can be stored inside itself
 func (m *PersistentMap) Type() ObjectType             { return "PERSISTENT_MAP" }
 func (m *PersistentMap) Inspect() string              { return fmt.Sprintf("<persistent map %d>", m.count) }

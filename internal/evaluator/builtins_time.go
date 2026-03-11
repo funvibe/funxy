@@ -56,8 +56,19 @@ func builtinSleep(e *Evaluator, args ...Object) Object {
 		return newError("sleep: duration cannot be negative")
 	}
 	if e.Context != nil {
+		// Priority check for context done
+		select {
+		case <-e.Context.Done():
+			return newError("sleep cancelled: %v", e.Context.Err())
+		default:
+		}
+
 		select {
 		case <-time.After(time.Duration(seconds.Value) * time.Second):
+			// If context also expired simultaneously, prioritize the timeout error
+			if e.Context.Err() != nil {
+				return newError("sleep cancelled: %v", e.Context.Err())
+			}
 			// Normal completion
 		case <-e.Context.Done():
 			// Context cancelled
@@ -83,8 +94,19 @@ func builtinSleepMs(e *Evaluator, args ...Object) Object {
 		return newError("sleepMs: duration cannot be negative")
 	}
 	if e.Context != nil {
+		// Priority check for context done
+		select {
+		case <-e.Context.Done():
+			return newError("sleep cancelled: %v", e.Context.Err())
+		default:
+		}
+
 		select {
 		case <-time.After(time.Duration(ms.Value) * time.Millisecond):
+			// If context also expired simultaneously, prioritize the timeout error
+			if e.Context.Err() != nil {
+				return newError("sleep cancelled: %v", e.Context.Err())
+			}
 			// Normal completion
 		case <-e.Context.Done():
 			// Context cancelled

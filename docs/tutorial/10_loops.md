@@ -165,11 +165,15 @@ res = for x in [1, 2, 3] {
 }
 ```
 
-## List Comprehensions
+## Comprehensions
 
-For many common iteration patterns, list comprehensions provide a more concise and declarative alternative to loops.
+For many common iteration patterns, comprehensions provide a more concise and declarative alternative to loops.
 
-### Basic Syntax
+### List Comprehensions
+
+List comprehensions create new lists and are highly optimized (using transient builders) to avoid intermediate garbage, making them much faster than manually appending in a loop:
+
+#### Basic Syntax
 
 ```
 [output | clause, clause, ...]
@@ -254,11 +258,35 @@ flat = [x | row <- matrix, x <- row]
 | Use Case | Recommended |
 |----------|-------------|
 | Transform/filter a list | List comprehension |
+| Transform/filter a map | Map comprehension |
 | Side effects (print, IO) | `for` loop |
 | Early exit with `break` | `for` loop |
 | Accumulating state | `for` loop or `foldl` |
 | Cartesian products | List comprehension |
 | Simple iteration | Either |
 
-See [Lists](06_lists.md) for more details on list comprehensions.
+See [Lists](06_lists.md) and [Maps](09_maps.md) for more details on comprehensions.
+
+### Map Comprehensions
+
+Map comprehensions provide similar declarative capabilities but produce Map objects instead of Lists. They are highly optimized, avoiding the creation of intermediate garbage during map construction.
+
+#### Basic Syntax
+
+```
+%{ keyExpr => valExpr | clause, clause, ... }
+```
+
+```rust
+import "lib/map" (*)
+
+// Generate a map from a range
+m1 = %{ "item_" ++ show(i) => i * 10 | i <- 1..5 }
+// %{ "item_1" => 10, "item_2" => 20, "item_3" => 30, "item_4" => 40, "item_5" => 50 }
+
+// Transform an existing map using mapItems
+baseMap = %{ "a" => 1, "b" => 2, "c" => 3 }
+m2 = %{ k => v * 100 | (k, v) <- mapItems(baseMap), v > 1 }
+// %{ "b" => 200, "c" => 300 }
+```
 

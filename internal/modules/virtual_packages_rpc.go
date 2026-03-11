@@ -27,7 +27,17 @@ func initRpcPackage() {
 				ReturnType:   resultAny,
 				DefaultCount: 1, // timeoutMs is optional
 			},
+			"callWaitFast": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, stringType, typesystem.TVar{Name: "a"}, intType},
+				ReturnType:   resultAny,
+				DefaultCount: 1, // timeoutMs is optional
+			},
 			"callWaitGroup": typesystem.TFunc{
+				Params:       []typesystem.Type{stringType, stringType, typesystem.TVar{Name: "a"}, intType},
+				ReturnType:   resultAny,
+				DefaultCount: 1, // timeoutMs is optional
+			},
+			"callWaitGroupFast": typesystem.TFunc{
 				Params:       []typesystem.Type{stringType, stringType, typesystem.TVar{Name: "a"}, intType},
 				ReturnType:   resultAny,
 				DefaultCount: 1, // timeoutMs is optional

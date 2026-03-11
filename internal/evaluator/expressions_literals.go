@@ -91,6 +91,70 @@ func (e *Evaluator) evalListComprehension(node *ast.ListComprehension, env *Envi
 	return newList(results)
 }
 
+// evalMapComprehension evaluates a map comprehension expression
+// %{ keyExpr => valExpr | clause, clause, ... }
+func (e *Evaluator) evalMapComprehension(node *ast.MapComprehension, env *Environment) Object {
+	// Start with a single empty environment (representing one "iteration")
+	envs := []*Environment{NewEnclosedEnvironment(env)}
+
+	// Process each clause
+	for _, clause := range node.Clauses {
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			var newEnvs []*Environment
+			for _, currentEnv := range envs {
+				iterable := e.Eval(c.Iterable, currentEnv)
+				if isError(iterable) {
+					return iterable
+				}
+
+				elements := e.getIterableElements(iterable)
+				if elements == nil {
+					return newError("cannot iterate over %s", iterable.Type())
+				}
+
+				for _, elem := range elements {
+					newEnv := NewEnclosedEnvironment(currentEnv)
+					if !e.bindPattern(c.Pattern, elem, newEnv) {
+						continue
+					}
+					newEnvs = append(newEnvs, newEnv)
+				}
+			}
+			envs = newEnvs
+
+		case *ast.CompFilter:
+			var newEnvs []*Environment
+			for _, currentEnv := range envs {
+				cond := e.Eval(c.Condition, currentEnv)
+				if isError(cond) {
+					return cond
+				}
+				if e.isTruthy(cond) {
+					newEnvs = append(newEnvs, currentEnv)
+				}
+			}
+			envs = newEnvs
+		}
+	}
+
+	// Evaluate the key and value expressions for each remaining environment
+	m := EmptyMap()
+	for _, currentEnv := range envs {
+		key := e.Eval(node.Key, currentEnv)
+		if isError(key) {
+			return key
+		}
+		val := e.Eval(node.Value, currentEnv)
+		if isError(val) {
+			return val
+		}
+		m = m.Put(key, val)
+	}
+
+	return &Map{hamt: m}
+}
+
 // getIterableElements extracts elements from an iterable object
 func (e *Evaluator) getIterableElements(obj Object) []Object {
 	switch o := obj.(type) {

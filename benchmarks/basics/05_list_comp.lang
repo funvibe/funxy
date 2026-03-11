@@ -1,0 +1,21 @@
+import "lib/time" (clockMs)
+import "lib/list" (append)
+
+print("Testing list creation speed: 500k elements")
+
+// 1. Old way (O(N^2) due to repeated copying)
+start = clockMs()
+oldList = []
+for i in 1..500000 {
+    oldList = oldList ++ [i]
+}
+oldTime = clockMs() - start
+print("1. Old way (O(N^2) due to repeated copying): " ++ show(oldTime) ++ "ms")
+
+// 2. New way (List Comprehension - Transient Builder)
+start2 = clockMs()
+newList = [i | i <- 1..500000]
+newTime = clockMs() - start2
+print("2. List Comprehension (Transient Builder): " ++ show(newTime) ++ "ms")
+
+print("Speedup: " ++ show(oldTime / newTime) ++ "x")

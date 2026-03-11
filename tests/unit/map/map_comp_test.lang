@@ -1,0 +1,27 @@
+import "lib/test" (testRun, assertEquals, assertOk, assertTrue)
+import "lib/map" (mapKeys, mapGet, mapItems)
+import "lib/list" (length)
+
+testRun("Map comprehension basic", \ -> {
+    m = %{ "key_" ++ show(i) => i * 2 | i <- 1..5 }
+    assertEquals(5, length(mapKeys(m)))
+    assertEquals(Some(2), mapGet(m, "key_1"))
+    assertEquals(Some(10), mapGet(m, "key_5"))
+})
+
+testRun("Map comprehension with filter", \ -> {
+    m = %{ "key_" ++ show(i) => i | i <- 1..10, i % 2 == 0 }
+    assertEquals(5, length(mapKeys(m)))
+    assertEquals(None, mapGet(m, "key_1"))
+    assertEquals(Some(2), mapGet(m, "key_2"))
+    assertEquals(Some(10), mapGet(m, "key_10"))
+})
+
+testRun("Map comprehension from map items", \ -> {
+    base = %{ "a" => 1, "b" => 2, "c" => 3 }
+    m = %{ k => v * 10 | (k, v) <- mapItems(base) }
+    assertEquals(3, length(mapKeys(m)))
+    assertEquals(Some(10), mapGet(m, "a"))
+    assertEquals(Some(20), mapGet(m, "b"))
+    assertEquals(Some(30), mapGet(m, "c"))
+})

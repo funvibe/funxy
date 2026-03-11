@@ -748,6 +748,56 @@ func (vm *VM) executeOneOp(op Opcode) error {
 		}
 		vm.push(ObjVal(evaluator.NewList(elements)))
 
+	case OP_BUILD_MAP_TRANSIENT:
+		builder := evaluator.NewMapBuilder()
+		vm.push(ObjVal(builder))
+
+	case OP_MAP_TRANSIENT_PUT:
+		value := vm.pop().AsObject()
+		key := vm.pop().AsObject()
+		builderVal := vm.pop()
+
+		if builder, ok := builderVal.AsObject().(*evaluator.MapBuilder); ok {
+			builder.Put(key, value)
+		} else {
+			return fmt.Errorf("OP_MAP_TRANSIENT_PUT expected MapBuilder, got %v", builderVal.Type)
+		}
+
+	case OP_FREEZE_MAP:
+		builderVal := vm.pop()
+		if builder, ok := builderVal.AsObject().(*evaluator.MapBuilder); ok {
+			persistentMap := builder.Freeze()
+			// Wrap in evaluator.Map
+			finalMap := evaluator.NewMapFromPersistent(persistentMap)
+			vm.push(ObjVal(finalMap))
+		} else {
+			return fmt.Errorf("OP_FREEZE_MAP expected MapBuilder, got %v", builderVal.Type)
+		}
+
+	case OP_BUILD_LIST_TRANSIENT:
+		builder := evaluator.NewListBuilder()
+		vm.push(ObjVal(builder))
+
+	case OP_LIST_TRANSIENT_APPEND:
+		value := vm.pop().AsObject()
+		builderVal := vm.pop()
+
+		if builder, ok := builderVal.AsObject().(*evaluator.ListBuilder); ok {
+			builder.Append(value)
+		} else {
+			return fmt.Errorf("OP_LIST_TRANSIENT_APPEND expected ListBuilder, got %v", builderVal.Type)
+		}
+
+	case OP_FREEZE_LIST:
+		builderVal := vm.pop()
+		if builder, ok := builderVal.AsObject().(*evaluator.ListBuilder); ok {
+			persistentVector := builder.Freeze()
+			finalList := evaluator.NewListFromPersistent(persistentVector)
+			vm.push(ObjVal(finalList))
+		} else {
+			return fmt.Errorf("OP_FREEZE_LIST expected ListBuilder, got %v", builderVal.Type)
+		}
+
 	case OP_MAKE_TUPLE:
 		count := int(vm.readByte())
 		if err := vm.AddAllocatedBytes(uint64(count*16 + 48)); err != nil {

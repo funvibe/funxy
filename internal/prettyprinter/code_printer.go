@@ -1757,6 +1757,65 @@ func (p *CodePrinter) VisitListComprehension(n *ast.ListComprehension) {
 	p.write("]")
 }
 
+func (p *CodePrinter) VisitMapComprehension(n *ast.MapComprehension) {
+	if n == nil {
+		p.write("nil")
+		return
+	}
+	p.write("%{ ")
+	if n.Key != nil {
+		// Map keys must be parenthesized if they contain operators with precedence lower than |
+		// because | is the delimiter for comprehension clauses.
+		// Actually, the issue is that | has precedence 7, so if key is `a | b`, it parses as `(a) | (b => ...)` which is wrong.
+		// We need to ensure key binds tighter than |
+		p.printExpr(n.Key, getPrecedence("|")+1, false)
+	} else {
+		p.write("<???>")
+	}
+	p.write(" => ")
+	if n.Value != nil {
+		// Same for value
+		p.printExpr(n.Value, getPrecedence("|")+1, false)
+	} else {
+		p.write("<???>")
+	}
+	p.write(" | ")
+	for i, clause := range n.Clauses {
+		if i > 0 {
+			p.write(", ")
+		}
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			if c == nil {
+				p.write("<???>")
+				continue
+			}
+			if c.Pattern != nil {
+				c.Pattern.Accept(p)
+			} else {
+				p.write("<???>")
+			}
+			p.write(" <- ")
+			if c.Iterable != nil {
+				c.Iterable.Accept(p)
+			} else {
+				p.write("<???>")
+			}
+		case *ast.CompFilter:
+			if c == nil {
+				p.write("<???>")
+				continue
+			}
+			if c.Condition != nil {
+				c.Condition.Accept(p)
+			} else {
+				p.write("<???>")
+			}
+		}
+	}
+	p.write(" }")
+}
+
 func (p *CodePrinter) VisitRangeExpression(n *ast.RangeExpression) {
 	if n == nil {
 		p.write("nil")

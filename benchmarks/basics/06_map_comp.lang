@@ -1,0 +1,21 @@
+import "lib/time" (clockMs)
+import "lib/map" (mapPut)
+
+print("Testing map creation speed: 100k elements (String keys)")
+
+// 1. Old way (Repeated Path Copying)
+start = clockMs()
+oldMap = %{}
+for i in 1..100000 {
+    oldMap = mapPut(oldMap, "key_" ++ show(i), i)
+}
+oldTime = clockMs() - start
+print("1. Old way (Repeated Path Copying): " ++ show(oldTime) ++ "ms")
+
+// 2. New way (Map Comprehension - Transient Builder)
+start2 = clockMs()
+newMap = %{ "key_" ++ show(i) => i | i <- 1..100000 }
+newTime = clockMs() - start2
+print("2. Map Comprehension (Transient Builder): " ++ show(newTime) ++ "ms")
+
+print("Speedup: " ++ show(oldTime / newTime) ++ "x")

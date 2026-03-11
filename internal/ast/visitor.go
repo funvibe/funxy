@@ -72,4 +72,5 @@ type Visitor interface {
 	VisitReturnStatement(n *ReturnStatement)
 	// List Comprehension
 	VisitListComprehension(n *ListComprehension)
+	VisitMapComprehension(n *MapComprehension)
 }

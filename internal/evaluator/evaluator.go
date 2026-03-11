@@ -28,23 +28,25 @@ type AsyncHandler func(fn Object, args []Object) Object
 
 // SupervisorHandler handles VM lifecycle operations (Spawn, Kill, List)
 type SupervisorHandler struct {
-	SpawnVM              func(path string, config map[string]interface{}, state []byte) (string, error)
-	KillVM               func(id string, saveState bool, timeoutMs int) ([]byte, error)
-	StopVM               func(id string, saveState bool, timeoutMs int) ([]byte, error)
-	TraceOn              func(id string) error
-	TraceOff             func(id string) error
-	TraceOnAll           func()
-	TraceOffAll          func()
-	GetRPCCircuitStats   func(id string) (map[string]interface{}, error)
-	ListVMs              func() []string
-	GetStats             func(id string) (map[string]uint64, error)
-	ReceiveEvent         func() map[string]interface{}
-	ReceiveEventTimeout  func(timeoutMs int) (map[string]interface{}, bool)
-	RPCCall              func(targetID, method string, args []byte, timeoutMs int) ([]byte, error)
-	RPCCallFast          func(targetID, method string, args Object, timeoutMs int) (Object, error)
-	RPCCallGroup         func(group, method string, args []byte, timeoutMs int) ([]byte, error)
-	RPCCallGroupFast     func(group, method string, args Object, timeoutMs int) (Object, error)
-	RPCSerializationMode func() string
+	SpawnVM                func(path string, config map[string]interface{}, state []byte) (string, error)
+	KillVM                 func(id string, saveState bool, timeoutMs int) ([]byte, error)
+	StopVM                 func(id string, saveState bool, timeoutMs int) ([]byte, error)
+	TraceOn                func(id string) error
+	TraceOff               func(id string) error
+	TraceOnAll             func()
+	TraceOffAll            func()
+	GetRPCCircuitStats     func(id string) (map[string]interface{}, error)
+	ListVMs                func() []string
+	GetStats               func(id string) (map[string]uint64, error)
+	ReceiveEvent           func() map[string]interface{}
+	ReceiveEventTimeout    func(timeoutMs int) (map[string]interface{}, bool)
+	RPCCall                func(targetID, method string, args []byte, timeoutMs int) ([]byte, error)
+	RPCCallFast            func(targetID, method string, args Object, timeoutMs int) (Object, error)
+	RPCCallFastUnsafe      func(targetID, method string, args Object, timeoutMs int) (Object, error)
+	RPCCallGroup           func(group, method string, args []byte, timeoutMs int) ([]byte, error)
+	RPCCallGroupFast       func(group, method string, args Object, timeoutMs int) (Object, error)
+	RPCCallGroupFastUnsafe func(group, method string, args Object, timeoutMs int) (Object, error)
+	RPCSerializationMode   func() string
 }
 
 // StateHandler handles VM state operations (State Handoff)
@@ -471,6 +473,8 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		return e.evalListLiteral(node, env)
 	case *ast.ListComprehension:
 		return e.evalListComprehension(node, env)
+	case *ast.MapComprehension:
+		return e.evalMapComprehension(node, env)
 	case *ast.MapLiteral:
 		return e.evalMapLiteral(node, env)
 	case *ast.RecordLiteral:

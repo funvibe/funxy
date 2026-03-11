@@ -23,12 +23,14 @@ In many popular scripting languages, there is a problem with the Global Interpre
     Any mutation operation (adding an element or key) does not change the original object but creates a new structure reusing existing nodes (structural sharing). This means that any internal data of the language can be safely passed between goroutines without mutexes.
 *   Garbage Collection Optimization:
     Funxy relies on Go's concurrent garbage collector. The creation of many short-lived intermediate nodes is well-utilized by the garbage collector without causing long application pauses.
+*   Transient Builders for Comprehensions:
+    To maximize performance during bulk generation of persistent data structures (e.g. Map and List comprehensions), the VM utilizes a Transient Builder pattern. This accumulates data in a mutable structure localized entirely on the VM stack, converting it to an immutable HAMT/List only at the very end. This completely avoids allocating intermediate GC garbage and greatly speeds up operations.
 *   Cheap Interpreter Cloning:
     Thanks to the immutability of the environment, forking in the VM happens very quickly, as new instances mostly receive pointers to the same immutable property trees. During fallback via `evaluator`, part of the global environment can be cloned linearly.
 
 ## 3. Concurrency: Asynchrony and Actor Model
 
-Funxy provides two layers for working with concurrency: application (`lib/task`) and architectural (VMM).
+Funxy provides two layers for working with concurrency: application (`lib/task`) and architectural (Virtual Machine Manager (VMM)).
 
 ### Application Asynchrony (`lib/task`)
 For everyday tasks (network requests, timers), the language provides the `lib/task` module — a wrapper over goroutines with Promises/Futures semantics.

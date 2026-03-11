@@ -75,6 +75,11 @@ func NewList(elements []Object) *List {
 	return &List{vector: v}
 }
 
+// NewListFromPersistent creates a List from an existing PersistentVector
+func NewListFromPersistent(pv *PersistentVector) *List {
+	return &List{vector: pv}
+}
+
 // newListWithType creates a new List with a specified element type
 func newListWithType(elements []Object, elemType string) *List {
 	v := VectorFrom(elements)
@@ -348,6 +353,11 @@ func newMap() *Map {
 // NewMap creates a new empty Map (exported for VM)
 func NewMap() *Map {
 	return newMap()
+}
+
+// NewMapFromPersistent creates a Map from an existing PersistentMap
+func NewMapFromPersistent(pm *PersistentMap) *Map {
+	return &Map{hamt: pm}
 }
 
 func (m *Map) Type() ObjectType { return MAP_OBJ }

@@ -522,6 +522,9 @@ func InferWithContext(ctx *InferenceContext, node ast.Node, table *symbols.Symbo
 	case *ast.ListComprehension:
 		resultType, subst, err = inferListComprehension(ctx, n, table, recursiveInfer)
 
+	case *ast.MapComprehension:
+		resultType, subst, err = inferMapComprehension(ctx, n, table, recursiveInfer)
+
 	case *ast.RangeExpression:
 		resultType, subst, err = inferRangeExpression(ctx, n, table, recursiveInfer)
 

@@ -6,6 +6,217 @@ import (
 	"github.com/funvibe/funxy/internal/evaluator"
 )
 
+// compileMapComprehension compiles a map comprehension expression
+// %{ keyExpr => valExpr | clause, clause, ... }
+func (c *Compiler) compileMapComprehension(expr *ast.MapComprehension) error {
+	line := expr.Token.Line
+
+	// Create transient map builder
+	c.emit(OP_BUILD_MAP_TRANSIENT, line)
+	c.slotCount++
+	resultSlot := c.slotCount - 1
+
+	// Add local for the builder so we can update it
+	c.beginScope()
+	c.addLocal("$comp_result", resultSlot)
+
+	// Compile clauses recursively
+	if err := c.compileMapCompClauses(expr.Clauses, 0, expr.Key, expr.Value, resultSlot, line); err != nil {
+		return err
+	}
+
+	// Get builder back on top of stack
+	c.emit(OP_GET_LOCAL, line)
+	c.currentChunk().Write(byte(resultSlot), line)
+	c.slotCount++
+
+	// Freeze into persistent map
+	c.emit(OP_FREEZE_MAP, line)
+	// slotCount unchanged (builder -> map)
+
+	// End scope - clean up but keep result on stack
+	c.emit(OP_CLOSE_SCOPE, line)
+	c.currentChunk().Write(byte(1), line) // 1 local to close (the builder slot)
+	c.slotCount--
+	c.endScopeNoEmit()
+
+	return nil
+}
+
+// compileMapCompClauses recursively compiles comprehension clauses for maps
+func (c *Compiler) compileMapCompClauses(clauses []ast.CompClause, idx int, keyExpr ast.Expression, valExpr ast.Expression, resultSlot int, line int) error {
+	if idx >= len(clauses) {
+		// All clauses processed, compile key and value and add to builder
+
+		// Get builder first
+		c.emit(OP_GET_LOCAL, line)
+		c.currentChunk().Write(byte(resultSlot), line)
+		c.slotCount++
+		// Stack: [..., builder]
+
+		// Compile key expression
+		if err := c.compileExpression(keyExpr); err != nil {
+			return err
+		}
+		// Stack: [..., builder, key]
+
+		// Compile value expression
+		if err := c.compileExpression(valExpr); err != nil {
+			return err
+		}
+		// Stack: [..., builder, key, value]
+
+		// Put key and value into transient builder
+		c.emit(OP_MAP_TRANSIENT_PUT, line)
+		c.slotCount -= 3 // consumes builder, key, value, pushes nothing
+		// Stack: [...] (back to state before this clause)
+
+		return nil
+	}
+
+	clause := clauses[idx]
+
+	switch cl := clause.(type) {
+	case *ast.CompGenerator:
+		return c.compileMapCompGenerator(cl, clauses, idx, keyExpr, valExpr, resultSlot, line)
+
+	case *ast.CompFilter:
+		return c.compileMapCompFilter(cl, clauses, idx, keyExpr, valExpr, resultSlot, line)
+
+	default:
+		return fmt.Errorf("unknown comprehension clause type: %T", clause)
+	}
+}
+
+// compileMapCompGenerator compiles a generator clause for map comprehension
+func (c *Compiler) compileMapCompGenerator(gen *ast.CompGenerator, clauses []ast.CompClause, idx int, keyExpr ast.Expression, valExpr ast.Expression, resultSlot int, line int) error {
+	c.beginScope()
+
+	// 1. Compile iterable expression
+	if err := c.compileExpression(gen.Iterable); err != nil {
+		return err
+	}
+	c.emit(OP_MAKE_ITER, line)
+	iterableSlot := c.slotCount - 1
+	c.addLocal("$comp_iter", iterableSlot)
+
+	// Length slot
+	c.slotCount++
+	lenSlot := c.slotCount - 1
+	c.addLocal("$comp_len", lenSlot)
+
+	// Index variable
+	c.emitConstant(&evaluator.Integer{Value: 0}, line)
+	c.slotCount++
+	indexSlot := c.slotCount - 1
+	c.addLocal("$comp_idx", indexSlot)
+
+	// Item slot
+	c.emit(OP_NIL, line)
+	c.slotCount++
+	itemSlot := c.slotCount - 1
+
+	// For complex patterns, pre-allocate slots for pattern variables BEFORE the loop
+	var patternSlots map[string]int
+	if _, ok := gen.Pattern.(*ast.IdentifierPattern); !ok {
+		patternSlots = make(map[string]int)
+		c.allocatePatternSlots(gen.Pattern, patternSlots, line)
+	}
+
+	// 2. Loop start
+	loopStart := c.currentChunk().Len()
+
+	// 3. Get next element
+	c.emit(OP_ITER_NEXT, line)
+	c.currentChunk().Write(byte(iterableSlot), line)
+	c.currentChunk().Write(byte(lenSlot), line)
+	c.currentChunk().Write(byte(indexSlot), line)
+	c.slotCount += 2
+
+	// Save slotCount after ITER_NEXT for exit label
+	slotCountAfterIterNext := c.slotCount
+
+	// Exit if done
+	exitJump := c.emitJump(OP_JUMP_IF_FALSE, line)
+	c.emit(OP_POP, line) // Pop continue flag
+	c.slotCount--
+
+	// Store item
+	c.emit(OP_SET_LOCAL, line)
+	c.currentChunk().Write(byte(itemSlot), line)
+	c.emit(OP_POP, line)
+	c.slotCount--
+
+	// Bind pattern
+	if identPat, ok := gen.Pattern.(*ast.IdentifierPattern); ok {
+		if identPat.Value != "_" {
+			c.addLocal(identPat.Value, itemSlot)
+		}
+	} else {
+		if err := c.extractPatternValues(gen.Pattern, itemSlot, patternSlots, line); err != nil {
+			return err
+		}
+	}
+
+	// Recurse into next clause
+	if err := c.compileMapCompClauses(clauses, idx+1, keyExpr, valExpr, resultSlot, line); err != nil {
+		return err
+	}
+
+	c.emitLoop(loopStart, line)
+
+	c.patchJump(exitJump)
+	c.slotCount = slotCountAfterIterNext // Reset slotCount for exit path
+	c.emit(OP_POP, line)                 // Pop continue flag (false)
+	c.slotCount--
+	c.emit(OP_POP, line) // Pop item from ITER_NEXT
+	c.slotCount--
+
+	// Clean up generator variables manually
+	for range patternSlots {
+		c.emit(OP_POP, line)
+		c.slotCount--
+	}
+
+	c.emit(OP_POP, line) // item slot
+	c.slotCount--
+	c.emit(OP_POP, line) // index
+	c.slotCount--
+	c.emit(OP_POP, line) // len
+	c.slotCount--
+	c.emit(OP_POP, line) // iter
+	c.slotCount--
+	c.endScopeNoEmit()
+
+	return nil
+}
+
+// compileMapCompFilter compiles a filter clause for map comprehension
+func (c *Compiler) compileMapCompFilter(filter *ast.CompFilter, clauses []ast.CompClause, idx int, keyExpr ast.Expression, valExpr ast.Expression, resultSlot int, line int) error {
+	if err := c.compileExpression(filter.Condition); err != nil {
+		return err
+	}
+
+	skipJump := c.emitJump(OP_JUMP_IF_FALSE, line)
+
+	c.emit(OP_POP, line)
+	c.slotCount--
+
+	if err := c.compileMapCompClauses(clauses, idx+1, keyExpr, valExpr, resultSlot, line); err != nil {
+		return err
+	}
+
+	skipEndJump := c.emitJump(OP_JUMP, line)
+
+	c.patchJump(skipJump)
+	c.emit(OP_POP, line)
+	c.slotCount--
+
+	c.patchJump(skipEndJump)
+
+	return nil
+}
+
 // emitLoop emits a backward jump to loopStart
 func (c *Compiler) emitLoop(loopStart int, line int) {
 	c.emit(OP_LOOP, line)
@@ -288,14 +499,12 @@ func (c *Compiler) compileContinueStatement(stmt *ast.ContinueStatement) error {
 func (c *Compiler) compileListComprehension(expr *ast.ListComprehension) error {
 	line := expr.Token.Line
 
-	// Create empty result list using OP_MAKE_LIST with 0 elements
-	c.emit(OP_MAKE_LIST, line)
-	c.currentChunk().Write(byte(0), line) // high byte of count
-	c.currentChunk().Write(byte(0), line) // low byte of count
+	// Create transient list builder
+	c.emit(OP_BUILD_LIST_TRANSIENT, line)
 	c.slotCount++
 	resultSlot := c.slotCount - 1
 
-	// Add local for result list so we can update it
+	// Add local for the builder so we can update it
 	c.beginScope()
 	c.addLocal("$comp_result", resultSlot)
 
@@ -304,14 +513,18 @@ func (c *Compiler) compileListComprehension(expr *ast.ListComprehension) error {
 		return err
 	}
 
-	// Get result list back on top of stack
+	// Get builder back on top of stack
 	c.emit(OP_GET_LOCAL, line)
 	c.currentChunk().Write(byte(resultSlot), line)
 	c.slotCount++
 
+	// Freeze into persistent list
+	c.emit(OP_FREEZE_LIST, line)
+	// slotCount unchanged (builder -> list)
+
 	// End scope - clean up but keep result on stack
 	c.emit(OP_CLOSE_SCOPE, line)
-	c.currentChunk().Write(byte(1), line) // 1 local to close (the result list slot)
+	c.currentChunk().Write(byte(1), line) // 1 local to close (the builder slot)
 	c.slotCount--
 	c.endScopeNoEmit()
 
@@ -321,37 +534,24 @@ func (c *Compiler) compileListComprehension(expr *ast.ListComprehension) error {
 // compileCompClauses recursively compiles comprehension clauses
 func (c *Compiler) compileCompClauses(clauses []ast.CompClause, idx int, output ast.Expression, resultSlot int, line int) error {
 	if idx >= len(clauses) {
-		// All clauses processed, compile output and append to result
-		// Strategy: get result list, compile output, make single-element list, concat
+		// All clauses processed, compile output and append to result builder
+		// Strategy: get builder, compile output, OP_LIST_TRANSIENT_APPEND
 
-		// Get result list first
+		// Get builder
 		c.emit(OP_GET_LOCAL, line)
 		c.currentChunk().Write(byte(resultSlot), line)
 		c.slotCount++
-		// Stack: [..., result_list]
+		// Stack: [..., builder]
 
 		// Compile output expression
 		if err := c.compileExpression(output); err != nil {
 			return err
 		}
-		// Stack: [..., result_list, output_value]
+		// Stack: [..., builder, output_value]
 
-		// Create single-element list from output
-		c.emit(OP_MAKE_LIST, line)
-		c.currentChunk().Write(byte(0), line) // high byte
-		c.currentChunk().Write(byte(1), line) // low byte = 1 element
-		// Stack: [..., result_list, [output_value]]
-
-		// Concat: result_list ++ [output_value]
-		c.emit(OP_CONCAT, line)
-		c.slotCount-- // consumes 2, pushes 1
-		// Stack: [..., new_result_list]
-
-		// Store updated list back
-		c.emit(OP_SET_LOCAL, line)
-		c.currentChunk().Write(byte(resultSlot), line)
-		c.emit(OP_POP, line)
-		c.slotCount--
+		// Append to builder (consumes output_value and builder)
+		c.emit(OP_LIST_TRANSIENT_APPEND, line)
+		c.slotCount -= 2
 		// Stack: [...] (back to state before this clause)
 
 		return nil

@@ -1302,6 +1302,57 @@ func (c *Compiler) specialize(name string, instantiation map[string]typesystem.T
 	// Mark as compiled to break recursion
 	root.registerGlobal(specName)
 
+	// Optimization: If the function body is just a call to a builtin,
+	// alias the specialized name directly to the builtin instead of creating a wrapper.
+	if len(stmt.Body.Statements) == 1 {
+		var expr ast.Expression
+		if ret, ok := stmt.Body.Statements[0].(*ast.ReturnStatement); ok {
+			expr = ret.Value
+		} else if exp, ok := stmt.Body.Statements[0].(*ast.ExpressionStatement); ok {
+			expr = exp.Expression
+		}
+
+		if call, ok := expr.(*ast.CallExpression); ok {
+			if ident, ok := call.Function.(*ast.Identifier); ok {
+				if builtin, isBuiltin := evaluator.Builtins[ident.Value]; isBuiltin {
+					// It's a builtin!
+					// Check arguments pass-through: arguments must match parameters exactly 1:1 in order.
+					// e.g. fun(a, b) { builtin(a, b) }
+					isPassThrough := true
+					if len(call.Arguments) != len(stmt.Parameters) {
+						isPassThrough = false
+					} else {
+						for i, arg := range call.Arguments {
+							argIdent, ok := arg.(*ast.Identifier)
+							if !ok || argIdent.Value != stmt.Parameters[i].Name.Value {
+								isPassThrough = false
+								break
+							}
+						}
+					}
+
+					if isPassThrough {
+						// optimization: alias to builtin
+						builtinIdx := root.currentChunk().AddConstant(builtin)
+						root.emit(OP_CONST, stmt.Token.Line)
+						root.currentChunk().Write(byte(builtinIdx>>8), stmt.Token.Line)
+						root.currentChunk().Write(byte(builtinIdx), stmt.Token.Line)
+						root.slotCount++
+
+						nameIdx := root.currentChunk().AddConstant(&stringConstant{Value: specName})
+						root.emit(OP_SET_GLOBAL, stmt.Token.Line)
+						root.currentChunk().Write(byte(nameIdx>>8), stmt.Token.Line)
+						root.currentChunk().Write(byte(nameIdx), stmt.Token.Line)
+						root.emit(OP_POP, stmt.Token.Line)
+						root.slotCount--
+
+						return specName, nil
+					}
+				}
+			}
+		}
+	}
+
 	// Create compiler for specialized function attached to ROOT
 	arity := len(stmt.Parameters)
 	specCompiler := newFunctionCompiler(root, specName, arity)

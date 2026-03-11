@@ -47,7 +47,7 @@ fun loop() {
 	time.Sleep(100 * time.Millisecond)
 
 	eval := evaluator.New()
-	eval.MailboxHandler = hyp.MailboxHandler("host")
+	eval.MailboxHandler = hyp.MailboxHandler(CallerIDHost)
 
 	// 1. Try to send HostObject
 	hostObj := &evaluator.HostObject{Value: make(map[string]interface{})}

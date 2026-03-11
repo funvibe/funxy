@@ -327,6 +327,33 @@ func (w *walker) VisitListComprehension(n *ast.ListComprehension) {
 	}
 }
 
+func (w *walker) VisitMapComprehension(n *ast.MapComprehension) {
+	outer := w.symbolTable
+	w.symbolTable = symbols.NewEnclosedSymbolTable(outer, symbols.ScopeBlock)
+	defer func() { w.symbolTable = outer }()
+
+	for _, clause := range n.Clauses {
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			if c.Iterable != nil {
+				c.Iterable.Accept(w)
+			}
+			w.bindPatternVariablesLoose(c.Pattern, c.Token)
+		case *ast.CompFilter:
+			if c.Condition != nil {
+				c.Condition.Accept(w)
+			}
+		}
+	}
+
+	if n.Key != nil {
+		n.Key.Accept(w)
+	}
+	if n.Value != nil {
+		n.Value.Accept(w)
+	}
+}
+
 func (w *walker) VisitRangeExpression(n *ast.RangeExpression) {
 	if n.Start != nil {
 		n.Start.Accept(w)

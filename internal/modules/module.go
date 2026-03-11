@@ -384,6 +384,17 @@ func collectExprDeps(expr ast.Expression, deps map[string]bool) {
 				collectExprDeps(c.Iterable, deps)
 			}
 		}
+	case *ast.MapComprehension:
+		collectExprDeps(e.Key, deps)
+		collectExprDeps(e.Value, deps)
+		for _, clause := range e.Clauses {
+			switch c := clause.(type) {
+			case *ast.CompFilter:
+				collectExprDeps(c.Condition, deps)
+			case *ast.CompGenerator:
+				collectExprDeps(c.Iterable, deps)
+			}
+		}
 	case *ast.FunctionLiteral:
 		// Skip function body to avoid ordering dependencies.
 		return

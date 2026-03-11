@@ -1659,8 +1659,10 @@ func initVmmDocs() {
 
 func initRpcDocs() {
 	meta := map[string]*DocMeta{
-		"callWait":      {Description: "Synchronously call a function by name on another running VM", Category: "RPC"},
-		"callWaitGroup": {Description: "Synchronously call a function by name on another running VM in a specific group (Round Robin)", Category: "RPC"},
+		"callWait":          {Description: "Synchronously call a function by name on another running VM", Category: "RPC"},
+		"callWaitFast":      {Description: "Synchronously call a function by name on another running VM (Unsafe: skips serialization checks)", Category: "RPC"},
+		"callWaitGroup":     {Description: "Synchronously call a function by name on another running VM in a specific group (Round Robin)", Category: "RPC"},
+		"callWaitGroupFast": {Description: "Synchronously call a function by name on another running VM in a specific group (Round Robin) (Unsafe: skips serialization checks)", Category: "RPC"},
 	}
 	pkg := generatePackageDocs("lib/rpc", "RPC cross-VM communication", meta, nil)
 	RegisterDocPackage(pkg)

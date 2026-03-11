@@ -135,6 +135,16 @@ const (
 
 	OP_AUTO_CALL // Auto-call nullary method if type context is set
 	OP_FORMATTER // Create format string function: [constant_index] -> [closure]
+
+	// Map Comprehensions (Transient builder pattern)
+	OP_BUILD_MAP_TRANSIENT // Creates a temporary MapBuilder on stack
+	OP_MAP_TRANSIENT_PUT   // Pops value, key and adds to MapBuilder
+	OP_FREEZE_MAP          // Converts MapBuilder to PersistentMap
+
+	// List Comprehensions (Transient builder pattern)
+	OP_BUILD_LIST_TRANSIENT  // Creates a temporary ListBuilder on stack
+	OP_LIST_TRANSIENT_APPEND // Pops value and appends to ListBuilder
+	OP_FREEZE_LIST           // Converts ListBuilder to List
 )
 
 // OpcodeNames maps opcodes to their string names (for debugging)
@@ -248,4 +258,12 @@ var OpcodeNames = map[Opcode]string{
 	OP_HALT:      "HALT",
 	OP_AUTO_CALL: "AUTO_CALL",
 	OP_FORMATTER: "FORMATTER",
+
+	OP_BUILD_MAP_TRANSIENT: "BUILD_MAP_TRANSIENT",
+	OP_MAP_TRANSIENT_PUT:   "MAP_TRANSIENT_PUT",
+	OP_FREEZE_MAP:          "FREEZE_MAP",
+
+	OP_BUILD_LIST_TRANSIENT:  "BUILD_LIST_TRANSIENT",
+	OP_LIST_TRANSIENT_APPEND: "LIST_TRANSIENT_APPEND",
+	OP_FREEZE_LIST:           "FREEZE_LIST",
 }

@@ -757,7 +757,9 @@ Use `rpcCircuitStats(vmId)` from supervisor code when you need live breaker diag
 | Function | Signature | Purpose |
 |---|---|---|
 | `callWait` | `<a,b>(targetVmId: String, method: String, payload: a, timeoutMs?: Int = 5000) -> Result<String, b>` | Call method on specific VM |
+| `callWaitFast` | `<a,b>(targetVmId: String, method: String, payload: a, timeoutMs?: Int = 5000) -> Result<String, b>` | Call method on specific VM (Unsafe: skips serialization checks) |
 | `callWaitGroup` | `<a,b>(group: String, method: String, payload: a, timeoutMs?: Int = 5000) -> Result<String, b>` | Call method on VM selected by round-robin in group |
+| `callWaitGroupFast` | `<a,b>(group: String, method: String, payload: a, timeoutMs?: Int = 5000) -> Result<String, b>` | Call method on VM selected by round-robin in group (Unsafe: skips serialization checks) |
 
 #### Behavior guarantees
 

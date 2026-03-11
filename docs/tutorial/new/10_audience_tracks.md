@@ -476,7 +476,7 @@ type alias User = { name: String }  // OK
 ```
 
 **You'll Like:**
-- List comprehensions with familiar syntax
+- List and Map comprehensions with familiar syntax
 - Type inference — types work without annotations
 - String interpolation: `"Hello, ${name}!"`
 - Pipelines `|>` for readable data transformations

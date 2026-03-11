@@ -412,6 +412,105 @@ func inferListComprehension(ctx *InferenceContext, n *ast.ListComprehension, tab
 	}, totalSubst, nil
 }
 
+// inferMapComprehension infers the type of a map comprehension
+// %{ key => value | clause, clause, ... }
+// The result type is Map<K, V> where K and V are the types of the key and value expressions
+func inferMapComprehension(ctx *InferenceContext, n *ast.MapComprehension, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {
+	totalSubst := typesystem.Subst{}
+
+	// Create a new scope for the comprehension
+	compScope := symbols.NewEnclosedSymbolTable(table, symbols.ScopeBlock)
+
+	// Process each clause to bind variables and infer types
+	for _, clause := range n.Clauses {
+		switch c := clause.(type) {
+		case *ast.CompGenerator:
+			// Infer the type of the iterable
+			iterType, s, err := inferFn(c.Iterable, compScope)
+			if err != nil {
+				return nil, nil, err
+			}
+			totalSubst = s.Compose(totalSubst)
+			iterType = iterType.Apply(totalSubst)
+
+			// Resolve type alias
+			iterType = table.ResolveTypeAlias(iterType)
+
+			// Extract element type from iterable
+			var elemType typesystem.Type
+			if tApp, ok := iterType.(typesystem.TApp); ok {
+				if tCon, ok := tApp.Constructor.(typesystem.TCon); ok {
+					if tCon.Name == config.ListTypeName && len(tApp.Args) == 1 {
+						elemType = tApp.Args[0]
+					} else if tCon.Name == "Range" && len(tApp.Args) == 1 {
+						elemType = tApp.Args[0]
+					} else {
+						return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List or Range, got %s", iterType)
+					}
+				} else {
+					return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List or Range, got %s", iterType)
+				}
+			} else if tVar, ok := iterType.(typesystem.TVar); ok {
+				// Unknown type, create fresh element type and constrain
+				elemType = ctx.FreshVar()
+				listType := typesystem.TApp{
+					Constructor: typesystem.TCon{Name: config.ListTypeName},
+					Args:        []typesystem.Type{elemType},
+				}
+				subst, err := typesystem.Unify(tVar, listType)
+				if err != nil {
+					return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List, got %s", iterType)
+				}
+				totalSubst = subst.Compose(totalSubst)
+				elemType = elemType.Apply(totalSubst)
+			} else {
+				return nil, nil, inferErrorf(c.Iterable, "generator iterable must be a List, got %s", iterType)
+			}
+
+			// Bind pattern variables with the element type
+			bindPatternType(c.Pattern, elemType, compScope)
+
+		case *ast.CompFilter:
+			// Infer the type of the filter condition
+			condType, s, err := inferFn(c.Condition, compScope)
+			if err != nil {
+				return nil, nil, err
+			}
+			totalSubst = s.Compose(totalSubst)
+			condType = condType.Apply(totalSubst)
+
+			// Filter condition must be Bool
+			subst, err := typesystem.Unify(condType, typesystem.Bool)
+			if err != nil {
+				return nil, nil, inferErrorf(c.Condition, "filter condition must be Bool, got %s", condType)
+			}
+			totalSubst = subst.Compose(totalSubst)
+		}
+	}
+
+	// Infer the type of the key expression
+	keyType, s1, err := inferFn(n.Key, compScope)
+	if err != nil {
+		return nil, nil, err
+	}
+	totalSubst = s1.Compose(totalSubst)
+	keyType = keyType.Apply(totalSubst)
+
+	// Infer the type of the value expression
+	valType, s2, err := inferFn(n.Value, compScope)
+	if err != nil {
+		return nil, nil, err
+	}
+	totalSubst = s2.Compose(totalSubst)
+	valType = valType.Apply(totalSubst)
+
+	// Result is Map<keyType, valType>
+	return typesystem.TApp{
+		Constructor: typesystem.TCon{Name: "Map"},
+		Args:        []typesystem.Type{keyType, valType},
+	}, totalSubst, nil
+}
+
 // bindPatternType binds variables in a pattern to the given type in the symbol table
 func bindPatternType(pattern ast.Pattern, t typesystem.Type, table *symbols.SymbolTable) {
 	switch p := pattern.(type) {

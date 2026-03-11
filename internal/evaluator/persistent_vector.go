@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"github.com/funvibe/funxy/internal/typesystem"
 )
 
 func init() {
@@ -58,6 +59,33 @@ func VectorFrom(elements []Object) *PersistentVector {
 	}
 	return v
 }
+
+// ListBuilder is used for fast transient construction of a PersistentVector/List
+// Used by List Comprehensions to avoid intermediate list concatenations
+type ListBuilder struct {
+	elements []Object
+}
+
+func NewListBuilder() *ListBuilder {
+	// Pre-allocate a reasonable capacity
+	return &ListBuilder{
+		elements: make([]Object, 0, 64),
+	}
+}
+
+func (lb *ListBuilder) Append(val Object) {
+	lb.elements = append(lb.elements, val)
+}
+
+func (lb *ListBuilder) Freeze() *PersistentVector {
+	return VectorFrom(lb.elements)
+}
+
+// Implement Object interface for ListBuilder so it can live on the VM stack safely
+func (lb *ListBuilder) Type() ObjectType             { return "LIST_BUILDER" }
+func (lb *ListBuilder) Inspect() string              { return fmt.Sprintf("<list builder %d>", len(lb.elements)) }
+func (lb *ListBuilder) RuntimeType() typesystem.Type { return typesystem.TCon{Name: "ListBuilder"} }
+func (lb *ListBuilder) Hash() uint32                 { return 0 } // Mutable objects shouldn't be hashed, but satisfy interface
 
 // Len returns the number of elements
 func (v *PersistentVector) Len() int {

@@ -13,6 +13,29 @@ import (
 )
 
 func init() {
+	// Add builtins that cause initialization cycles if in global map
+	Builtins["__make_dictionary"] = &Builtin{Name: "__make_dictionary", Fn: builtinMakeDictionary, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TCon{Name: "String"}, typesystem.TCon{Name: "List"}, typesystem.TCon{Name: "List"}}, ReturnType: typesystem.TCon{Name: "Dictionary"}}}
+
+	Builtins["runReader"] = &Builtin{Name: "runReader", Fn: builtinRunReader, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "r"}, typesystem.TVar{Name: "e"}}, ReturnType: typesystem.TVar{Name: "a"}}}
+	Builtins["runIdentity"] = &Builtin{Name: "runIdentity", Fn: builtinRunIdentity, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "i"}}, ReturnType: typesystem.TVar{Name: "a"}}}
+
+	Builtins["runState"] = &Builtin{Name: "runState", Fn: builtinRunState, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "s"}, typesystem.TVar{Name: "i"}}, ReturnType: typesystem.TVar{Name: "a"}}}
+	Builtins["evalState"] = &Builtin{Name: "evalState", Fn: builtinEvalState, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "s"}, typesystem.TVar{Name: "i"}}, ReturnType: typesystem.TVar{Name: "a"}}}
+	Builtins["execState"] = &Builtin{Name: "execState", Fn: builtinExecState, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "s"}, typesystem.TVar{Name: "i"}}, ReturnType: typesystem.TVar{Name: "s"}}}
+
+	Builtins["sGet"] = &Builtin{Name: "sGet", Fn: builtinSGet, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{}, ReturnType: typesystem.TVar{Name: "State"}}}
+	Builtins["get_state"] = &Builtin{Name: "get_state", Fn: builtinMonadGetState, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "s"}}, ReturnType: typesystem.TTuple{Elements: []typesystem.Type{typesystem.TVar{Name: "s"}, typesystem.TVar{Name: "s"}}}}}
+
+	Builtins["sPut"] = &Builtin{Name: "sPut", Fn: builtinSPut, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "s"}}, ReturnType: typesystem.TVar{Name: "State"}}}
+	Builtins["put_state"] = &Builtin{Name: "put_state", Fn: builtinMonadPutState, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "s"}}, ReturnType: typesystem.TTuple{Elements: []typesystem.Type{typesystem.Nil, typesystem.TVar{Name: "s"}}}}}
+
+	Builtins["runWriter"] = &Builtin{Name: "runWriter", Fn: builtinRunWriter, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "w"}}, ReturnType: typesystem.TTuple{Elements: []typesystem.Type{typesystem.TVar{Name: "a"}, typesystem.TVar{Name: "l"}}}}}
+	Builtins["execWriter"] = &Builtin{Name: "execWriter", Fn: builtinExecWriter, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "w"}}, ReturnType: typesystem.TVar{Name: "l"}}}
+	Builtins["wTell"] = &Builtin{Name: "wTell", Fn: builtinWTell, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "l"}}, ReturnType: typesystem.TVar{Name: "Writer"}}}
+
+	Builtins["runOptionT"] = &Builtin{Name: "runOptionT", Fn: builtinRunOptionT, TypeInfo: getRunOptionTType()}
+	Builtins["runResultT"] = &Builtin{Name: "runResultT", Fn: builtinRunResultT, TypeInfo: getRunResultTType()}
+
 	// Verify all builtins have TypeInfo defined
 	for name, builtin := range Builtins {
 		if builtin.TypeInfo == nil {
@@ -513,10 +536,15 @@ var Builtins = map[string]*Builtin{
 			return &TypeObject{TypeVal: t}
 		},
 	},
-	"optionT":    {Name: "optionT", Fn: builtinOptionT, TypeInfo: getOptionTConstructorType()},
-	"resultT":    {Name: "resultT", Fn: builtinResultT, TypeInfo: getResultTConstructorType()},
-	"runOptionT": {Name: "runOptionT", Fn: builtinRunOptionT, TypeInfo: getRunOptionTType()},
-	"runResultT": {Name: "runResultT", Fn: builtinRunResultT, TypeInfo: getRunResultTType()},
+	"optionT": {Name: "optionT", Fn: builtinOptionT, TypeInfo: getOptionTConstructorType()},
+	"resultT": {Name: "resultT", Fn: builtinResultT, TypeInfo: getResultTConstructorType()},
+	// runOptionT and runResultT moved to init()
+
+	// Internal
+	// (Moved to init() to avoid initialization cycle)
+
+	// Monad Transformers / Effect System
+	// (Moved to init() to avoid initialization cycle)
 
 	// Reflection
 	"kindOf":    {Name: "kindOf", Fn: builtinKindOf, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}},
@@ -863,60 +891,6 @@ func GetBuiltinsList() *StringMap {
 
 // RegisterBuiltins registers built-in functions and types into the environment.
 func RegisterBuiltins(env *Environment) {
-	// Internal builtin for dictionary creation (Analyzer usage)
-	env.Set("__make_dictionary", &Builtin{
-		Name: "__make_dictionary",
-		TypeInfo: typesystem.TFunc{
-			// We can be loose with types here as it's internal
-			Params:     []typesystem.Type{typesystem.TCon{Name: "String"}, typesystem.TCon{Name: "List"}, typesystem.TCon{Name: "List"}},
-			ReturnType: typesystem.TCon{Name: "Dictionary"},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 3 {
-				return newError("__make_dictionary expects 3 arguments, got %d", len(args))
-			}
-
-			// 1. Name
-			nameList, ok := args[0].(*List)
-			if !ok {
-				return newError("__make_dictionary arg 1 (name) must be String/List<Char>")
-			}
-			name := ListToString(nameList)
-
-			// 2. Methods
-			var methods []Object
-			if tuple, ok := args[1].(*Tuple); ok {
-				methods = tuple.Elements
-			} else if list, ok := args[1].(*List); ok {
-				// Fallback for homogeneous lists or if empty
-				methods = list.ToSlice()
-			} else {
-				return newError("__make_dictionary arg 2 (methods) must be Tuple or List")
-			}
-
-			// 3. Supers
-			supersList, ok := args[2].(*List)
-			if !ok {
-				return newError("__make_dictionary arg 3 (supers) must be List")
-			}
-			supersSlice := supersList.ToSlice()
-			supers := make([]*Dictionary, len(supersSlice))
-			for i, s := range supersSlice {
-				dict, ok := s.(*Dictionary)
-				if !ok {
-					return newError("__make_dictionary arg 3 (supers) must contain Dictionaries")
-				}
-				supers[i] = dict
-			}
-
-			return &Dictionary{
-				TraitName: name,
-				Methods:   methods,
-				Supers:    supers,
-			}
-		},
-	})
-
 	// Built-in types
 	env.Set("Int", &TypeObject{TypeVal: typesystem.TCon{Name: "Int"}})
 	env.Set("Float", &TypeObject{TypeVal: typesystem.TCon{Name: "Float"}})
@@ -974,207 +948,24 @@ func RegisterBuiltins(env *Environment) {
 	env.Set("Reader", &TypeObject{TypeVal: typesystem.TCon{Name: "Reader"}})
 	// Constructor: reader(fn)
 	env.Set("reader", &Constructor{Name: "reader", TypeName: "Reader", Arity: 1})
-	// runReader(r, e)
-	env.Set("runReader", &Builtin{
-		Name: "runReader",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 2 {
-				return newError("runReader expects 2 arguments, got %d", len(args))
-			}
-			r := args[0]
-			envVal := args[1]
-			// Check if r is Reader
-			di, ok := r.(*DataInstance)
-			if !ok || di.TypeName != "Reader" || len(di.Fields) != 1 {
-				return newError("runReader expects a Reader")
-			}
-			fn := di.Fields[0]
-			return e.ApplyFunction(fn, []Object{envVal})
-		},
-	})
 
 	// Identity<T>
 	// Type: Identity
 	env.Set("Identity", &TypeObject{TypeVal: typesystem.TCon{Name: "Identity"}})
 	// Constructor: identity(val)
 	env.Set("identity", &Constructor{Name: "identity", TypeName: "Identity", Arity: 1})
-	// runIdentity(i)
-	env.Set("runIdentity", &Builtin{
-		Name: "runIdentity",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("runIdentity expects 1 argument")
-			}
-			i := args[0]
-			di, ok := i.(*DataInstance)
-			if !ok || di.TypeName != "Identity" || len(di.Fields) != 1 {
-				return newError("runIdentity expects an Identity")
-			}
-			return di.Fields[0]
-		},
-	})
 
 	// State<S, A>
 	// Type: State
 	env.Set("State", &TypeObject{TypeVal: typesystem.TCon{Name: "State"}})
 	// Constructor: state(fn)
 	env.Set("state", &Constructor{Name: "state", TypeName: "State", Arity: 1})
-	// runState(s, init)
-	env.Set("runState", &Builtin{
-		Name: "runState",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 2 {
-				return newError("runState expects 2 arguments")
-			}
-			s := args[0]
-			init := args[1]
-			di, ok := s.(*DataInstance)
-			if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
-				return newError("runState expects a State, got %s (TypeName=%s)", s.Inspect(), getTypeName(s))
-			}
-			fn := di.Fields[0]
-			return e.ApplyFunction(fn, []Object{init})
-		},
-	})
-	// evalState(s, init) -> val
-	env.Set("evalState", &Builtin{
-		Name: "evalState",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 2 {
-				return newError("evalState expects 2 arguments")
-			}
-			s := args[0]
-			init := args[1]
-			di, ok := s.(*DataInstance)
-			if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
-				return newError("evalState expects a State")
-			}
-			fn := di.Fields[0]
-			res := e.ApplyFunction(fn, []Object{init})
-			if isError(res) {
-				return res
-			}
-			// Result is (val, state) tuple
-			tuple, ok := res.(*Tuple)
-			if !ok || len(tuple.Elements) != 2 {
-				return newError("State function must return (value, state) tuple")
-			}
-			return tuple.Elements[0]
-		},
-	})
-	// execState(s, init) -> state
-	env.Set("execState", &Builtin{
-		Name: "execState",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 2 {
-				return newError("execState expects 2 arguments")
-			}
-			s := args[0]
-			init := args[1]
-			di, ok := s.(*DataInstance)
-			if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
-				return newError("execState expects a State")
-			}
-			fn := di.Fields[0]
-			res := e.ApplyFunction(fn, []Object{init})
-			if isError(res) {
-				return res
-			}
-			// Result is (val, state) tuple
-			tuple, ok := res.(*Tuple)
-			if !ok || len(tuple.Elements) != 2 {
-				return newError("State function must return (value, state) tuple")
-			}
-			return tuple.Elements[1]
-		},
-	})
-	// sGet() -> State (\s -> (s, s))
-	env.Set("sGet", &Builtin{
-		Name: "sGet",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			fn := &Builtin{
-				Name: "get_state",
-				Fn: func(ev *Evaluator, callArgs ...Object) Object {
-					if len(callArgs) != 1 {
-						return newError("State function expects 1 argument")
-					}
-					s := callArgs[0]
-					return &Tuple{Elements: []Object{s, s}}
-				},
-			}
-			return &DataInstance{Name: "state", TypeName: "State", Fields: []Object{fn}}
-		},
-	})
-	// sPut(s) -> State (\_ -> ((), s))
-	env.Set("sPut", &Builtin{
-		Name: "sPut",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("sPut expects 1 argument")
-			}
-			newState := args[0]
-			fn := &Builtin{
-				Name: "put_state",
-				Fn: func(ev *Evaluator, callArgs ...Object) Object {
-					return &Tuple{Elements: []Object{&Nil{}, newState}}
-				},
-			}
-			return &DataInstance{Name: "state", TypeName: "State", Fields: []Object{fn}}
-		},
-	})
 
 	// Writer<W, A>
 	// Type: Writer
 	env.Set("Writer", &TypeObject{TypeVal: typesystem.TCon{Name: "Writer"}})
 	// Constructor: writer(val, log)
 	env.Set("writer", &Constructor{Name: "writer", TypeName: "Writer", Arity: 2})
-	// runWriter(w) -> (val, log)
-	env.Set("runWriter", &Builtin{
-		Name: "runWriter",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("runWriter expects 1 argument")
-			}
-			w := args[0]
-			di, ok := w.(*DataInstance)
-			if !ok || di.TypeName != "Writer" || len(di.Fields) != 2 {
-				return newError("runWriter expects a Writer")
-			}
-			val := di.Fields[0]
-			log := di.Fields[1]
-			return &Tuple{Elements: []Object{val, log}}
-		},
-	})
-	// execWriter(w) -> log
-	env.Set("execWriter", &Builtin{
-		Name: "execWriter",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("execWriter expects 1 argument")
-			}
-			w := args[0]
-			di, ok := w.(*DataInstance)
-			if !ok || di.TypeName != "Writer" || len(di.Fields) != 2 {
-				return newError("execWriter expects a Writer")
-			}
-			return di.Fields[1]
-		},
-	})
-	// wTell(log) -> Writer((), log)
-	env.Set("wTell", &Builtin{
-		Name: "wTell",
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("wTell expects 1 argument")
-			}
-			log := args[0]
-			return &DataInstance{
-				Name:     "writer",
-				TypeName: "Writer",
-				Fields:   []Object{&Nil{}, log},
-			}
-		},
-	})
 
 	// Register all builtin functions from the Builtins map
 	for name, builtin := range Builtins {
@@ -1400,17 +1191,243 @@ func builtinRunOptionT(e *Evaluator, args ...Object) Object {
 	return newError("runOptionT expects OptionT")
 }
 
-// runResultT
+// builtinRunResultT
 func builtinRunResultT(e *Evaluator, args ...Object) Object {
 	if len(args) != 1 {
 		return newError("runResultT expects 1 argument")
 	}
-	if di, ok := args[0].(*DataInstance); ok {
-		if di.TypeName == "ResultT" && len(di.Fields) == 1 {
-			return di.Fields[0]
-		}
-		// If check failed, inspect why
-		return newError("runResultT expects ResultT. Got: Name=%s, TypeName=%s, Fields=%d", di.Name, di.TypeName, len(di.Fields))
+	if di, ok := args[0].(*DataInstance); ok && di.TypeName == "ResultT" && len(di.Fields) == 1 {
+		return di.Fields[0]
 	}
-	return newError("runResultT expects ResultT. Got: %s (Type: %s)", args[0].Inspect(), args[0].Type())
+	return newError("runResultT expects ResultT")
+}
+
+// builtinRunReader
+func builtinRunReader(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("runReader expects 2 arguments, got %d", len(args))
+	}
+	r := args[0]
+	envVal := args[1]
+	// Check if r is Reader
+	di, ok := r.(*DataInstance)
+	if !ok || di.TypeName != "Reader" || len(di.Fields) != 1 {
+		return newError("runReader expects a Reader")
+	}
+	fn := di.Fields[0]
+	return e.ApplyFunction(fn, []Object{envVal})
+}
+
+// builtinRunIdentity
+func builtinRunIdentity(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("runIdentity expects 1 argument")
+	}
+	i := args[0]
+	di, ok := i.(*DataInstance)
+	if !ok || di.TypeName != "Identity" || len(di.Fields) != 1 {
+		return newError("runIdentity expects an Identity")
+	}
+	return di.Fields[0]
+}
+
+// builtinRunState
+func builtinRunState(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("runState expects 2 arguments")
+	}
+	s := args[0]
+	init := args[1]
+	di, ok := s.(*DataInstance)
+	if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
+		return newError("runState expects a State, got %s (TypeName=%s)", s.Inspect(), getTypeName(s))
+	}
+	fn := di.Fields[0]
+	return e.ApplyFunction(fn, []Object{init})
+}
+
+// builtinEvalState
+func builtinEvalState(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("evalState expects 2 arguments")
+	}
+	s := args[0]
+	init := args[1]
+	di, ok := s.(*DataInstance)
+	if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
+		return newError("evalState expects a State")
+	}
+	fn := di.Fields[0]
+	res := e.ApplyFunction(fn, []Object{init})
+	if isError(res) {
+		return res
+	}
+	// Result is (val, state) tuple
+	tuple, ok := res.(*Tuple)
+	if !ok || len(tuple.Elements) != 2 {
+		return newError("State function must return (value, state) tuple")
+	}
+	return tuple.Elements[0]
+}
+
+// builtinExecState
+func builtinExecState(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("execState expects 2 arguments")
+	}
+	s := args[0]
+	init := args[1]
+	di, ok := s.(*DataInstance)
+	if !ok || di.TypeName != "State" || len(di.Fields) != 1 {
+		return newError("execState expects a State")
+	}
+	fn := di.Fields[0]
+	res := e.ApplyFunction(fn, []Object{init})
+	if isError(res) {
+		return res
+	}
+	// Result is (val, state) tuple
+	tuple, ok := res.(*Tuple)
+	if !ok || len(tuple.Elements) != 2 {
+		return newError("State function must return (value, state) tuple")
+	}
+	return tuple.Elements[1]
+}
+
+// builtinMonadGetState (inner function for sGet)
+func builtinMonadGetState(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("State function expects 1 argument")
+	}
+	s := args[0]
+	return &Tuple{Elements: []Object{s, s}}
+}
+
+// builtinSGet
+func builtinSGet(e *Evaluator, args ...Object) Object {
+	// We need access to the `get_state` builtin from the registry
+	builtinFn, ok := Builtins["get_state"]
+	if !ok {
+		return newError("internal error: get_state builtin not found")
+	}
+
+	return &DataInstance{Name: "state", TypeName: "State", Fields: []Object{builtinFn}}
+}
+
+// builtinMonadPutState (inner function for sPut)
+func builtinMonadPutState(e *Evaluator, args ...Object) Object {
+	if len(args) != 2 {
+		return newError("put_state expects 2 arguments (newState, currentState)")
+	}
+	newState := args[0]
+	// currentState := args[1] // Ignored
+	return &Tuple{Elements: []Object{&Nil{}, newState}}
+}
+
+// builtinSPut
+func builtinSPut(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("sPut expects 1 argument")
+	}
+	newState := args[0]
+
+	builtinFn, ok := Builtins["put_state"]
+	if !ok {
+		return newError("internal error: put_state builtin not found")
+	}
+
+	// Create PartialApplication
+	partial := &PartialApplication{
+		Builtin:         builtinFn,
+		AppliedArgs:     []Object{newState},
+		RemainingParams: 1, // It needs currentState
+	}
+
+	return &DataInstance{Name: "state", TypeName: "State", Fields: []Object{partial}}
+}
+
+// builtinRunWriter
+func builtinRunWriter(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("runWriter expects 1 argument")
+	}
+	w := args[0]
+	di, ok := w.(*DataInstance)
+	if !ok || di.TypeName != "Writer" || len(di.Fields) != 2 {
+		return newError("runWriter expects a Writer")
+	}
+	val := di.Fields[0]
+	log := di.Fields[1]
+	return &Tuple{Elements: []Object{val, log}}
+}
+
+// builtinExecWriter
+func builtinExecWriter(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("execWriter expects 1 argument")
+	}
+	w := args[0]
+	di, ok := w.(*DataInstance)
+	if !ok || di.TypeName != "Writer" || len(di.Fields) != 2 {
+		return newError("execWriter expects a Writer")
+	}
+	return di.Fields[1]
+}
+
+// builtinWTell
+func builtinWTell(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("wTell expects 1 argument")
+	}
+	log := args[0]
+	return &DataInstance{
+		Name:     "writer",
+		TypeName: "Writer",
+		Fields:   []Object{&Nil{}, log},
+	}
+}
+
+// builtinMakeDictionary
+func builtinMakeDictionary(e *Evaluator, args ...Object) Object {
+	if len(args) != 3 {
+		return newError("__make_dictionary expects 3 arguments, got %d", len(args))
+	}
+
+	// 1. Name
+	nameList, ok := args[0].(*List)
+	if !ok {
+		return newError("__make_dictionary arg 1 (name) must be String/List<Char>")
+	}
+	name := ListToString(nameList)
+
+	// 2. Methods
+	var methods []Object
+	if tuple, ok := args[1].(*Tuple); ok {
+		methods = tuple.Elements
+	} else if list, ok := args[1].(*List); ok {
+		methods = list.ToSlice()
+	} else {
+		return newError("__make_dictionary arg 2 (methods) must be Tuple or List")
+	}
+
+	// 3. Supers
+	supersList, ok := args[2].(*List)
+	if !ok {
+		return newError("__make_dictionary arg 3 (supers) must be List")
+	}
+	supersSlice := supersList.ToSlice()
+	supers := make([]*Dictionary, len(supersSlice))
+	for i, s := range supersSlice {
+		dict, ok := s.(*Dictionary)
+		if !ok {
+			return newError("__make_dictionary arg 3 (supers) must contain Dictionaries")
+		}
+		supers[i] = dict
+	}
+
+	return &Dictionary{
+		TraitName: name,
+		Methods:   methods,
+		Supers:    supers,
+	}
 }
