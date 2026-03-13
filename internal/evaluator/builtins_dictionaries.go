@@ -2,26 +2,45 @@ package evaluator
 
 import (
 	"github.com/funvibe/funxy/internal/config"
+	"sync"
 )
 
 // TraitMethods defines the standard methods for built-in traits.
 // This is used for dictionary construction and dynamic dispatch.
-var TraitMethods = map[string][]string{
-	"Show":        {"show"},
-	"Equal":       {"(==)", "(!=)"},
-	"Order":       {"(<)", "(>)", "(<=)", "(>=)"},
-	"Numeric":     {"(+)", "(-)", "(*)", "(/)", "(%)", "(**)"},
-	"Bitwise":     {"(&)", "(|)", "(^)", "(<<)", "(>>)"},
-	"Concat":      {"(++)"},
-	"Default":     {"default", "getDefault"}, // Both registered in analyzer
-	"Functor":     {"fmap"},
-	"Applicative": {"pure", "(<*>)"},
-	"Monad":       {"(>>=)"},
-	"Semigroup":   {"(<>)"},
-	"Monoid":      {"mempty"},
-	"Empty":       {"isEmpty"},
-	"Optional":    {"unwrap", "wrap"},
-	"Iter":        {"iter"},
+var (
+	traitMethodsMu sync.RWMutex
+	traitMethods   = map[string][]string{
+		"Show":        {"show"},
+		"Equal":       {"(==)", "(!=)"},
+		"Order":       {"(<)", "(>)", "(<=)", "(>=)"},
+		"Numeric":     {"(+)", "(-)", "(*)", "(/)", "(%)", "(**)"},
+		"Bitwise":     {"(&)", "(|)", "(^)", "(<<)", "(>>)"},
+		"Concat":      {"(++)"},
+		"Default":     {"default", "getDefault"}, // Both registered in analyzer
+		"Functor":     {"fmap"},
+		"Applicative": {"pure", "(<*>)"},
+		"Monad":       {"(>>=)"},
+		"Semigroup":   {"(<>)"},
+		"Monoid":      {"mempty"},
+		"Empty":       {"isEmpty"},
+		"Optional":    {"unwrap", "wrap"},
+		"Iter":        {"iter"},
+	}
+)
+
+// GetTraitMethods returns the method names for a trait.
+func GetTraitMethods(traitName string) ([]string, bool) {
+	traitMethodsMu.RLock()
+	defer traitMethodsMu.RUnlock()
+	m, ok := traitMethods[traitName]
+	return m, ok
+}
+
+// RegisterTraitMethods registers methods for a trait.
+func RegisterTraitMethods(traitName string, methods []string) {
+	traitMethodsMu.Lock()
+	defer traitMethodsMu.Unlock()
+	traitMethods[traitName] = methods
 }
 
 // RegisterDictionaryGlobals populates the environment with dictionary objects
@@ -38,7 +57,7 @@ func RegisterDictionaryGlobals(e *Evaluator, env *Environment) {
 		types := typesMapObj.Value.(*PersistentMap)
 
 		// Get expected method order
-		expectedMethods, ok := TraitMethods[traitName]
+		expectedMethods, ok := GetTraitMethods(traitName)
 		if !ok {
 			// Skip user-defined traits not in our hardcoded list?
 			// Or should we try to infer? For now, skip to avoid crashes.
@@ -235,7 +254,7 @@ func buildDictionary(e *Evaluator, traitName, typeName string) *Dictionary {
 	// (Simplified copy of the loop body)
 
 	// 1. Methods
-	expectedMethods, ok := TraitMethods[traitName]
+	expectedMethods, ok := GetTraitMethods(traitName)
 	if !ok {
 		return &Dictionary{TraitName: traitName} // Empty
 	}

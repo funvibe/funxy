@@ -575,7 +575,7 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 	}
 
 	// Mark tail calls since walker skips inner functions/expressions
-	MarkTailCalls(n.Body)
+	MarkTailCalls(n.Body, 0)
 
 	// Rank-2/Rank-N Polymorphism: If a parameter is polymorphic (TForall),
 	// and the return type depends on calling that parameter, generalize the return type
@@ -726,7 +726,7 @@ func resolveLocalWitnesses(ctx *InferenceContext, table *symbols.SymbolTable) []
 		}
 
 		// Attempt to solve
-		witnessExpr, err := ctx.SolveWitness(pw.Node, pw.Trait, resolvedArgs, table)
+		witnessExpr, err := ctx.SolveWitness(pw.Node, pw.Trait, resolvedArgs, table, 0)
 
 		if err == nil {
 			// Success! Update the AST node.

@@ -262,6 +262,12 @@ func handleVmm() bool {
 	go func() {
 		<-h.WaitForExit(id)
 		fmt.Printf("\nSupervisor VM '%s' exited. Shutting down host...\n", id)
+		if info, err := h.InspectVM(id); err == nil {
+			// Ignore context canceled error which happens on normal shutdown
+			if exitErr, ok := info["exit_error"].(string); ok && exitErr != "" && !strings.Contains(exitErr, "context canceled") {
+				fmt.Printf("Exit error: %s\n", exitErr)
+			}
+		}
 		exitCh <- true
 	}()
 

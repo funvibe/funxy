@@ -1720,7 +1720,8 @@ row = sqlQueryRow(db, "SELECT * FROM users WHERE id=$1", [SqlInt(1)])?
 import "lib/json" (*)
 
 // Encode/decode
-json = jsonEncode({ name: "Alice", age: 30 })
+json = jsonEncode({ name: "Alice", age: 30 }) // Returns String (slow)
+bytes = jsonEncodeBytes({ name: "Bob" })      // Returns Bytes (fast, zero-copy)
 user = jsonDecode(json)?
 
 // Parse into Json ADT

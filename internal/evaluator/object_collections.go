@@ -683,6 +683,7 @@ func (b *Bytes) GobEncode() ([]byte, error) {
 
 // GobDecode implements gob decoding for Bytes
 func (b *Bytes) GobDecode(data []byte) error {
+	// Must allocate new slice, do not reference data directly as it may be reused by gob
 	b.data = make([]byte, len(data))
 	copy(b.data, data)
 	return nil
@@ -974,26 +975,29 @@ func (b *Bits) GobEncode() ([]byte, error) {
 	if b == nil {
 		return nil, nil
 	}
-	buf := new(bytes.Buffer)
-	enc := gob.NewEncoder(buf)
-	if err := enc.Encode(b.data); err != nil {
-		return nil, err
-	}
-	if err := enc.Encode(b.length); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	// Custom serialization format: length (4 bytes) + data
+	buf := make([]byte, 4+len(b.data))
+	// Encode length (int) as uint32 big endian
+	buf[0] = byte(b.length >> 24)
+	buf[1] = byte(b.length >> 16)
+	buf[2] = byte(b.length >> 8)
+	buf[3] = byte(b.length)
+	copy(buf[4:], b.data)
+	return buf, nil
 }
 
 // GobDecode implements gob decoding for Bits
 func (b *Bits) GobDecode(data []byte) error {
-	buf := bytes.NewReader(data)
-	dec := gob.NewDecoder(buf)
-	if err := dec.Decode(&b.data); err != nil {
-		return err
+	if len(data) < 4 {
+		return fmt.Errorf("invalid bits encoding")
 	}
-	if err := dec.Decode(&b.length); err != nil {
-		return err
-	}
+	// Decode length
+	length := int(uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3]))
+	b.length = length
+
+	// Decode data
+	dataLen := len(data) - 4
+	b.data = make([]byte, dataLen)
+	copy(b.data, data[4:])
 	return nil
 }

@@ -12,10 +12,17 @@ import (
 	"github.com/funvibe/funxy/internal/typesystem"
 )
 
+var (
+	// Char cache for ASCII characters to reduce allocations
+	smallChars [256]*Char
+)
+
+// Builtins is exported for use by other packages (e.g. vm)
+// Initialized in init() to avoid cycles
+var Builtins = map[string]*Builtin{}
+
 func init() {
 	// Add builtins that cause initialization cycles if in global map
-	Builtins["__make_dictionary"] = &Builtin{Name: "__make_dictionary", Fn: builtinMakeDictionary, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TCon{Name: "String"}, typesystem.TCon{Name: "List"}, typesystem.TCon{Name: "List"}}, ReturnType: typesystem.TCon{Name: "Dictionary"}}}
-
 	Builtins["runReader"] = &Builtin{Name: "runReader", Fn: builtinRunReader, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "r"}, typesystem.TVar{Name: "e"}}, ReturnType: typesystem.TVar{Name: "a"}}}
 	Builtins["runIdentity"] = &Builtin{Name: "runIdentity", Fn: builtinRunIdentity, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "i"}}, ReturnType: typesystem.TVar{Name: "a"}}}
 
@@ -33,8 +40,461 @@ func init() {
 	Builtins["execWriter"] = &Builtin{Name: "execWriter", Fn: builtinExecWriter, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "w"}}, ReturnType: typesystem.TVar{Name: "l"}}}
 	Builtins["wTell"] = &Builtin{Name: "wTell", Fn: builtinWTell, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "l"}}, ReturnType: typesystem.TVar{Name: "Writer"}}}
 
+	Builtins["__make_dictionary"] = &Builtin{Name: "__make_dictionary", Fn: builtinMakeDictionary, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TCon{Name: "String"}, typesystem.TCon{Name: "List"}, typesystem.TCon{Name: "List"}}, ReturnType: typesystem.TCon{Name: "Dictionary"}}}
+
 	Builtins["runOptionT"] = &Builtin{Name: "runOptionT", Fn: builtinRunOptionT, TypeInfo: getRunOptionTType()}
 	Builtins["runResultT"] = &Builtin{Name: "runResultT", Fn: builtinRunResultT, TypeInfo: getRunResultTType()}
+
+	Builtins["optionT"] = &Builtin{Name: "optionT", Fn: builtinOptionT, TypeInfo: getOptionTConstructorType()}
+	Builtins["resultT"] = &Builtin{Name: "resultT", Fn: builtinResultT, TypeInfo: getResultTConstructorType()}
+
+	Builtins["kindOf"] = &Builtin{Name: "kindOf", Fn: builtinKindOf, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}}
+	Builtins["debugType"] = &Builtin{Name: "debugType", Fn: builtinDebugType, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}}
+	Builtins["debugRepr"] = &Builtin{Name: "debugRepr", Fn: builtinDebugRepr, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}}
+
+	Builtins[config.PrintFuncName] = &Builtin{
+		Name: config.PrintFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
+			ReturnType: typesystem.Nil,
+			IsVariadic: true,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			for i, arg := range args {
+				if i > 0 {
+					_, _ = fmt.Fprint(e.Out, " ")
+				}
+
+				// Unquote strings: if arg is a List of Chars, print it as a string directly
+				// Empty generic list [] should print as [], but empty string "" should print nothing
+				if list, ok := arg.(*List); ok {
+					// If it's explicitly marked as a Char list (string), print as string
+					if list.ElementType == "Char" {
+						var s string
+						for _, el := range list.ToSlice() {
+							if c, ok := el.(*Char); ok {
+								s += string(rune(c.Value))
+							}
+						}
+						_, _ = fmt.Fprint(e.Out, s)
+						continue
+					}
+
+					// For non-empty lists, check if all elements are chars
+					if list.len() > 0 {
+						isString := true
+						var s string
+						for _, el := range list.ToSlice() {
+							if c, ok := el.(*Char); ok {
+								s += string(rune(c.Value))
+							} else {
+								isString = false
+								break
+							}
+						}
+						if isString {
+							_, _ = fmt.Fprint(e.Out, s)
+							continue
+						}
+					}
+				}
+
+				_, _ = fmt.Fprint(e.Out, arg.Inspect())
+			}
+			_, _ = fmt.Fprintln(e.Out)
+			return &Nil{}
+		},
+	}
+
+	Builtins[config.WriteFuncName] = &Builtin{
+		Name: config.WriteFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
+			ReturnType: typesystem.Nil,
+			IsVariadic: true,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			for i, arg := range args {
+				if i > 0 {
+					_, _ = fmt.Fprint(e.Out, " ")
+				}
+
+				// Unquote strings: if arg is a List of Chars, print it as a string directly
+				if list, ok := arg.(*List); ok {
+					if list.ElementType == "Char" {
+						var s string
+						for _, el := range list.ToSlice() {
+							if c, ok := el.(*Char); ok {
+								s += string(rune(c.Value))
+							}
+						}
+						_, _ = fmt.Fprint(e.Out, s)
+						continue
+					}
+
+					if list.len() > 0 {
+						isString := true
+						var s string
+						for _, el := range list.ToSlice() {
+							if c, ok := el.(*Char); ok {
+								s += string(rune(c.Value))
+							} else {
+								isString = false
+								break
+							}
+						}
+						if isString {
+							_, _ = fmt.Fprint(e.Out, s)
+							continue
+						}
+					}
+				}
+
+				_, _ = fmt.Fprint(e.Out, arg.Inspect())
+			}
+			// No newline for write()
+			return &Nil{}
+		},
+	}
+
+	Builtins[config.TypeOfFuncName] = &Builtin{
+		Name: config.TypeOfFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}, typesystem.TCon{Name: "Type"}},
+			ReturnType: typesystem.Bool,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 2 {
+				return newError("wrong number of arguments. got=%d, want=2", len(args))
+			}
+			val := args[0]
+			expectedTypeObj, ok := args[1].(*TypeObject)
+			if !ok {
+				return newError("argument 2 must be a Type, got=%s", args[1].Type())
+			}
+
+			return e.nativeBoolToBooleanObject(checkType(val, expectedTypeObj.TypeVal))
+		},
+	}
+
+	Builtins[config.IdFuncName] = &Builtin{
+		Name: config.IdFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
+			ReturnType: typesystem.TVar{Name: "a"},
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments to id. got=%d, want=1", len(args))
+			}
+			return args[0]
+		},
+	}
+
+	Builtins[config.ConstFuncName] = &Builtin{
+		Name: config.ConstFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}, typesystem.TVar{Name: "b"}},
+			ReturnType: typesystem.TVar{Name: "a"},
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 2 {
+				return newError("wrong number of arguments to constant. got=%d, want=2", len(args))
+			}
+			return args[0]
+		},
+	}
+
+	Builtins[config.ReadFuncName] = &Builtin{
+		Name: config.ReadFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params: []typesystem.Type{
+				typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.Char}},
+				typesystem.TType{Type: typesystem.TVar{Name: "t"}},
+			},
+			ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: config.OptionTypeName}, Args: []typesystem.Type{typesystem.TVar{Name: "t"}}},
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 2 {
+				return newError("wrong number of arguments to read. got=%d, want=2", len(args))
+			}
+			// Extract string from first argument
+			str := listToString(args[0])
+			if str == "" && args[0] != nil {
+				if list, ok := args[0].(*List); ok && list.len() > 0 {
+					// Non-empty list that's not a string
+					return makeNone()
+				}
+			}
+
+			// Get target type from second argument
+			typeObj, ok := args[1].(*TypeObject)
+			if !ok {
+				return newError("second argument to read must be a Type")
+			}
+
+			// Parse based on type
+			return parseStringToType(str, typeObj.TypeVal)
+		},
+	}
+
+	Builtins["intToFloat"] = &Builtin{
+		Name: "intToFloat",
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.Int},
+			ReturnType: typesystem.Float,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("intToFloat expects 1 argument, got %d", len(args))
+			}
+			i, ok := args[0].(*Integer)
+			if !ok {
+				return newError("intToFloat expects an Int, got %s", args[0].Type())
+			}
+			return &Float{Value: float64(i.Value)}
+		},
+	}
+
+	Builtins["floatToInt"] = &Builtin{
+		Name: "floatToInt",
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.Float},
+			ReturnType: typesystem.Int,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("floatToInt expects 1 argument, got %d", len(args))
+			}
+			switch v := args[0].(type) {
+			case *Integer:
+				return v
+			case *Float:
+				return &Integer{Value: int64(v.Value)}
+			default:
+				return newError("floatToInt expects Int or Float, got %s", args[0].Type())
+			}
+		},
+	}
+
+	Builtins["format"] = &Builtin{
+		Name: "format",
+		TypeInfo: typesystem.TFunc{
+			Params: []typesystem.Type{
+				typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}},
+				typesystem.TVar{Name: "a"},
+			},
+			ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}},
+			IsVariadic: true,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) < 1 {
+				return newError("format expects at least 1 argument (format string)")
+			}
+
+			// 1. Get format string
+			fmtStr := listToString(args[0])
+
+			// Validate format string and argument count
+			expectedArgs, err := CountFormatVerbs(fmtStr)
+			if err != nil {
+				return newError("invalid format string: %s", err.Error())
+			}
+			// args[0] is fmtStr, args[1:] are arguments
+			if len(args)-1 != expectedArgs {
+				return newError("format string expects %d arguments, got %d", expectedArgs, len(args)-1)
+			}
+
+			// 2. Unwrap values
+			var goArgs []interface{}
+			for _, arg := range args[1:] {
+				var goVal interface{}
+				switch v := arg.(type) {
+				case *Integer:
+					goVal = v.Value
+				case *Float:
+					goVal = v.Value
+				case *Boolean:
+					goVal = v.Value
+				case *Char:
+					goVal = v.Value
+				case *BigInt:
+					goVal = v.Value
+				case *Rational:
+					goVal = v.Value
+				case *List:
+					// If string, convert to string
+					if s := listToString(v); s != "" || v.len() == 0 {
+						goVal = s
+					} else {
+						goVal = v.Inspect()
+					}
+				default:
+					goVal = v.Inspect()
+				}
+				goArgs = append(goArgs, goVal)
+			}
+
+			// 3. Sprintf
+			res := fmt.Sprintf(fmtStr, goArgs...)
+			return stringToList(res)
+		},
+	}
+
+	Builtins[config.PanicFuncName] = &Builtin{
+		Name: config.PanicFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TCon{Name: "String"}},
+			ReturnType: typesystem.TVar{Name: "a"},
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			var msg string
+			// Try to extract string from List Char
+			if list, ok := args[0].(*List); ok {
+				// Check if elements are chars
+				isString := true
+				var s string
+				for _, el := range list.ToSlice() {
+					if c, ok := el.(*Char); ok {
+						s += string(rune(c.Value))
+					} else {
+						isString = false
+						break
+					}
+				}
+				if isString {
+					msg = s
+				} else {
+					msg = list.Inspect()
+				}
+			} else {
+				msg = args[0].Inspect()
+			}
+
+			return newError("%s", msg)
+		},
+	}
+
+	Builtins[config.DebugFuncName] = &Builtin{
+		Name: config.DebugFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
+			ReturnType: typesystem.Nil,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("debug: wrong number of arguments. got=%d, want=1", len(args))
+			}
+			val := args[0]
+			typeName := getTypeName(val)
+			// Get location from call stack
+			location := "?"
+			if len(e.CallStack) > 0 {
+				frame := e.CallStack[len(e.CallStack)-1]
+				file := frame.File
+				// Extract just the filename without directory path
+				file = filepath.Base(file)
+				location = fmt.Sprintf("%s:%d", file, frame.Line)
+			}
+			_, _ = fmt.Fprintf(e.Out, "[DEBUG %s] %s : %s\n", location, val.Inspect(), typeName)
+			return &Nil{}
+		},
+	}
+
+	Builtins[config.TraceFuncName] = &Builtin{
+		Name: config.TraceFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
+			ReturnType: typesystem.TVar{Name: "a"},
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("trace: wrong number of arguments. got=%d, want=1", len(args))
+			}
+			val := args[0]
+			typeName := getTypeName(val)
+			// Get location from call stack
+			location := "?"
+			if len(e.CallStack) > 0 {
+				frame := e.CallStack[len(e.CallStack)-1]
+				file := frame.File
+				// Extract just the filename without directory path
+				file = filepath.Base(file)
+				location = fmt.Sprintf("%s:%d", file, frame.Line)
+			}
+			_, _ = fmt.Fprintf(e.Out, "[TRACE %s] %s : %s\n", location, val.Inspect(), typeName)
+			return val // Return the value for pipe chains
+		},
+	}
+
+	Builtins[config.LenFuncName] = &Builtin{
+		Name: config.LenFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
+			ReturnType: typesystem.Int,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			switch obj := args[0].(type) {
+			case *List:
+				return &Integer{Value: int64(obj.Len())}
+			case *Tuple:
+				return &Integer{Value: int64(len(obj.Elements))}
+			case *Map:
+				return &Integer{Value: int64(obj.Len())}
+			case *Bytes:
+				return &Integer{Value: int64(obj.Len())}
+			case *Bits:
+				return &Integer{Value: int64(obj.Len())}
+			default:
+				return newError("argument to `len` must be List, Tuple, Map, Bytes or Bits, got %s", args[0].Type())
+			}
+		},
+	}
+
+	Builtins[config.LenBytesFuncName] = &Builtin{
+		Name: config.LenBytesFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params:     []typesystem.Type{typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.Char}}},
+			ReturnType: typesystem.Int,
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments to lenBytes. got=%d, want=1", len(args))
+			}
+			str := listToString(args[0])
+			return &Integer{Value: int64(len(str))}
+		},
+	}
+
+	Builtins[config.GetTypeFuncName] = &Builtin{
+		Name: config.GetTypeFuncName,
+		TypeInfo: typesystem.TFunc{
+			Params: []typesystem.Type{typesystem.TVar{Name: "a"}},
+			ReturnType: typesystem.TType{
+				Type: typesystem.TVar{Name: "a"},
+			},
+		},
+		Fn: func(e *Evaluator, args ...Object) Object {
+			if len(args) != 1 {
+				return newError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+			t := getTypeFromObject(args[0])
+			return &TypeObject{TypeVal: t}
+		},
+	}
+
+	// Init char cache
+	for i := 0; i < 256; i++ {
+		smallChars[i] = &Char{Value: int64(i)}
+	}
 
 	// Verify all builtins have TypeInfo defined
 	for name, builtin := range Builtins {
@@ -108,448 +568,6 @@ func ASTTypeToTypesystem(t ast.Type) typesystem.Type {
 // astTypeToTypesystem is a deprecated alias for ASTTypeToTypesystem
 func astTypeToTypesystem(t ast.Type) typesystem.Type {
 	return ASTTypeToTypesystem(t)
-}
-
-var Builtins = map[string]*Builtin{
-	config.PrintFuncName: {
-		Name: config.PrintFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.Nil,
-			IsVariadic: true,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			for i, arg := range args {
-				if i > 0 {
-					_, _ = fmt.Fprint(e.Out, " ")
-				}
-
-				// Unquote strings: if arg is a List of Chars, print it as a string directly
-				// Empty generic list [] should print as [], but empty string "" should print nothing
-				if list, ok := arg.(*List); ok {
-					// If it's explicitly marked as a Char list (string), print as string
-					if list.ElementType == "Char" {
-						var s string
-						for _, el := range list.ToSlice() {
-							if c, ok := el.(*Char); ok {
-								s += string(rune(c.Value))
-							}
-						}
-						_, _ = fmt.Fprint(e.Out, s)
-						continue
-					}
-
-					// For non-empty lists, check if all elements are chars
-					if list.len() > 0 {
-						isString := true
-						var s string
-						for _, el := range list.ToSlice() {
-							if c, ok := el.(*Char); ok {
-								s += string(rune(c.Value))
-							} else {
-								isString = false
-								break
-							}
-						}
-						if isString {
-							_, _ = fmt.Fprint(e.Out, s)
-							continue
-						}
-					}
-				}
-
-				_, _ = fmt.Fprint(e.Out, arg.Inspect())
-			}
-			_, _ = fmt.Fprintln(e.Out)
-			return &Nil{}
-		},
-	},
-	config.WriteFuncName: {
-		Name: config.WriteFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.Nil,
-			IsVariadic: true,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			for i, arg := range args {
-				if i > 0 {
-					_, _ = fmt.Fprint(e.Out, " ")
-				}
-
-				// Unquote strings: if arg is a List of Chars, print it as a string directly
-				if list, ok := arg.(*List); ok {
-					if list.ElementType == "Char" {
-						var s string
-						for _, el := range list.ToSlice() {
-							if c, ok := el.(*Char); ok {
-								s += string(rune(c.Value))
-							}
-						}
-						_, _ = fmt.Fprint(e.Out, s)
-						continue
-					}
-
-					if list.len() > 0 {
-						isString := true
-						var s string
-						for _, el := range list.ToSlice() {
-							if c, ok := el.(*Char); ok {
-								s += string(rune(c.Value))
-							} else {
-								isString = false
-								break
-							}
-						}
-						if isString {
-							_, _ = fmt.Fprint(e.Out, s)
-							continue
-						}
-					}
-				}
-
-				_, _ = fmt.Fprint(e.Out, arg.Inspect())
-			}
-			// No newline for write()
-			return &Nil{}
-		},
-	},
-	config.TypeOfFuncName: {
-		Name: config.TypeOfFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}, typesystem.TCon{Name: "Type"}},
-			ReturnType: typesystem.Bool,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 2 {
-				return newError("wrong number of arguments. got=%d, want=2", len(args))
-			}
-			val := args[0]
-			expectedTypeObj, ok := args[1].(*TypeObject)
-			if !ok {
-				return newError("argument 2 must be a Type, got=%s", args[1].Type())
-			}
-
-			return e.nativeBoolToBooleanObject(checkType(val, expectedTypeObj.TypeVal))
-		},
-	},
-	// show is now a trait method (Show trait), registered in RegisterFPTraits
-	config.IdFuncName: {
-		Name: config.IdFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.TVar{Name: "a"},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("wrong number of arguments to id. got=%d, want=1", len(args))
-			}
-			return args[0]
-		},
-	},
-	config.ConstFuncName: {
-		Name: config.ConstFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}, typesystem.TVar{Name: "b"}},
-			ReturnType: typesystem.TVar{Name: "a"},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 2 {
-				return newError("wrong number of arguments to constant. got=%d, want=2", len(args))
-			}
-			return args[0]
-		},
-	},
-	config.ReadFuncName: {
-		Name: config.ReadFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params: []typesystem.Type{
-				typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.Char}},
-				typesystem.TType{Type: typesystem.TVar{Name: "t"}},
-			},
-			ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: config.OptionTypeName}, Args: []typesystem.Type{typesystem.TVar{Name: "t"}}},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 2 {
-				return newError("wrong number of arguments to read. got=%d, want=2", len(args))
-			}
-			// Extract string from first argument
-			str := listToString(args[0])
-			if str == "" && args[0] != nil {
-				if list, ok := args[0].(*List); ok && list.len() > 0 {
-					// Non-empty list that's not a string
-					return makeNone()
-				}
-			}
-
-			// Get target type from second argument
-			typeObj, ok := args[1].(*TypeObject)
-			if !ok {
-				return newError("second argument to read must be a Type")
-			}
-
-			// Parse based on type
-			return parseStringToType(str, typeObj.TypeVal)
-		},
-	},
-	"intToFloat": {
-		Name: "intToFloat",
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.Int},
-			ReturnType: typesystem.Float,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("intToFloat expects 1 argument, got %d", len(args))
-			}
-			i, ok := args[0].(*Integer)
-			if !ok {
-				return newError("intToFloat expects an Int, got %s", args[0].Type())
-			}
-			return &Float{Value: float64(i.Value)}
-		},
-	},
-	"floatToInt": {
-		Name: "floatToInt",
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.Float},
-			ReturnType: typesystem.Int,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("floatToInt expects 1 argument, got %d", len(args))
-			}
-			switch v := args[0].(type) {
-			case *Integer:
-				return v
-			case *Float:
-				return &Integer{Value: int64(v.Value)}
-			default:
-				return newError("floatToInt expects Int or Float, got %s", args[0].Type())
-			}
-		},
-	},
-	"format": {
-		Name: "format",
-		TypeInfo: typesystem.TFunc{
-			Params: []typesystem.Type{
-				typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}},
-				typesystem.TVar{Name: "a"},
-			},
-			ReturnType: typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.TCon{Name: "Char"}}},
-			IsVariadic: true,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) < 1 {
-				return newError("format expects at least 1 argument (format string)")
-			}
-
-			// 1. Get format string
-			fmtStr := listToString(args[0])
-
-			// Validate format string and argument count
-			expectedArgs, err := CountFormatVerbs(fmtStr)
-			if err != nil {
-				return newError("invalid format string: %s", err.Error())
-			}
-			// args[0] is fmtStr, args[1:] are arguments
-			if len(args)-1 != expectedArgs {
-				return newError("format string expects %d arguments, got %d", expectedArgs, len(args)-1)
-			}
-
-			// 2. Unwrap values
-			var goArgs []interface{}
-			for _, arg := range args[1:] {
-				var goVal interface{}
-				switch v := arg.(type) {
-				case *Integer:
-					goVal = v.Value
-				case *Float:
-					goVal = v.Value
-				case *Boolean:
-					goVal = v.Value
-				case *Char:
-					goVal = v.Value
-				case *BigInt:
-					goVal = v.Value
-				case *Rational:
-					goVal = v.Value
-				case *List:
-					// If string, convert to string
-					if s := listToString(v); s != "" || v.len() == 0 {
-						goVal = s
-					} else {
-						goVal = v.Inspect()
-					}
-				default:
-					goVal = v.Inspect()
-				}
-				goArgs = append(goArgs, goVal)
-			}
-
-			// 3. Sprintf
-			res := fmt.Sprintf(fmtStr, goArgs...)
-			return stringToList(res)
-		},
-	},
-	config.PanicFuncName: {
-		Name: config.PanicFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TCon{Name: "String"}},
-			ReturnType: typesystem.TVar{Name: "a"},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("wrong number of arguments. got=%d, want=1", len(args))
-			}
-
-			var msg string
-			// Try to extract string from List Char
-			if list, ok := args[0].(*List); ok {
-				// Check if elements are chars
-				isString := true
-				var s string
-				for _, el := range list.ToSlice() {
-					if c, ok := el.(*Char); ok {
-						s += string(rune(c.Value))
-					} else {
-						isString = false
-						break
-					}
-				}
-				if isString {
-					msg = s
-				} else {
-					msg = list.Inspect()
-				}
-			} else {
-				msg = args[0].Inspect()
-			}
-
-			return newError("%s", msg)
-		},
-	},
-	config.DebugFuncName: {
-		Name: config.DebugFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.Nil,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("debug: wrong number of arguments. got=%d, want=1", len(args))
-			}
-			val := args[0]
-			typeName := getTypeName(val)
-			// Get location from call stack
-			location := "?"
-			if len(e.CallStack) > 0 {
-				frame := e.CallStack[len(e.CallStack)-1]
-				file := frame.File
-				// Extract just the filename without directory path
-				file = filepath.Base(file)
-				location = fmt.Sprintf("%s:%d", file, frame.Line)
-			}
-			_, _ = fmt.Fprintf(e.Out, "[DEBUG %s] %s : %s\n", location, val.Inspect(), typeName)
-			return &Nil{}
-		},
-	},
-	config.TraceFuncName: {
-		Name: config.TraceFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.TVar{Name: "a"},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("trace: wrong number of arguments. got=%d, want=1", len(args))
-			}
-			val := args[0]
-			typeName := getTypeName(val)
-			// Get location from call stack
-			location := "?"
-			if len(e.CallStack) > 0 {
-				frame := e.CallStack[len(e.CallStack)-1]
-				file := frame.File
-				// Extract just the filename without directory path
-				file = filepath.Base(file)
-				location = fmt.Sprintf("%s:%d", file, frame.Line)
-			}
-			_, _ = fmt.Fprintf(e.Out, "[TRACE %s] %s : %s\n", location, val.Inspect(), typeName)
-			return val // Return the value for pipe chains
-		},
-	},
-	config.LenFuncName: {
-		Name: config.LenFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.Int,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("wrong number of arguments. got=%d, want=1", len(args))
-			}
-
-			switch obj := args[0].(type) {
-			case *List:
-				return &Integer{Value: int64(obj.Len())}
-			case *Tuple:
-				return &Integer{Value: int64(len(obj.Elements))}
-			case *Map:
-				return &Integer{Value: int64(obj.Len())}
-			case *Bytes:
-				return &Integer{Value: int64(obj.Len())}
-			case *Bits:
-				return &Integer{Value: int64(obj.Len())}
-			default:
-				return newError("argument to `len` must be List, Tuple, Map, Bytes or Bits, got %s", args[0].Type())
-			}
-		},
-	},
-	config.LenBytesFuncName: {
-		Name: config.LenBytesFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params:     []typesystem.Type{typesystem.TApp{Constructor: typesystem.TCon{Name: config.ListTypeName}, Args: []typesystem.Type{typesystem.Char}}},
-			ReturnType: typesystem.Int,
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("wrong number of arguments to lenBytes. got=%d, want=1", len(args))
-			}
-			str := listToString(args[0])
-			return &Integer{Value: int64(len(str))}
-		},
-	},
-	config.GetTypeFuncName: {
-		Name: config.GetTypeFuncName,
-		TypeInfo: typesystem.TFunc{
-			Params: []typesystem.Type{typesystem.TVar{Name: "a"}},
-			ReturnType: typesystem.TType{
-				Type: typesystem.TVar{Name: "a"},
-			},
-		},
-		Fn: func(e *Evaluator, args ...Object) Object {
-			if len(args) != 1 {
-				return newError("wrong number of arguments. got=%d, want=1", len(args))
-			}
-			t := getTypeFromObject(args[0])
-			return &TypeObject{TypeVal: t}
-		},
-	},
-	"optionT": {Name: "optionT", Fn: builtinOptionT, TypeInfo: getOptionTConstructorType()},
-	"resultT": {Name: "resultT", Fn: builtinResultT, TypeInfo: getResultTConstructorType()},
-	// runOptionT and runResultT moved to init()
-
-	// Internal
-	// (Moved to init() to avoid initialization cycle)
-
-	// Monad Transformers / Effect System
-	// (Moved to init() to avoid initialization cycle)
-
-	// Reflection
-	"kindOf":    {Name: "kindOf", Fn: builtinKindOf, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}},
-	"debugType": {Name: "debugType", Fn: builtinDebugType, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}},
-	"debugRepr": {Name: "debugRepr", Fn: builtinDebugRepr, TypeInfo: typesystem.TFunc{Params: []typesystem.Type{typesystem.TVar{Name: "a"}}, ReturnType: typesystem.TCon{Name: "String"}}},
 }
 
 // Helpers for type info construction
@@ -655,13 +673,23 @@ func objectToString(obj Object) string {
 	return obj.Inspect()
 }
 
-// stringToList converts a Go string to List<Char>
-func stringToList(s string) *List {
+// StringToList converts a Go string to List<Char>
+// It uses a cache for small ASCII characters to reduce allocations.
+func StringToList(s string) *List {
 	chars := make([]Object, 0, len(s))
 	for _, r := range s {
-		chars = append(chars, &Char{Value: int64(r)})
+		if r >= 0 && r < 256 {
+			chars = append(chars, smallChars[r])
+		} else {
+			chars = append(chars, &Char{Value: int64(r)})
+		}
 	}
 	return newListWithType(chars, "Char")
+}
+
+// stringToList is a deprecated alias for StringToList
+func stringToList(s string) *List {
+	return StringToList(s)
 }
 
 // getDefaultValue returns the default value for a type
@@ -992,15 +1020,16 @@ func listToString(obj Object) string {
 
 // ListToString converts List<Char> to Go string (exported for VM)
 func ListToString(list *List) string {
-	var result string
+	var sb strings.Builder
+	sb.Grow(list.Len()) // Pre-allocate buffer
 	for _, el := range list.ToSlice() {
 		if c, ok := el.(*Char); ok {
-			result += string(rune(c.Value))
+			sb.WriteRune(rune(c.Value))
 		} else {
 			return ""
 		}
 	}
-	return result
+	return sb.String()
 }
 
 // isZeroValue is a helper function to check if an object represents a "zero" or "empty" value

@@ -98,7 +98,9 @@ func getErrorType(err error) string {
 		strings.Contains(msg, "operator") && strings.Contains(msg, "not supported"),
 		strings.Contains(msg, "unknown operator"),
 		strings.Contains(msg, "argument to") && strings.Contains(msg, "must be") && strings.Contains(msg, "got"),
-		strings.Contains(msg, "expects") && strings.Contains(msg, "got"):
+		strings.Contains(msg, "expects") && strings.Contains(msg, "got"),
+		strings.Contains(msg, "can only call functions"),
+		strings.Contains(msg, "not a function"):
 		return "TypeError"
 	case strings.Contains(msg, "name not found"), strings.Contains(msg, "not defined"),
 		strings.Contains(msg, "identifier not found"), strings.Contains(msg, "undefined variable"):

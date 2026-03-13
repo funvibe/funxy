@@ -50,7 +50,7 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 	}
 	leftExp := prefix()
 
-	for {
+	for !p.peekTokenIs(token.EOF) {
 		// Check if we should continue parsing infix operators
 		if p.peekTokenIs(token.NEWLINE) {
 			// Look ahead past newlines for continuation operators
@@ -71,12 +71,12 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 		if infix == nil {
 			return leftExp
 		}
+
 		p.nextToken()
-		nextExp := infix(leftExp)
-		if nextExp == nil {
+		leftExp = infix(leftExp)
+		if leftExp == nil {
 			return nil
 		}
-		leftExp = nextExp
 	}
 
 	return leftExp

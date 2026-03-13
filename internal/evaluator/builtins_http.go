@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -49,6 +50,10 @@ func (sl *sharedListener) acceptLoop() {
 	for {
 		conn, err := sl.Listener.Accept()
 		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				time.Sleep(5 * time.Millisecond)
+				continue
+			}
 			close(sl.conns)
 			return
 		}
@@ -215,7 +220,7 @@ func builtinHttpPostJson(e *Evaluator, args ...Object) Object {
 	// Encode data to JSON
 	jsonBody, err := objectToJson(args[1])
 	if err != nil {
-		return makeFail(stringToList("failed to encode JSON: " + err.Error()))
+		return makeFail(StringToList("failed to encode JSON: " + err.Error()))
 	}
 
 	headers := [][2]string{{"Content-Type", "application/json"}}
@@ -373,7 +378,14 @@ func builtinHttpSetMaxConnections(e *Evaluator, args ...Object) Object {
 	}
 
 	httpMaxConnsMu.Lock()
-	httpMaxConnections = maxConns.Value
+	oldMax := atomic.LoadInt64(&httpMaxConnections)
+	atomic.StoreInt64(&httpMaxConnections, maxConns.Value)
+
+	// If switching from unlimited to limited, reset counter to avoid stuck "full" state
+	// due to skipped decrements during unlimited phase.
+	if oldMax <= 0 && maxConns.Value > 0 {
+		httpCurrentConns = 0
+	}
 	httpMaxConnsMu.Unlock()
 	return &Nil{}
 }
@@ -381,14 +393,20 @@ func builtinHttpSetMaxConnections(e *Evaluator, args ...Object) Object {
 // acquireHttpConnSlot attempts to acquire a connection slot.
 // Returns true if acquired, false if max connections reached.
 func acquireHttpConnSlot() bool {
+	// Optimization: fast path for unlimited connections
+	if atomic.LoadInt64(&httpMaxConnections) <= 0 {
+		return true
+	}
+
 	httpMaxConnsMu.Lock()
 	defer httpMaxConnsMu.Unlock()
 
-	if httpMaxConnections <= 0 {
+	max := atomic.LoadInt64(&httpMaxConnections)
+	if max <= 0 {
 		return true // unlimited
 	}
 
-	if httpCurrentConns >= httpMaxConnections {
+	if httpCurrentConns >= max {
 		return false // full
 	}
 
@@ -397,10 +415,16 @@ func acquireHttpConnSlot() bool {
 }
 
 func releaseHttpConnSlot() {
+	// Optimization: fast path for unlimited connections
+	if atomic.LoadInt64(&httpMaxConnections) <= 0 {
+		return
+	}
+
 	httpMaxConnsMu.Lock()
 	defer httpMaxConnsMu.Unlock()
 
-	if httpMaxConnections > 0 && httpCurrentConns > 0 {
+	max := atomic.LoadInt64(&httpMaxConnections)
+	if max > 0 && httpCurrentConns > 0 {
 		httpCurrentConns--
 	}
 }
@@ -438,7 +462,7 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 
 	// Check for error mock
 	if errMsg, found := tr.FindHttpMockError(url); found {
-		return makeFail(stringToList(errMsg))
+		return makeFail(StringToList(errMsg))
 	}
 
 	// Check for response mock
@@ -448,7 +472,7 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 
 	// Check if we should block real HTTP (mocks active but no match)
 	if tr.ShouldBlockHttp(url) {
-		return makeFail(stringToList("HTTP request blocked: no mock found for " + url))
+		return makeFail(StringToList("HTTP request blocked: no mock found for " + url))
 	}
 
 	// Handle http+unix:// scheme for Unix socket connections
@@ -478,7 +502,7 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 
 	req, err := http.NewRequest(method, requestURL, body)
 	if err != nil {
-		return makeFail(stringToList("failed to create request: " + err.Error()))
+		return makeFail(StringToList("failed to create request: " + err.Error()))
 	}
 
 	// Set headers
@@ -488,13 +512,13 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return makeFail(stringToList("request failed: " + err.Error()))
+		return makeFail(StringToList("request failed: " + err.Error()))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return makeFail(stringToList("failed to read response: " + err.Error()))
+		return makeFail(StringToList("failed to read response: " + err.Error()))
 	}
 
 	// Build response headers
@@ -502,7 +526,7 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 	for key, values := range resp.Header {
 		for _, val := range values {
 			respHeaders = append(respHeaders, &Tuple{
-				Elements: []Object{stringToList(key), stringToList(val)},
+				Elements: []Object{StringToList(key), StringToList(val)},
 			})
 		}
 	}
@@ -510,7 +534,7 @@ func doHttpRequestWithTimeout(method, url string, headers [][2]string, body io.R
 	// Build response record
 	response := NewRecord(map[string]Object{
 		"status":  &Integer{Value: int64(resp.StatusCode)},
-		"body":    stringToList(string(respBody)),
+		"body":    StringToList(string(respBody)),
 		"headers": newList(respHeaders),
 	})
 
@@ -637,15 +661,35 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 	// Create a snapshot of the evaluator/VM for the server
 	// This avoids race conditions when the main VM continues execution and modifies globals
 	var serverEval *Evaluator
-	if e.Fork != nil {
+	if e.Forker != nil {
 		serverEval = e.Fork()
 	} else {
+		// If Fork is missing, we must ensure we are not in a VM context that requires it.
+		// Clone is safe for pure tree-walk (VMCallHandler is nil), but unsafe if VMCallHandler is present (shared state).
+		if e.VMCallHandler != nil {
+			return newError("httpServe: concurrent execution requires Fork support when VM is active")
+		}
 		serverEval = e.Clone()
+	}
+
+	// Optimization: Mark server environment as read-only to avoid lock contention during concurrent requests
+	if serverEval.GlobalEnv != nil {
+		serverEval.GlobalEnv.SetReadOnly()
 	}
 
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Panic recovery for robust server
+		defer func() {
+			if rec := recover(); rec != nil {
+				// Log panic but don't crash the whole process
+				fmt.Printf("[httpServe] Panic in handler: %v\n", rec)
+				// Stack trace is usually printed by net/http or we could print it here
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}()
+
 		if !acquireHttpConnSlot() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("503 Service Unavailable: Too Many Connections"))
@@ -655,18 +699,19 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 
 		// Create a fresh evaluator/VM for each request from the snapshot
 		var reqEval *Evaluator
-		if serverEval.Fork != nil {
+		if serverEval.Forker != nil {
 			reqEval = serverEval.Fork()
 		} else {
-			reqEval = serverEval.Clone()
+			reqEval = serverEval.FastFork()
 		}
+		defer reqEval.Release()
 
 		// Build HttpRequest object
 		var headers []Object
 		for key, values := range r.Header {
 			for _, val := range values {
 				headers = append(headers, &Tuple{
-					Elements: []Object{stringToList(key), stringToList(val)},
+					Elements: []Object{StringToList(key), StringToList(val)},
 				})
 			}
 		}
@@ -675,11 +720,11 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		defer func() { _ = r.Body.Close() }()
 
 		request := NewRecord(map[string]Object{
-			"method":  stringToList(r.Method),
-			"path":    stringToList(r.URL.Path),
-			"query":   stringToList(r.URL.RawQuery),
+			"method":  StringToList(r.Method),
+			"path":    StringToList(r.URL.Path),
+			"query":   StringToList(r.URL.RawQuery),
 			"headers": newList(headers),
-			"body":    stringToList(string(bodyBytes)),
+			"body":    StringToList(string(bodyBytes)),
 		})
 
 		// Call handler
@@ -735,6 +780,8 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 		if bodyObj := respRec.Get("body"); bodyObj != nil {
 			if bodyList, ok := bodyObj.(*List); ok {
 				_, _ = w.Write([]byte(ListToString(bodyList)))
+			} else if bodyBytes, ok := bodyObj.(*Bytes); ok {
+				_, _ = w.Write(bodyBytes.ToSlice())
 			}
 		}
 	})
@@ -747,13 +794,13 @@ func builtinHttpServe(e *Evaluator, args ...Object) Object {
 	// Get shared listener
 	l, err := getSharedListener(port)
 	if err != nil {
-		return makeFail(stringToList(err.Error()))
+		return makeFail(StringToList(err.Error()))
 	}
 
 	// Start server (blocking)
 	err = server.Serve(l)
 	if err != nil && err != http.ErrServerClosed {
-		return makeFail(stringToList(err.Error()))
+		return makeFail(StringToList(err.Error()))
 	}
 
 	return makeOk(&Nil{})
@@ -787,15 +834,33 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 	// Create a snapshot of the evaluator/VM for the server
 	// This avoids race conditions when the main VM continues execution and modifies globals
 	var serverEval *Evaluator
-	if e.Fork != nil {
+	if e.Forker != nil {
 		serverEval = e.Fork()
 	} else {
+		// If Fork is missing, we must ensure we are not in a VM context that requires it.
+		// Clone is safe for pure tree-walk (VMCallHandler is nil), but unsafe if VMCallHandler is present (shared state).
+		if e.VMCallHandler != nil {
+			return newError("httpServeAsync: concurrent execution requires Fork support when VM is active")
+		}
 		serverEval = e.Clone()
+	}
+
+	// Optimization: Mark server environment as read-only to avoid lock contention during concurrent requests
+	if serverEval.GlobalEnv != nil {
+		serverEval.GlobalEnv.SetReadOnly()
 	}
 
 	// Create HTTP server with same handler logic as httpServe
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Panic recovery for robust server
+		defer func() {
+			if rec := recover(); rec != nil {
+				fmt.Printf("[httpServeAsync] Panic in handler: %v\n", rec)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		}()
+
 		if !acquireHttpConnSlot() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("503 Service Unavailable: Too Many Connections"))
@@ -805,18 +870,19 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 
 		// Create a fresh evaluator/VM for each request from the snapshot
 		var reqEval *Evaluator
-		if serverEval.Fork != nil {
+		if serverEval.Forker != nil {
 			reqEval = serverEval.Fork()
 		} else {
-			reqEval = serverEval.Clone()
+			reqEval = serverEval.FastFork()
 		}
+		defer reqEval.Release()
 
 		// Build HttpRequest object
 		var headers []Object
 		for key, values := range r.Header {
 			for _, val := range values {
 				headers = append(headers, &Tuple{
-					Elements: []Object{stringToList(key), stringToList(val)},
+					Elements: []Object{StringToList(key), StringToList(val)},
 				})
 			}
 		}
@@ -825,11 +891,11 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 		defer func() { _ = r.Body.Close() }()
 
 		request := NewRecord(map[string]Object{
-			"method":  stringToList(r.Method),
-			"path":    stringToList(r.URL.Path),
-			"query":   stringToList(r.URL.RawQuery),
+			"method":  StringToList(r.Method),
+			"path":    StringToList(r.URL.Path),
+			"query":   StringToList(r.URL.RawQuery),
 			"headers": newList(headers),
-			"body":    stringToList(string(bodyBytes)),
+			"body":    StringToList(string(bodyBytes)),
 		})
 
 		// Call handler
@@ -885,6 +951,8 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 		if bodyObj := respRec.Get("body"); bodyObj != nil {
 			if bodyList, ok := bodyObj.(*List); ok {
 				_, _ = w.Write([]byte(ListToString(bodyList)))
+			} else if bodyBytes, ok := bodyObj.(*Bytes); ok {
+				_, _ = w.Write(bodyBytes.ToSlice())
 			}
 		}
 	})
@@ -906,7 +974,7 @@ func builtinHttpServeAsync(e *Evaluator, args ...Object) Object {
 	// Get shared listener
 	l, err := getSharedListener(port)
 	if err != nil {
-		return makeFail(stringToList(err.Error()))
+		return makeFail(StringToList(err.Error()))
 	}
 
 	// Start server in background (non-blocking)

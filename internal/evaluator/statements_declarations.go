@@ -54,7 +54,7 @@ func (e *Evaluator) evalTraitDeclaration(node *ast.TraitDeclaration, env *Enviro
 		}
 		methodNames = append(methodNames, name)
 	}
-	TraitMethods[node.Name.Value] = methodNames
+	RegisterTraitMethods(node.Name.Value, methodNames)
 
 	for _, sig := range node.Signatures {
 		methodName := sig.Name.Value
@@ -63,6 +63,7 @@ func (e *Evaluator) evalTraitDeclaration(node *ast.TraitDeclaration, env *Enviro
 		if sig.Operator != "" {
 			methodName = "(" + sig.Operator + ")"
 		}
+
 		// Arity from parameter count - used to determine if auto-call in type context
 		arity := len(sig.Parameters)
 
@@ -71,6 +72,16 @@ func (e *Evaluator) evalTraitDeclaration(node *ast.TraitDeclaration, env *Enviro
 		if env.SymbolTable != nil {
 			if sources, ok := env.SymbolTable.GetTraitMethodDispatch(node.Name.Value, methodName); ok {
 				dispatchSources = sources
+			}
+		}
+
+		// Check if already exists (built-in) to preserve hardcoded dispatch strategies
+		if existing, ok := env.Get(methodName); ok {
+			if cm, ok := existing.(*ClassMethod); ok && cm.ClassName == node.Name.Value {
+				// Preserve existing dispatch sources if we don't have new ones (or if SymbolTable is missing)
+				if len(dispatchSources) == 0 && len(cm.DispatchSources) > 0 {
+					dispatchSources = cm.DispatchSources
+				}
 			}
 		}
 
@@ -214,7 +225,7 @@ func (e *Evaluator) evalInstanceDeclaration(node *ast.InstanceDeclaration, env *
 				}
 
 				// Map to slice based on Trait definition order
-				if methodNames, ok := TraitMethods[className]; ok {
+				if methodNames, ok := GetTraitMethods(className); ok {
 					dict.Methods = make([]Object, len(methodNames))
 					for i, name := range methodNames {
 						if fn, ok := methodsMap[name]; ok {
@@ -260,6 +271,26 @@ func (e *Evaluator) evalConstantDeclaration(node *ast.ConstantDeclaration, env *
 		if pushedTypeName != "" {
 			e.TypeContextStack = append(e.TypeContextStack, pushedTypeName)
 		}
+
+		// Proactive Witness Push (similar to evalAssignExpression)
+		sysType := astTypeToTypesystem(node.TypeAnnotation)
+		resolvedType := e.resolveTypeFromEnv(sysType, env)
+
+		witness := make(map[string][]typesystem.Type)
+		witness["$ContextType"] = []typesystem.Type{resolvedType}
+		witness["$Return"] = []typesystem.Type{resolvedType}
+
+		// Push Applicative/Monad witness if applicable
+		if _, ok := resolvedType.(typesystem.TApp); ok {
+			witness["Applicative"] = []typesystem.Type{resolvedType}
+			witness["Monad"] = []typesystem.Type{resolvedType}
+		} else if _, ok := resolvedType.(typesystem.TCon); ok {
+			witness["Applicative"] = []typesystem.Type{resolvedType}
+			witness["Monad"] = []typesystem.Type{resolvedType}
+		}
+
+		e.PushWitness(witness)
+		pushedWitness = true
 	}
 
 	val := e.Eval(node.Value, env)

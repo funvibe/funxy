@@ -14,32 +14,32 @@ func (w *walker) VisitAssignExpression(expr *ast.AssignExpression) {
 	// We just need to traverse children to ensure any nested structures are visited
 	// (though InferWithContext also traverses, so this might be redundant, but safe)
 	if expr.Left != nil {
-		expr.Left.Accept(w)
+		w.visit(expr.Left)
 	}
 	if expr.Value != nil {
-		expr.Value.Accept(w)
+		w.visit(expr.Value)
 	}
 }
 
 func (w *walker) VisitPatternAssignExpression(expr *ast.PatternAssignExpression) {
 	// Inference handled by InferWithContext
 	if expr.Value != nil {
-		expr.Value.Accept(w)
+		w.visit(expr.Value)
 	}
 }
 
 func (w *walker) VisitPrefixExpression(expr *ast.PrefixExpression) {
 	if expr.Right != nil {
-		expr.Right.Accept(w)
+		w.visit(expr.Right)
 	}
 }
 
 func (w *walker) VisitInfixExpression(expr *ast.InfixExpression) {
 	if expr.Left != nil {
-		expr.Left.Accept(w)
+		w.visit(expr.Left)
 	}
 	if expr.Right != nil {
-		expr.Right.Accept(w)
+		w.visit(expr.Right)
 	}
 }
 
@@ -49,48 +49,48 @@ func (w *walker) VisitOperatorAsFunction(expr *ast.OperatorAsFunction) {
 
 func (w *walker) VisitPostfixExpression(expr *ast.PostfixExpression) {
 	if expr.Left != nil {
-		expr.Left.Accept(w)
+		w.visit(expr.Left)
 	}
 }
 
 func (w *walker) VisitCallExpression(expr *ast.CallExpression) {
 	// Visit function and arguments - inference handles undefined checks
 	if expr.Function != nil {
-		expr.Function.Accept(w)
+		w.visit(expr.Function)
 	}
 	for _, arg := range expr.Arguments {
 		if arg != nil {
-			arg.Accept(w)
+			w.visit(arg)
 		}
 	}
 }
 
 func (w *walker) VisitMemberExpression(n *ast.MemberExpression) {
 	if n.Left != nil {
-		n.Left.Accept(w)
+		w.visit(n.Left)
 	}
 }
 
 func (w *walker) VisitIndexExpression(n *ast.IndexExpression) {
 	if n.Left != nil {
-		n.Left.Accept(w)
+		w.visit(n.Left)
 	}
 	if n.Index != nil {
-		n.Index.Accept(w)
+		w.visit(n.Index)
 	}
 }
 
 func (w *walker) VisitAnnotatedExpression(expr *ast.AnnotatedExpression) {
 	// Validating type annotations would happen during inference
 	if expr.Expression != nil {
-		expr.Expression.Accept(w)
+		w.visit(expr.Expression)
 	}
 }
 
 func (w *walker) VisitTypeApplicationExpression(n *ast.TypeApplicationExpression) {
 	// Analyze the base expression (e.g., the identifier/function being applied)
 	if n.Expression != nil {
-		n.Expression.Accept(w)
+		w.visit(n.Expression)
 	}
 
 	// Validate Type Arguments
@@ -109,7 +109,7 @@ func (w *walker) VisitSpreadExpression(n *ast.SpreadExpression) {
 	if n == nil || n.Expression == nil {
 		return
 	}
-	n.Expression.Accept(w)
+	w.visit(n.Expression)
 }
 
 func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
@@ -176,7 +176,7 @@ func (w *walker) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	defer w.popReturnType()
 
 	if n.Body != nil {
-		n.Body.Accept(w)
+		w.visit(n.Body)
 	}
 
 	w.inFunctionBody = prevInFn
@@ -236,7 +236,7 @@ func (w *walker) VisitFormatStringLiteral(n *ast.FormatStringLiteral) {}
 func (w *walker) VisitInterpolatedString(n *ast.InterpolatedString) {
 	for _, part := range n.Parts {
 		if part != nil {
-			part.Accept(w)
+			w.visit(part)
 		}
 	}
 }
@@ -249,7 +249,7 @@ func (w *walker) VisitBitsLiteral(n *ast.BitsLiteral) {}
 func (w *walker) VisitTupleLiteral(lit *ast.TupleLiteral) {
 	for _, el := range lit.Elements {
 		if el != nil {
-			el.Accept(w)
+			w.visit(el)
 		}
 	}
 }
@@ -260,7 +260,7 @@ func (w *walker) VisitListLiteral(n *ast.ListLiteral) {
 	}
 	for _, el := range n.Elements {
 		if el != nil {
-			el.Accept(w)
+			w.visit(el)
 		}
 	}
 }
@@ -268,7 +268,7 @@ func (w *walker) VisitListLiteral(n *ast.ListLiteral) {
 func (w *walker) VisitRecordLiteral(n *ast.RecordLiteral) {
 	// Visit spread expression first if present
 	if n.Spread != nil {
-		n.Spread.Accept(w)
+		w.visit(n.Spread)
 	}
 
 	// Sort keys for deterministic traversal order
@@ -279,7 +279,7 @@ func (w *walker) VisitRecordLiteral(n *ast.RecordLiteral) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		if n.Fields[k] != nil {
-			n.Fields[k].Accept(w)
+			w.visit(n.Fields[k])
 		}
 	}
 }
@@ -287,10 +287,10 @@ func (w *walker) VisitRecordLiteral(n *ast.RecordLiteral) {
 func (w *walker) VisitMapLiteral(n *ast.MapLiteral) {
 	for _, pair := range n.Pairs {
 		if pair.Key != nil {
-			pair.Key.Accept(w)
+			w.visit(pair.Key)
 		}
 		if pair.Value != nil {
-			pair.Value.Accept(w)
+			w.visit(pair.Value)
 		}
 	}
 }
@@ -307,7 +307,7 @@ func (w *walker) VisitListComprehension(n *ast.ListComprehension) {
 		case *ast.CompGenerator:
 			// Visit iterable expression to traverse nested nodes.
 			if c.Iterable != nil {
-				c.Iterable.Accept(w)
+				w.visit(c.Iterable)
 			}
 
 			// Bind pattern variables without inferring iterable types here.
@@ -316,14 +316,14 @@ func (w *walker) VisitListComprehension(n *ast.ListComprehension) {
 		case *ast.CompFilter:
 			// Filters use variables from generators
 			if c.Condition != nil {
-				c.Condition.Accept(w)
+				w.visit(c.Condition)
 			}
 		}
 	}
 
 	// Visit the output expression (uses all bound variables)
 	if n.Output != nil {
-		n.Output.Accept(w)
+		w.visit(n.Output)
 	}
 }
 
@@ -336,32 +336,32 @@ func (w *walker) VisitMapComprehension(n *ast.MapComprehension) {
 		switch c := clause.(type) {
 		case *ast.CompGenerator:
 			if c.Iterable != nil {
-				c.Iterable.Accept(w)
+				w.visit(c.Iterable)
 			}
 			w.bindPatternVariablesLoose(c.Pattern, c.Token)
 		case *ast.CompFilter:
 			if c.Condition != nil {
-				c.Condition.Accept(w)
+				w.visit(c.Condition)
 			}
 		}
 	}
 
 	if n.Key != nil {
-		n.Key.Accept(w)
+		w.visit(n.Key)
 	}
 	if n.Value != nil {
-		n.Value.Accept(w)
+		w.visit(n.Value)
 	}
 }
 
 func (w *walker) VisitRangeExpression(n *ast.RangeExpression) {
 	if n.Start != nil {
-		n.Start.Accept(w)
+		w.visit(n.Start)
 	}
 	if n.Next != nil {
-		n.Next.Accept(w)
+		w.visit(n.Next)
 	}
 	if n.End != nil {
-		n.End.Accept(w)
+		w.visit(n.End)
 	}
 }

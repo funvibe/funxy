@@ -66,9 +66,9 @@ func TestMarshaller_Tags(t *testing.T) {
 
 	// Test FromValue (Funxy -> Go)
 	// Create mock string values as List of Chars
-	visibleVal := stringToList("v2")
-	jsonVal := stringToList("j2")
-	noTagVal := stringToList("n2")
+	visibleVal := evaluator.StringToList("v2")
+	jsonVal := evaluator.StringToList("j2")
+	noTagVal := evaluator.StringToList("n2")
 
 	rec2 := evaluator.NewRecord(map[string]evaluator.Object{
 		"visible":    visibleVal,

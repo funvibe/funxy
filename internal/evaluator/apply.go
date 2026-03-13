@@ -64,6 +64,12 @@ func getRuntimeTypeName(obj Object) string {
 		return o.TypeName
 	case *Range:
 		return RUNTIME_TYPE_RANGE
+	case *Bytes:
+		return "Bytes"
+	case *Bits:
+		return "Bits"
+	case *Map:
+		return "Map"
 	default:
 		// Handle VM types that might not be directly accessible (e.g. VMClosure)
 		if string(obj.Type()) == "CLOSURE" {
@@ -694,7 +700,8 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				switch source.Kind {
 				case typesystem.DispatchArg:
 					if source.Index >= 0 && source.Index < len(hintCheckArgs) {
-						keyParts = append(keyParts, e.getDispatchTypeName(hintCheckArgs[source.Index]))
+						part := e.getDispatchTypeName(hintCheckArgs[source.Index])
+						keyParts = append(keyParts, part)
 					} else {
 						validKey = false
 					}
@@ -1246,6 +1253,6 @@ func (e *Evaluator) ApplyFunction(fn Object, args []Object) Object {
 				return result
 			}
 		}
-		return newError("not a function: %s", fn.Type())
+		return newError("can only call functions, got %s", getRuntimeTypeName(fn))
 	}
 }

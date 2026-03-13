@@ -637,7 +637,7 @@ func builtinWsServe(e *Evaluator, args ...Object) Object {
 
 		// Create a fresh evaluator/VM for each connection
 		var connEval *Evaluator
-		if e.Fork != nil {
+		if e.Forker != nil {
 			connEval = e.Fork()
 		} else {
 			connEval = e.Clone()
@@ -713,6 +713,11 @@ func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 	wsServersMu.Unlock()
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("panic in WebSocket server loop: %v\n", r)
+			}
+		}()
 		for {
 			select {
 			case <-srv.shutdown:
@@ -734,7 +739,7 @@ func builtinWsServeAsync(e *Evaluator, args ...Object) Object {
 
 				// Create a fresh evaluator/VM for each connection to ensure thread safety
 				var connEval *Evaluator
-				if srv.eval.Fork != nil {
+				if srv.eval.Forker != nil {
 					connEval = srv.eval.Fork()
 				} else {
 					connEval = srv.eval.Clone()
@@ -783,7 +788,12 @@ func builtinWsServerStop(e *Evaluator, args ...Object) Object {
 
 // handleWsConnection handles a single WebSocket connection
 func handleWsConnection(conn net.Conn, handler Object, eval *Evaluator) {
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("panic in WebSocket handler: %v\n", r)
+		}
+		_ = conn.Close()
+	}()
 
 	// Perform server-side handshake
 	reader := bufio.NewReader(conn)

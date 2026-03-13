@@ -102,6 +102,9 @@ type Compiler struct {
 	// Specialization depth counter (tracked on root compiler to detect infinite
 	// monomorphization recursion, e.g. f<T> calling f<Wrapper<T>>)
 	specializeDepth int
+
+	// Recursion depth for expression compilation to prevent stack overflow
+	recursionDepth int
 }
 
 // PendingImport represents an import that needs to be processed before VM runs
@@ -244,6 +247,7 @@ func newFunctionCompiler(enclosing *Compiler, name string, arity int) *Compiler 
 		subst:            enclosing.subst,            // Inherit substitution
 		symbolTable:      enclosing.symbolTable,      // Inherit symbol table
 		resolutionMap:    enclosing.resolutionMap,    // Inherit resolution map
+		recursionDepth:   enclosing.recursionDepth,   // Inherit recursion depth
 	}
 	return c
 }

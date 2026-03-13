@@ -1379,6 +1379,9 @@ func (h *Hypervisor) InspectVM(id string) (map[string]interface{}, error) {
 	info["uptime_seconds"] = time.Since(entry.StartedAt).Seconds()
 	info["status"] = vmStatusString(entry.Status.Load())
 	info["status_code"] = entry.Status.Load()
+	if entry.ExitError != nil {
+		info["exit_error"] = entry.ExitError.Error()
+	}
 	info["rpc_serialization_mode"] = h.GetRPCSerializationMode()
 
 	return info, nil

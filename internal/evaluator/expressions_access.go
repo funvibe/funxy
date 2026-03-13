@@ -20,7 +20,7 @@ func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Enviro
 		// Fallback to name lookup if index is invalid (e.g. -1 from analyzer)
 		idx := node.MethodIndex
 		if idx == -1 {
-			if methodNames, ok := TraitMethods[dict.TraitName]; ok {
+			if methodNames, ok := GetTraitMethods(dict.TraitName); ok {
 				for i, name := range methodNames {
 					if name == node.Member.Value {
 						idx = i

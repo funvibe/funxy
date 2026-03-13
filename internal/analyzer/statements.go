@@ -129,7 +129,7 @@ func (w *walker) VisitProgram(program *ast.Program) {
 		// Phase 1: Imports
 		for _, stmt := range program.Statements {
 			if s, ok := stmt.(*ast.ImportStatement); ok {
-				s.Accept(w)
+				w.visit(s)
 			}
 		}
 
@@ -139,11 +139,11 @@ func (w *walker) VisitProgram(program *ast.Program) {
 			case *ast.ImportStatement:
 				// Already done
 			case *ast.TypeDeclarationStatement:
-				s.Accept(w)
+				w.visit(s)
 			case *ast.TraitDeclaration:
-				s.Accept(w)
+				w.visit(s)
 			case *ast.FunctionStatement:
-				s.Accept(w)
+				w.visit(s)
 			}
 		}
 		return
@@ -162,29 +162,29 @@ func (w *walker) VisitProgram(program *ast.Program) {
 				}
 			case *ast.ImportStatement:
 				if s != nil {
-					s.Accept(w) // Ensure dependency bodies are analyzed
+					w.visit(s) // Ensure dependency bodies are analyzed
 				}
 			case *ast.ConstantDeclaration:
 				if s != nil {
-					s.Accept(w)
+					w.visit(s)
 				}
 			case *ast.ExpressionStatement:
 				if s != nil {
-					s.Accept(w)
+					w.visit(s)
 				}
 			case *ast.ReturnStatement:
 				if s != nil {
-					s.Accept(w)
+					w.visit(s)
 				}
 			case *ast.InstanceDeclaration:
 				if s != nil {
 					// We need to visit instance declarations in ModeBodies to process method bodies!
 					// In ModeInstances (Pass 3), we only checked signatures.
-					s.Accept(w)
+					w.visit(s)
 				}
 			case *ast.DirectiveStatement:
 				if s != nil {
-					s.Accept(w)
+					w.visit(s)
 				}
 			}
 		}
@@ -195,7 +195,7 @@ func (w *walker) VisitProgram(program *ast.Program) {
 		// Pass 3: Instances (only InstanceDeclaration)
 		for _, stmt := range program.Statements {
 			if s, ok := stmt.(*ast.InstanceDeclaration); ok {
-				s.Accept(w)
+				w.visit(s)
 			}
 		}
 
@@ -208,20 +208,20 @@ func (w *walker) VisitProgram(program *ast.Program) {
 	for _, stmt := range program.Statements {
 		switch s := stmt.(type) {
 		case *ast.FunctionStatement:
-			s.Accept(w)
+			w.visit(s)
 		case *ast.TypeDeclarationStatement:
-			s.Accept(w)
+			w.visit(s)
 		case *ast.TraitDeclaration:
 			// Register Trait
 		case *ast.InstanceDeclaration:
 			// Register Instance
 		case *ast.ImportStatement:
 			// Legacy support for single-pass import handling (if needed)
-			s.Accept(w)
+			w.visit(s)
 		case *ast.ConstantDeclaration:
-			s.Accept(w)
+			w.visit(s)
 		case *ast.DirectiveStatement:
-			s.Accept(w)
+			w.visit(s)
 		}
 	}
 
@@ -246,11 +246,11 @@ func (w *walker) VisitProgram(program *ast.Program) {
 
 		case *ast.TraitDeclaration:
 			if s != nil {
-				s.Accept(w)
+				w.visit(s)
 			}
 		case *ast.InstanceDeclaration:
 			if s != nil {
-				s.Accept(w)
+				w.visit(s)
 			}
 		case *ast.ImportStatement:
 			// Already visited in Pass 1
@@ -259,7 +259,7 @@ func (w *walker) VisitProgram(program *ast.Program) {
 			// Already visited
 			continue
 		default:
-			stmt.Accept(w)
+			w.visit(stmt)
 		}
 	}
 }

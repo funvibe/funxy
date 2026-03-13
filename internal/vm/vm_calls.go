@@ -891,7 +891,7 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 
 			// Push witness on evaluator
 			if explicitTypeHint != nil {
-				vm.getEvaluator().PushWitness(map[string][]typesystem.Type{"Applicative": {explicitTypeHint}})
+				vm.getEvaluator().PushWitness(map[string][]typesystem.Type{cm.ClassName: {explicitTypeHint}})
 				// Witness will be popped when the builtin call completes
 				// For VM, we rely on the builtin to properly manage witness stack
 			}
@@ -1051,6 +1051,12 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 			eval.TypeContextStack = nil
 		}
 
+		// Push witness on evaluator if explicit hint was extracted from stack
+		if explicitTypeHint != nil {
+			eval.PushWitness(map[string][]typesystem.Type{cm.ClassName: {explicitTypeHint}})
+			defer eval.PopWitness()
+		}
+
 		result := eval.ApplyFunction(cm, args)
 		if err, ok := result.(*evaluator.Error); ok {
 			return fmt.Errorf("%s", err.Message)
@@ -1107,7 +1113,7 @@ func (vm *VM) callClassMethod(cm *evaluator.ClassMethod, argCount int) error {
 
 	// Push witness on evaluator
 	if explicitTypeHint != nil {
-		vm.getEvaluator().PushWitness(map[string][]typesystem.Type{"Applicative": {explicitTypeHint}})
+		vm.getEvaluator().PushWitness(map[string][]typesystem.Type{cm.ClassName: {explicitTypeHint}})
 	}
 
 	if resolvedType != "" {

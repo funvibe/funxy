@@ -653,7 +653,7 @@ func (e *Evaluator) getReturnTypeName(obj Object) string {
 // Returns nil if not found.
 func FindMethodInDictionary(d *Dictionary, methodName string) Object {
 	// Check if this dictionary belongs to a trait that has the method
-	if methods, ok := TraitMethods[d.TraitName]; ok {
+	if methods, ok := GetTraitMethods(d.TraitName); ok {
 		for i, name := range methods {
 			if name == methodName {
 				// Found the method name in this trait definition
@@ -833,6 +833,6 @@ func getTypeName(obj Object) string {
 	case *Uuid:
 		return "Uuid"
 	default:
-		return string(obj.Type())
+		return string(v.Type())
 	}
 }

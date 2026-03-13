@@ -61,11 +61,6 @@ func listToGoString(obj Object) (string, bool) {
 	return sb.String(), true
 }
 
-// StringToList converts Go string to List<Char> (exported for VM)
-func StringToList(s string) *List {
-	return goStringToList(s)
-}
-
 // IsStringList checks if a list contains only Char elements (is a string)
 func IsStringList(l *List) bool {
 	if l.ElementType == "Char" {

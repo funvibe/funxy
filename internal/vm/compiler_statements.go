@@ -10,6 +10,13 @@ import (
 
 // compileStatement compiles a statement
 func (c *Compiler) compileStatement(stmt ast.Statement) error {
+	c.recursionDepth++
+	defer func() { c.recursionDepth-- }()
+
+	if c.recursionDepth > 500 {
+		return fmt.Errorf("stack overflow: statement recursion limit exceeded")
+	}
+
 	switch s := stmt.(type) {
 	case *ast.ExpressionStatement:
 		return c.compileExpression(s.Expression)
@@ -337,7 +344,7 @@ func (c *Compiler) compileTraitDeclaration(stmt *ast.TraitDeclaration) error {
 	for _, method := range stmt.Signatures {
 		methodNames = append(methodNames, method.Name.Value)
 	}
-	evaluator.TraitMethods[traitName] = methodNames
+	evaluator.RegisterTraitMethods(traitName, methodNames)
 
 	for _, method := range stmt.Signatures {
 		methodName := method.Name.Value
@@ -497,6 +504,9 @@ func (c *Compiler) GetPendingImports() []PendingImport {
 
 // compileFunctionBody compiles the body of a function
 func (c *Compiler) compileFunctionBody(body *ast.BlockStatement) error {
+	c.recursionDepth++
+	defer func() { c.recursionDepth-- }()
+
 	// Predeclare local functions to support mutual recursion within the body.
 	for _, stmt := range body.Statements {
 		fs, ok := stmt.(*ast.FunctionStatement)

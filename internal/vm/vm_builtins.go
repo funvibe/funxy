@@ -1,6 +1,9 @@
 package vm
 
-import "github.com/funvibe/funxy/internal/evaluator"
+import (
+	"github.com/funvibe/funxy/internal/evaluator"
+	"github.com/funvibe/funxy/internal/typesystem"
+)
 
 // SetEvaluator sets the evaluator to use for builtin calls
 func (vm *VM) SetEvaluator(eval *evaluator.Evaluator) {
@@ -29,7 +32,12 @@ func (vm *VM) registerFPTraitMethods() {
 	vm.globals.Globals = vm.globals.Globals.Put("mempty", &evaluator.ClassMethod{Name: "mempty", ClassName: "Monoid", Arity: 0})
 
 	// Functor
-	vm.globals.Globals = vm.globals.Globals.Put("fmap", &evaluator.ClassMethod{Name: "fmap", ClassName: "Functor", Arity: 2})
+	vm.globals.Globals = vm.globals.Globals.Put("fmap", &evaluator.ClassMethod{
+		Name:            "fmap",
+		ClassName:       "Functor",
+		Arity:           2,
+		DispatchSources: []typesystem.DispatchSource{{Kind: typesystem.DispatchArg, Index: 1}},
+	})
 
 	// Applicative
 	vm.globals.Globals = vm.globals.Globals.Put("pure", &evaluator.ClassMethod{Name: "pure", ClassName: "Applicative", Arity: 1})
@@ -121,6 +129,13 @@ func (vm *VM) registerBuiltinTraitImpls() {
 		return evaluator.StringToList(args[0].Inspect())
 	})
 	vm.registerBuiltinTraitMethod("Show", "String", "show", func(args []evaluator.Object) evaluator.Object {
+		// If it's a string (List<Char>), return it as-is (unquoted)
+		if list, ok := args[0].(*evaluator.List); ok {
+			if evaluator.IsStringList(list) {
+				return list
+			}
+		}
+		// Fallback to Inspect for non-strings (e.g. if wrongly dispatched)
 		return evaluator.StringToList(args[0].Inspect())
 	})
 	vm.registerBuiltinTraitMethod("Show", "Char", "show", func(args []evaluator.Object) evaluator.Object {
@@ -130,6 +145,12 @@ func (vm *VM) registerBuiltinTraitImpls() {
 		return evaluator.StringToList(args[0].Inspect())
 	})
 	vm.registerBuiltinTraitMethod("Show", "List", "show", func(args []evaluator.Object) evaluator.Object {
+		// If it's a string (List<Char>), return it as-is (unquoted)
+		if list, ok := args[0].(*evaluator.List); ok {
+			if evaluator.IsStringList(list) {
+				return list
+			}
+		}
 		return evaluator.StringToList(args[0].Inspect())
 	})
 	vm.registerBuiltinTraitMethod("Show", "Tuple", "show", func(args []evaluator.Object) evaluator.Object {
@@ -235,6 +256,96 @@ func (vm *VM) registerBuiltinTraitImpls() {
 			return &evaluator.Boolean{Value: l.Len() == 0}
 		}
 		return &evaluator.Boolean{Value: false}
+	})
+
+	// Concat for List
+	vm.registerBuiltinTraitMethod("Concat", "List", "(++)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.List)
+		b, ok2 := args[1].(*evaluator.List)
+		if ok1 && ok2 {
+			return a.Concat(b)
+		}
+		return &evaluator.Error{Message: "Concat (++) expects two Lists"}
+	})
+
+	// Concat for String
+	vm.registerBuiltinTraitMethod("Concat", "String", "(++)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.List)
+		b, ok2 := args[1].(*evaluator.List)
+		if ok1 && ok2 {
+			return a.Concat(b)
+		}
+		return &evaluator.Error{Message: "Concat (++) expects two Strings"}
+	})
+
+	// Concat for Bytes
+	vm.registerBuiltinTraitMethod("Concat", "Bytes", "(++)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.Bytes)
+		b, ok2 := args[1].(*evaluator.Bytes)
+		if ok1 && ok2 {
+			return a.Concat(b)
+		}
+		return &evaluator.Error{Message: "Concat (++) expects two Bytes"}
+	})
+
+	// Equal for Int
+	vm.registerBuiltinTraitMethod("Equal", "Int", "(==)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.Integer)
+		b, ok2 := args[1].(*evaluator.Integer)
+		if ok1 && ok2 {
+			return &evaluator.Boolean{Value: a.Value == b.Value}
+		}
+		return &evaluator.Boolean{Value: false}
+	})
+	vm.registerBuiltinTraitMethod("Equal", "Int", "(!=)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.Integer)
+		b, ok2 := args[1].(*evaluator.Integer)
+		if ok1 && ok2 {
+			return &evaluator.Boolean{Value: a.Value != b.Value}
+		}
+		return &evaluator.Boolean{Value: true}
+	})
+
+	// Equal for String
+	vm.registerBuiltinTraitMethod("Equal", "String", "(==)", func(args []evaluator.Object) evaluator.Object {
+		return &evaluator.Boolean{Value: evaluator.ObjectsEqual(args[0], args[1])}
+	})
+	vm.registerBuiltinTraitMethod("Equal", "String", "(!=)", func(args []evaluator.Object) evaluator.Object {
+		return &evaluator.Boolean{Value: !evaluator.ObjectsEqual(args[0], args[1])}
+	})
+
+	// Order for Int
+	vm.registerBuiltinTraitMethod("Order", "Int", "(<)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.Integer)
+		b, ok2 := args[1].(*evaluator.Integer)
+		if ok1 && ok2 {
+			return &evaluator.Boolean{Value: a.Value < b.Value}
+		}
+		return &evaluator.Error{Message: "Order (<) expects two Ints"}
+	})
+	vm.registerBuiltinTraitMethod("Order", "Int", "(<=)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.Integer)
+		b, ok2 := args[1].(*evaluator.Integer)
+		if ok1 && ok2 {
+			return &evaluator.Boolean{Value: a.Value <= b.Value}
+		}
+		return &evaluator.Error{Message: "Order (<=) expects two Ints"}
+	})
+	vm.registerBuiltinTraitMethod("Order", "Int", "(>)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.Integer)
+		b, ok2 := args[1].(*evaluator.Integer)
+		if ok1 && ok2 {
+			return &evaluator.Boolean{Value: a.Value > b.Value}
+		}
+		return &evaluator.Error{Message: "Order (>) expects two Ints"}
+	})
+	vm.registerBuiltinTraitMethod("Order", "Int", "(>=)", func(args []evaluator.Object) evaluator.Object {
+		a, ok1 := args[0].(*evaluator.Integer)
+		b, ok2 := args[1].(*evaluator.Integer)
+		if ok1 && ok2 {
+			return &evaluator.Boolean{Value: a.Value >= b.Value}
+		}
+		return &evaluator.Error{Message: "Order (>=) expects two Ints"}
 	})
 }
 

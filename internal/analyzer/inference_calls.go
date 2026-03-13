@@ -615,7 +615,7 @@ func inferTypeApplicationExpression(ctx *InferenceContext, n *ast.TypeApplicatio
 
 			// Solve witness
 			// Constraint.Args includes all types (e.g. [Int] for Show<Int>)
-			witnessExpr, err := ctx.SolveWitness(n, c.Trait, traitArgs, table)
+			witnessExpr, err := ctx.SolveWitness(n, c.Trait, traitArgs, table, 0)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -679,7 +679,7 @@ func inferTypeApplicationExpression(ctx *InferenceContext, n *ast.TypeApplicatio
 					// Full Args for Witness Lookup: [Type, Args...]
 					fullArgs := append([]typesystem.Type{concreteType}, concreteArgs...)
 
-					witnessExpr, err := ctx.SolveWitness(n, c.Trait, fullArgs, table)
+					witnessExpr, err := ctx.SolveWitness(n, c.Trait, fullArgs, table, 0)
 					if err != nil {
 						return nil, nil, err
 					}

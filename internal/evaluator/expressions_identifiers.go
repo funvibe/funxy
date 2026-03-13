@@ -60,6 +60,15 @@ func (e *Evaluator) evalAssignExpression(node *ast.AssignExpression, env *Enviro
 		// Also push generic return context for backward compatibility
 		witness["$Return"] = []typesystem.Type{resolvedType}
 
+		// Push Applicative/Monad witness if applicable (for pure, return, etc.)
+		if _, ok := resolvedType.(typesystem.TApp); ok {
+			witness["Applicative"] = []typesystem.Type{resolvedType}
+			witness["Monad"] = []typesystem.Type{resolvedType}
+		} else if _, ok := resolvedType.(typesystem.TCon); ok {
+			witness["Applicative"] = []typesystem.Type{resolvedType}
+			witness["Monad"] = []typesystem.Type{resolvedType}
+		}
+
 		e.PushWitness(witness)
 		pushedWitness = true
 	}

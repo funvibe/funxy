@@ -320,7 +320,7 @@ func (w *walker) visitInstanceMethods(n *ast.InstanceDeclaration, traitName, typ
 		for _, superName := range superTraitNames {
 			// Resolve witness for SuperTrait<InstanceArgs>
 			// Use w.inferCtx.SolveWitness
-			witness, err := w.inferCtx.SolveWitness(n, superName, instanceArgs, w.symbolTable)
+			witness, err := w.inferCtx.SolveWitness(n, superName, instanceArgs, w.symbolTable, 0)
 			if err != nil {
 				w.addError(diagnostics.NewError(
 					diagnostics.ErrA003,

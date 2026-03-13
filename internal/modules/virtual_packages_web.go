@@ -30,11 +30,11 @@ func initHttpPackage() {
 		Args:        []typesystem.Type{headerTuple},
 	}
 
-	// HttpResponse = { status: Int, body: String, headers: List<(String, String)> }
+	// HttpResponse = { status: Int, body: String | Bytes, headers: List<(String, String)> }
 	responseType := typesystem.TRecord{
 		Fields: map[string]typesystem.Type{
 			"status":  typesystem.Int,
-			"body":    stringType,
+			"body":    stringOrBytes,
 			"headers": headersType,
 		},
 	}

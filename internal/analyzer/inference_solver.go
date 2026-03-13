@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
@@ -13,6 +14,9 @@ func (ctx *InferenceContext) SolveConstraints(table *symbols.SymbolTable) []erro
 	// Iteratively resolve constraints
 	changed := true
 	for changed {
+		if ctx.Context != nil && ctx.Context.Err() != nil {
+			return append(errors, fmt.Errorf("analyzer timeout"))
+		}
 		changed = false
 
 		for _, c := range ctx.Constraints {
@@ -99,7 +103,13 @@ func (ctx *InferenceContext) SolveConstraints(table *symbols.SymbolTable) []erro
 						continue
 					}
 					// If we are here, it's ambiguous and not covered by constraints
-					errors = append(errors, inferErrorf(c.Node, "ambiguous type %s: cannot determine instance for %s (add type annotation)", concreteArgs[0], c.Trait))
+					// But if it's rigid, we might want to infer it.
+					if isRigidError {
+						// Fallthrough to rigid inference
+					} else {
+						errors = append(errors, inferErrorf(c.Node, "ambiguous type %s: cannot determine instance for %s (add type annotation)", concreteArgs[0], c.Trait))
+						continue
+					}
 				} else {
 					// MPTC ambiguous
 					if ctx.HasMPTCConstraint(c.Trait, concreteArgs) {
@@ -394,7 +404,14 @@ func isVar(t typesystem.Type) bool {
 // SolveWitness resolves a witness (dictionary) for a given trait and type arguments.
 // It returns an AST expression (Identifier or CallExpression) representing the dictionary.
 // Used for dictionary passing transformation.
-func (ctx *InferenceContext) SolveWitness(node ast.Node, traitName string, args []typesystem.Type, table *symbols.SymbolTable) (ast.Expression, error) {
+func (ctx *InferenceContext) SolveWitness(node ast.Node, traitName string, args []typesystem.Type, table *symbols.SymbolTable, depth int) (ast.Expression, error) {
+	if depth > MaxWitnessDepth {
+		return nil, inferErrorf(node, "witness resolution recursion limit exceeded for %s", traitName)
+	}
+	if ctx.Context != nil && ctx.Context.Err() != nil {
+		return nil, fmt.Errorf("analyzer timeout")
+	}
+
 	// 1. Resolve arguments
 	resolvedArgs := make([]typesystem.Type, len(args))
 	hasVar := false
@@ -440,7 +457,7 @@ func (ctx *InferenceContext) SolveWitness(node ast.Node, traitName string, args 
 							cFullArgs = append(cFullArgs, typesystem.TVar{Name: varName})
 							cFullArgs = append(cFullArgs, c.Args...)
 
-							witnessExpr, err := ctx.SolveWitness(node, c.Trait, cFullArgs, table)
+							witnessExpr, err := ctx.SolveWitness(node, c.Trait, cFullArgs, table, depth+1)
 							if err == nil {
 								path := findSuperTraitPath(c.Trait, traitName, table)
 								if path != nil {
@@ -524,7 +541,7 @@ func (ctx *InferenceContext) SolveWitness(node ast.Node, traitName string, args 
 				fullReqArgs := []typesystem.Type{reqType}
 				fullReqArgs = append(fullReqArgs, reqArgs...)
 
-				argWitness, err := ctx.SolveWitness(node, req.Trait, fullReqArgs, table)
+				argWitness, err := ctx.SolveWitness(node, req.Trait, fullReqArgs, table, depth+1)
 				if err != nil {
 					return nil, err
 				}
@@ -675,7 +692,7 @@ func (ctx *InferenceContext) SolveWitness(node ast.Node, traitName string, args 
 					fullReqArgs := []typesystem.Type{reqType}
 					fullReqArgs = append(fullReqArgs, reqArgs...)
 
-					argWitness, err := ctx.SolveWitness(node, req.Trait, fullReqArgs, table)
+					argWitness, err := ctx.SolveWitness(node, req.Trait, fullReqArgs, table, depth+1)
 					if err != nil {
 						return nil, err
 					}
@@ -715,7 +732,7 @@ func (ctx *InferenceContext) SolveWitness(node ast.Node, traitName string, args 
 			fullReqArgs := []typesystem.Type{reqType}
 			fullReqArgs = append(fullReqArgs, reqArgs...)
 
-			argWitness, err := ctx.SolveWitness(node, req.Trait, fullReqArgs, table)
+			argWitness, err := ctx.SolveWitness(node, req.Trait, fullReqArgs, table, depth+1)
 			if err != nil {
 				return nil, err
 			}

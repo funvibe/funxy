@@ -10,7 +10,15 @@ import (
 	"strings"
 )
 
+// CompileExpression compiles an expression
 func (c *Compiler) compileExpression(expr ast.Expression) error {
+	c.recursionDepth++
+	defer func() { c.recursionDepth-- }()
+
+	if c.recursionDepth > 500 {
+		return fmt.Errorf("stack overflow: expression recursion limit exceeded")
+	}
+
 	switch e := expr.(type) {
 	case *ast.IntegerLiteral:
 		c.emitConstant(&evaluator.Integer{Value: e.Value}, e.Token.Line)
@@ -1231,6 +1239,9 @@ func (c *Compiler) compilePatternBinding(pattern ast.Pattern, line int) error {
 
 // Compile block statement (not expression)
 func (c *Compiler) compileBlockStatement(block *ast.BlockStatement) error {
+	c.recursionDepth++
+	defer func() { c.recursionDepth-- }()
+
 	c.beginScope()
 
 	// Predeclare local functions to support mutual recursion within the block.

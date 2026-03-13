@@ -106,7 +106,7 @@ func (m *Marshaller) toValue(val interface{}, depth int) (evaluator.Object, erro
 	case reflect.Bool:
 		return &evaluator.Boolean{Value: v.Bool()}, nil
 	case reflect.String:
-		return stringToList(v.String()), nil
+		return evaluator.StringToList(v.String()), nil
 	case reflect.Slice:
 		return m.sliceToList(v, depth+1)
 	case reflect.Map:
@@ -232,15 +232,6 @@ func (m *Marshaller) fromValue(obj evaluator.Object, targetType reflect.Type, de
 	default:
 		return nil, fmt.Errorf("unsupported type for conversion: %s", o.Type())
 	}
-}
-
-func stringToList(s string) *evaluator.List {
-	runes := []rune(s)
-	chars := make([]evaluator.Object, len(runes))
-	for i, r := range runes {
-		chars[i] = &evaluator.Char{Value: int64(r)}
-	}
-	return evaluator.NewList(chars)
 }
 
 func (m *Marshaller) sliceToList(v reflect.Value, depth int) (*evaluator.List, error) {

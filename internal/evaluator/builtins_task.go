@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -176,6 +177,13 @@ func builtinAsync(e *Evaluator, args ...Object) Object {
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				task.mu.Lock()
+				task.err = fmt.Sprintf("panic in async task: %v", r)
+				task.mu.Unlock()
+			}
+		}()
 		AcquirePoolSlot()
 		defer ReleasePoolSlot()
 		defer close(task.done)
@@ -693,13 +701,20 @@ func builtinTaskMap(e *Evaluator, args ...Object) Object {
 
 	// Use Fork if available (creates isolated VM), otherwise Clone (tree-walk)
 	var evalClone *Evaluator
-	if e.Fork != nil {
+	if e.Forker != nil {
 		evalClone = e.Fork()
 	} else {
 		evalClone = e.Clone()
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				newTask.mu.Lock()
+				newTask.err = fmt.Sprintf("panic in async task combinator: %v", r)
+				newTask.mu.Unlock()
+			}
+		}()
 		defer close(newTask.done)
 
 		<-task.done
@@ -769,13 +784,20 @@ func builtinTaskFlatMap(e *Evaluator, args ...Object) Object {
 
 	// Use Fork if available (creates isolated VM), otherwise Clone (tree-walk)
 	var evalClone *Evaluator
-	if e.Fork != nil {
+	if e.Forker != nil {
 		evalClone = e.Fork()
 	} else {
 		evalClone = e.Clone()
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				newTask.mu.Lock()
+				newTask.err = fmt.Sprintf("panic in async task combinator: %v", r)
+				newTask.mu.Unlock()
+			}
+		}()
 		defer close(newTask.done)
 
 		<-task.done
@@ -864,13 +886,20 @@ func builtinTaskCatch(e *Evaluator, args ...Object) Object {
 
 	// Use Fork if available (creates isolated VM), otherwise Clone (tree-walk)
 	var evalClone *Evaluator
-	if e.Fork != nil {
+	if e.Forker != nil {
 		evalClone = e.Fork()
 	} else {
 		evalClone = e.Clone()
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				newTask.mu.Lock()
+				newTask.err = fmt.Sprintf("panic in async task combinator: %v", r)
+				newTask.mu.Unlock()
+			}
+		}()
 		defer close(newTask.done)
 
 		<-task.done

@@ -826,7 +826,7 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 			totalSubst = subst.Compose(totalSubst)
 
 			// Mark tail calls since walker skips inner functions
-			MarkTailCalls(fs.Body)
+			MarkTailCalls(fs.Body, 0)
 
 			lastType = typesystem.Nil
 		} else if bs, ok := stmt.(*ast.BreakStatement); ok {

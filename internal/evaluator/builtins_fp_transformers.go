@@ -1386,8 +1386,6 @@ func registerResultTInstances(e *Evaluator) {
 					if mType == nil && eval.TypeMap != nil && eval.CurrentCallNode != nil {
 						if t := eval.TypeMap[eval.CurrentCallNode]; t != nil {
 							if tApp, ok := t.(typesystem.TApp); ok {
-								// ResultT<M, E, A> has 3 args? Or 2 args + constructor?
-								// ResultT is likely TApp(ResultT, [M, E, A])
 								if len(tApp.Args) >= 1 {
 									mType = tApp.Args[0]
 								}

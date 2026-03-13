@@ -23,6 +23,8 @@ type Analyzer struct {
 	TraitDefaults map[string]*ast.FunctionStatement // "TraitName.methodName" -> FunctionStatement
 }
 
+const MaxASTDepth = 100
+
 // ModuleLoader interface to break dependency cycle
 type ModuleLoader interface {
 	GetModule(path string) (interface{}, error)     // Returns *modules.Module (which implements LoadedModule)
@@ -162,6 +164,35 @@ func (w *walker) getErrors() []*diagnostics.DiagnosticError {
 	return result
 }
 
+// visit is a safe wrapper around node.Accept(w) that tracks recursion depth
+func (w *walker) visit(node ast.Node) {
+	if node == nil {
+		return
+	}
+
+	if w.aborted {
+		return
+	}
+	if w.ctx != nil && w.ctx.Context != nil && w.ctx.Context.Err() != nil {
+		w.addError(diagnostics.NewError(diagnostics.ErrP008, getNodeToken(node), "analyzer timeout"))
+		return
+	}
+
+	w.depth++
+	defer func() { w.depth-- }()
+
+	if w.depth > MaxASTDepth {
+		w.addError(diagnostics.NewError(
+			diagnostics.ErrP006, // Use P006 (Expression too complex)
+			getNodeToken(node),
+			"expression too complex: recursion depth limit exceeded in analyzer",
+		))
+		return
+	}
+
+	node.Accept(w)
+}
+
 type AnalysisMode int
 
 const (
@@ -175,6 +206,13 @@ const (
 // AnalyzeNaming runs the naming pass (discovery)
 func (a *Analyzer) AnalyzeNaming(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// Simple walker for naming only
+	// Create inference context just for potential fresh vars (unlikely used in naming)
+	typeMap := make(map[ast.Node]typesystem.Type)
+	inferCtx := NewInferenceContextWithTypeMap(typeMap)
+	if ctx != nil {
+		inferCtx.Context = ctx.Context
+	}
+
 	w := &walker{
 		ctx:         ctx,
 		symbolTable: a.symbolTable,
@@ -183,18 +221,27 @@ func (a *Analyzer) AnalyzeNaming(node ast.Node, ctx *pipeline.PipelineContext) [
 		loader:      a.loader,
 		BaseDir:     a.BaseDir,
 		mode:        ModeNaming,
+		inferCtx:    inferCtx,
 	}
 	node.Accept(w)
 	return w.getErrors()
 }
 
+// AnalyzeHeaders runs the headers pass
 func (a *Analyzer) AnalyzeHeaders(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	typeMap := make(map[ast.Node]typesystem.Type)
 
 	// Create shared InferenceContext if not exists
 	if a.inferCtx == nil {
 		a.inferCtx = NewInferenceContextWithLoader(a.loader)
+		if ctx != nil {
+			a.inferCtx.Context = ctx.Context
+		}
+	} else if ctx != nil && a.inferCtx.Context == nil {
+		// Update context if missing
+		a.inferCtx.Context = ctx.Context
 	}
+
 	// Save previous state to restore after analysis
 	prevTypeMap := a.inferCtx.TypeMap
 	a.inferCtx.TypeMap = typeMap
@@ -234,6 +281,7 @@ func (a *Analyzer) AnalyzeHeaders(node ast.Node, ctx *pipeline.PipelineContext) 
 	return w.getErrors()
 }
 
+// AnalyzeInstances runs the instances pass
 func (a *Analyzer) AnalyzeInstances(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// Reuse existing TypeMap and InferenceContext from Headers pass
 	if a.TypeMap == nil {
@@ -241,7 +289,13 @@ func (a *Analyzer) AnalyzeInstances(node ast.Node, ctx *pipeline.PipelineContext
 	}
 	if a.inferCtx == nil {
 		a.inferCtx = NewInferenceContextWithLoader(a.loader)
+		if ctx != nil {
+			a.inferCtx.Context = ctx.Context
+		}
+	} else if ctx != nil && a.inferCtx.Context == nil {
+		a.inferCtx.Context = ctx.Context
 	}
+
 	// Save previous state to restore after analysis
 	prevTypeMap := a.inferCtx.TypeMap
 	a.inferCtx.TypeMap = a.TypeMap
@@ -294,6 +348,7 @@ func (a *Analyzer) AnalyzeInstances(node ast.Node, ctx *pipeline.PipelineContext
 	return w.getErrors()
 }
 
+// AnalyzeBodies runs the function bodies pass
 func (a *Analyzer) AnalyzeBodies(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// Reuse existing TypeMap if possible
 	if a.TypeMap == nil {
@@ -308,7 +363,13 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node, ctx *pipeline.PipelineContext) [
 	// Reuse shared InferenceContext (counter continues from Headers pass)
 	if a.inferCtx == nil {
 		a.inferCtx = NewInferenceContextWithLoader(a.loader)
+		if ctx != nil {
+			a.inferCtx.Context = ctx.Context
+		}
+	} else if ctx != nil && a.inferCtx.Context == nil {
+		a.inferCtx.Context = ctx.Context
 	}
+
 	// Save previous state to restore after analysis (for recursive calls)
 	// This is critical because inferCtx is shared between parent and imported modules.
 	prevTypeMap := a.inferCtx.TypeMap
@@ -354,29 +415,50 @@ func (a *Analyzer) AnalyzeBodies(node ast.Node, ctx *pipeline.PipelineContext) [
 	// Apply global substitution to all types in TypeMap to ensure all type variables are resolved
 	if len(a.inferCtx.GlobalSubst) > 0 {
 		for node, typ := range w.TypeMap {
+			// Periodically check context
+			if a.inferCtx.Context != nil && a.inferCtx.Context.Err() != nil {
+				w.addError(diagnostics.NewError(diagnostics.ErrP008, getNodeToken(node), "analyzer timeout"))
+				return w.getErrors()
+			}
 			w.TypeMap[node] = typ.Apply(a.inferCtx.GlobalSubst)
 		}
 		// Finalize Instantiations in CallExpressions
-		a.finalizeInstantiations(node, a.inferCtx.GlobalSubst)
+		a.finalizeInstantiations(node, a.inferCtx.GlobalSubst, 0)
 	}
 
 	// Resolve Pending Witnesses (global pass)
 	ResolvePendingWitnesses(a.inferCtx, nil, a.symbolTable, func(n ast.Node, err error) {
+		// Log error but don't fail immediately, try to resolve other witnesses
 		w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), err.Error()))
 	})
+
+	if a.inferCtx.Context != nil && a.inferCtx.Context.Err() != nil {
+		w.addError(diagnostics.NewError(diagnostics.ErrP008, token.Token{}, "analyzer timeout"))
+		return w.getErrors()
+	}
 
 	// Solve Deferred Constraints
 	constraintErrors := a.inferCtx.SolveConstraints(a.symbolTable)
 	for _, err := range constraintErrors {
-		// If the error is already a DiagnosticError, it has location info.
-		// appendError will use it. If not, we might lose location unless SolveConstraints puts it in.
-		// SolveConstraints creates DiagnosticErrors using inferErrorf which puts location.
 		w.appendError(nil, err)
 	}
 
 	ResolvePendingReturnContexts(a.inferCtx, func(n ast.Node, err error) {
 		w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), err.Error()))
 	})
+
+	// Resolve pending witnesses and constraints for standalone expression analysis
+	// This mirrors what AnalyzeBodies does for full programs.
+	if len(a.inferCtx.PendingWitnesses) > 0 || len(a.inferCtx.Constraints) > 0 {
+		ResolvePendingWitnesses(a.inferCtx, nil, a.symbolTable, func(n ast.Node, err error) {
+			w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), err.Error()))
+		})
+
+		constraintErrors := a.inferCtx.SolveConstraints(a.symbolTable)
+		for _, err := range constraintErrors {
+			w.appendError(nil, err)
+		}
+	}
 
 	return w.getErrors()
 }
@@ -415,9 +497,18 @@ func hasReturnDispatchContext(t typesystem.Type) bool {
 
 // ResolvePendingWitnesses resolves deferred type class constraints
 func ResolvePendingWitnesses(ctx *InferenceContext, subst typesystem.Subst, table *symbols.SymbolTable, errorHandler func(ast.Node, error)) {
+	if ctx == nil {
+		return
+	}
 	// Filter pending witnesses relevant to this scope (or all, since it's single-pass per function body mostly)
 	var remaining []PendingWitness
-	for _, pw := range ctx.PendingWitnesses {
+	for i, pw := range ctx.PendingWitnesses {
+		// Check for cancellation
+		if ctx.Context != nil && ctx.Context.Err() != nil {
+			// Abort processing, keep remaining
+			remaining = append(remaining, ctx.PendingWitnesses[i:]...)
+			break
+		}
 		// Resolve args
 		var resolvedArgs []typesystem.Type
 		if len(pw.Args) > 0 {
@@ -549,7 +640,7 @@ func ResolvePendingWitnesses(ctx *InferenceContext, subst typesystem.Subst, tabl
 			// It basically replaces the old check table.IsImplementationExists(pw.Trait, unwrappedArgs)
 			// because if evidence exists, implementation exists.
 
-			witnessExpr, err := ctx.SolveWitness(pw.Node, pw.Trait, resolvedArgs, table)
+			witnessExpr, err := ctx.SolveWitness(pw.Node, pw.Trait, resolvedArgs, table, 0)
 			if err != nil {
 				// If SolveWitness fails, it is a legitimate error.
 				if len(unwrappedArgs) == 1 {
@@ -606,6 +697,12 @@ func (a *Analyzer) Analyze(node ast.Node, ctx *pipeline.PipelineContext) []*diag
 	// Fallback for partial nodes (Expressions, etc.) - ModeFull
 	typeMap := make(map[ast.Node]typesystem.Type)
 	resolutionMap := make(map[ast.Node]symbols.Symbol)
+	// Create context with timeout support
+	inferCtx := NewInferenceContextWithTypeMap(typeMap)
+	if ctx != nil {
+		inferCtx.Context = ctx.Context
+	}
+
 	w := &walker{
 		ctx:             ctx,
 		symbolTable:     a.symbolTable,
@@ -616,7 +713,7 @@ func (a *Analyzer) Analyze(node ast.Node, ctx *pipeline.PipelineContext) []*diag
 		BaseDir:         a.BaseDir,
 		TypeMap:         typeMap,
 		ResolutionMap:   resolutionMap,
-		inferCtx:        NewInferenceContextWithTypeMap(typeMap),
+		inferCtx:        inferCtx,
 		mode:            ModeFull,
 		TraitDefaults:   a.TraitDefaults,
 		importedModules: make(map[string]bool),
@@ -652,6 +749,19 @@ func (a *Analyzer) Analyze(node ast.Node, ctx *pipeline.PipelineContext) []*diag
 		}
 	}
 
+	// Resolve pending witnesses and constraints for standalone expression analysis
+	// This mirrors what AnalyzeBodies does for full programs.
+	if len(a.inferCtx.PendingWitnesses) > 0 || len(a.inferCtx.Constraints) > 0 {
+		ResolvePendingWitnesses(a.inferCtx, nil, a.symbolTable, func(n ast.Node, err error) {
+			w.addError(diagnostics.NewError(diagnostics.ErrA003, getNodeToken(n), err.Error()))
+		})
+
+		constraintErrors := a.inferCtx.SolveConstraints(a.symbolTable)
+		for _, err := range constraintErrors {
+			w.appendError(nil, err)
+		}
+	}
+
 	return w.getErrors()
 }
 
@@ -661,8 +771,11 @@ func (w *walker) freshVar() typesystem.TVar {
 }
 
 // MarkTailCalls recursively marks tail calls in the AST.
-func MarkTailCalls(node ast.Node) {
+func MarkTailCalls(node ast.Node, depth int) {
 	if node == nil {
+		return
+	}
+	if depth > MaxASTDepth {
 		return
 	}
 
@@ -670,26 +783,26 @@ func MarkTailCalls(node ast.Node) {
 	case *ast.BlockStatement:
 		if len(n.Statements) > 0 {
 			lastStmt := n.Statements[len(n.Statements)-1]
-			MarkTailCalls(lastStmt)
+			MarkTailCalls(lastStmt, depth+1)
 		}
 	case *ast.ExpressionStatement:
-		MarkTailCalls(n.Expression)
+		MarkTailCalls(n.Expression, depth+1)
 	case *ast.CallExpression:
 		n.IsTail = true
 	case *ast.IfExpression:
-		MarkTailCalls(n.Consequence)
+		MarkTailCalls(n.Consequence, depth+1)
 		if n.Alternative != nil {
-			MarkTailCalls(n.Alternative)
+			MarkTailCalls(n.Alternative, depth+1)
 		}
 	case *ast.MatchExpression:
 		for _, arm := range n.Arms {
-			MarkTailCalls(arm.Expression)
+			MarkTailCalls(arm.Expression, depth+1)
 		}
 	}
 }
 
 func (w *walker) markTailCalls(node ast.Node) {
-	MarkTailCalls(node)
+	MarkTailCalls(node, 0)
 }
 
 // getNodeToken extracts token from AST node if possible
@@ -724,9 +837,20 @@ func (w *walker) appendError(node ast.Node, err error) {
 
 // finalizeInstantiations traverses the AST and applies the global substitution
 // to any Instantiation maps in CallExpressions.
-func (a *Analyzer) finalizeInstantiations(node ast.Node, subst typesystem.Subst) {
+func (a *Analyzer) finalizeInstantiations(node ast.Node, subst typesystem.Subst, depth int) {
 	if node == nil {
 		return
+	}
+	if depth > MaxASTDepth {
+		return
+	}
+
+	// Check cancellation periodically
+	// Use inferCtx for context access
+	if a.inferCtx != nil && a.inferCtx.Context != nil {
+		if a.inferCtx.Context.Err() != nil {
+			return
+		}
 	}
 
 	// Process CallExpression
@@ -747,88 +871,88 @@ func (a *Analyzer) finalizeInstantiations(node ast.Node, subst typesystem.Subst)
 	switch n := node.(type) {
 	case *ast.Program:
 		for _, stmt := range n.Statements {
-			a.finalizeInstantiations(stmt, subst)
+			a.finalizeInstantiations(stmt, subst, depth+1)
 		}
 	case *ast.BlockStatement:
 		for _, stmt := range n.Statements {
-			a.finalizeInstantiations(stmt, subst)
+			a.finalizeInstantiations(stmt, subst, depth+1)
 		}
 	case *ast.ExpressionStatement:
-		a.finalizeInstantiations(n.Expression, subst)
+		a.finalizeInstantiations(n.Expression, subst, depth+1)
 	case *ast.ConstantDeclaration:
-		a.finalizeInstantiations(n.Value, subst)
+		a.finalizeInstantiations(n.Value, subst, depth+1)
 	case *ast.FunctionStatement:
 		if n.Body != nil {
-			a.finalizeInstantiations(n.Body, subst)
+			a.finalizeInstantiations(n.Body, subst, depth+1)
 		}
 	case *ast.FunctionLiteral:
 		if n.Body != nil {
-			a.finalizeInstantiations(n.Body, subst)
+			a.finalizeInstantiations(n.Body, subst, depth+1)
 		}
 	case *ast.CallExpression:
-		a.finalizeInstantiations(n.Function, subst)
+		a.finalizeInstantiations(n.Function, subst, depth+1)
 		for _, arg := range n.Arguments {
-			a.finalizeInstantiations(arg, subst)
+			a.finalizeInstantiations(arg, subst, depth+1)
 		}
 	case *ast.InfixExpression:
-		a.finalizeInstantiations(n.Left, subst)
-		a.finalizeInstantiations(n.Right, subst)
+		a.finalizeInstantiations(n.Left, subst, depth+1)
+		a.finalizeInstantiations(n.Right, subst, depth+1)
 	case *ast.PrefixExpression:
-		a.finalizeInstantiations(n.Right, subst)
+		a.finalizeInstantiations(n.Right, subst, depth+1)
 	case *ast.PostfixExpression:
-		a.finalizeInstantiations(n.Left, subst)
+		a.finalizeInstantiations(n.Left, subst, depth+1)
 	case *ast.IfExpression:
-		a.finalizeInstantiations(n.Condition, subst)
+		a.finalizeInstantiations(n.Condition, subst, depth+1)
 		if n.Consequence != nil {
-			a.finalizeInstantiations(n.Consequence, subst)
+			a.finalizeInstantiations(n.Consequence, subst, depth+1)
 		}
 		if n.Alternative != nil {
-			a.finalizeInstantiations(n.Alternative, subst)
+			a.finalizeInstantiations(n.Alternative, subst, depth+1)
 		}
 	case *ast.MatchExpression:
-		a.finalizeInstantiations(n.Expression, subst)
+		a.finalizeInstantiations(n.Expression, subst, depth+1)
 		for _, arm := range n.Arms {
 			if arm.Guard != nil {
-				a.finalizeInstantiations(arm.Guard, subst)
+				a.finalizeInstantiations(arm.Guard, subst, depth+1)
 			}
-			a.finalizeInstantiations(arm.Expression, subst)
+			a.finalizeInstantiations(arm.Expression, subst, depth+1)
 		}
 	case *ast.AssignExpression:
-		a.finalizeInstantiations(n.Left, subst)
-		a.finalizeInstantiations(n.Value, subst)
+		a.finalizeInstantiations(n.Left, subst, depth+1)
+		a.finalizeInstantiations(n.Value, subst, depth+1)
 	case *ast.AnnotatedExpression:
-		a.finalizeInstantiations(n.Expression, subst)
+		a.finalizeInstantiations(n.Expression, subst, depth+1)
 	case *ast.TupleLiteral:
 		for _, elem := range n.Elements {
-			a.finalizeInstantiations(elem, subst)
+			a.finalizeInstantiations(elem, subst, depth+1)
 		}
 	case *ast.ListLiteral:
 		for _, elem := range n.Elements {
-			a.finalizeInstantiations(elem, subst)
+			a.finalizeInstantiations(elem, subst, depth+1)
 		}
 	case *ast.MapLiteral:
 		for _, pair := range n.Pairs {
-			a.finalizeInstantiations(pair.Key, subst)
-			a.finalizeInstantiations(pair.Value, subst)
+			a.finalizeInstantiations(pair.Key, subst, depth+1)
+			a.finalizeInstantiations(pair.Value, subst, depth+1)
 		}
 	case *ast.RecordLiteral:
 		for _, val := range n.Fields {
-			a.finalizeInstantiations(val, subst)
+			a.finalizeInstantiations(val, subst, depth+1)
 		}
-		a.finalizeInstantiations(n.Spread, subst)
+		a.finalizeInstantiations(n.Spread, subst, depth+1)
 	case *ast.ForExpression:
-		a.finalizeInstantiations(n.Initializer, subst)
-		a.finalizeInstantiations(n.Condition, subst)
-		a.finalizeInstantiations(n.Iterable, subst)
-		a.finalizeInstantiations(n.Body, subst)
+		a.finalizeInstantiations(n.Initializer, subst, depth+1)
+		a.finalizeInstantiations(n.Condition, subst, depth+1)
+		a.finalizeInstantiations(n.Iterable, subst, depth+1)
+		a.finalizeInstantiations(n.Body, subst, depth+1)
 	case *ast.SpreadExpression:
-		a.finalizeInstantiations(n.Expression, subst)
+		a.finalizeInstantiations(n.Expression, subst, depth+1)
 	case *ast.MemberExpression:
-		a.finalizeInstantiations(n.Left, subst)
+		a.finalizeInstantiations(n.Left, subst, depth+1)
 	case *ast.IndexExpression:
-		a.finalizeInstantiations(n.Left, subst)
-		a.finalizeInstantiations(n.Index, subst)
+		a.finalizeInstantiations(n.Left, subst, depth+1)
+		a.finalizeInstantiations(n.Index, subst, depth+1)
 	case *ast.TypeApplicationExpression:
-		a.finalizeInstantiations(n.Expression, subst)
+		a.finalizeInstantiations(n.Expression, subst, depth+1)
 	}
 }

@@ -404,7 +404,7 @@ func inferMemberExpression(ctx *InferenceContext, n *ast.MemberExpression, table
 				// Let's assume single param for dot notation for now.
 			} else {
 				// Solve Witness
-				witness, err := ctx.SolveWitness(n, traitName, resolvedArgs, table)
+				witness, err := ctx.SolveWitness(n, traitName, resolvedArgs, table, 0)
 				if err == nil {
 					// Found Witness!
 					n.Dictionary = witness

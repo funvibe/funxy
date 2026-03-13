@@ -4,24 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/funvibe/funxy/internal/typesystem"
-	"strings"
 )
 
 // JSON encoding/decoding functions for lib/json
 
-// jsonEncode converts any Object to a JSON string
-func jsonEncode(obj Object) (string, error) {
+// jsonEncode converts any Object to a JSON byte slice
+func jsonEncode(obj Object) ([]byte, error) {
 	value, err := objectToGo(obj)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	bytes, err := json.Marshal(value)
-	if err != nil {
-		return "", fmt.Errorf("JSON encoding error: %v", err)
-	}
-
-	return string(bytes), nil
+	return json.Marshal(value)
 }
 
 // objectToGo converts an Object to a Go value suitable for json.Marshal
@@ -41,7 +35,7 @@ func objectToGo(obj Object) (interface{}, error) {
 		// Check if it's a string (List<Char>) - but only if non-empty
 		// Empty list should be encoded as [] not ""
 		if v.len() > 0 && isStringListJson(v) {
-			return listToStringJson(v), nil
+			return ListToString(v), nil
 		}
 		// Regular list -> JSON array
 		arr := make([]interface{}, v.len())
@@ -131,7 +125,7 @@ func inferFromJson(data interface{}, e *Evaluator) (Object, error) {
 		}
 		return &Float{Value: v}, nil
 	case string:
-		return stringToListJson(v), nil
+		return StringToList(v), nil
 	case []interface{}:
 		elements := make([]Object, len(v))
 		for i, item := range v {
@@ -170,27 +164,6 @@ func isStringListJson(l *List) bool {
 	return true
 }
 
-// listToStringJson converts List<Char> to Go string
-func listToStringJson(l *List) string {
-	var sb strings.Builder
-	for _, el := range l.ToSlice() {
-		if c, ok := el.(*Char); ok {
-			sb.WriteRune(rune(c.Value))
-		}
-	}
-	return sb.String()
-}
-
-// stringToListJson converts Go string to List<Char>
-func stringToListJson(s string) *List {
-	runes := []rune(s)
-	elements := make([]Object, len(runes))
-	for i, r := range runes {
-		elements[i] = &Char{Value: int64(r)}
-	}
-	return newListWithType(elements, "Char")
-}
-
 // makeOkJson creates Result.Ok
 func makeOkJson(value Object) *DataInstance {
 	return &DataInstance{Name: "Ok", TypeName: "Result", Fields: []Object{value}}
@@ -219,12 +192,13 @@ func RegisterJsonBuiltins(env *Environment) {
 // JsonBuiltins returns built-in functions for lib/json virtual package
 func JsonBuiltins() map[string]*Builtin {
 	return map[string]*Builtin{
-		"jsonEncode":    {Name: "jsonEncode", Fn: builtinEncode},
-		"jsonDecode":    {Name: "jsonDecode", Fn: builtinDecode},
-		"jsonParse":     {Name: "jsonParse", Fn: builtinParseJson},
-		"jsonFromValue": {Name: "jsonFromValue", Fn: builtinToJson},
-		"jsonGet":       {Name: "jsonGet", Fn: builtinJsonGet},
-		"jsonKeys":      {Name: "jsonKeys", Fn: builtinJsonKeys},
+		"jsonEncode":      {Name: "jsonEncode", Fn: builtinEncode},
+		"jsonEncodeBytes": {Name: "jsonEncodeBytes", Fn: builtinEncodeBytes},
+		"jsonDecode":      {Name: "jsonDecode", Fn: builtinDecode},
+		"jsonParse":       {Name: "jsonParse", Fn: builtinParseJson},
+		"jsonFromValue":   {Name: "jsonFromValue", Fn: builtinToJson},
+		"jsonGet":         {Name: "jsonGet", Fn: builtinJsonGet},
+		"jsonKeys":        {Name: "jsonKeys", Fn: builtinJsonKeys},
 	}
 }
 
@@ -239,7 +213,19 @@ func builtinEncode(e *Evaluator, args ...Object) Object {
 	if err != nil {
 		return makeFailStr(err.Error())
 	}
-	return stringToListJson(result)
+	return StringToList(string(result))
+}
+
+func builtinEncodeBytes(e *Evaluator, args ...Object) Object {
+	if len(args) != 1 {
+		return newError("encodeBytes requires exactly 1 argument")
+	}
+
+	result, err := jsonEncode(args[0])
+	if err != nil {
+		return makeFailStr(err.Error())
+	}
+	return BytesFromSlice(result)
 }
 
 func builtinDecode(e *Evaluator, args ...Object) Object {
@@ -250,7 +236,7 @@ func builtinDecode(e *Evaluator, args ...Object) Object {
 	// Get JSON string
 	jsonStr := ""
 	if list, ok := args[0].(*List); ok && isStringListJson(list) {
-		jsonStr = listToStringJson(list)
+		jsonStr = ListToString(list)
 	} else {
 		return makeFailStr("decode argument must be a String")
 	}
@@ -287,7 +273,7 @@ func builtinParseJson(e *Evaluator, args ...Object) Object {
 
 	jsonStr := ""
 	if list, ok := args[0].(*List); ok && isStringListJson(list) {
-		jsonStr = listToStringJson(list)
+		jsonStr = ListToString(list)
 	} else {
 		return makeFailStr("parseJson argument must be a String")
 	}
@@ -320,7 +306,7 @@ func builtinJsonGet(e *Evaluator, args ...Object) Object {
 	if !ok || !isStringListJson(keyList) {
 		return newError("jsonGet second argument must be a String")
 	}
-	key := listToStringJson(keyList)
+	key := ListToString(keyList)
 
 	// Check if json is JObj
 	if di, ok := json.(*DataInstance); ok && di.Name == "JObj" {
@@ -329,7 +315,7 @@ func builtinJsonGet(e *Evaluator, args ...Object) Object {
 				for _, elem := range pairList.ToSlice() {
 					if tuple, ok := elem.(*Tuple); ok && len(tuple.Elements) >= 2 {
 						if keyStr, ok := tuple.Elements[0].(*List); ok && isStringListJson(keyStr) {
-							if listToStringJson(keyStr) == key {
+							if ListToString(keyStr) == key {
 								return makeSome(tuple.Elements[1])
 							}
 						}
@@ -375,7 +361,7 @@ func goToJsonADT(data interface{}) Object {
 	case float64:
 		return &DataInstance{Name: "JNum", Fields: []Object{&Float{Value: v}}, TypeName: "Json"}
 	case string:
-		return &DataInstance{Name: "JStr", Fields: []Object{stringToListJson(v)}, TypeName: "Json"}
+		return &DataInstance{Name: "JStr", Fields: []Object{StringToList(v)}, TypeName: "Json"}
 	case []interface{}:
 		elements := make([]Object, len(v))
 		for i, item := range v {
@@ -386,7 +372,7 @@ func goToJsonADT(data interface{}) Object {
 	case map[string]interface{}:
 		pairs := make([]Object, 0, len(v))
 		for key, val := range v {
-			pair := &Tuple{Elements: []Object{stringToListJson(key), goToJsonADT(val)}}
+			pair := &Tuple{Elements: []Object{StringToList(key), goToJsonADT(val)}}
 			pairs = append(pairs, pair)
 		}
 		pairList := newList(pairs)
@@ -429,7 +415,7 @@ func objectToJsonADT(obj Object) Object {
 	case *RecordInstance:
 		pairs := make([]Object, 0, len(v.Fields))
 		for _, f := range v.Fields {
-			pair := &Tuple{Elements: []Object{stringToListJson(f.Key), objectToJsonADT(f.Value)}}
+			pair := &Tuple{Elements: []Object{StringToList(f.Key), objectToJsonADT(f.Value)}}
 			pairs = append(pairs, pair)
 		}
 		pairList := newList(pairs)

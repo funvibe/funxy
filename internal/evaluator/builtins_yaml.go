@@ -45,7 +45,7 @@ func inferFromYaml(data interface{}) (Object, error) {
 		}
 		return &Float{Value: v}, nil
 	case string:
-		return stringToListJson(v), nil
+		return StringToList(v), nil
 	case []interface{}:
 		elements := make([]Object, len(v))
 		for i, item := range v {

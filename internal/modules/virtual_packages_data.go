@@ -51,6 +51,12 @@ func initJsonPackage() {
 				Params:     []typesystem.Type{typesystem.TVar{Name: "A"}},
 				ReturnType: stringType,
 			},
+			// jsonEncodeBytes(value) -> Bytes
+			// Encodes any value to JSON bytes
+			"jsonEncodeBytes": typesystem.TFunc{
+				Params:     []typesystem.Type{typesystem.TVar{Name: "A"}},
+				ReturnType: typesystem.Bytes,
+			},
 			// jsonDecode<T>(json: String) -> Result<String, T>
 			// Decodes JSON string to typed value
 			"jsonDecode": typesystem.TFunc{

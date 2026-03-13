@@ -258,7 +258,7 @@ func builtinGrpcServer(e *Evaluator, args ...Object) Object {
 	server := grpc.NewServer()
 	// Clone evaluator to safely run handlers concurrently (similar to http)
 	var serverEval *Evaluator
-	if e.Fork != nil {
+	if e.Forker != nil {
 		serverEval = e.Fork()
 	} else {
 		serverEval = e.Clone()
@@ -375,6 +375,11 @@ func builtinGrpcServeAsync(e *Evaluator, args ...Object) Object {
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Printf("panic in gRPC server: %v\n", r)
+			}
+		}()
 		_ = serverObj.Server.Serve(lis)
 	}()
 
@@ -457,7 +462,13 @@ type FunxyGrpcHandler struct {
 	SD   *desc.ServiceDescriptor
 }
 
-func (h *FunxyGrpcHandler) HandleUnary(ctx context.Context, md *desc.MethodDescriptor, dec func(interface{}) error) (interface{}, error) {
+func (h *FunxyGrpcHandler) HandleUnary(ctx context.Context, md *desc.MethodDescriptor, dec func(interface{}) error) (res interface{}, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = status.Errorf(codes.Internal, "panic in gRPC handler: %v", r)
+		}
+	}()
+
 	if !acquireGrpcConnSlot() {
 		return nil, status.Error(codes.Unavailable, "Too Many Connections")
 	}
@@ -490,7 +501,7 @@ func (h *FunxyGrpcHandler) HandleUnary(ctx context.Context, md *desc.MethodDescr
 
 	// 5. Call function
 	var reqEval *Evaluator
-	if h.Eval.Fork != nil {
+	if h.Eval.Forker != nil {
 		reqEval = h.Eval.Fork()
 	} else {
 		reqEval = h.Eval.Clone()

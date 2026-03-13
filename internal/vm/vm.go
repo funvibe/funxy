@@ -18,6 +18,30 @@ import (
 	"time"
 )
 
+var (
+	// Pools for reusing VM resources
+	vmStackPool = sync.Pool{
+		New: func() interface{} {
+			return make([]Value, InitialStackSize)
+		},
+	}
+	vmFramePool = sync.Pool{
+		New: func() interface{} {
+			return make([]CallFrame, InitialFrameCount)
+		},
+	}
+	// Pool for reusing VM structs to reduce allocation overhead
+	vmStructPool = sync.Pool{
+		New: func() interface{} {
+			return &VM{
+				stack:            make([]Value, InitialStackSize),
+				frames:           make([]CallFrame, InitialFrameCount),
+				typeContextStack: make([]string, 0, 16),
+			}
+		},
+	}
+)
+
 // formatFilePath formats a file path for display in stack traces
 func formatFilePath(file string) string {
 	if file == "" {
@@ -188,6 +212,14 @@ type VM struct {
 
 	// mu protects VM state during concurrent access (e.g. fast path RPC)
 	mu sync.Mutex
+
+	// skipGlobalSync is set by FastForkVM to prevent O(N) global sync in getEvaluator
+	skipGlobalSync bool
+
+	// maxSp tracks the high-water mark of stack usage to optimize clearing
+	maxSp int
+	// maxFrameCount tracks the high-water mark of frame usage to optimize clearing
+	maxFrameCount int
 }
 
 // GlobalBundle holds the embedded bundle for library-only mode.
@@ -330,6 +362,26 @@ func (vm *VM) RegisterTraitMethod(traitName, typeName, methodName string, closur
 	methodMap = methodMap.Put(methodName, closure)
 	typeMap = typeMap.Put(typeName, methodMap)
 	vm.traitMethods = vm.traitMethods.Put(traitName, typeMap)
+
+	// Sync to evaluator if it exists (crucial for builtins using the cached evaluator)
+	vm.evalMu.Lock()
+	if vm.eval != nil {
+		// Get existing table to merge to avoid overwriting other methods
+		var newMethods map[string]evaluator.Object
+		if existingTable, ok := vm.eval.GetClassImplementation(traitName, typeName); ok {
+			newMethods = make(map[string]evaluator.Object, len(existingTable.Methods)+1)
+			for k, v := range existingTable.Methods {
+				newMethods[k] = v
+			}
+		} else {
+			newMethods = make(map[string]evaluator.Object, 1)
+		}
+		newMethods[methodName] = closure
+
+		methodTable := &evaluator.MethodTable{Methods: newMethods}
+		vm.eval.AddClassImplementation(traitName, typeName, methodTable)
+	}
+	vm.evalMu.Unlock()
 }
 
 // LookupTraitMethod finds a trait method for a given type
@@ -639,96 +691,81 @@ func (vm *VM) GetEvaluatorMetrics() map[string]uint64 {
 
 // getEvaluator returns or creates the evaluator for builtin calls
 func (vm *VM) getEvaluator() *evaluator.Evaluator {
+	// Double-checked locking pattern for performance
+	if vm.eval != nil {
+		return vm.eval
+	}
+
 	vm.evalMu.Lock()
 	defer vm.evalMu.Unlock()
 
-	if vm.eval == nil {
-		vm.eval = evaluator.New()
-		vm.eval.Out = vm.out
-		vm.eval.Context = vm.Context // Propagate context
-		vm.eval.BaseDir = vm.baseDir
-		vm.eval.CurrentFile = vm.currentFile
-		// Set VMCallHandler to allow builtins to call VM closures
-		vm.eval.VMCallHandler = vm.vmCallHandler
-		vm.eval.AsyncHandler = vm.asyncHandler
-		vm.eval.CaptureHandler = vm.captureHandler
-		// Initialize GlobalEnv if not set
-		if vm.eval.GlobalEnv == nil {
-			vm.eval.GlobalEnv = evaluator.NewEnvironment()
-		}
-		// Pass type aliases for default() support
-		evalAliases := make(map[string]typesystem.Type)
-		vm.typeAliases.Range(func(key string, val evaluator.Object) bool {
-			if typeObj, ok := val.(*evaluator.TypeObject); ok {
-				evalAliases[key] = typeObj.TypeVal
-			}
-			return true
-		})
-		vm.eval.TypeAliases = evalAliases
-		// Pass trait default implementations
-		vm.eval.TraitDefaults = vm.traitDefaults
-		// Pass type map for type-based dispatch
-		vm.eval.TypeMap = vm.typeMap
-		// Pass embedded resources for file I/O builtins
-		vm.eval.EmbeddedResources = vm.resources
-		// Pass bundle mode flag (affects sysScriptDir behavior)
-		vm.eval.IsBundleMode = vm.isBundleMode
-
-		// Handler for runBytecode
-		vm.eval.RunBytecodeHandler = func(path string) (evaluator.Object, error) {
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil, err
-			}
-			bundle, err := DeserializeAny(data)
-			if err != nil {
-				return nil, err
-			}
-			return RunBundle(bundle)
-		}
-
-		// Set Fork function for thread-safe isolation (e.g. for taskMap)
-		vm.eval.Fork = func() *evaluator.Evaluator {
-			newVM := vm.ForkVM()
-			newEval := newVM.getEvaluator()
-			// Inherit environment for non-compiled code (if any)
-			if vm.eval.GlobalEnv != nil {
-				// We don't want to share the exact same env pointer if it's mutable?
-				// But GlobalEnv in VM is sync'd from vm.globals.
-				// newVM has its own globals map.
-				// newEval.GlobalEnv should be initialized from newVM.globals.
-				// But what about closures capturing env?
-				// VM closures use Upvalues, not env.
-				// Tree-walk closures use env.
-				// If we have mixed code, we might need env copy.
-				// newEval.GlobalEnv is already initialized by getEvaluator().
-				// But let's copy local env if we were inside a function?
-				// No, Fork() is called from builtinTaskMap which has 'e'.
-				// 'e' is the evaluator of the caller.
-				// If caller has local env, Clone() copies it.
-				// Fork() should probably do the same?
-				// But vm.getEvaluator() creates a fresh evaluator with EMPTY local env?
-				// Wait. vm.eval is the evaluator for BUILTINS. It doesn't track local env of running VM code.
-				// VM tracks locals in stack.
-				// So vm.eval usually has only GlobalEnv.
-				// So we are good.
-			}
-			return newEval
-		}
-
-		// Register FP traits (Semigroup, Monad, etc.) and operator mappings
-		evaluator.RegisterFPTraits(vm.eval, vm.eval.GlobalEnv)
+	if vm.eval != nil {
+		return vm.eval
 	}
+
+	e := evaluator.New()
+	e.Out = vm.out
+	e.Context = vm.Context // Propagate context
+	e.BaseDir = vm.baseDir
+	e.CurrentFile = vm.currentFile
+	// Set VMCallHandler to allow builtins to call VM closures
+	e.VMCallHandler = vm.vmCallHandler
+	e.AsyncHandler = vm.asyncHandler
+	e.CaptureHandler = vm.captureHandler
+	// Initialize GlobalEnv if not set
+	if e.GlobalEnv == nil {
+		e.GlobalEnv = evaluator.NewEnvironment()
+	}
+	// Pass type aliases for default() support
+	evalAliases := make(map[string]typesystem.Type)
+	vm.typeAliases.Range(func(key string, val evaluator.Object) bool {
+		if typeObj, ok := val.(*evaluator.TypeObject); ok {
+			evalAliases[key] = typeObj.TypeVal
+		}
+		return true
+	})
+	e.TypeAliases = evalAliases
+	// Pass trait default implementations
+	e.TraitDefaults = vm.traitDefaults
+	// Pass type map for type-based dispatch
+	e.TypeMap = vm.typeMap
+	// Pass embedded resources for file I/O builtins
+	e.EmbeddedResources = vm.resources
+	// Pass bundle mode flag (affects sysScriptDir behavior)
+	e.IsBundleMode = vm.isBundleMode
+
+	// Handler for runBytecode
+	e.RunBytecodeHandler = func(path string) (evaluator.Object, error) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		bundle, err := DeserializeAny(data)
+		if err != nil {
+			return nil, err
+		}
+		return RunBundle(bundle)
+	}
+
+	// Set Forker for thread-safe isolation (e.g. for taskMap)
+	e.Forker = vm
+
+	// Register FP traits (Semigroup, Monad, etc.) and operator mappings
+	evaluator.RegisterFPTraits(e, e.GlobalEnv)
+
 	// Sync VM globals to evaluator's GlobalEnv for trait dispatch
-	if vm.eval.GlobalEnv != nil {
-		if vm.globals != nil && vm.globals.Globals != nil {
+	if e.GlobalEnv != nil {
+		// Optimization: Skip sync if VM was FastForked (COW environment is already consistent with parent)
+		if vm.skipGlobalSync {
+			// Do nothing - globals are visible via delegation to parent env
+		} else if vm.globals != nil && vm.globals.Globals != nil {
 			vm.globals.Globals.Range(func(name string, obj evaluator.Object) bool {
 				// Don't sync if this gets called concurrently from multiple goroutines
 				// the VM map handles its own locking, but GlobalEnv.Set does not
 				// lock the map itself. We must lock it if we are mutating.
 				// For now, getEvaluator should only be called from a single thread
 				// or we need to ensure thread safety of evaluator's GlobalEnv
-				vm.eval.GlobalEnv.Set(name, obj)
+				e.GlobalEnv.Set(name, obj)
 				return true
 			})
 		}
@@ -751,19 +788,22 @@ func (vm *VM) getEvaluator() *evaluator.Evaluator {
 			// This prevents empty entries in vm.traitMethods (from unknown source)
 			// from clobbering builtin instances.
 			if len(methodTable.Methods) == 0 {
-				if existing, ok := vm.eval.GetClassImplementation(traitName, typeName); ok {
+				if existing, ok := e.GetClassImplementation(traitName, typeName); ok {
 					if len(existing.Methods) > 0 {
 						return true
 					}
 				}
 			}
 
-			vm.eval.AddClassImplementation(traitName, typeName, methodTable)
+			e.AddClassImplementation(traitName, typeName, methodTable)
 			return true
 		})
 		return true
 	})
-	return vm.eval
+
+	// Publish initialized evaluator
+	vm.eval = e
+	return e
 }
 
 // getDefaultForRecord creates a default value for a record type
@@ -917,6 +957,9 @@ func (vm *VM) vmCallHandler(closure evaluator.Object, args []evaluator.Object) e
 	frame.ExplicitTypeContextDepth = len(vm.typeContextStack)
 
 	vm.frameCount++
+	if vm.frameCount > vm.maxFrameCount {
+		vm.maxFrameCount = vm.frameCount
+	}
 	vm.frame = frame
 
 	// Execute until this call returns
@@ -1102,6 +1145,9 @@ func (vm *VM) Run(chunk *Chunk) (result evaluator.Object, err error) {
 
 	// Set up the initial frame for top-level code
 	vm.frameCount = 1
+	if vm.maxFrameCount < 1 {
+		vm.maxFrameCount = 1
+	}
 	vm.frames[0] = CallFrame{
 		closure:                  scriptClosure,
 		chunk:                    chunk,
@@ -1296,6 +1342,10 @@ func (vm *VM) push(obj Value) {
 
 	vm.stack[vm.sp] = obj
 	vm.sp++
+	// Track high-water mark for efficient clearing
+	if vm.sp > vm.maxSp {
+		vm.maxSp = vm.sp
+	}
 }
 
 func (vm *VM) pop() Value {
@@ -1814,6 +1864,192 @@ func (vm *VM) cloneEvaluatorTo(newVM *VM) {
 	vm.evalMu.Unlock()
 }
 
+// Release returns resources to the pool.
+func (vm *VM) Release() {
+	// 1. Release Evaluator resources first
+	if vm.eval != nil {
+		e := vm.eval
+		vm.eval = nil // Detach first to prevent further access
+
+		// Only call Release on the evaluator if it has a ReleaseHandler.
+		// If ReleaseHandler is nil, it implies that either:
+		// 1. The evaluator initiated this Release() call (via its ReleaseHandler),
+		//    in which case we must NOT call e.Release() back to avoid recursion and use-after-free.
+		// 2. The evaluator was not properly initialized or doesn't own this VM.
+		if e.ReleaseHandler != nil {
+			e.ReleaseHandler = nil // Break potential cycle
+			e.Release()            // Release evaluator resources
+		}
+	}
+
+	// 2. Release VM resources
+	// Reset slices but keep underlying array for pooling
+	// Clearing contents to avoid memory leaks (references)
+	// We must restore full capacity to clear everything that might have been used
+	vm.stack = vm.stack[:cap(vm.stack)]
+	// Optimization: Only clear up to maxSp (high-water mark) to avoid O(Capacity) cost
+	clearLimit := vm.maxSp
+	if clearLimit > len(vm.stack) {
+		clearLimit = len(vm.stack)
+	}
+	// Use range loop for memclr optimization on the used segment
+	for i := range vm.stack[:clearLimit] {
+		vm.stack[i] = Value{}
+	}
+
+	vm.frames = vm.frames[:cap(vm.frames)]
+	frameClearLimit := vm.maxFrameCount
+	if frameClearLimit > len(vm.frames) {
+		frameClearLimit = len(vm.frames)
+	}
+	for i := range vm.frames[:frameClearLimit] {
+		vm.frames[i] = CallFrame{}
+	}
+
+	vm.typeContextStack = vm.typeContextStack[:0]
+
+	// Reset other fields
+	vm.sp = 0
+	vm.maxSp = 0
+	vm.frameCount = 0
+	vm.maxFrameCount = 0
+	vm.frame = nil
+	vm.openUpvalues = nil
+	// Don't reset globals/maps as they are pointers and will be overwritten on reuse
+
+	// Return ModuleScope to pool if it exists
+	if vm.globals != nil {
+		moduleScopePool.Put(vm.globals)
+		vm.globals = nil
+	}
+
+	// Return VM struct to pool
+	vmStructPool.Put(vm)
+}
+
+// fastCloneEvaluatorTo creates a thread-safe copy of the evaluator using FastFork
+func (vm *VM) fastCloneEvaluatorTo(newVM *VM) {
+	// Optimization: Optimistic read of vm.eval without lock.
+	// This is safe if vm is stable (e.g. serverVM snapshot) or thread-local.
+	// For httpServe, serverVM is initialized before requests and is read-only.
+	if vm.eval != nil {
+		newVM.evalMu.Lock()
+		// Use FastFork for lightweight cloning (O(1) environment + pools)
+		newVM.eval = vm.eval.FastFork()
+		newVM.eval.VMCallHandler = newVM.vmCallHandler
+		newVM.eval.AsyncHandler = newVM.asyncHandler
+		newVM.eval.CaptureHandler = newVM.captureHandler
+		newVM.evalMu.Unlock()
+		return
+	}
+
+	vm.evalMu.Lock()
+	if vm.eval != nil {
+		newVM.evalMu.Lock()
+		// Use FastFork for lightweight cloning (O(1) environment + pools)
+		newVM.eval = vm.eval.FastFork()
+		newVM.eval.VMCallHandler = newVM.vmCallHandler
+		newVM.eval.AsyncHandler = newVM.asyncHandler
+		newVM.eval.CaptureHandler = newVM.captureHandler
+		newVM.evalMu.Unlock()
+	}
+	vm.evalMu.Unlock()
+}
+
+// ModuleScope wraps globals for shared access
+type ModuleScope struct {
+	Globals *PersistentMap
+}
+
+// Global pool for ModuleScope to reduce allocation
+var moduleScopePool = sync.Pool{
+	New: func() interface{} {
+		return &ModuleScope{}
+	},
+}
+
+// FastForkVM creates a thread-safe copy of the VM using pooled resources
+func (vm *VM) FastForkVM() *VM {
+	// Use VM struct pool
+	newVM := vmStructPool.Get().(*VM)
+
+	// Use ModuleScope pool
+	scope := moduleScopePool.Get().(*ModuleScope)
+	scope.Globals = vm.globals.Globals
+	newVM.globals = scope
+
+	// Reset/Initialize fields manually (faster than struct literal)
+	newVM.traitMethods = vm.traitMethods
+	newVM.extensionMethods = vm.extensionMethods
+	newVM.builtinTraitMethods = vm.builtinTraitMethods
+	newVM.typeAliases = vm.typeAliases
+	newVM.traitDefaults = vm.traitDefaults
+	newVM.compiledTraitDefaults = vm.compiledTraitDefaults
+	newVM.resources = vm.resources
+	newVM.isBundleMode = vm.isBundleMode
+	newVM.loader = vm.loader
+	newVM.baseDir = vm.baseDir
+	newVM.currentFile = vm.currentFile
+	newVM.moduleCache = vm.moduleCache
+	newVM.bundle = vm.bundle
+	newVM.typeMap = vm.typeMap
+	newVM.out = vm.out
+	newVM.debugger = vm.debugger
+	newVM.Context = vm.Context
+	newVM.skipGlobalSync = true
+	newVM.sp = 0
+	newVM.frameCount = 0
+	newVM.InstructionCount = 0
+	newVM.AllocatedBytes = 0
+	newVM.frame = nil
+	newVM.openUpvalues = nil
+	newVM.eval = nil // Ensure eval is nil before cloning
+	// Reset high-water marks for new usage
+	newVM.maxSp = 0
+	newVM.maxFrameCount = 0
+
+	// Ensure slices are ready (if reused from pool)
+	if cap(newVM.stack) < InitialStackSize {
+		newVM.stack = make([]Value, InitialStackSize)
+	} else {
+		newVM.stack = newVM.stack[:cap(newVM.stack)] // Restore full capacity
+	}
+	if cap(newVM.frames) < InitialFrameCount {
+		newVM.frames = make([]CallFrame, InitialFrameCount)
+	} else {
+		newVM.frames = newVM.frames[:cap(newVM.frames)] // Restore full capacity
+	}
+	if cap(newVM.typeContextStack) < 16 {
+		newVM.typeContextStack = make([]string, 0, 16)
+	} else {
+		newVM.typeContextStack = newVM.typeContextStack[:0]
+	}
+
+	vm.fastCloneEvaluatorTo(newVM)
+
+	// CRITICAL: Rebind Fork to use the new VM to avoid contention on parent VM's lock
+	// and ensure isolation.
+	if newVM.eval != nil {
+		newVM.eval.Forker = newVM
+	}
+
+	return newVM
+}
+
+// Fork implements evaluator.Forker interface
+func (vm *VM) Fork() *evaluator.Evaluator {
+	// Use FastForkVM for better performance
+	newVM := vm.FastForkVM()
+	newEval := newVM.getEvaluator()
+
+	// Set ReleaseHandler to clean up VM resources
+	newEval.ReleaseHandler = func() {
+		newVM.Release()
+	}
+
+	return newEval
+}
+
 // ForkVM creates a thread-safe copy of the VM for isolated execution
 func (vm *VM) ForkVM() *VM {
 	newVM := New()
@@ -1924,9 +2160,15 @@ func (vm *VM) asyncHandler(fn evaluator.Object, args []evaluator.Object) evaluat
 		base:  0,
 	}
 	newVM.frameCount = 1
+	newVM.maxFrameCount = 1
 	newVM.frame = &newVM.frames[0]
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				task.Complete(&evaluator.Error{Message: fmt.Sprintf("panic in async task: %v", r)})
+			}
+		}()
 		evaluator.AcquirePoolSlot()
 		defer evaluator.ReleasePoolSlot()
 
@@ -1982,50 +2224,17 @@ func (vm *VM) RegisterFPTraits() {
 
 	// Copy symbols from env to globals
 	env.GetStore().Range(func(name string, val evaluator.Object) bool {
+		// Optimization: Don't overwrite (++) builtin with ClassMethod to keep it fast for String/List.
+		// This aligns Standalone mode with VMM mode performance for string concatenation.
+		// Users needing polymorphic concatenation should use (<>) (Semigroup) or explicit trait method.
+		if name == "(++)" {
+			if existing := vm.globals.Globals.Get(name); existing != nil {
+				if _, ok := existing.(*evaluator.Builtin); ok {
+					return true // Skip overwrite if an optimized Builtin already exists for (++)
+				}
+			}
+		}
 		vm.globals.Globals = vm.globals.Globals.Put(name, val)
 		return true
 	})
-
-	// Copy trait implementations from evaluator to VM
-	for _, traitMapObj := range e.ClassImplementations.Items() {
-		traitName := traitMapObj.Key.(*evaluator.StringKey).Value
-		typesMap := traitMapObj.Value.(*evaluator.PersistentMap)
-
-		// traitMethods[traitName]
-		var typeMap *PersistentMap
-		if val := vm.traitMethods.Get(traitName); val != nil {
-			typeMap = val.(*PersistentMap)
-		} else {
-			typeMap = EmptyMap()
-		}
-
-		for _, typeMapObj := range typesMap.Items() {
-			typeName := typeMapObj.Key.(*evaluator.StringKey).Value
-			methodTableObj := typeMapObj.Value
-			if methodTable, ok := methodTableObj.(*evaluator.MethodTable); ok {
-				// traitMethods[traitName][typeName]
-				var methodMap *PersistentMap
-				if existing := typeMap.Get(typeName); existing != nil {
-					methodMap = existing.(*PersistentMap)
-				} else {
-					methodMap = EmptyMap()
-				}
-
-				for methodName, method := range methodTable.Methods {
-					method := method // Capture loop var
-					key := traitName + "." + typeName + "." + methodName
-
-					vm.builtinTraitMethods = vm.builtinTraitMethods.Put(key, &BuiltinClosure{
-						Name: methodName,
-						Fn: func(args []evaluator.Object) evaluator.Object {
-							return e.ApplyFunction(method, args)
-						},
-					})
-				}
-				typeMap = typeMap.Put(typeName, methodMap)
-			}
-		}
-
-		vm.traitMethods = vm.traitMethods.Put(traitName, typeMap)
-	}
 }

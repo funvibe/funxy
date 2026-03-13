@@ -9,7 +9,33 @@ import (
 	"github.com/funvibe/funxy/internal/typesystem"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
+)
+
+var (
+	// Pools for reusing slice allocations in FastFork
+	callStackPool = sync.Pool{
+		New: func() interface{} {
+			return make([]CallFrame, 0, 64)
+		},
+	}
+	witnessStackPool = sync.Pool{
+		New: func() interface{} {
+			return make([]map[string][]typesystem.Type, 0, 16)
+		},
+	}
+	typeContextStackPool = sync.Pool{
+		New: func() interface{} {
+			return make([]string, 0, 16)
+		},
+	}
+	// Pool for Evaluator structs
+	evaluatorPool = sync.Pool{
+		New: func() interface{} {
+			return &Evaluator{}
+		},
+	}
 )
 
 // CallFrame represents a single frame in the call stack
@@ -142,8 +168,8 @@ type Evaluator struct {
 	// CurrentEnv stores the current environment being evaluated (for witness lookup)
 	CurrentEnv *Environment
 
-	// Fork creates a thread-safe copy of the evaluator for background execution
-	Fork func() *Evaluator
+	// Forker interface allows creating a thread-safe copy of the evaluator
+	Forker Forker
 
 	// EmbeddedResources holds static files embedded via --embed during build.
 	// File I/O builtins check this map before falling back to the filesystem.
@@ -163,6 +189,22 @@ type Evaluator struct {
 
 	// RunBytecodeHandler handles running compiled bytecode (.fbc) from a file path.
 	RunBytecodeHandler func(path string) (Object, error)
+
+	// ReleaseHandler is a callback for cleaning up resources (e.g. returning VM stack to pool)
+	ReleaseHandler func()
+}
+
+// Forker interface for creating a new evaluator instance
+type Forker interface {
+	Fork() *Evaluator
+}
+
+// Fork creates a thread-safe copy of the evaluator for background execution
+func (e *Evaluator) Fork() *Evaluator {
+	if e.Forker != nil {
+		return e.Forker.Fork()
+	}
+	return nil
 }
 
 // ModuleLoader interface (same as in Analyzer, should probably be in a common package)
@@ -332,6 +374,83 @@ func (e *Evaluator) SetLoader(l ModuleLoader) {
 	e.Loader = l
 }
 
+// FastFork creates a lightweight copy of the evaluator for request handling.
+func (e *Evaluator) FastFork() *Evaluator {
+	// Get from pool
+	child := evaluatorPool.Get().(*Evaluator)
+	// Shallow copy of the struct
+	*child = *e
+
+	// Use pools for mutable stacks to avoid allocation
+	child.CallStack = callStackPool.Get().([]CallFrame)
+	child.WitnessStack = witnessStackPool.Get().([]map[string][]typesystem.Type)
+	child.TypeContextStack = typeContextStackPool.Get().([]string)
+
+	// Create an isolated environment that shadows the parent
+	// Reads fall through to e.GlobalEnv, writes stay in child.GlobalEnv
+	child.GlobalEnv = NewIsolatedEnvironment(e.GlobalEnv)
+
+	// Reset per-request state
+	child.CurrentCallNode = nil
+	child.evalDepth = 0
+	child.InstructionCount = 0
+	child.AllocatedBytes = 0
+	// Child does not inherit the ReleaseHandler (which might close the parent VM)
+	child.ReleaseHandler = nil
+
+	// Ensure Fork points to FastFork for children?
+	// NO. If the parent has a custom Fork (e.g. creating a new VM), we want to preserve it.
+	// FastFork is only for creating the child itself.
+	// If the parent uses default Clone-based Fork, it's fine.
+	// If we overwrite it here, we break VM isolation for nested forks (e.g. tasks inside http handler).
+	// child.Forker = child.Forker (already copied by shallow copy)
+
+	return child
+}
+
+// Release returns resources to the pool.
+// Must be called when a FastFork-ed evaluator is no longer needed.
+func (e *Evaluator) Release() {
+	// Call custom release handler if set (e.g. for VM cleanup)
+	if h := e.ReleaseHandler; h != nil {
+		e.ReleaseHandler = nil // Clear first to prevent recursion/double-release
+		h()
+	}
+
+	if e.GlobalEnv != nil {
+		e.GlobalEnv.Release()
+		e.GlobalEnv = nil
+	}
+
+	// Clear and return CallStack
+	if cap(e.CallStack) > 0 {
+		e.CallStack = e.CallStack[:0]
+		callStackPool.Put(e.CallStack)
+		e.CallStack = nil
+	}
+
+	// Clear and return WitnessStack
+	if cap(e.WitnessStack) > 0 {
+		// Clear references to maps to allow GC
+		for i := range e.WitnessStack {
+			e.WitnessStack[i] = nil
+		}
+		e.WitnessStack = e.WitnessStack[:0]
+		witnessStackPool.Put(e.WitnessStack)
+		e.WitnessStack = nil
+	}
+
+	// Clear and return TypeContextStack
+	if cap(e.TypeContextStack) > 0 {
+		e.TypeContextStack = e.TypeContextStack[:0]
+		typeContextStackPool.Put(e.TypeContextStack)
+		e.TypeContextStack = nil
+	}
+
+	// Return Evaluator struct to pool
+	evaluatorPool.Put(e)
+}
+
 // Clone creates a copy of the evaluator for use in a goroutine
 // Shares immutable state but creates new mutable state
 func (e *Evaluator) Clone() *Evaluator {
@@ -363,7 +482,7 @@ func (e *Evaluator) Clone() *Evaluator {
 		HostToValueHandler:   e.HostToValueHandler,                    // shared
 		EmbeddedResources:    e.EmbeddedResources,                     // shared, read-only
 		IsBundleMode:         e.IsBundleMode,                          // shared
-		Fork:                 e.Fork,                                  // shared
+		Forker:               e.Forker,                                // shared
 	}
 }
 
@@ -849,11 +968,28 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			// Resolve generics using Env (e.g. t -> Int)
 			resolvedType := e.resolveTypeFromEnv(sysType, env)
 
-			witness := make(map[string][]typesystem.Type)
+			// Optimization: Pre-allocate map with expected size (ContextType + Return + Applicative + Monad = ~4)
+			witness := make(map[string][]typesystem.Type, 4)
 			// Generic context dispatch: pass expected result type
 			witness["$ContextType"] = []typesystem.Type{resolvedType}
 			// Also push general return context for backward compatibility
 			witness["$Return"] = []typesystem.Type{resolvedType}
+
+			// Optimization: Allocate slice once
+			typeWitness := []typesystem.Type{resolvedType}
+
+			// Check for rigid vars (e.g. from generic functions) and generic types
+			if _, ok := resolvedType.(typesystem.TVar); ok {
+				// Push witness for generic type variable
+				witness["Applicative"] = typeWitness
+				witness["Monad"] = typeWitness
+			} else if _, ok := resolvedType.(typesystem.TApp); ok {
+				witness["Applicative"] = typeWitness
+				witness["Monad"] = typeWitness
+			} else if _, ok := resolvedType.(typesystem.TCon); ok {
+				witness["Applicative"] = typeWitness
+				witness["Monad"] = typeWitness
+			}
 
 			e.PushWitness(witness)
 			pushedWitness = true
@@ -862,7 +998,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			if annotatedType := e.TypeMap[node]; annotatedType != nil {
 				// Check if annotated type implements Applicative (for pure, etc.)
 				// We'll create a witness map for Applicative trait
-				witnesses := make(map[string][]typesystem.Type)
+				witnesses := make(map[string][]typesystem.Type, 1)
 				// For now, assume if it's a generic type, it might implement Applicative
 				if _, ok := annotatedType.(typesystem.TApp); ok {
 					witnesses["Applicative"] = []typesystem.Type{annotatedType}
@@ -902,16 +1038,24 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		// If value is a nullary ClassMethod (Arity == 0), auto-call with type context
 		if cm, ok := val.(*ClassMethod); ok && cm.Arity == 0 {
 			e.CurrentCallNode = node
+
+			var pushedAutoWitness bool
 			// Push witness again for the auto-call
 			if e.TypeMap != nil {
 				if annotatedType := e.TypeMap[node]; annotatedType != nil {
-					witnesses := make(map[string][]typesystem.Type)
+					witnesses := make(map[string][]typesystem.Type, 1)
 					witnesses["Applicative"] = []typesystem.Type{annotatedType}
 					e.PushWitness(witnesses)
-					defer e.PopWitness()
+					pushedAutoWitness = true
 				}
 			}
+
 			result := e.ApplyFunction(cm, []Object{})
+
+			if pushedAutoWitness {
+				e.PopWitness()
+			}
+
 			if !isError(result) {
 				val = result
 			}
@@ -980,6 +1124,16 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 // For List<Int>, returns "List". For Option<String>, returns "Option".
 // This matches how keys are stored in ClassImplementations for generic types.
 func (e *Evaluator) getDispatchTypeName(obj Object) string {
+	// Special handling for DataInstance to ensure we get the base type name
+	if di, ok := obj.(*DataInstance); ok {
+		// If TypeName is already clean (e.g. "Result"), use it
+		// If it's qualified (e.g. "Result<Int>"), strip it
+		if idx := strings.Index(di.TypeName, "<"); idx > 0 {
+			return di.TypeName[:idx]
+		}
+		return di.TypeName
+	}
+
 	typeName := getRuntimeTypeName(obj)
 	// Check if it's a generic type (e.g. List<Int>) and extract the base
 	if idx := strings.Index(typeName, "<"); idx > 0 {

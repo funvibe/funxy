@@ -2,12 +2,19 @@ package analyzer
 
 // Force update
 import (
+	"context"
 	"fmt"
 	"github.com/funvibe/funxy/internal/ast"
 	"github.com/funvibe/funxy/internal/symbols"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"sort"
 )
+
+// MaxTypeInferenceDepth defines the maximum recursion depth for type inference
+const MaxTypeInferenceDepth = 500
+
+// MaxWitnessDepth defines the maximum recursion depth for witness resolution
+const MaxWitnessDepth = 50
 
 // InferenceContext holds the state for a type inference pass.
 // Using a context instead of global state ensures predictable type variable names
@@ -40,9 +47,14 @@ type InferenceContext struct {
 	// InferredConstraints stores constraints inferred from usage of rigid type variables
 	// These should be added to the function signature.
 	InferredConstraints []Constraint
+	// Recursion depth counter to prevent stack overflow during type inference
+	recursionDepth int
+
 	// BaseCounter tracks the counter start value for this context
 	// Used to distinguish generic parameters (created before) from inference variables (created during this session)
 	BaseCounter int
+	// Context for cancellation
+	Context context.Context
 }
 
 // PendingWitness represents a trait constraint that needs a witness
@@ -289,6 +301,9 @@ func getStandaloneContext() *InferenceContext {
 // This is primarily for external callers like the compiler.
 // Within the analyzer, use InstantiateWithContext instead.
 func Instantiate(t typesystem.Type) typesystem.Type {
+	if t == nil {
+		return nil
+	}
 	return InstantiateWithContext(getStandaloneContext(), t)
 }
 
@@ -448,6 +463,17 @@ func Infer(node ast.Node, table *symbols.SymbolTable, typeMap map[ast.Node]types
 
 // InferWithContext computes the type using an explicit inference context.
 func InferWithContext(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error) {
+	ctx.recursionDepth++
+	defer func() { ctx.recursionDepth-- }()
+
+	if ctx.recursionDepth > MaxTypeInferenceDepth {
+		return nil, nil, inferErrorf(node, "type inference recursion depth limit exceeded")
+	}
+
+	if ctx.Context != nil && ctx.Context.Err() != nil {
+		return nil, nil, fmt.Errorf("analyzer timeout")
+	}
+
 	// Helper to wrap recursive calls
 	recursiveInfer := func(n ast.Node, t *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error) {
 		return InferWithContext(ctx, n, t)
@@ -618,6 +644,9 @@ func InstantiateGenericsWithSubst(ctx *InferenceContext, t typesystem.Type) (typ
 // InstantiateGenerics replaces only generic type variables (those created before the current inference session)
 // with fresh type variables. Inference variables created during this session are preserved.
 func InstantiateGenerics(ctx *InferenceContext, t typesystem.Type) typesystem.Type {
+	if t == nil {
+		return nil
+	}
 	// First handle explicit Forall
 	if forall, ok := t.(typesystem.TForall); ok {
 		return InstantiateForall(ctx, forall)
@@ -630,6 +659,12 @@ func InstantiateGenerics(ctx *InferenceContext, t typesystem.Type) typesystem.Ty
 // InstantiateForall instantiates a polytype (forall a. T) with fresh type variables.
 // It peels off the quantifier and replaces the bound variables in the body.
 func InstantiateForall(ctx *InferenceContext, t typesystem.TForall) typesystem.Type {
+	ctx.recursionDepth++
+	defer func() { ctx.recursionDepth-- }()
+	if ctx.recursionDepth > MaxTypeInferenceDepth {
+		return t.Type
+	}
+
 	subst := make(typesystem.Subst)
 	for _, v := range t.Vars {
 		subst[v.Name] = ctx.FreshVarWithKind(v.Kind())
@@ -657,6 +692,11 @@ func InstantiateForall(ctx *InferenceContext, t typesystem.TForall) typesystem.T
 // InstantiateForallWithSubst instantiates a polytype (forall a. T) with fresh type variables
 // and returns the instantiated type and the substitution used.
 func InstantiateForallWithSubst(ctx *InferenceContext, t typesystem.TForall) (typesystem.Type, typesystem.Subst) {
+	ctx.recursionDepth++
+	defer func() { ctx.recursionDepth-- }()
+	if ctx.recursionDepth > MaxTypeInferenceDepth {
+		return t.Type, nil
+	}
 	subst := make(typesystem.Subst)
 	for _, v := range t.Vars {
 		subst[v.Name] = ctx.FreshVarWithKind(v.Kind())

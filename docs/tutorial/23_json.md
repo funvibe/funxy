@@ -38,6 +38,33 @@ print(jsonEncode(Some(42)))  // 42
 print(jsonEncode(None))      // null
 ```
 
+### `jsonEncodeBytes(value) -> Bytes`
+
+Converts any value to JSON bytes (`Bytes` object).
+
+**When to use:**
+*   **Always for I/O and Networking:** HTTP responses (`httpServe`), HTTP request bodies (`httpPost`), file writing.
+*   **Why:** This is a **Zero-Copy** (or near zero-copy) path. The JSON is generated directly into a byte buffer and wrapped in a `Bytes` object without converting to an intermediate `List<Char>` (String). This significantly reduces memory allocation and GC pressure, providing a massive performance boost for high-throughput applications.
+
+```rust
+import "lib/json" (jsonEncodeBytes)
+import "lib/http" (httpServe)
+
+// High-performance JSON API
+httpServe(8080, \req -> {
+    data = { id: 1, name: "Alice" }
+    // jsonEncodeBytes returns Bytes, which httpServe writes directly to the socket
+    { status: 200, body: jsonEncodeBytes(data), headers: [] }
+})
+```
+
+**Comparison:**
+
+| Function | Returns | Use Case | Performance |
+|----------|---------|----------|-------------|
+| `jsonEncode` | `String` (`List<Char>`) | String manipulation, logging, debug | Slow (allocates list nodes) |
+| `jsonEncodeBytes` | `Bytes` (`[]byte`) | Network I/O, File I/O | **Fast** (Zero-Copy) |
+
 ### Type Mapping (Encode)
 
 | Type | JSON |
