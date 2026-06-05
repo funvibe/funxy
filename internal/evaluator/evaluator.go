@@ -975,42 +975,8 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 			// Also push general return context for backward compatibility
 			witness["$Return"] = []typesystem.Type{resolvedType}
 
-			// Optimization: Allocate slice once
-			typeWitness := []typesystem.Type{resolvedType}
-
-			// Check for rigid vars (e.g. from generic functions) and generic types
-			if _, ok := resolvedType.(typesystem.TVar); ok {
-				// Push witness for generic type variable
-				witness["Applicative"] = typeWitness
-				witness["Monad"] = typeWitness
-			} else if _, ok := resolvedType.(typesystem.TApp); ok {
-				witness["Applicative"] = typeWitness
-				witness["Monad"] = typeWitness
-			} else if _, ok := resolvedType.(typesystem.TCon); ok {
-				witness["Applicative"] = typeWitness
-				witness["Monad"] = typeWitness
-			}
-
 			e.PushWitness(witness)
 			pushedWitness = true
-		} else if e.TypeMap != nil {
-			// Fallback to TypeMap if no explicit annotation in AST (inferred types)
-			if annotatedType := e.TypeMap[node]; annotatedType != nil {
-				// Check if annotated type implements Applicative (for pure, etc.)
-				// We'll create a witness map for Applicative trait
-				witnesses := make(map[string][]typesystem.Type, 1)
-				// For now, assume if it's a generic type, it might implement Applicative
-				if _, ok := annotatedType.(typesystem.TApp); ok {
-					witnesses["Applicative"] = []typesystem.Type{annotatedType}
-					e.PushWitness(witnesses)
-					pushedWitness = true
-				} else if _, ok := annotatedType.(typesystem.TCon); ok {
-					// For simple types, check if they're known Applicative instances
-					witnesses["Applicative"] = []typesystem.Type{annotatedType}
-					e.PushWitness(witnesses)
-					pushedWitness = true
-				}
-			}
 		}
 
 		val := e.Eval(node.Expression, env)
@@ -1039,22 +1005,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		if cm, ok := val.(*ClassMethod); ok && cm.Arity == 0 {
 			e.CurrentCallNode = node
 
-			var pushedAutoWitness bool
-			// Push witness again for the auto-call
-			if e.TypeMap != nil {
-				if annotatedType := e.TypeMap[node]; annotatedType != nil {
-					witnesses := make(map[string][]typesystem.Type, 1)
-					witnesses["Applicative"] = []typesystem.Type{annotatedType}
-					e.PushWitness(witnesses)
-					pushedAutoWitness = true
-				}
-			}
-
 			result := e.ApplyFunction(cm, []Object{})
-
-			if pushedAutoWitness {
-				e.PopWitness()
-			}
 
 			if !isError(result) {
 				val = result

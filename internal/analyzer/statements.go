@@ -830,7 +830,16 @@ func (w *walker) VisitReturnStatement(n *ast.ReturnStatement) {
 		n.Value.Accept(w)
 	}
 
-	// If we are inside a function body, still infer return expression for checking
+	// If we are inside a function body, skip eager inference of the return expression.
+	// The whole body (including this return statement and any local variable definitions
+	// that precede it) is inferred together in analyzeFunctionBody via InferWithContext(n.Body).
+	// Inferring here would fail to see locals defined by earlier statements, since the walk
+	// does not populate the symbol table with local bindings (that happens during body inference).
+	if w.inFunctionBody {
+		return
+	}
+
+	// At top level (e.g. inside lambdas analyzed standalone), infer the return expression for checking
 	if n.Value != nil {
 		if expectedRetType != nil && w.inferCtx != nil {
 			if w.inferCtx.ExpectedReturnTypes == nil {
