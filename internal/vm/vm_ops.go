@@ -420,10 +420,10 @@ func (vm *VM) getIndex(obj, index Value) (Value, error) {
 	case *evaluator.Map:
 		if val, ok := o.Get(idxVal); ok {
 			// Return Some(value) for consistency with tree-walk
-			return ObjVal(&evaluator.DataInstance{Name: "Some", Fields: []evaluator.Object{val}}), nil
+			return ObjVal(evaluator.MakeSome(val)), nil
 		}
 		// Return None for not found
-		return ObjVal(&evaluator.DataInstance{Name: "None", Fields: nil}), nil
+		return ObjVal(evaluator.MakeNone()), nil
 
 	case *evaluator.Bytes:
 		idx, ok := idxVal.(*evaluator.Integer)
@@ -437,10 +437,10 @@ func (vm *VM) getIndex(obj, index Value) (Value, error) {
 		}
 		if i < 0 || i >= len(data) {
 			// Return None for out of bounds
-			return ObjVal(&evaluator.DataInstance{Name: "None", Fields: nil}), nil
+			return ObjVal(evaluator.MakeNone()), nil
 		}
 		// Return Some(byte)
-		return ObjVal(&evaluator.DataInstance{Name: "Some", Fields: []evaluator.Object{&evaluator.Integer{Value: int64(data[i])}}}), nil
+		return ObjVal(evaluator.MakeSome(&evaluator.Integer{Value: int64(data[i])})), nil
 
 	case *evaluator.Bits:
 		idx, ok := idxVal.(*evaluator.Integer)
@@ -454,10 +454,10 @@ func (vm *VM) getIndex(obj, index Value) (Value, error) {
 		}
 		if i < 0 || i >= bitsLen {
 			// Return None for out of bounds
-			return ObjVal(&evaluator.DataInstance{Name: "None", Fields: nil}), nil
+			return ObjVal(evaluator.MakeNone()), nil
 		}
 		// Return Some(bit)
-		return ObjVal(&evaluator.DataInstance{Name: "Some", Fields: []evaluator.Object{&evaluator.Integer{Value: int64(o.Get(i))}}}), nil
+		return ObjVal(evaluator.MakeSome(&evaluator.Integer{Value: int64(o.Get(i))})), nil
 
 	default:
 		return NilVal(), fmt.Errorf("cannot index %s", objVal.Type())

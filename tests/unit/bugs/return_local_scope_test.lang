@@ -1,0 +1,48 @@
+import "lib/test" (*)
+
+// Regression: a `return` referencing a local variable defined earlier in the
+// function body used to fail with "[A006] undefined symbol" because the return
+// expression was eagerly inferred during the walk, before local bindings were
+// registered in the symbol table.
+
+fun returnLocalIdent() -> Int {
+    mode = 5
+    return mode
+}
+
+fun returnLocalTuple() -> (Int, Int) {
+    mode = 5
+    size = 6
+    return (mode, size)
+}
+
+cfg = {
+    mode: "dev"
+    size: 1024
+}
+
+fun returnDestructuredFromRecord() -> (String, Int) {
+    (mode, size) = (cfg.mode, cfg.size)
+    return (mode, size)
+}
+
+fun returnFromLiteralDestructure() -> (String, Int) {
+    (mode, size) = ("dev", 1024)
+    return (mode, size)
+}
+
+testRun("return referencing a local identifier", \ -> {
+    assertEquals(5, returnLocalIdent())
+})
+
+testRun("return referencing locals in a tuple", \ -> {
+    assertEquals((5, 6), returnLocalTuple())
+})
+
+testRun("return tuple destructured from record fields", \ -> {
+    assertEquals(("dev", 1024), returnDestructuredFromRecord())
+})
+
+testRun("return tuple destructured from a tuple literal", \ -> {
+    assertEquals(("dev", 1024), returnFromLiteralDestructure())
+})

@@ -799,8 +799,8 @@ func inferIndexExpression(ctx *InferenceContext, n *ast.IndexExpression, table *
 		totalSubst = subst.Compose(totalSubst)
 	}
 
-	// Handle Bytes indexing: bytes[i] -> Option<Int>
-	if tCon, ok := leftType.(typesystem.TCon); ok && tCon.Name == config.BytesTypeName {
+	// Handle Bytes/Bits indexing: bytes[i] / bits[i] -> Option<Int>
+	if tCon, ok := leftType.(typesystem.TCon); ok && (tCon.Name == config.BytesTypeName || tCon.Name == config.BitsTypeName) {
 		resultType := typesystem.TApp{
 			Constructor: typesystem.TCon{Name: config.OptionTypeName},
 			Args:        []typesystem.Type{typesystem.Int},

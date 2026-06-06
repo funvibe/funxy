@@ -216,6 +216,17 @@ func (e *Evaluator) evalIndexExpression(node *ast.IndexExpression, env *Environm
 		}
 		return makeSome(&Integer{Value: int64(obj.get(idx))})
 
+	case *Bits:
+		// Bits indexing: b[i] -> Option<Int>
+		max := obj.Len()
+		if idx < 0 {
+			idx = max + idx
+		}
+		if idx < 0 || idx >= max {
+			return makeNone() // Out of bounds returns None
+		}
+		return makeSome(&Integer{Value: int64(obj.Get(idx))})
+
 	case *List:
 		max := obj.Len()
 		if idx < 0 {

@@ -1916,6 +1916,9 @@ print(uuidToString(id))
 import "lib/bytes" (*)
 
 b = @"Hello"
+b[0]                    // Some(72) - indexing returns Option<Int>
+b[10]                   // None - out of bounds
+b[-1]                   // Some(111) - last byte
 bytesSlice(b, 0, 3)     // @"Hel"
 bytesConcat(b1, b2)     // b1 ++ b2
 bytesToHex(b)           // "48..."
@@ -1929,6 +1932,9 @@ bytesDecodeInt(b, "big")     // Decode int
 import "lib/bits" (*)
 
 b = #b"1010"
+b[0]                    // Some(1) - indexing returns Option<Int>
+b[10]                   // None - out of bounds
+b[-1]                   // Some(0) - last bit
 bitsGet(b, 0)           // Some(1)
 bitsSet(b, 0, 0)        // #b"0010"
 bitsToBinary(b)         // "1010"

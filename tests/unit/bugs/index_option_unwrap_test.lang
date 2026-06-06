@@ -1,0 +1,60 @@
+import "lib/test" (*)
+
+// Regression: indexing a Map (m[key]), Bytes (b[i]) or Bits (b[i]) returned a
+// Some/None DataInstance without the "Option" TypeName set. It printed as
+// Some(v) but `unwrap` (and other Option helpers that check TypeName) treated
+// it as None, failing with "unwrap: expected Some, got None".
+
+testRun("unwrap on Map index hit returns the value", \ -> {
+    m = %{ "a" => 0, "b" => 5 }
+    assertEquals(0, unwrap(m["a"]))
+    assertEquals(5, unwrap(m["b"]))
+})
+
+testRun("Map index returns proper Option (pattern matches)", \ -> {
+    m = %{ "a" => 7 }
+    hit = match m["a"] {
+        Some(v) -> v
+        None -> -1
+    }
+    miss = match m["missing"] {
+        Some(v) -> v
+        None -> -1
+    }
+    assertEquals(7, hit)
+    assertEquals(-1, miss)
+})
+
+testRun("Map index missing key is None", \ -> {
+    m = %{ "a" => 1 }
+    assert(m["missing"] == None, "missing key yields None")
+})
+
+testRun("Map index Option works with unwrapOr", \ -> {
+    m = %{ "a" => 9 }
+    assertEquals(9, unwrapOr(m["a"], 0))
+    assertEquals(42, unwrapOr(m["missing"], 42))
+})
+
+testRun("Map index with a dynamically built key unwraps", \ -> {
+    stats = %{ "FirstCount" => 0, "SecondCount" => 3 }
+    key = "First" ++ "Count"
+    assertEquals(0, unwrap(stats[key]))
+})
+
+testRun("unwrap on Bytes index hit returns the byte", \ -> {
+    data = @"Hello"
+    assertEquals(72, unwrap(data[0]))   // 'H'
+    assertEquals(111, unwrap(data[4]))  // 'o'
+    assertEquals(111, unwrap(data[-1])) // last byte
+    assert(data[10] == None, "out-of-bounds byte index is None")
+})
+
+testRun("unwrap on Bits index hit returns the bit", \ -> {
+    bits = #b"101"
+    assertEquals(1, unwrap(bits[0]))
+    assertEquals(0, unwrap(bits[1]))
+    assertEquals(1, unwrap(bits[2]))
+    assertEquals(1, unwrap(bits[-1])) // last bit
+    assert(bits[10] == None, "out-of-bounds bit index is None")
+})

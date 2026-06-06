@@ -84,6 +84,12 @@ match bitsGet(b, 0) {
     None -> print("out of bounds")
 }
 
+// Indexing returns Option<Int> (same as bitsGet)
+b[0]    // Some(1)
+b[7]    // Some(0)
+b[10]   // None - out of bounds
+b[-1]   // Some(0) - last bit
+
 // Slice [start, end)
 part = bitsSlice(b, 0, 4)  // #b"1010"
 ```
