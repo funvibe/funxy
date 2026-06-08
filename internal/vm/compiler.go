@@ -37,11 +37,12 @@ const (
 
 // LoopContext tracks loop information for break/continue
 type LoopContext struct {
-	loopStart  int   // Offset of loop start (for continue)
-	breakJumps []int // Offsets of break jumps to patch
-	scopeDepth int   // Scope depth when loop started
-	localCount int   // Local count when loop started
-	slotCount  int   // Slot count when loop started (before loop vars)
+	loopStart          int   // Offset of loop start (for continue)
+	breakJumps         []int // Offsets of break jumps to patch
+	scopeDepth         int   // Scope depth when loop started
+	localCount         int   // Local count when loop started
+	slotCount          int   // Slot count when loop started (before loop vars)
+	loopStartSlotCount int   // Stack slot count expected at loopStart (continue target)
 }
 
 // Compiler compiles AST to bytecode

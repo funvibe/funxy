@@ -1,0 +1,53 @@
+import "lib/test" (*)
+import "lib/list" (nth, nthOr, slice, insert, update)
+
+// lib/list index-based functions should support negative indices,
+// consistent with the native index operator (xs[-1] == last element).
+
+testRun("nth supports negative indices", \ -> {
+    xs = [10, 20, 30]
+    assertEquals(30, nth(xs, -1))
+    assertEquals(20, nth(xs, -2))
+    assertEquals(10, nth(xs, -3))
+    // positive indices still work
+    assertEquals(10, nth(xs, 0))
+    assertEquals(30, nth(xs, 2))
+})
+
+testRun("nthOr supports negative indices", \ -> {
+    xs = [10, 20, 30]
+    assertEquals(30, nthOr(xs, -1, 0))
+    assertEquals(10, nthOr(xs, -3, 0))
+    // out-of-bounds negative falls back to default
+    assertEquals(-99, nthOr(xs, -4, -99))
+    // out-of-bounds positive still falls back to default
+    assertEquals(-1, nthOr(xs, 5, -1))
+})
+
+testRun("slice supports negative from/to (Python-like)", \ -> {
+    xs = [1, 2, 3, 4, 5]
+    assertEquals([3, 4], slice(xs, -3, -1))
+    assertEquals([2, 3, 4], slice(xs, 1, -1))
+    assertEquals([4, 5], slice(xs, -2, 5))
+    assertEquals([1, 2, 3, 4], slice(xs, 0, -1))
+    // all but nothing / full positive range still works
+    assertEquals([1, 2, 3, 4, 5], slice(xs, 0, 5))
+})
+
+testRun("insert supports negative indices", \ -> {
+    xs = [1, 2, 3]
+    assertEquals([1, 2, 99, 3], insert(xs, -1, 99))
+    assertEquals([1, 99, 2, 3], insert(xs, -2, 99))
+    assertEquals([99, 1, 2, 3], insert(xs, -3, 99))
+    // positive indices still work
+    assertEquals([1, 2, 3, 99], insert(xs, 3, 99))
+})
+
+testRun("update supports negative indices", \ -> {
+    xs = [1, 2, 3]
+    assertEquals([1, 2, 99], update(xs, -1, 99))
+    assertEquals([1, 99, 3], update(xs, -2, 99))
+    assertEquals([99, 2, 3], update(xs, -3, 99))
+    // positive indices still work
+    assertEquals([1, 99, 3], update(xs, 1, 99))
+})

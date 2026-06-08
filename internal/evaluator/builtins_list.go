@@ -122,8 +122,13 @@ func builtinNth(e *Evaluator, args ...Object) Object {
 		return newError("nth expects an integer as second argument, got %s", args[1].Type())
 	}
 	n := int(idx.Value)
-	if n < 0 || n >= list.len() {
-		return newError("nth: index %d out of bounds for list of length %d", n, list.len())
+	length := list.len()
+	// Negative indices count from the end (consistent with xs[-1])
+	if n < 0 {
+		n += length
+	}
+	if n < 0 || n >= length {
+		return newError("nth: index %d out of bounds for list of length %d", int(idx.Value), length)
 	}
 	return list.get(n)
 }
@@ -142,7 +147,12 @@ func builtinNthOr(e *Evaluator, args ...Object) Object {
 		return newError("nthOr expects an integer as second argument, got %s", args[1].Type())
 	}
 	n := int(idx.Value)
-	if n < 0 || n >= list.len() {
+	length := list.len()
+	// Negative indices count from the end (consistent with xs[-1])
+	if n < 0 {
+		n += length
+	}
+	if n < 0 || n >= length {
 		return args[2]
 	}
 	return list.get(n)
@@ -245,8 +255,16 @@ func builtinSlice(e *Evaluator, args ...Object) Object {
 	to := int(toArg.Value)
 	length := list.len()
 
+	// Negative indices count from the end (consistent with xs[-1])
+	if from < 0 {
+		from += length
+	}
+	if to < 0 {
+		to += length
+	}
+
 	if from < 0 || to > length || from > to {
-		return newError("slice: indices [%d, %d) out of bounds for list of length %d", from, to, length)
+		return newError("slice: indices [%d, %d) out of bounds for list of length %d", int(fromArg.Value), int(toArg.Value), length)
 	}
 	return list.Slice(from, to)
 }
@@ -862,9 +880,14 @@ func builtinInsert(e *Evaluator, args ...Object) Object {
 	idx := int(idxArg.Value)
 	original := list.ToSlice()
 
+	// Negative indices count from the end (consistent with xs[-1])
+	if idx < 0 {
+		idx += len(original)
+	}
+
 	// Check bounds: 0 <= idx <= len (insert at end is ok)
 	if idx < 0 || idx > len(original) {
-		return newError("insert: index %d out of bounds for list of length %d", idx, len(original))
+		return newError("insert: index %d out of bounds for list of length %d", int(idxArg.Value), len(original))
 	}
 
 	result := make([]Object, len(original)+1)
@@ -893,9 +916,14 @@ func builtinUpdate(e *Evaluator, args ...Object) Object {
 	idx := int(idxArg.Value)
 	original := list.ToSlice()
 
+	// Negative indices count from the end (consistent with xs[-1])
+	if idx < 0 {
+		idx += len(original)
+	}
+
 	// Check bounds: 0 <= idx < len
 	if idx < 0 || idx >= len(original) {
-		return newError("update: index %d out of bounds for list of length %d", idx, len(original))
+		return newError("update: index %d out of bounds for list of length %d", int(idxArg.Value), len(original))
 	}
 
 	result := make([]Object, len(original))

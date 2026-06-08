@@ -1,0 +1,69 @@
+import "lib/test" (*)
+
+// Regression: a `continue` inside a loop body that also declares local
+// variables used to leave an extra value on the VM stack. The stack pointer
+// drifted by one on every iteration that hit a `continue`, so subsequent
+// iterations read locals (and the loop variable) from the wrong slots,
+// producing Nil / garbage results.
+//
+// The original repro: lastDozens[i * -1] returned Nil for i >= 3 once an
+// earlier iteration had executed `continue`.
+
+testRun("negative index stays correct across a continue", \ -> {
+    xs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    out = []
+    for i in 1..4 {
+        v = xs[i * -1]
+        if i == 2 {
+            continue
+        }
+        out = out ++ [v]
+    }
+    // i=1 -> xs[-1]=10, i=2 -> continue, i=3 -> xs[-3]=8, i=4 -> xs[-4]=7
+    assertEquals([10, 8, 7], out)
+})
+
+testRun("while loop with body locals and continue", \ -> {
+    i = 0
+    acc = []
+    while i < 6 {
+        i = i + 1
+        doubled = i * 2
+        if i % 2 == 0 {
+            continue
+        }
+        acc = acc ++ [doubled]
+    }
+    assertEquals([2, 6, 10], acc)
+})
+
+testRun("nested for loop with continue in inner loop", \ -> {
+    xs = [1, 2, 3]
+    ys = [10, 20, 30]
+    out = []
+    for a in xs {
+        for b in ys {
+            prod = a * b
+            if b == 20 {
+                continue
+            }
+            out = out ++ [prod]
+        }
+    }
+    assertEquals([10, 30, 20, 60, 30, 90], out)
+})
+
+testRun("multiple continues in a single body", \ -> {
+    res = []
+    for k in 1..10 {
+        sq = k * k
+        if k == 3 {
+            continue
+        }
+        if k == 7 {
+            continue
+        }
+        res = res ++ [sq]
+    }
+    assertEquals([1, 4, 16, 25, 36, 64, 81, 100], res)
+})

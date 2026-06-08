@@ -263,11 +263,12 @@ func (c *Compiler) compileWhileLoop(expr *ast.ForExpression) error {
 
 	// Push loop context for break/continue
 	c.loopStack = append(c.loopStack, LoopContext{
-		loopStart:  loopStart,
-		breakJumps: nil,
-		scopeDepth: c.scopeDepth,
-		localCount: c.localCount,
-		slotCount:  slotCountBeforeLoop,
+		loopStart:          loopStart,
+		breakJumps:         nil,
+		scopeDepth:         c.scopeDepth,
+		localCount:         c.localCount,
+		slotCount:          slotCountBeforeLoop,
+		loopStartSlotCount: c.slotCount,
 	})
 
 	// Compile condition
@@ -356,11 +357,12 @@ func (c *Compiler) compileForInLoop(expr *ast.ForExpression) error {
 
 	// Push loop context
 	c.loopStack = append(c.loopStack, LoopContext{
-		loopStart:  loopStart,
-		breakJumps: nil,
-		scopeDepth: c.scopeDepth,
-		localCount: c.localCount,
-		slotCount:  slotCountBeforeLoop,
+		loopStart:          loopStart,
+		breakJumps:         nil,
+		scopeDepth:         c.scopeDepth,
+		localCount:         c.localCount,
+		slotCount:          slotCountBeforeLoop,
+		loopStartSlotCount: c.slotCount,
 	})
 
 	// OP_ITER_NEXT: gets next item or signals end
@@ -473,23 +475,45 @@ func (c *Compiler) compileContinueStatement(stmt *ast.ContinueStatement) error {
 	line := stmt.Token.Line
 	loopCtx := &c.loopStack[len(c.loopStack)-1]
 
-	// Push nil as "result" for this iteration
-	c.emit(OP_NIL, line)
-	c.slotCount++
+	// Save compiler bookkeeping so we can restore it for the (unreachable) code
+	// that follows the continue jump. Without this, the surrounding block's
+	// scope-cleanup math would be thrown off.
+	savedSlotCount := c.slotCount
+	savedLocalCount := c.localCount
 
-	// Close any locals defined since loop started
-	localsToClose := c.localCount - loopCtx.localCount
-	if localsToClose > 0 {
-		c.emit(OP_CLOSE_SCOPE, line)
-		c.currentChunk().Write(byte(localsToClose), line)
+	// Unwind the stack back to the invariant the loop expects at loopStart.
+	// The loop body (and any nested blocks) may have pushed locals/temporaries
+	// on top of the loop's bookkeeping slots; these must be removed before we
+	// jump back, otherwise the stack pointer drifts on every iteration that hits
+	// a continue, corrupting subsequent local-slot accesses.
+	for c.slotCount > loopCtx.loopStartSlotCount {
+		if c.localCount > loopCtx.localCount && c.locals[c.localCount-1].Slot == c.slotCount-1 {
+			// Topmost stack slot is a named local declared inside the loop body.
+			if c.locals[c.localCount-1].IsCaptured {
+				c.emit(OP_CLOSE_UPVALUE, line)
+			} else {
+				c.emit(OP_POP, line)
+			}
+			c.localCount--
+		} else {
+			// Topmost stack slot is a temporary value.
+			c.emit(OP_POP, line)
+		}
+		c.slotCount--
+	}
+	// If we somehow have fewer slots than the loop expects (e.g. an empty
+	// while-loop body), pad with nils so loopStart sees a consistent stack.
+	for c.slotCount < loopCtx.loopStartSlotCount {
+		c.emit(OP_NIL, line)
+		c.slotCount++
 	}
 
 	// Jump back to loop start
 	c.emitLoop(loopCtx.loopStart, line)
 
-	// Code after continue is unreachable
-	c.emit(OP_NIL, line)
-	c.slotCount++
+	// Code after continue is unreachable; restore bookkeeping for it.
+	c.slotCount = savedSlotCount
+	c.localCount = savedLocalCount
 	return nil
 }
 
