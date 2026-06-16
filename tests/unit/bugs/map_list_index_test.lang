@@ -1,0 +1,68 @@
+import "lib/list" (map)
+import "lib/test" (*)
+
+// Regression: a function call used as an index (xs[f(i)]) or as the receiver
+// of a member access (f(x).field) was compiled as a TAIL_CALL when it appeared
+// in tail position inside a function/closure body. The inner call then reused
+// the enclosing frame and returned directly, so:
+//   - xs[f(i)] returned f(i) instead of xs[f(i)]
+//   - f(x).field returned f(x) instead of f(x).field
+// This surfaced via `map(\i -> xs[pickIdx(i)], ...)` returning the indices
+// instead of the indexed elements.
+
+fun pickIdx(i: Int) -> Int {
+    i
+}
+
+fun mkRec(x: Int) -> { val: Int } {
+    { val: x * 10 }
+}
+
+fun mkList(x: Int) -> List<Int> {
+    [x, x + 1, x + 2]
+}
+
+testRun("map list index with computed index", \ -> {
+    xs = [30, 0, 30]
+
+    viaFor = 0
+    for i in [0, 1, 2] {
+        viaFor = viaFor + xs[pickIdx(i)]
+    }
+
+    viaMap = 0
+    for v in map(\i -> xs[pickIdx(i)], [0, 1, 2]) {
+        viaMap = viaMap + v
+    }
+
+    assertEquals(60, viaFor)
+    assertEquals(60, viaMap)
+})
+
+testRun("index with call result inside a closure (tail position)", \ -> {
+    xs = [30, 0, 40]
+    get = \i -> xs[pickIdx(i)]
+    assertEquals(30, get(0))
+    assertEquals(0, get(1))
+    assertEquals(40, get(2))
+})
+
+testRun("index where the indexed object is itself a call", \ -> {
+    at1 = \x -> mkList(x)[1]
+    assertEquals(6, at1(5))
+    assertEquals(1, at1(0))
+})
+
+testRun("member access on a call result (tail position)", \ -> {
+    getVal = \x -> mkRec(x).val
+    assertEquals(30, getVal(3))
+    assertEquals(0, getVal(0))
+})
+
+testRun("map producing member-access of a call result", \ -> {
+    total = 0
+    for v in map(\x -> mkRec(x).val, [1, 2, 3]) {
+        total = total + v
+    }
+    assertEquals(60, total)
+})

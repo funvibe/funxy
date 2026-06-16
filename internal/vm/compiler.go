@@ -579,6 +579,14 @@ func (c *Compiler) compileRecordLiteral(lit *ast.RecordLiteral) error {
 
 // Compile index expression: list[i], map[k]
 func (c *Compiler) compileIndexExpression(expr *ast.IndexExpression) error {
+	// Neither the indexed object nor the index expression is in tail position:
+	// their results are consumed by OP_GET_INDEX. Without clearing this, an
+	// index like xs[f(i)] inside a function body would compile f(i) as a
+	// TAIL_CALL, returning f(i) directly instead of xs[f(i)].
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+	defer func() { c.inTailPosition = wasTail }()
+
 	if err := c.withTypeContext("", func() error {
 		return c.compileExpression(expr.Left)
 	}); err != nil {
@@ -1182,6 +1190,13 @@ func (c *Compiler) compileFormatStringLiteral(lit *ast.FormatStringLiteral) erro
 
 // Compile member expression: record.field
 func (c *Compiler) compileMemberExpression(expr *ast.MemberExpression) error {
+	// The receiver is not in tail position: its result is consumed by
+	// OP_GET_FIELD. Without clearing this, f(x).field inside a function body
+	// would compile f(x) as a TAIL_CALL, returning f(x) instead of f(x).field.
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+	defer func() { c.inTailPosition = wasTail }()
+
 	if err := c.withTypeContext("", func() error {
 		return c.compileExpression(expr.Left)
 	}); err != nil {
