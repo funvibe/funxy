@@ -82,4 +82,4 @@ Since Funxy cannot control the behavior inside Go, passing the same mutable Go p
 
 ## Conclusion
 Funxy provides a combination rare for scripting languages: static type guarantees + functional data model + managed concurrency + deep integration with Go.
-This makes the language particularly strong for infrastructure scenarios where execution predictability, context isolation, and convenient access to production Go libraries are important.
+This makes the language particularly strong for embedded scenarios, high-concurrency environments, and infrastructure tooling where execution predictability, context isolation, and convenient access to production Go libraries are important.
