@@ -1,0 +1,190 @@
+import "lib/test" (*)
+import "lib/map" (mapGetOr, mapPut)
+import "lib/vmm" (deserialize, serialize)
+
+type Tag = Red | Blue
+
+type alias Leaf = {
+    tag: Tag
+    count: Int
+    depth: Int
+}
+
+type alias Node = {
+    tag: Tag
+    count: Int
+    depth: Int
+    children: Map<Tag, Leaf>
+    total: Int
+}
+
+type alias RecNode = {
+    tag: Tag
+    count: Int
+    depth: Int
+    children: Map<Tag, RecNode>
+    total: Int
+}
+
+type alias Money = Int
+type alias UserId = Int
+
+type alias PointA = { x: Int, y: Int }
+type alias PointB = { x: Int, y: Int }
+
+type alias Narrow = { a: Int, b: Int }
+type alias Wide = { a: Int, b: Int, c: Int }
+
+type alias Pair = (String, Int)
+type alias Entry = (String, Int)
+
+fun nodeInit() -> Node {
+    {
+        tag: Red
+        count: 100
+        depth: 0
+        children: %{}
+        total: 0
+    }
+}
+
+fun leafInit(t: Tag) -> Leaf {
+    { tag: t, count: 100, depth: 0 }
+}
+
+fun stripNode(state: Node) -> Node {
+    {...state, children: %{}, total: 0}
+}
+
+fun fromLeaf(leaf: Leaf) -> Node {
+    {...leaf, children: %{}, total: 0}
+}
+
+fun asLeaf(state: Node) -> Leaf {
+    { tag: state.tag, count: state.count, depth: state.depth }
+}
+
+fun bumpDepth(state: Node) -> Node {
+    {...state, depth: state.depth + 1}
+}
+
+fun withChild(state: Node) -> Node {
+    if state.total == 0 {
+        children = mapPut(%{}, Blue, leafInit(Blue))
+        {...state, children: children}
+    } else {
+        state
+    }
+}
+
+fun leafRoundtrip(leaf: Leaf, event: Int) -> Leaf {
+    asLeaf(bumpDepth(fromLeaf(leaf)))
+}
+
+fun recNodeInit() -> RecNode {
+    { tag: Red, count: 100, depth: 0, children: %{}, total: 0 }
+}
+
+// Regression: spreading a recursive-alias value into a Map<Tag, RecNode>
+// and returning the alias must unify (the inner alias reference unfolds equi-recursively).
+fun recWithChild(state: RecNode) -> RecNode {
+    children = mapPut(%{}, Blue, {...recNodeInit(), tag: Blue})
+    {...state, children: children}
+}
+
+// negative (compile-error) cases live in the *_error.lang + .want golden files
+// next to this file, executed by tests/functional_test.go
+
+testRun("Leaf/Node split: withChild if branches unify", \ -> {
+    s = withChild(nodeInit())
+    assertEquals(1, len(s.children))
+    assertEquals(Blue, mapGetOr(s.children, Blue, { tag: Red, count: 0, depth: 0 }).tag)
+})
+
+testRun("Leaf/Node split: stripNode clears nested maps", \ -> {
+    stripped = stripNode(withChild(nodeInit()))
+    assertEquals(0, len(stripped.children))
+})
+
+testRun("Leaf/Node split: fromLeaf must add every extra Node field", \ -> {
+    n = fromLeaf({ tag: Blue, count: 50, depth: 3 })
+    assertEquals(0, n.total)
+    assertEquals(0, len(n.children))
+})
+
+testRun("Leaf/Node split: asLeaf/fromLeaf roundtrip", \ -> {
+    back = fromLeaf(asLeaf({...nodeInit(), tag: Blue, count: 200, depth: 7}))
+    assertEquals(Blue, back.tag)
+    assertEquals(7, back.depth)
+})
+
+testRun("Leaf/Node split: leaf roundtrip through Node logic", \ -> {
+    out = leafRoundtrip({ tag: Red, count: 100, depth: 0 }, 1)
+    assertEquals(1, out.depth)
+})
+
+testRun("recursive Node map works with explicitly typed nested value", \ -> {
+    nested: RecNode = {
+        tag: Blue
+        count: 10
+        depth: 1
+        children: %{}
+        total: 0
+    }
+    root: RecNode = {
+        tag: Red
+        count: 100
+        depth: 0
+        children: mapPut(%{}, Blue, nested)
+        total: 5
+    }
+    assertEquals(Blue, mapGetOr(root.children, Blue, { tag: Red, count: 0, depth: 0, children: %{}, total: 0 }).tag)
+})
+
+testRun("recursive alias: spread into nested map unifies (regression)", \ -> {
+    out = recWithChild(recNodeInit())
+    assertEquals(1, len(out.children))
+    assertEquals(Blue, mapGetOr(out.children, Blue, recNodeInit()).tag)
+})
+
+testRun("Int aliases are interchangeable at compile time", \ -> {
+    m: Money = 10
+    u: UserId = 20
+    assertEquals(30, m + u)
+})
+
+testRun("record aliases with same fields spread into each other", \ -> {
+    a: PointA = { x: 1, y: 2 }
+    b: PointB = {...a}
+    n: Narrow = { a: 5, b: 6 }
+    w: Wide = {...n, c: 7}
+    assertEquals(2, b.y)
+    assertEquals(7, w.c)
+})
+
+testRun("tuple aliases with identical shape are interchangeable", \ -> {
+    p: Pair = ("x", 1)
+    e: Entry = p
+    assertEquals(("x", 1), e)
+})
+
+testRun("Node with Leaf children survives serialize roundtrip", \ -> {
+    node = withChild({...nodeInit(), count: 999, depth: 2, total: 0})
+    bytes = serialize(node, "fdf")
+    match deserialize(bytes) : Result<String, Node> {
+        Ok(restored) -> assertEquals(999, restored.count)
+        Fail(err) -> panic("deserialize failed: " ++ err)
+    }
+})
+
+testRun("record aliases are nominal at runtime (distinct getType)", \ -> {
+    a: PointA = { x: 1, y: 2 }
+    b: PointB = { x: 1, y: 2 }
+    assertNotEquals(getType(a), getType(b))
+})
+
+testRun("scalar aliases are transparent at runtime (same getType)", \ -> {
+    m: Money = 1
+    u: UserId = 2
+    assertEquals(getType(m), getType(u))
+})

@@ -1,0 +1,22 @@
+// compile-fail: fromLeaf spread misses a field that Node requires when Node grows
+type alias Leaf = {
+    count: Int
+    depth: Int
+}
+
+type alias Node = {
+    count: Int
+    depth: Int
+    children: Map<String, Leaf>
+    total: Int
+}
+
+fun fromLeaf(leaf: Leaf) -> Node {
+    {...leaf, children: %{}}
+}
+
+fun main() -> Nil {
+    n = fromLeaf({ count: 1, depth: 2 })
+    print(show(n.total))
+    Nil
+}

@@ -1,0 +1,45 @@
+// compile-fail: if branches diverge when one arm builds a child map from a Node spread,
+// producing Map<Tag, Node> where Node.children expects Map<Tag, Leaf>.
+import "lib/map" (mapPut)
+
+type Tag = Red | Blue
+
+type alias Leaf = {
+    tag: Tag
+    count: Int
+    depth: Int
+}
+
+type alias Node = {
+    tag: Tag
+    count: Int
+    depth: Int
+    children: Map<Tag, Leaf>
+    total: Int
+}
+
+fun nodeInit() -> Node {
+    {
+        tag: Red
+        count: 100
+        depth: 0
+        children: %{}
+        total: 0
+    }
+}
+
+fun withNodeChildren(state: Node) -> Node {
+    if state.total == 0 {
+        children = %{}
+        child: Node = {...nodeInit(), tag: Blue}
+        children = mapPut(children, Blue, child)
+        {...state, children: children}
+    } else {
+        state
+    }
+}
+
+fun main() -> Nil {
+    print(show(withNodeChildren(nodeInit()).tag))
+    Nil
+}

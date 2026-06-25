@@ -4,7 +4,13 @@ This iteration introduces powerful type system features: Type Aliases, Records, 
 
 ## Type Aliases
 
-Aliases create a new name for an existing type. They are interchangeable with the original type but help with readability.
+Aliases create a new name for an existing type. They are interchangeable with the original type at compile time but help with readability.
+
+> **Runtime note:** alias transparency is a *compile-time* property. At runtime, aliases of
+> scalars and tuples are erased to their base type (`getType(money) == getType(0.0)`), but
+> aliases of **records** (and ADTs) are **nominal** — they carry their name, so `getType`
+> distinguishes them (`getType(pointA) != getType(pointB)` even with identical fields).
+> See [Runtime Representation](#runtime-representation) below.
 
 ```rust
 type alias Money = Float
@@ -130,6 +136,6 @@ print(t2)  // type((Int) -> Int)
 
 ## Runtime Representation
 
-*   **Aliases**: Resolved to underlying type at analysis time.
-*   **Records**: Represented as `RecordInstance` with named fields.
-*   **ADTs**: Represented as `DataInstance` with constructor name and field values.
+*   **Scalar/tuple aliases** (e.g. `type alias Money = Int`): resolved to the underlying type and erased at runtime — `getType` returns the base type, and two such aliases are indistinguishable.
+*   **Record aliases** (e.g. `type alias Point = { x: Int, y: Int }`): nominal at runtime. The `RecordInstance` carries the alias name, so `getType` reports `Point` (not `{ x: Int, y: Int }`) and distinguishes it from other aliases with identical fields.
+*   **ADTs**: Represented as `DataInstance` with constructor name and field values (nominal).

@@ -1,0 +1,16 @@
+// compile-fail: tuple aliases with different component order are NOT interchangeable
+type alias Pair = (String, Int)
+type alias Flipped = (Int, String)
+
+fun amount(p: Pair) -> Int {
+    match p {
+        (_, n) -> n
+    }
+}
+
+fun main() -> Nil {
+    f: Flipped = (23, "x")
+    p: Pair = f
+    print(show(amount(p)))
+    Nil
+}

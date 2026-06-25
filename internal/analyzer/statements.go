@@ -533,7 +533,12 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 			// Apply accumulated substitution from body to return type before unification
 			expectedRetType = expectedRetType.Apply(sBody)
 
-			subst, err := typesystem.Unify(expectedRetType, bodyType)
+			// Use a resolver so recursive/named type aliases (e.g. a record alias whose
+			// field references the alias itself) can be unfolded during unification.
+			// Without it, an inner alias reference with no inlined UnderlyingType cannot be
+			// matched against its structurally-expanded counterpart.
+			retResolver := &ResolverWrapper{Table: w.symbolTable, Ctx: w.inferCtx}
+			subst, err := typesystem.UnifyWithResolver(expectedRetType, bodyType, retResolver)
 			if err != nil {
 				w.addError(diagnostics.NewError(diagnostics.ErrA003, n.Body.GetToken(),
 					"function body type "+bodyType.String()+" does not match return type "+expectedRetType.String()))

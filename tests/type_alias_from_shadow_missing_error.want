@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 14:34 [A003]: type error: function body type { children: (Map t? t?), count: Int, depth: Int } does not match return type { children: (Map String Leaf), count: Int, depth: Int, total: Int }

@@ -1,0 +1,2 @@
+Processing failed with errors:
+- error at 32:5 [A003]: type error: if branches must match expected type { children: (Map Tag Leaf), count: Int, depth: Int, tag: Tag, total: Int }, got { children: (Map Tag { children: (Map Tag { count: Int, depth: Int, tag: Tag }), count: Int, depth: Int, tag: Tag, total: Int }), count: Int, depth: Int, tag: Tag, total: Int } and Node
