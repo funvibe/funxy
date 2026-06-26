@@ -1,5 +1,6 @@
 import "lib/test" (testRun, assertEquals)
 import "lib/list" (range)
+import "lib/map" (mapItems)
 
 testRun("While loop", \ -> {
     i = 0
@@ -33,6 +34,47 @@ testRun("For-in loop", \ -> {
         sum2 = sum2 + x
     }
     assertEquals(6, sum2, "Range sum")
+})
+
+testRun("For-in tuple destructuring", \ -> {
+    pairs = [("a", 1), ("b", 2), ("c", 3)]
+    keys = ""
+    sum = 0
+    for (k, v) in pairs {
+        keys = keys ++ k
+        sum = sum + v
+    }
+    assertEquals("abc", keys, "Destructured keys")
+    assertEquals(6, sum, "Destructured values")
+})
+
+testRun("For-in list-pattern destructuring", \ -> {
+    rows = [[1, 2], [3, 4]]
+    total = 0
+    for [a, b] in rows {
+        total = total + a * b
+    }
+    assertEquals(14, total, "List-pattern products (2 + 12)")
+})
+
+testRun("For-in destructuring over mapItems", \ -> {
+    m = %{ "x" => 10, "y" => 20 }
+    total = 0
+    for (_, v) in mapItems(m) {
+        total = total + v
+    }
+    assertEquals(30, total, "Sum of map values")
+})
+
+testRun("For-in nested destructuring loops", \ -> {
+    grid = [[(1, 2)], [(3, 4)]]
+    total = 0
+    for row in grid {
+        for (a, b) in row {
+            total = total + a + b
+        }
+    }
+    assertEquals(10, total, "Nested tuple destructure (3 + 7)")
 })
 
 testRun("Loop control (break/continue)", \ -> {

@@ -1,7 +1,10 @@
 package parser
 
 import (
+	"fmt"
+
 	"github.com/funvibe/funxy/internal/ast"
+	"github.com/funvibe/funxy/internal/diagnostics"
 	"github.com/funvibe/funxy/internal/token"
 )
 
@@ -79,14 +82,51 @@ func (p *Parser) parseForExpression() ast.Expression {
 	expr := &ast.ForExpression{Token: p.curToken}
 	p.nextToken() // consume 'for'
 
-	// Check for iteration: for item in iterable
-	// Or condition: for condition
-	// If next is IDENT and peek after is IN, then iteration.
-	if p.curTokenIs(token.IDENT_LOWER) && p.peekTokenIs(token.IN) {
+	// Parse the loop header. It is either an iteration target (an identifier or a
+	// destructuring pattern) followed by `in`, or a `while`-style condition.
+	// Since `in` is not an infix operator, expression parsing stops right before it,
+	// so we disambiguate the two forms by checking for `in` afterwards.
+	prev := p.disallowTrailingLambda
+	p.disallowTrailingLambda = true
+	header := p.parseExpression(LOWEST)
+	p.disallowTrailingLambda = prev
+	if header == nil {
+		return nil
+	}
+
+	var destructurePattern ast.Pattern
+	var hiddenName string
+
+	if p.peekTokenIs(token.IN) {
 		// Iteration loop
-		expr.ItemName = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal.(string)}
-		p.nextToken() // consume ident
-		p.nextToken() // consume in
+		if id, ok := header.(*ast.Identifier); ok {
+			expr.ItemName = id
+		} else {
+			// Destructuring target (e.g. `for (k, v) in xs`). Desugar into a hidden
+			// item bound by a pattern assignment prepended to the loop body, reusing
+			// the existing pattern-assignment machinery.
+			//
+			// NOTE: this desugaring happens in the parser, so the AST loses the original
+			// surface pattern (ItemName becomes the synthetic `$foritemN`). That's fine
+			// today because there is no formatter command. If a `fmt`/round-trip printer
+			// is ever added, store the original pattern on ast.ForExpression (e.g. an
+			// `ItemPattern` field) and reconstruct `for (k, v) in ...` from it instead of
+			// emitting the desugared `$foritemN`.
+			destructurePattern = p.exprToPattern(header)
+			if destructurePattern == nil {
+				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
+					diagnostics.ErrP006, header.GetToken(),
+					"invalid for-loop binding: expected an identifier or a destructuring pattern",
+				))
+				return nil
+			}
+			hiddenName = fmt.Sprintf("$foritem%d", p.forPatternCounter)
+			p.forPatternCounter++
+			expr.ItemName = &ast.Identifier{Token: header.GetToken(), Value: hiddenName}
+		}
+
+		p.nextToken() // consume last header token -> curToken = in
+		p.nextToken() // consume in -> curToken = first token of iterable
 		// Skip newlines after 'in' — allows: for x in\n    list
 		for p.curTokenIs(token.NEWLINE) {
 			p.nextToken()
@@ -98,10 +138,7 @@ func (p *Parser) parseForExpression() ast.Expression {
 		p.disallowTrailingLambda = prev
 	} else {
 		// Standard condition loop
-		prev := p.disallowTrailingLambda
-		p.disallowTrailingLambda = true
-		expr.Condition = p.parseExpression(LOWEST)
-		p.disallowTrailingLambda = prev
+		expr.Condition = header
 	}
 
 	if !p.expectPeek(token.LBRACE) {
@@ -109,6 +146,18 @@ func (p *Parser) parseForExpression() ast.Expression {
 	}
 
 	expr.Body = p.parseBlockStatement()
+
+	// Prepend `<pattern> = <hidden item>` so the body binds the destructured names.
+	if destructurePattern != nil && expr.Body != nil {
+		assign := &ast.PatternAssignExpression{
+			Token:   header.GetToken(),
+			Pattern: destructurePattern,
+			Value:   &ast.Identifier{Token: header.GetToken(), Value: hiddenName},
+		}
+		stmt := &ast.ExpressionStatement{Token: header.GetToken(), Expression: assign}
+		expr.Body.Statements = append([]ast.Statement{stmt}, expr.Body.Statements...)
+	}
+
 	return expr
 }
 

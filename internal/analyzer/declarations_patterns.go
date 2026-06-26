@@ -280,8 +280,8 @@ func (w *walker) bindPatternVariablesWithConstFlag(pat ast.Pattern, valType type
 		}
 
 	case *ast.TuplePattern:
-		// valType should be TTuple
-		if tuple, ok := valType.(typesystem.TTuple); ok {
+		// valType should be TTuple (unfold bare TCon tuple aliases first)
+		if tuple, ok := unfoldAliasType(valType, w.symbolTable).(typesystem.TTuple); ok {
 			if len(tuple.Elements) != len(p.Elements) {
 				w.addError(diagnostics.NewError(
 					diagnostics.ErrA003,
@@ -302,8 +302,8 @@ func (w *walker) bindPatternVariablesWithConstFlag(pat ast.Pattern, valType type
 		}
 
 	case *ast.ListPattern:
-		// valType should be TApp List<T>
-		if app, ok := valType.(typesystem.TApp); ok {
+		// valType should be TApp List<T> (unfold bare TCon list aliases first)
+		if app, ok := unfoldAliasType(valType, w.symbolTable).(typesystem.TApp); ok {
 			if con, ok := app.Constructor.(typesystem.TCon); ok && con.Name == "List" && len(app.Args) > 0 {
 				elemType := app.Args[0]
 				for _, elem := range p.Elements {

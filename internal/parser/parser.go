@@ -33,6 +33,10 @@ type Parser struct {
 
 	// inRecursionRecovery suppresses duplicate depth errors while we resync
 	inRecursionRecovery bool
+
+	// forPatternCounter generates unique hidden binding names when desugaring
+	// destructuring for-loops (e.g. `for (k, v) in xs`).
+	forPatternCounter int
 }
 
 const MaxRecursionDepth = 500

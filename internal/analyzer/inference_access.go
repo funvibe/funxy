@@ -769,6 +769,9 @@ func inferIndexExpression(ctx *InferenceContext, n *ast.IndexExpression, table *
 
 	// Expand type aliases (e.g., IntMap<String> -> Map<Int, String>)
 	leftType = typesystem.ExpandTypeAlias(leftType)
+	// Also unfold bare TCon aliases (e.g. `Scores` = Map<..>, `Entry` = (..)) so the
+	// structural dispatch below (Map/Tuple/List) sees the underlying collection type.
+	leftType = unfoldAliasType(leftType, table)
 
 	// Handle Map indexing: map[key] -> Option<V>
 	if tApp, ok := leftType.(typesystem.TApp); ok {

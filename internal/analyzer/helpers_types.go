@@ -1,6 +1,28 @@
 package analyzer
 
-import "github.com/funvibe/funxy/internal/typesystem"
+import (
+	"github.com/funvibe/funxy/internal/symbols"
+	"github.com/funvibe/funxy/internal/typesystem"
+)
+
+// unfoldAliasType resolves a bare TCon type alias to its underlying structural
+// type (e.g. `Scores` -> Map<String, Int>, `Entry` -> (String, Int), `Ints` ->
+// List<Int>). Structural dispatch on collections/tuples needs the underlying form;
+// without this, an alias TCon would not match the Map/Tuple/List branches.
+// Non-alias TCons and already-structural types are returned unchanged.
+func unfoldAliasType(t typesystem.Type, table *symbols.SymbolTable) typesystem.Type {
+	tCon, ok := t.(typesystem.TCon)
+	if !ok {
+		return t
+	}
+	if tCon.UnderlyingType != nil {
+		return typesystem.UnwrapUnderlying(tCon)
+	}
+	if table != nil {
+		return table.ResolveTypeAlias(tCon)
+	}
+	return t
+}
 
 // containsTypeVar checks if a type variable appears in a type
 func containsTypeVar(t typesystem.Type, varName string) bool {

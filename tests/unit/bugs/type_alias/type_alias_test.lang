@@ -38,6 +38,10 @@ type alias Wide = { a: Int, b: Int, c: Int }
 type alias Pair = (String, Int)
 type alias Entry = (String, Int)
 
+type alias Scores = Map<String, Int>
+type alias Ids = Map<Int, String>
+type alias Ints = List<Int>
+
 fun nodeInit() -> Node {
     {
         tag: Red
@@ -91,6 +95,11 @@ fun recWithChild(state: RecNode) -> RecNode {
     children = mapPut(%{}, Blue, {...recNodeInit(), tag: Blue})
     {...state, children: children}
 }
+
+// Index assignment must be returned (discarding an immutable update is an error),
+// so these helpers exercise index-assign through collection aliases.
+fun putScore(s: Scores) -> Scores { s["c"] = 5 }
+fun setHead(xs: Ints) -> Ints { xs[0] = 99 }
 
 // negative (compile-error) cases live in the *_error.lang + .want golden files
 // next to this file, executed by tests/functional_test.go
@@ -166,6 +175,38 @@ testRun("tuple aliases with identical shape are interchangeable", \ -> {
     p: Pair = ("x", 1)
     e: Entry = p
     assertEquals(("x", 1), e)
+})
+
+testRun("tuple alias supports indexing and destructuring", \ -> {
+    e: Entry = ("x", 7)
+    assertEquals(7, e[1])
+    (s, k) = e
+    assertEquals("x", s)
+    assertEquals(7, k)
+})
+
+testRun("tuple alias destructures in match and comprehension", \ -> {
+    e: Entry = ("a", 3)
+    r = match e {
+        (s, n) -> s ++ show(n)
+    }
+    assertEquals("a3", r)
+    es: List<Entry> = [("a", 1), ("b", 2)]
+    assertEquals([11, 12], [v + 10 | (_, v) <- es])
+})
+
+testRun("map alias supports indexing", \ -> {
+    sc: Scores = %{ "a" => 1 }
+    ids: Ids = %{ 7 => "z" }
+    assertEquals(Some(1), sc["a"])
+    assertEquals(Some("z"), ids[7])
+})
+
+testRun("collection aliases support index assignment", \ -> {
+    sc = putScore(%{ "a" => 1 })
+    assertEquals(2, len(sc))
+    xs = setHead([1, 2, 3])
+    assertEquals(99, xs[0])
 })
 
 testRun("Node with Leaf children survives serialize roundtrip", \ -> {

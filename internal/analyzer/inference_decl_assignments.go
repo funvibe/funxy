@@ -372,6 +372,9 @@ func inferAssignExpression(ctx *InferenceContext, n *ast.AssignExpression, table
 
 		leftType = leftType.Apply(ctx.GlobalSubst).Apply(totalSubst)
 		leftTypeExpanded := typesystem.ExpandTypeAlias(leftType)
+		// Unfold bare TCon aliases (e.g. `Scores` = Map<..>, `Ints` = List<..>) so the
+		// Map/List dispatch below sees the underlying collection type.
+		leftTypeExpanded = unfoldAliasType(leftTypeExpanded, table)
 
 		var elemType typesystem.Type
 
@@ -783,6 +786,11 @@ func inferPatternAssignExpression(ctx *InferenceContext, n *ast.PatternAssignExp
 		return nil, nil, err
 	}
 
+	// Resolve the value type through accumulated substitutions before destructuring.
+	// Without this, a value whose type is still a substitution-bound variable (e.g. a
+	// for-loop item bound to List<(K,V)>'s element) would not be seen as a tuple/list.
+	valType = valType.Apply(ctx.GlobalSubst).Apply(subst)
+
 	// Bind pattern variables to the symbol table
 	err = bindPatternToType(n.Pattern, valType, table, ctx)
 	if err != nil {
@@ -806,8 +814,20 @@ func bindPatternToType(pat ast.Pattern, valType typesystem.Type, table *symbols.
 		return nil
 
 	case *ast.TuplePattern:
-		tuple, ok := valType.(typesystem.TTuple)
+		resolved := unfoldAliasType(valType, table)
+		tuple, ok := resolved.(typesystem.TTuple)
 		if !ok {
+			// During the loose pre-pass a loop item (or polymorphic value) can still be
+			// an unresolved type variable. Bind the names to fresh types so later
+			// references resolve; structural validation runs in the authoritative pass.
+			if _, isVar := resolved.(typesystem.TVar); isVar {
+				for _, elem := range p.Elements {
+					if err := bindPatternToType(elem, ctx.FreshVar(), table, ctx); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
 			return inferErrorf(pat, "cannot destructure non-tuple value with tuple pattern")
 		}
 		if len(tuple.Elements) != len(p.Elements) {
@@ -822,7 +842,8 @@ func bindPatternToType(pat ast.Pattern, valType typesystem.Type, table *symbols.
 
 	case *ast.ListPattern:
 		// Extract element type from List<T>
-		if app, ok := valType.(typesystem.TApp); ok {
+		resolved := unfoldAliasType(valType, table)
+		if app, ok := resolved.(typesystem.TApp); ok {
 			if con, ok := app.Constructor.(typesystem.TCon); ok && con.Name == "List" && len(app.Args) > 0 {
 				elemType := app.Args[0]
 				for _, elem := range p.Elements {
@@ -832,6 +853,15 @@ func bindPatternToType(pat ast.Pattern, valType typesystem.Type, table *symbols.
 				}
 				return nil
 			}
+		}
+		// Unresolved value type during the loose pre-pass: bind names to fresh types.
+		if _, isVar := resolved.(typesystem.TVar); isVar {
+			for _, elem := range p.Elements {
+				if err := bindPatternToType(elem, ctx.FreshVar(), table, ctx); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		return inferErrorf(pat, "cannot destructure non-list value with list pattern")
 
