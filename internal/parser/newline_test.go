@@ -74,6 +74,39 @@ func TestNewline_ImportExcludeMultiline(t *testing.T) {
 	}
 }
 
+// ---------- package export list ----------
+
+func TestNewline_PackageExportSingleLine(t *testing.T) {
+	prog := parse(t, "package mylib (foo, bar, baz)")
+	pd := prog.Statements[0].(*ast.PackageDeclaration)
+	if len(pd.Exports) != 3 {
+		t.Fatalf("expected 3 exports, got %d", len(pd.Exports))
+	}
+}
+
+func TestNewline_PackageExportMultiline(t *testing.T) {
+	// Multi-line export list with a trailing comma (previously failed with P006).
+	prog := parse(t, "package mylib (\n    foo, bar,\n    baz,\n)")
+	pd := prog.Statements[0].(*ast.PackageDeclaration)
+	if len(pd.Exports) != 3 {
+		t.Fatalf("expected 3 exports, got %d", len(pd.Exports))
+	}
+	if pd.Exports[0].Symbol.Value != "foo" ||
+		pd.Exports[1].Symbol.Value != "bar" ||
+		pd.Exports[2].Symbol.Value != "baz" {
+		t.Fatalf("wrong exports: %s, %s, %s",
+			pd.Exports[0].Symbol.Value, pd.Exports[1].Symbol.Value, pd.Exports[2].Symbol.Value)
+	}
+}
+
+func TestNewline_PackageExportMultilineNoTrailingComma(t *testing.T) {
+	prog := parse(t, "package mylib (\n    foo,\n    bar\n)")
+	pd := prog.Statements[0].(*ast.PackageDeclaration)
+	if len(pd.Exports) != 2 {
+		t.Fatalf("expected 2 exports, got %d", len(pd.Exports))
+	}
+}
+
 // ---------- assignment ----------
 
 func TestNewline_AssignAfterEq(t *testing.T) {
@@ -136,6 +169,65 @@ func TestNewline_ElseIfNewline(t *testing.T) {
 	}
 	if ifExpr.Alternative == nil {
 		t.Fatal("expected else-if branch, got nil")
+	}
+}
+
+// TestNewline_IfConditionLeadingAnd: a binary operator at the START of the next
+// line must continue the if-condition (regression for [P005] expected '{').
+func TestNewline_IfConditionLeadingAnd(t *testing.T) {
+	src := "if a == b\n    && c == d\n    && e == f {\n    1\n} else {\n    0\n}"
+	prog := parse(t, src)
+	expr := stmtExpr(t, prog, 0)
+	ifExpr, ok := expr.(*ast.IfExpression)
+	if !ok {
+		t.Fatalf("expected IfExpression, got %T", expr)
+	}
+	cond, ok := ifExpr.Condition.(*ast.InfixExpression)
+	if !ok {
+		t.Fatalf("expected InfixExpression condition, got %T", ifExpr.Condition)
+	}
+	if cond.Operator != "&&" {
+		t.Fatalf("expected top-level &&, got %s", cond.Operator)
+	}
+}
+
+// TestNewline_LeadingBinaryOps: assorted purely-infix operators continue the
+// expression when they lead the next line.
+func TestNewline_LeadingBinaryOps(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		op   string
+	}{
+		{"or", "x = a > 0\n    || b > 0", "||"},
+		{"plus", "x = 1\n    + 2", "+"},
+		{"compare", "x = a\n    == b", "=="},
+		{"mul", "x = 2\n    * 3", "*"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prog := parse(t, tc.src)
+			assign, ok := stmtExpr(t, prog, 0).(*ast.AssignExpression)
+			if !ok {
+				t.Fatalf("expected AssignExpression")
+			}
+			infix, ok := assign.Value.(*ast.InfixExpression)
+			if !ok {
+				t.Fatalf("expected InfixExpression value, got %T", assign.Value)
+			}
+			if infix.Operator != tc.op {
+				t.Fatalf("expected operator %s, got %s", tc.op, infix.Operator)
+			}
+		})
+	}
+}
+
+// TestNewline_LeadingMinusIsNewStatement: MINUS is also a prefix operator, so a
+// line starting with `-` must NOT merge with the previous line.
+func TestNewline_LeadingMinusIsNewStatement(t *testing.T) {
+	prog := parse(t, "x = 1\n-2")
+	if len(prog.Statements) != 2 {
+		t.Fatalf("expected 2 statements (leading '-' starts a new one), got %d", len(prog.Statements))
 	}
 }
 

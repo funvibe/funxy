@@ -1,0 +1,25 @@
+import "lib/test" (*)
+
+fun returnsFalse() -> Bool {
+    false
+}
+
+fun orWithTrueAfterFalseCall() -> Bool {
+    returnsFalse() || true
+}
+
+fun orWithLiteralFalse() -> Bool {
+    false || true
+}
+
+testRun("literal false || true in named fun", \ -> {
+    assertTrue(orWithLiteralFalse())
+})
+
+testRun("returnsFalse() || true in lambda", \ -> {
+    assertTrue(returnsFalse() || true)
+})
+
+testRun("returnsFalse() || true in named fun", \ -> {
+    assertTrue(orWithTrueAfterFalseCall())
+})

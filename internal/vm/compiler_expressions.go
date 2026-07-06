@@ -232,6 +232,13 @@ func (c *Compiler) compileExpression(expr ast.Expression) error {
 func (c *Compiler) compileRangeExpression(expr *ast.RangeExpression) error {
 	line := expr.Token.Line
 
+	// Range bounds are never in tail position: OP_RANGE consumes all three.
+	// Without this, a function call bound (e.g. `1..n()`) would be compiled as a
+	// tail call and return from the enclosing function immediately.
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+	defer func() { c.inTailPosition = wasTail }()
+
 	// Compile start
 	if err := c.compileExpression(expr.Start); err != nil {
 		return err
@@ -1497,6 +1504,14 @@ func (c *Compiler) compileInfixExpression(expr *ast.InfixExpression) error {
 
 // Compile logical operators with short-circuit evaluation
 func (c *Compiler) compileLogicalOp(expr *ast.InfixExpression) error {
+	// The left operand is never in tail position: its value must remain on the
+	// stack so the short-circuit branch can inspect it. Without this, a function
+	// call on the left (e.g. `returnsFalse() || true`) would be compiled as a
+	// tail call and return from the enclosing function immediately, skipping the
+	// operator entirely.
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+
 	if err := c.compileExpression(expr.Left); err != nil {
 		return err
 	}
@@ -1507,6 +1522,9 @@ func (c *Compiler) compileLogicalOp(expr *ast.InfixExpression) error {
 		jumpAddr := c.emitJump(OP_JUMP_IF_FALSE, line)
 		c.emit(OP_POP, line)
 		c.slotCount--
+		// The right operand IS the result when the left didn't short-circuit,
+		// so it may keep the enclosing tail position (enables TCO through &&/||).
+		c.inTailPosition = wasTail
 		if err := c.compileExpression(expr.Right); err != nil {
 			return err
 		}
@@ -1517,11 +1535,14 @@ func (c *Compiler) compileLogicalOp(expr *ast.InfixExpression) error {
 		c.patchJump(elseJump)
 		c.emit(OP_POP, line)
 		c.slotCount--
+		c.inTailPosition = wasTail
 		if err := c.compileExpression(expr.Right); err != nil {
 			return err
 		}
 		c.patchJump(endJump)
 	}
+
+	c.inTailPosition = wasTail
 	return nil
 }
 
@@ -1704,6 +1725,13 @@ func (c *Compiler) compileComposeOp(expr *ast.InfixExpression) error {
 func (c *Compiler) compileCoalesceOp(expr *ast.InfixExpression) error {
 	line := expr.Token.Line
 
+	// The left operand is never in tail position: OP_COALESCE must inspect its
+	// value. Without this, a function call on the left (e.g. `getOpt() ?? d`)
+	// would be compiled as a tail call and return from the enclosing function
+	// immediately, skipping the coalesce entirely.
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+
 	// Compile left (the Option/Result value)
 	if err := c.compileExpression(expr.Left); err != nil {
 		return err
@@ -1726,11 +1754,14 @@ func (c *Compiler) compileCoalesceOp(expr *ast.InfixExpression) error {
 	c.emit(OP_POP, line) // pop bool
 	c.emit(OP_POP, line) // pop the empty Option
 	c.slotCount -= 2
+	// The default IS the result on the empty path, so it may keep tail position.
+	c.inTailPosition = wasTail
 	if err := c.compileExpression(expr.Right); err != nil {
 		return err
 	}
 
 	c.patchJump(skipDefault)
+	c.inTailPosition = wasTail
 	return nil
 }
 

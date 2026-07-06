@@ -9,7 +9,7 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 	// Special handling for default() to avoid init cycle
 	if ident, ok := node.Function.(*ast.Identifier); ok && ident.Value == "default" {
 		args := e.evalExpressions(node.Arguments, env)
-		if len(args) == 1 && isError(args[0]) {
+		if len(args) == 1 && isControlSignal(args[0]) {
 			return args[0]
 		}
 		if len(args) != 1 {
@@ -72,7 +72,7 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 			return function
 		}
 		args := e.evalExpressions(node.Arguments, env)
-		if len(args) == 1 && isError(args[0]) {
+		if len(args) == 1 && isControlSignal(args[0]) {
 			restoreContext()
 			e.CurrentCallNode = oldCallNode
 			return args[0]
@@ -116,7 +116,7 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression, env *Environmen
 		return function
 	}
 	args := e.evalExpressions(node.Arguments, env)
-	if len(args) == 1 && isError(args[0]) {
+	if len(args) == 1 && isControlSignal(args[0]) {
 		restoreContext()
 		return args[0]
 	}

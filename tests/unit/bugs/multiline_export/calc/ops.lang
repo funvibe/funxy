@@ -1,0 +1,5 @@
+package calc
+
+fun add(a: Int, b: Int) -> Int { a + b }
+fun sub(a: Int, b: Int) -> Int { a - b }
+fun triple(a: Int) -> Int { a * 3 }

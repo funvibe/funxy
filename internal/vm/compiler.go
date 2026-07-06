@@ -609,10 +609,19 @@ func (c *Compiler) compileIndexExpression(expr *ast.IndexExpression) error {
 func (c *Compiler) compilePostfixExpression(expr *ast.PostfixExpression) error {
 	line := expr.Token.Line
 
+	// The operand is never in tail position: OP_UNWRAP_OR_RETURN must inspect its
+	// value. Without this, a function call operand (e.g. `getOpt()?`) would be
+	// compiled as a tail call and return from the enclosing function immediately,
+	// skipping the unwrap and returning the wrapped Option/Result instead.
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+
 	// Compile the left operand
 	if err := c.compileExpression(expr.Left); err != nil {
 		return err
 	}
+
+	c.inTailPosition = wasTail
 
 	switch expr.Operator {
 	case "?":
@@ -1144,6 +1153,14 @@ func (c *Compiler) compileInterpolatedString(expr *ast.InterpolatedString) error
 		c.slotCount++
 		return nil
 	}
+
+	// No interpolation part is in tail position: each part's value is consumed by
+	// OP_INTERP_CONCAT. Without this, a function call in the last part (e.g.
+	// `"v=${getX()}"`) would be compiled as a tail call and return from the
+	// enclosing function immediately, skipping concatenation.
+	wasTail := c.inTailPosition
+	c.inTailPosition = false
+	defer func() { c.inTailPosition = wasTail }()
 
 	// Compile first part
 	if err := c.compileExpression(expr.Parts[0]); err != nil {

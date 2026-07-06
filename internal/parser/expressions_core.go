@@ -97,14 +97,59 @@ func (p *Parser) hasContinuationOperator() bool {
 	return false
 }
 
-// isContinuationOperator returns true for operators that can continue on next line
+// isContinuationOperator returns true for operators that can continue the current
+// expression when they appear at the START of the next line, e.g.:
+//
+//	if a == b
+//	   && c == d   // leading && continues the condition
+//
+// Only purely-infix operators are listed here. Operators that can also begin an
+// expression (prefix `-`, `!`, `~`, or brackets `(`/`[`) are deliberately excluded:
+// a line that starts with one of those is a new statement, not a continuation.
+// (Trailing operators — `a &&\n b` — are handled separately in parseInfixExpression,
+// which simply skips newlines after the operator.)
 func isContinuationOperator(t token.TokenType) bool {
 	switch t {
+	// Pipelines / composition / application
 	case token.PIPE_GT, // |>
 		token.PIPE_GT_UNWRAP, // |>>
 		token.CONCAT,         // ++
 		token.COMPOSE,        // ,,
-		token.USER_OP_APP:    // $
+		token.USER_OP_APP,    // $
+		// Logical
+		token.AND, // &&
+		token.OR,  // ||
+		// Comparison
+		token.EQ,     // ==
+		token.NOT_EQ, // !=
+		token.LT,     // <
+		token.GT,     // >
+		token.LTE,    // <=
+		token.GTE,    // >=
+		// Arithmetic (note: MINUS is excluded — it is also a prefix operator)
+		token.PLUS,     // +
+		token.ASTERISK, // *
+		token.SLASH,    // /
+		token.PERCENT,  // %
+		token.POWER,    // **
+		// Bitwise (TILDE excluded — it is a prefix operator)
+		token.AMPERSAND, // &
+		token.PIPE,      // |
+		token.CARET,     // ^
+		token.LSHIFT,    // <<
+		token.RSHIFT,    // >>
+		// List / optional
+		token.CONS,          // ::
+		token.NULL_COALESCE, // ??
+		// User-definable trait operators (all infix)
+		token.USER_OP_COMBINE,   // <>
+		token.USER_OP_CHOOSE,    // <|>
+		token.USER_OP_APPLY,     // <*>
+		token.USER_OP_BIND,      // >>=
+		token.USER_OP_MAP,       // <$>
+		token.USER_OP_CONS,      // <:>
+		token.USER_OP_SWAP,      // <~>
+		token.USER_OP_PIPE_LEFT: // <|
 		return true
 	}
 	return false

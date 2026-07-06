@@ -1,0 +1,8 @@
+import "./calc" (add, sub, triple)
+import "lib/test" (testRun, assertEquals)
+
+testRun("multiline package export list (with trailing comma) is importable", fun() {
+    assertEquals(5, add(2, 3))
+    assertEquals(1, sub(4, 3))
+    assertEquals(9, triple(3))
+})

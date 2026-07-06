@@ -130,6 +130,20 @@ func isError(obj Object) bool {
 	return false
 }
 
+// isControlSignal reports whether obj is a value that must short-circuit the
+// evaluation of a surrounding expression and propagate up unchanged: a runtime
+// error, or a ReturnValue produced by the `?` operator (early return on
+// Fail/None). Sub-expression contexts (call args, operands, list/record
+// elements, interpolation, ranges) must check this so that `?` propagates
+// correctly instead of being consumed by the enclosing operation.
+func isControlSignal(obj Object) bool {
+	if obj == nil {
+		return false
+	}
+	t := obj.Type()
+	return t == ERROR_OBJ || t == RETURN_VALUE_OBJ
+}
+
 // UnwrapOption returns the inner value if obj is Some(x), otherwise (nil, false).
 // Use when handling Option<T> without panicking on None.
 func UnwrapOption(obj Object) (Object, bool) {
@@ -353,7 +367,7 @@ func (e *Evaluator) evalExpressions(exps []ast.Expression, env *Environment) []O
 		// Handle spread expression: args...
 		if spread, ok := exp.(*ast.SpreadExpression); ok {
 			val := e.Eval(spread.Expression, env)
-			if isError(val) {
+			if isControlSignal(val) {
 				return []Object{val}
 			}
 			if tuple, ok := val.(*Tuple); ok {
@@ -367,7 +381,7 @@ func (e *Evaluator) evalExpressions(exps []ast.Expression, env *Environment) []O
 		}
 
 		evaluated := e.Eval(exp, env)
-		if isError(evaluated) {
+		if isControlSignal(evaluated) {
 			return []Object{evaluated}
 		}
 		result = append(result, evaluated)

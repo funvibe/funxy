@@ -25,6 +25,15 @@ func (p *Parser) parsePackageDeclaration() *ast.PackageDeclaration {
 
 		pd.Exports = []*ast.ExportSpec{}
 
+		// Skip newlines after '(' — allows multi-line export lists:
+		//   package mylib (
+		//       Vector, Matrix,
+		//       add, subtract,
+		//   )
+		for p.peekTokenIs(token.NEWLINE) {
+			p.nextToken()
+		}
+
 		// Parse export specs until )
 		for !p.peekTokenIs(token.RPAREN) {
 			spec := p.parseExportSpec()
@@ -39,9 +48,19 @@ func (p *Parser) parsePackageDeclaration() *ast.PackageDeclaration {
 				pd.Exports = append(pd.Exports, spec)
 			}
 
+			// Skip newlines before the comma or closing ')'.
+			for p.peekTokenIs(token.NEWLINE) {
+				p.nextToken()
+			}
+
 			// Check for comma or end
 			if p.peekTokenIs(token.COMMA) {
 				p.nextToken() // consume comma
+				// Skip newlines after the comma (also allows a trailing comma
+				// right before ')').
+				for p.peekTokenIs(token.NEWLINE) {
+					p.nextToken()
+				}
 			} else if !p.peekTokenIs(token.RPAREN) {
 				p.ctx.Errors = append(p.ctx.Errors, diagnostics.NewError(
 					diagnostics.ErrP006,

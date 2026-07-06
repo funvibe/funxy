@@ -6,21 +6,21 @@ import (
 
 func (e *Evaluator) evalRangeExpression(node *ast.RangeExpression, env *Environment) Object {
 	start := e.Eval(node.Start, env)
-	if isError(start) {
+	if isControlSignal(start) {
 		return start
 	}
 
 	var next Object = &Nil{}
 	if node.Next != nil {
 		nextVal := e.Eval(node.Next, env)
-		if isError(nextVal) {
+		if isControlSignal(nextVal) {
 			return nextVal
 		}
 		next = nextVal
 	}
 
 	end := e.Eval(node.End, env)
-	if isError(end) {
+	if isControlSignal(end) {
 		return end
 	}
 

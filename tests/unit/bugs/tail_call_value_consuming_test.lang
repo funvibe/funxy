@@ -1,0 +1,76 @@
+import "lib/test" (*)
+
+// Regression: a function call whose value is consumed by a following operation
+// must not be compiled as a tail call. Previously, when such a call was the last
+// thing in a function body, the compiler emitted OP_TAIL_CALL and returned from
+// the function immediately, skipping the surrounding operation.
+
+fun returnsFalse() -> Bool { false }
+fun returnsTrue() -> Bool { true }
+fun getNone() -> Option<Int> { None }
+fun getSome() -> Option<Int> { Some(5) }
+fun getOk() -> Result<String, Int> { Ok(5) }
+fun getFail() -> Result<String, Int> { Fail("boom") }
+fun n() -> Int { 3 }
+
+// || / && with a call as the left operand, in tail position
+fun orCall() -> Bool { returnsFalse() || true }
+fun andCall() -> Bool { returnsTrue() && false }
+
+// ?? with a call on the left, in tail position
+fun coalesceNone() -> Int { getNone() ?? 99 }
+fun coalesceSome() -> Int { getSome() ?? 99 }
+
+// ? unwrap in tail position
+fun tryOk() -> Int { getOk()? }
+fun tryFail() -> Result<String, Int> { Ok(getFail()?) }
+
+// string interpolation with a call in the last part
+fun interp() -> String { "v=${n()}" }
+
+// range bound is a call
+fun rangeCall() -> List<Int> { [x | x <- 1..n()] }
+
+// ? inside sub-expression contexts must still propagate Fail (tree-walk)
+fun tryInInfix() -> Result<String, Int> { Ok(getFail()? + 1) }
+fun tryInList() -> Result<String, List<Int>> { Ok([getFail()?]) }
+
+testRun("|| with call on left (tail position)", \ -> {
+    assertTrue(orCall())
+})
+
+testRun("&& with call on left (tail position)", \ -> {
+    assertEquals(false, andCall())
+})
+
+testRun("?? with empty Option on left returns default", \ -> {
+    assertEquals(99, coalesceNone())
+})
+
+testRun("?? with present Option on left unwraps", \ -> {
+    assertEquals(5, coalesceSome())
+})
+
+testRun("? unwraps Ok in tail position", \ -> {
+    assertEquals(5, tryOk())
+})
+
+testRun("? propagates Fail in tail position", \ -> {
+    assertEquals(Fail("boom"), tryFail())
+})
+
+testRun("interpolation with call in last part", \ -> {
+    assertEquals("v=3", interp())
+})
+
+testRun("range bound is a call", \ -> {
+    assertEquals([1, 2, 3], rangeCall())
+})
+
+testRun("? propagates Fail from inside infix operand", \ -> {
+    assertEquals(Fail("boom"), tryInInfix())
+})
+
+testRun("? propagates Fail from inside list element", \ -> {
+    assertEquals(Fail("boom"), tryInList())
+})

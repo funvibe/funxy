@@ -616,7 +616,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		return e.evalBitsLiteral(node, env)
 	case *ast.PrefixExpression:
 		right := e.Eval(node.Right, env)
-		if isError(right) {
+		if isControlSignal(right) {
 			return right
 		}
 		return e.evalPrefixExpression(node.Operator, right)
@@ -628,28 +628,28 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		// Short-circuit evaluation for && and ||
 		if node.Operator == "&&" {
 			left := e.Eval(node.Left, env)
-			if isError(left) {
+			if isControlSignal(left) {
 				return left
 			}
 			if !e.isTruthy(left) {
 				return left
 			}
 			right := e.Eval(node.Right, env)
-			if isError(right) {
+			if isControlSignal(right) {
 				return right
 			}
 			return right
 		}
 		if node.Operator == "||" {
 			left := e.Eval(node.Left, env)
-			if isError(left) {
+			if isControlSignal(left) {
 				return left
 			}
 			if e.isTruthy(left) {
 				return left
 			}
 			right := e.Eval(node.Right, env)
-			if isError(right) {
+			if isControlSignal(right) {
 				return right
 			}
 			return right
@@ -660,7 +660,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		// Ok(x) ?? y = x, Fail(_) ?? y = y
 		if node.Operator == "??" {
 			left := e.Eval(node.Left, env)
-			if isError(left) {
+			if isControlSignal(left) {
 				return left
 			}
 
@@ -859,11 +859,11 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 
 		// Standard evaluation for other operators
 		left := e.Eval(node.Left, env)
-		if isError(left) {
+		if isControlSignal(left) {
 			return left
 		}
 		right := e.Eval(node.Right, env)
-		if isError(right) {
+		if isControlSignal(right) {
 			return right
 		}
 		res := e.EvalInfixExpression(node.Operator, left, right)
@@ -888,7 +888,7 @@ func (e *Evaluator) evalCore(node ast.Node, env *Environment) Object {
 		return res
 	case *ast.PostfixExpression:
 		left := e.Eval(node.Left, env)
-		if isError(left) {
+		if isControlSignal(left) {
 			return left
 		}
 		return e.evalPostfixExpression(node.Operator, left)

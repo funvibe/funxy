@@ -1,0 +1,7 @@
+// Regression: the entry file's export list spans multiple lines and ends with a
+// trailing comma. This previously failed to parse with [P006].
+package calc (
+    add,
+    sub,
+    triple,
+)

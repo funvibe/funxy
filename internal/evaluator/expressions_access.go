@@ -49,7 +49,7 @@ func (e *Evaluator) evalMemberExpression(node *ast.MemberExpression, env *Enviro
 	}
 
 	left := e.Eval(node.Left, env)
-	if isError(left) {
+	if isControlSignal(left) {
 		return left
 	}
 
@@ -179,12 +179,12 @@ func (e *Evaluator) accessMember(obj Object, node *ast.MemberExpression, env *En
 
 func (e *Evaluator) evalIndexExpression(node *ast.IndexExpression, env *Environment) Object {
 	left := e.Eval(node.Left, env)
-	if isError(left) {
+	if isControlSignal(left) {
 		return left
 	}
 
 	index := e.Eval(node.Index, env)
-	if isError(index) {
+	if isControlSignal(index) {
 		return index
 	}
 

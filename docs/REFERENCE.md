@@ -2325,7 +2325,7 @@ match callWaitGroup("billing_workers", "processPayment", {amount: 100}) {
 
 See `examples/vmm` for a full example demonstrating safe callbacks and isolation.
 
-For more details, see the [Virtual Machine Manager (VMM) Tutorial](tutorial/new/47_vmm.md) and [Embedding Tutorial](tutorial/41_embedding.md).
+For more details, see the [Virtual Machine Manager (VMM) Tutorial](docs/tutorial/47_vmm.md) and [Embedding Tutorial](docs/tutorial/41_embedding.md).
 
 ---
 

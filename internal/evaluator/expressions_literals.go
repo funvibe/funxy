@@ -11,7 +11,7 @@ import (
 
 func (e *Evaluator) evalTupleLiteral(node *ast.TupleLiteral, env *Environment) Object {
 	elements := e.evalExpressions(node.Elements, env)
-	if len(elements) == 1 && isError(elements[0]) {
+	if len(elements) == 1 && isControlSignal(elements[0]) {
 		return elements[0]
 	}
 	return &Tuple{Elements: elements}
@@ -19,7 +19,7 @@ func (e *Evaluator) evalTupleLiteral(node *ast.TupleLiteral, env *Environment) O
 
 func (e *Evaluator) evalListLiteral(node *ast.ListLiteral, env *Environment) Object {
 	elements := e.evalExpressions(node.Elements, env)
-	if len(elements) == 1 && isError(elements[0]) {
+	if len(elements) == 1 && isControlSignal(elements[0]) {
 		return elements[0]
 	}
 	return newList(elements)
@@ -296,11 +296,11 @@ func (e *Evaluator) evalMapLiteral(node *ast.MapLiteral, env *Environment) Objec
 	result := newMap()
 	for _, pair := range node.Pairs {
 		key := e.Eval(pair.Key, env)
-		if isError(key) {
+		if isControlSignal(key) {
 			return key
 		}
 		value := e.Eval(pair.Value, env)
-		if isError(value) {
+		if isControlSignal(value) {
 			return value
 		}
 		result = result.put(key, value)
@@ -317,7 +317,7 @@ func (e *Evaluator) evalRecordLiteral(node *ast.RecordLiteral, env *Environment)
 	// Handle spread expression first: { ...base, key: val }
 	if node.Spread != nil {
 		spreadVal := e.Eval(node.Spread, env)
-		if isError(spreadVal) {
+		if isControlSignal(spreadVal) {
 			return spreadVal
 		}
 		// Spread value must be a record
@@ -351,7 +351,7 @@ func (e *Evaluator) evalRecordLiteral(node *ast.RecordLiteral, env *Environment)
 	for _, k := range keys {
 		v := node.Fields[k]
 		val := e.Eval(v, env)
-		if isError(val) {
+		if isControlSignal(val) {
 			return val
 		}
 		// Check if this is a new field (not in spread base)
@@ -440,7 +440,7 @@ func (e *Evaluator) evalInterpolatedString(node *ast.InterpolatedString, env *En
 
 	for _, part := range node.Parts {
 		val := e.Eval(part, env)
-		if isError(val) {
+		if isControlSignal(val) {
 			return val
 		}
 

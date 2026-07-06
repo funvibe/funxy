@@ -1,0 +1,95 @@
+import "lib/test" (*)
+
+// Fixed Bug: a binary operator at the START of the next line did not continue
+// the expression, so multi-line conditions like
+//
+//     if a == b
+//        && c == d { ... }
+//
+// failed to parse with [P005] expected next token to be '{', but got 'NEWLINE'.
+//
+// Only pipeline/concat operators were whitelisted as line-continuation operators.
+// Logical / comparison / arithmetic / bitwise operators were missing. The fix
+// extends the whitelist to all purely-infix operators (prefix-capable `-`, `!`,
+// `~` and brackets are intentionally excluded so independent statements that begin
+// with `-` are not merged).
+
+testRun("if condition continues with leading && (original repro)", fun() {
+    maxGroup = 1
+    minGroup = 1
+    lastDozens = [1, 1, 2, 2, 3, 3]
+
+    result = if maxGroup == minGroup && lastDozens[0] == lastDozens[1]
+                                     && lastDozens[2] == lastDozens[3]
+                                     && lastDozens[4] == lastDozens[5] {
+        "all equal pairs"
+    } else {
+        "nope"
+    }
+
+    assertEquals("all equal pairs", result, "leading && should continue the if condition")
+})
+
+testRun("leading && evaluates to false branch when a pair differs", fun() {
+    xs = [1, 1, 2, 2, 3, 9]
+
+    result = if xs[0] == xs[1]
+                && xs[2] == xs[3]
+                && xs[4] == xs[5] {
+        "equal"
+    } else {
+        "not equal"
+    }
+
+    assertEquals("not equal", result, "last pair differs => false branch")
+})
+
+testRun("leading || continues the expression", fun() {
+    a = 0
+    b = 5
+
+    ok = a > 0
+         || b > 0
+    assertTrue(ok, "0>0 || 5>0 should be true")
+
+    no = a > 0
+         || b < 0
+    assertFalse(no, "0>0 || 5<0 should be false")
+})
+
+testRun("leading arithmetic operators keep precedence", fun() {
+    // 100 + (20 * 2) == 140
+    total = 100
+          + 20
+          * 2
+    assertEquals(140, total, "precedence must be preserved across line breaks")
+})
+
+testRun("leading comparison operator continues", fun() {
+    x = 2 + 2
+        == 4
+    assertTrue(x, "2 + 2 == 4 across lines")
+})
+
+testRun("mixed multi-line condition inside a function", fun() {
+    fun classify(n: Int) -> String {
+        if n > 0
+           && n < 10 {
+            "small"
+        } else {
+            "other"
+        }
+    }
+
+    assertEquals("small", classify(5), "5 is small")
+    assertEquals("other", classify(50), "50 is other")
+})
+
+testRun("leading minus is NOT a continuation (separate statements)", fun() {
+    x = 10
+    y = 3
+    // `-y` on its own line is a standalone expression, not `x - y`.
+    x
+    -y
+    assertEquals(10, x, "x stays 10; the next line does not subtract from it")
+})
