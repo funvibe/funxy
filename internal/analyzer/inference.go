@@ -50,11 +50,60 @@ type InferenceContext struct {
 	// Recursion depth counter to prevent stack overflow during type inference
 	recursionDepth int
 
+	// ReturnTypeStack tracks the expected return type of the enclosing function
+	// during body inference. Unlike ExpectedReturnTypes (which only flows through
+	// value/tail positions), this stack is available to return statements in any
+	// position — including early returns inside non-tail if/match branches — so
+	// their value can be checked against the declared return type.
+	ReturnTypeStack []ReturnTypeExpectation
+
 	// BaseCounter tracks the counter start value for this context
 	// Used to distinguish generic parameters (created before) from inference variables (created during this session)
 	BaseCounter int
 	// Context for cancellation
 	Context context.Context
+}
+
+// ReturnTypeExpectation describes the contract for explicit return statements
+// in the currently inferred function. Check is false for functions whose
+// return type is inferred: their individual branches contribute to inference
+// instead of being checked against a prematurely chosen type variable.
+type ReturnTypeExpectation struct {
+	Type          typesystem.Type
+	Check         bool
+	RigidTypeVars map[string]typesystem.Kind
+}
+
+// PushReturnTypeExpectation pushes the current function's return contract.
+// With no annotation, Check is false and the entry only shadows an enclosing
+// function. Rigid variables are protected from unrelated or earlier inference
+// substitutions while explicit return values are checked.
+func (ctx *InferenceContext) PushReturnTypeExpectation(
+	declaredRet typesystem.Type,
+	hasAnnotation bool,
+	rigidTypeVars map[string]typesystem.Kind,
+) {
+	ctx.ReturnTypeStack = append(ctx.ReturnTypeStack, ReturnTypeExpectation{
+		Type:          declaredRet,
+		Check:         hasAnnotation,
+		RigidTypeVars: rigidTypeVars,
+	})
+}
+
+// PopReturnType removes the topmost expected return type from the stack.
+func (ctx *InferenceContext) PopReturnType() {
+	if len(ctx.ReturnTypeStack) == 0 {
+		return
+	}
+	ctx.ReturnTypeStack = ctx.ReturnTypeStack[:len(ctx.ReturnTypeStack)-1]
+}
+
+// CurrentReturnExpectation returns the innermost function's return contract.
+func (ctx *InferenceContext) CurrentReturnExpectation() (ReturnTypeExpectation, bool) {
+	if len(ctx.ReturnTypeStack) == 0 {
+		return ReturnTypeExpectation{}, false
+	}
+	return ctx.ReturnTypeStack[len(ctx.ReturnTypeStack)-1], true
 }
 
 // PendingWitness represents a trait constraint that needs a witness

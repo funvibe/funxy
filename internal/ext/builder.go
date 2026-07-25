@@ -130,6 +130,9 @@ func (b *Builder) Build() (*BuildResult, error) {
 	inspector := NewInspector(b.goVersion)
 	// Reuse our workspace
 	inspector.workDir = b.workDir
+	// Propagate the config dir so local: paths in Inspect() resolve relative
+	// to funxy.yaml, not the current working directory.
+	inspector.SetConfigDir(b.configDir)
 
 	if err := inspector.setupWorkspace(b.config, b.configDir); err != nil {
 		return nil, fmt.Errorf("workspace setup: %w", err)

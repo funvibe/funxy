@@ -832,6 +832,70 @@ print("Sum: " ++ show(add(2, 3)))
 	}
 }
 
+// TestE2E_LocalDep_BuildFromDifferentCWD verifies that `funxy build` resolves
+// local: dependency paths relative to funxy.yaml, not the current working
+// directory. Regression test: building with an absolute source path from a CWD
+// other than the project dir used to fail because the inspector regenerated the
+// workspace with an empty configDir, resolving local: against CWD.
+func TestE2E_LocalDep_BuildFromDifferentCWD(t *testing.T) {
+	skipIfShortOrNoGo(t)
+	binary, sourceDir := buildFunxyBinary(t)
+
+	projectDir := t.TempDir()
+
+	localModName := "local.dev/golib"
+	writeLocalGoPackage(t, projectDir, localModName)
+
+	yamlContent := fmt.Sprintf(`deps:
+  - pkg: %s
+    local: ./golib
+    bind:
+      - func: Greet
+        as: greet
+      - func: Add
+        as: add
+`, localModName)
+	if err := os.WriteFile(filepath.Join(projectDir, "funxy.yaml"), []byte(yamlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	script := `import "ext/golib" (greet, add)
+print(greet("World"))
+print("Sum: " ++ show(add(2, 3)))
+`
+	if err := os.WriteFile(filepath.Join(projectDir, "app.lang"), []byte(script), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build from a DIFFERENT working directory using an absolute source path.
+	otherCWD := t.TempDir()
+	appBinary := filepath.Join(projectDir, "app")
+	output, err := runFunxy(t, binary, sourceDir, otherCWD,
+		"build", filepath.Join(projectDir, "app.lang"), "-o", appBinary,
+	)
+	t.Logf("build output:\n%s", output)
+	if err != nil {
+		t.Fatalf("funxy build from different CWD failed: %v\n%s", err, output)
+	}
+
+	// Run the built binary (also from the unrelated CWD).
+	runCmd := exec.Command(appBinary)
+	runCmd.Dir = otherCWD
+	runOutput, err := runCmd.CombinedOutput()
+	t.Logf("Script output:\n%s", string(runOutput))
+	if err != nil {
+		t.Fatalf("built binary failed: %v\n%s", err, string(runOutput))
+	}
+
+	outStr := string(runOutput)
+	if !strings.Contains(outStr, "Hello, World!") {
+		t.Errorf("expected 'Hello, World!' in output, got: %s", outStr)
+	}
+	if !strings.Contains(outStr, "Sum: 5") {
+		t.Errorf("expected 'Sum: 5' in output, got: %s", outStr)
+	}
+}
+
 // TestE2E_LocalDep_Validation tests that invalid local paths are caught.
 func TestE2E_LocalDep_Validation(t *testing.T) {
 	skipIfShortOrNoGo(t)

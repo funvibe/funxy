@@ -1,0 +1,37 @@
+import "lib/test" (*)
+
+// Regression guard for the early-return fix's TVar-skip path.
+//
+// When a function's return type is *inferred* (no annotation), the expected
+// return type is an unbound type variable. The per-branch early-return check
+// must be SKIPPED in that case, otherwise legitimate programs are wrongly
+// rejected. This test exercises that path end-to-end through the compiler
+// and runtime.
+//
+// Note: an `if` *expression* still requires both branches to unify, so these
+// cases use a single-typed early return (the real shape the TVar-skip path
+// must allow). Without the skip, the early `return` would be checked against
+// an unbound TVar and could be wrongly rejected.
+
+testRun("inferred return: early return Int, trailing Int", fun() -> {
+    fun classify(n: Int) {
+        if n > 0 {
+            return 1
+        }
+        0
+    }
+    assertEquals(1, classify(5), "positive branch returns Int via early return")
+    assertEquals(0, classify(-1), "fallback branch returns Int")
+})
+
+testRun("inferred return: single-typed early return compiles and runs", fun() -> {
+    // Even with an inferred return type, a single-typed early return must work.
+    fun firstOr(items: List<Int>, fallback: Int) {
+        if len(items) > 0 {
+            return items[0]
+        }
+        fallback
+    }
+    assertEquals(1, firstOr([1, 2, 3], 99), "returns first element")
+    assertEquals(99, firstOr([], 99), "returns fallback")
+})

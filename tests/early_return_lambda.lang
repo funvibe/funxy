@@ -1,0 +1,24 @@
+// Regression: an early `return` inside a lambda with an explicit return type
+// annotation must be checked against that annotation at compile time.
+//
+// Bug: `return x` returns a single Tag where the lambda declares `-> List<Tag>`.
+// The analyzer's inferFunctionLiteral only pushed the *contextual* expected
+// return type onto ReturnTypeStack, not the lambda's own n.ReturnType, so the
+// early-return mismatch check was skipped. The body-level check only inspected
+// the trailing expression ([x], which is List<Tag> and matches), so the invalid
+// early return slipped through and failed at runtime instead of compile time.
+//
+// Expected: compile-time type error on the mismatched return branch.
+type Tag = Alpha | Beta | Gamma
+
+fun apply(items: List<Tag>) -> List<Tag> {
+    f = fun(x: Tag) -> List<Tag> {
+        if true {
+            return x
+        }
+        [x]
+    }
+    f(items[-1])
+}
+
+print(apply([Alpha, Beta, Gamma]))

@@ -110,6 +110,252 @@ fun f() -> Int { "hello" }
 	expectAnalyzerError(t, input, diagnostics.ErrA003)
 }
 
+// TestA003_EarlyReturnTypeMismatch verifies that an early `return` in a
+// non-tail branch is checked against the function's declared return type —
+// not just the trailing body expression. Previously the analyzer only checked
+// the trailing expression, so `return items[-1]` (a single Tag) inside an `if`
+// branch slipped past the body-level check when the declared return type was
+// List<Tag>, compiled fine, and failed at runtime when the value was iterated.
+func TestA003_EarlyReturnTypeMismatch(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun pickTags(items: List<Tag>, take: Bool) -> List<Tag> {
+    if take {
+        return items[-1]
+    }
+    [items[-1]]
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected 'return type mismatch' in error, got: %s", e.Error())
+	}
+}
+
+// TestA003_EarlyReturnTypeMatch ensures the early-return check does not reject
+// a correct early return whose value matches the declared return type.
+func TestA003_EarlyReturnTypeMatch(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun pickTags(items: List<Tag>, take: Bool) -> List<Tag> {
+    if take {
+        return [items[-1]]
+    }
+    [items[-1]]
+}`
+	expectNoAnalyzerErrors(t, input)
+}
+
+// TestA003_EarlyReturnInElseBranch verifies that an early `return` in an
+// `else` branch (not just the `if` branch) is checked against the declared
+// return type. The original fix's tests only covered the `if` branch.
+func TestA003_EarlyReturnInElseBranch(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun pickTags(items: List<Tag>, take: Bool) -> List<Tag> {
+    if take {
+        [items[-1]]
+    } else {
+        return items[-1]
+    }
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected 'return type mismatch' in error, got: %s", e.Error())
+	}
+}
+
+// TestA003_EarlyReturnInNestedFunction verifies that an early `return` inside
+// a nested local function is checked against *that* function's declared return
+// type, not the enclosing function's. Without the ReturnTypeStack push in
+// inferBlockStatement's nested-function path, this would slip through.
+func TestA003_EarlyReturnInNestedFunction(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun outer(items: List<Tag>) -> List<Tag> {
+    fun inner(x: Tag) -> List<Tag> {
+        if true {
+            return x
+        }
+        [x]
+    }
+    inner(items[-1])
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected 'return type mismatch' in error, got: %s", e.Error())
+	}
+}
+
+// TestA003_EarlyReturnInLambda verifies that an early `return` inside a lambda
+// with an explicit return type annotation is checked against that annotation.
+// This is the case the current fix does NOT cover: inferFunctionLiteral only
+// pushes the contextual expectedFuncType.ReturnType, not the lambda's own
+// n.ReturnType, so an early return in a non-tail branch slips past the check
+// and is only caught (if at all) at runtime.
+func TestA003_EarlyReturnInLambda(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun apply(items: List<Tag>) -> List<Tag> {
+    f = fun(x: Tag) -> List<Tag> {
+        if true {
+            return x
+        }
+        [x]
+    }
+    f(items[-1])
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected 'return type mismatch' in error, got: %s", e.Error())
+	}
+}
+
+// TestA003_EarlyReturnInLambdaMatch ensures a correct early return inside a
+// lambda with an explicit return type is not rejected.
+func TestA003_EarlyReturnInLambdaMatch(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun apply(items: List<Tag>) -> List<Tag> {
+    f = fun(x: Tag) -> List<Tag> {
+        if true {
+            return [x]
+        }
+        [x]
+    }
+    f(items[-1])
+}`
+	expectNoAnalyzerErrors(t, input)
+}
+
+// TestA003_EarlyReturnInMatchBranch verifies that an early `return` inside a
+// `match` branch (not just an `if` branch) is checked against the declared
+// return type. The original fix's tests only covered `if`/`else` branches.
+func TestA003_EarlyReturnInMatchBranch(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun pickTag(items: List<Tag>) -> List<Tag> {
+    match items[-1] {
+        Alpha -> {
+            return items[-1]
+        }
+        _ -> [items[-1]]
+    }
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected 'return type mismatch' in error, got: %s", e.Error())
+	}
+}
+
+// TestA003_EarlyReturnInMatchBranchMatch ensures a correct early return inside
+// a `match` branch is not rejected.
+func TestA003_EarlyReturnInMatchBranchMatch(t *testing.T) {
+	input := `
+type Tag = Alpha | Beta | Gamma
+
+fun pickTag(items: List<Tag>) -> List<Tag> {
+    match items[-1] {
+        Alpha -> {
+            return [items[-1]]
+        }
+        _ -> [items[-1]]
+    }
+}`
+	expectNoAnalyzerErrors(t, input)
+}
+
+// TestA003_InferredUnionReturnWithEarlyReturn guards the TVar-skip path: when
+// a function's return type is *inferred* (no annotation), different return
+// branches may produce a union of types. The per-branch early-return check
+// must be skipped in that case, otherwise legitimate programs are rejected.
+func TestA003_InferredUnionReturnWithEarlyReturn(t *testing.T) {
+	input := `
+fun classify(n: Int) {
+    if n > 0 {
+        return 1
+    }
+    "neg"
+}`
+	expectNoAnalyzerErrors(t, input)
+}
+
+func TestA003_EarlyReturnRejectsConcreteValueForGenericReturn(t *testing.T) {
+	input := `
+fun bad<t>(x: t) -> t {
+    if true {
+        return 1
+    }
+    x
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected generic return mismatch, got: %s", e.Error())
+	}
+}
+
+func TestA003_EarlyReturnRejectsConcreteListForGenericReturn(t *testing.T) {
+	input := `
+fun bad<t>(x: t) -> List<t> {
+    if true {
+        return [1]
+    }
+    [x]
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected generic list return mismatch, got: %s", e.Error())
+	}
+}
+
+func TestA003_EarlyReturnAcceptsDeclaredGenericValue(t *testing.T) {
+	input := `
+fun good<t>(x: t) -> t {
+    if true {
+        return x
+    }
+    x
+}`
+	expectNoAnalyzerErrors(t, input)
+}
+
+func TestA003_EarlyReturnRejectsConcreteValueForGenericLambda(t *testing.T) {
+	input := `
+fun outer() -> Int {
+    f = fun(x: t) -> t {
+        if true {
+            return 1
+        }
+        x
+    }
+    0
+}`
+	e := expectAnalyzerError(t, input, diagnostics.ErrA003)
+	if !strings.Contains(e.Error(), "return type mismatch") {
+		t.Errorf("expected generic lambda return mismatch, got: %s", e.Error())
+	}
+}
+
+func TestA003_EarlyReturnAcceptsDeclaredGenericLambdaValue(t *testing.T) {
+	input := `
+fun outer() -> Int {
+    f = fun(x: t) -> t {
+        if true {
+            return x
+        }
+        x
+    }
+    0
+}`
+	expectNoAnalyzerErrors(t, input)
+}
+
 func TestA003_ConstReassignment(t *testing.T) {
 	// Constants cannot be reassigned
 	input := `

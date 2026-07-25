@@ -1,0 +1,25 @@
+package literal_repro (*)
+
+type Tag = Red | Black
+type alias Target = Tag | Nil
+
+type alias Item = {
+    target: Target
+    weight: Int
+    fails: Int
+}
+
+type alias Box = {
+    item: Item | Nil
+}
+
+fun makeItem(target: Target, weight: Int, fails: Int) -> Item {
+    {target: target, weight: weight, fails: fails}
+}
+
+fun getItem(box: Box) -> Item {
+    match box.item {
+        _: Nil -> panic("item is nil")
+        item: Item -> item
+    }
+}

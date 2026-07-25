@@ -526,7 +526,29 @@ func (w *walker) analyzeFunctionBody(n *ast.FunctionStatement) {
 			w.inferCtx.ExpectedReturnTypes[n.Body] = expectedRetType
 		}
 
+		// Push the return type onto the inference stack so that early `return`
+		// statements in non-tail positions (e.g. inside an `if` branch) can be
+		// checked against the function signature, not just the trailing body
+		// expression.
+		returnContractType := expectedRetType
+		var rigidReturnVars map[string]typesystem.Kind
+		if n.ReturnType != nil {
+			// The body is historically inferred with flexible TVars, but an explicit
+			// generic return annotation is a rigid contract. Rigidify only the type
+			// used to validate `return` statements so normal body inference and
+			// monomorphization keep their existing behavior.
+			returnRigidSubst := make(typesystem.Subst)
+			rigidReturnVars = make(map[string]typesystem.Kind, len(n.TypeParams))
+			for _, tp := range n.TypeParams {
+				kind := inferKindFromFunction(n, tp.Value, w.symbolTable)
+				returnRigidSubst[tp.Value] = typesystem.TCon{Name: tp.Value, KindVal: kind}
+				rigidReturnVars[tp.Value] = kind
+			}
+			returnContractType = expectedRetType.Apply(returnRigidSubst)
+		}
+		w.inferCtx.PushReturnTypeExpectation(returnContractType, n.ReturnType != nil, rigidReturnVars)
 		bodyType, sBody, err := InferWithContext(w.inferCtx, n.Body, w.symbolTable)
+		w.inferCtx.PopReturnType()
 		if err != nil {
 			w.appendError(n.Body, err)
 		} else {

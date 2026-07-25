@@ -94,6 +94,7 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 
 	case *ast.RecordLiteral:
 		fieldTypes := make(map[string]typesystem.Type)
+		nominalFieldTypes := make(map[string]typesystem.Type)
 		totalSubst := typesystem.Subst{}
 
 		// Handle spread expression first: { ...base, key: val }
@@ -104,6 +105,11 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			}
 			totalSubst = s.Compose(totalSubst)
 			spreadType = spreadType.Apply(totalSubst)
+			if nominalRecord, ok := resolveRecordShapePreservingAliases(spreadType, table); ok {
+				for k, v := range nominalRecord.Fields {
+					nominalFieldTypes[k] = v
+				}
+			}
 
 			// Resolve type alias to get underlying record type
 			spreadType = table.ResolveTypeAlias(spreadType)
@@ -126,9 +132,22 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 		}
 		sort.Strings(keys)
 
-		// Override/add fields from explicit field definitions
+		// Override/add fields from explicit field definitions.
+		// When a spread base provides a field type, propagate it as the expected
+		// type for the overriding value. This is critical for nominal type
+		// preservation: e.g. `{...box, item: {target: ..., weight: ..., fails: ...}}`
+		// where `item` has type `Item` (a type alias for a record). Without
+		// propagating the expected field type, the inner record literal is
+		// inferred as an anonymous TRecord and loses its `Item` nominal tag,
+		// causing downstream pattern matches on `item: Item` to fail at runtime.
 		for _, k := range keys {
 			v := n.Fields[k]
+			if existingType, hasField := fieldTypes[k]; hasField && ctx.ExpectedTypes != nil {
+				if nominalType, hasNominalField := nominalFieldTypes[k]; hasNominalField {
+					existingType = nominalType
+				}
+				ctx.ExpectedTypes[v] = existingType.Apply(totalSubst)
+			}
 			t, s, err := inferFn(v, table)
 			if err != nil {
 				return nil, nil, err
@@ -142,11 +161,72 @@ func inferLiteral(ctx *InferenceContext, node ast.Node, table *symbols.SymbolTab
 			finalFields[k] = t.Apply(totalSubst)
 		}
 
-		// Return anonymous record type by default
-		// Nominal typing is handled via explicit type annotations or unification
+		// Return anonymous record type by default.
+		// Nominal typing is handled via explicit type annotations or unification.
 		// Empty record literal {} is treated as Open to allow it to unify with any record (as a base/default)
 		isOpen := len(finalFields) == 0
-		return typesystem.TRecord{Fields: finalFields, IsOpen: isOpen}, totalSubst, nil
+		resultRecord := typesystem.TRecord{Fields: finalFields, IsOpen: isOpen}
+
+		// Nominal type preservation: if there is an expected type for this
+		// record literal that is a nominal type (TCon) whose underlying type
+		// (via alias resolution) is a record, return the nominal TCon instead
+		// of the anonymous TRecord. This ensures the TypeMap stores the nominal
+		// type name so the VM compiler can emit it as the record's TypeName,
+		// preserving nominal identity for downstream pattern matching and
+		// trait dispatch (e.g. `match box.item { item: Item -> ... }`).
+		if expectedType, ok := ctx.ExpectedTypes[n]; ok {
+			nominalTypes := resolveNominalRecordTypes(expectedType, table)
+			if len(nominalTypes) > 0 {
+				// Structural validation before adopting the nominal tag.
+				// Returning the nominal type (TCon or TApp) bypasses the unification the
+				// caller would normally perform against the anonymous TRecord,
+				// so we must verify here that the literal actually matches the
+				// underlying record structure. Without this, a literal with a
+				// wrong field type or a missing field would silently be stamped
+				// with the nominal type and fail at runtime (e.g. `record has no
+				// field 'fails'`).
+				//
+				// Validation is strict (no width subtyping): a literal with
+				// extra fields is rejected, consistent with how record function
+				// returns are checked (statements.go). Otherwise the nominal
+				// tag would swallow the extra fields and hide them from the
+				// outer strict return check, creating an inconsistency between
+				// direct (`{item: Item}`) and union (`{item: Item | ...}`)
+				// contexts. The sole exception is the "any record" idiom
+				// (`type alias AnyRecord = {}`), a closed empty record used to
+				// accept any record shape; there we must allow width subtyping.
+				resolver := &ResolverWrapper{Table: table, Ctx: ctx}
+				var firstErr error
+				for _, nominalType := range nominalTypes {
+					underlying := table.ResolveTypeAlias(nominalType)
+
+					allowExtra := false
+					if rec, isRec := underlying.(typesystem.TRecord); isRec && len(rec.Fields) == 0 {
+						allowExtra = true
+					}
+
+					var s typesystem.Subst
+					var err error
+					if allowExtra {
+						s, err = typesystem.UnifyAllowExtraWithResolver(underlying, resultRecord, resolver)
+					} else {
+						s, err = typesystem.UnifyWithResolver(underlying, resultRecord, resolver)
+					}
+					if err != nil {
+						if firstErr == nil {
+							firstErr = err
+						}
+						continue
+					}
+					totalSubst = s.Compose(totalSubst)
+					ctx.GlobalSubst = s.Compose(ctx.GlobalSubst)
+					return nominalType, totalSubst, nil
+				}
+				return nil, nil, inferErrorf(n, "record literal does not match any nominal record in expected type %s: %s", expectedType, firstErr)
+			}
+		}
+
+		return resultRecord, totalSubst, nil
 
 	case *ast.ListLiteral:
 		if n == nil {
@@ -535,5 +615,102 @@ func bindPatternType(pattern ast.Pattern, t typesystem.Type, table *symbols.Symb
 				}
 			}
 		}
+	}
+}
+
+// resolveNominalRecordTypes returns nominal record candidates contained in an
+// expected type. Candidates are validated against the literal by the caller;
+// this is important for unions such as A | B where both members are records.
+// The complete TApp is preserved so generic arguments remain available during
+// structural validation and in the TypeMap.
+func resolveNominalRecordTypes(expectedType typesystem.Type, table *symbols.SymbolTable) []typesystem.Type {
+	if expectedType == nil {
+		return nil
+	}
+	if union, ok := expectedType.(typesystem.TUnion); ok {
+		var candidates []typesystem.Type
+		for _, member := range union.Types {
+			candidates = append(candidates, resolveNominalRecordTypes(member, table)...)
+		}
+		return candidates
+	}
+	resolved := table.ResolveTypeAlias(expectedType)
+	if _, isRecord := resolved.(typesystem.TRecord); !isRecord {
+		return nil
+	}
+	switch expectedType.(type) {
+	case typesystem.TCon, typesystem.TApp:
+		return []typesystem.Type{expectedType}
+	default:
+		return nil
+	}
+}
+
+// resolveRecordShapePreservingAliases expands only the outer record alias.
+// Unlike SymbolTable.ResolveTypeAlias, it intentionally leaves field aliases
+// nominal so an overridden spread field can pass Item or Entry<Int> as the
+// expected type of its inline record literal.
+func resolveRecordShapePreservingAliases(t typesystem.Type, table *symbols.SymbolTable) (typesystem.TRecord, bool) {
+	return resolveRecordShapePreservingAliasesDepth(t, table, 0)
+}
+
+func resolveRecordShapePreservingAliasesDepth(t typesystem.Type, table *symbols.SymbolTable, depth int) (typesystem.TRecord, bool) {
+	if t == nil || depth > 64 {
+		return typesystem.TRecord{}, false
+	}
+	switch ty := t.(type) {
+	case typesystem.TRecord:
+		return ty, true
+	case typesystem.TCon:
+		underlying := ty.UnderlyingType
+		if underlying == nil {
+			lookupName := ty.Name
+			if ty.Module != "" {
+				lookupName = ty.Module + "." + ty.Name
+			}
+			if alias, ok := table.GetTypeAlias(lookupName); ok {
+				underlying = alias
+			}
+		}
+		if underlying == nil {
+			return typesystem.TRecord{}, false
+		}
+		return resolveRecordShapePreservingAliasesDepth(underlying, table, depth+1)
+	case typesystem.TApp:
+		constructor, ok := ty.Constructor.(typesystem.TCon)
+		if !ok {
+			return typesystem.TRecord{}, false
+		}
+		underlying := constructor.UnderlyingType
+		lookupName := constructor.Name
+		if constructor.Module != "" {
+			lookupName = constructor.Module + "." + constructor.Name
+		}
+		if underlying == nil {
+			if alias, found := table.GetTypeAlias(lookupName); found {
+				underlying = alias
+			}
+		}
+		if underlying == nil {
+			return typesystem.TRecord{}, false
+		}
+		var params []string
+		if constructor.TypeParams != nil {
+			params = *constructor.TypeParams
+		} else if registered, found := table.GetTypeParams(lookupName); found {
+			params = registered
+		} else if registered, found := table.GetTypeParams(constructor.Name); found {
+			params = registered
+		}
+		if len(params) == len(ty.Args) {
+			subst := make(typesystem.Subst, len(params))
+			for i, param := range params {
+				subst[param] = ty.Args[i]
+			}
+			underlying = underlying.Apply(subst)
+		}
+		return resolveRecordShapePreservingAliasesDepth(underlying, table, depth+1)
+	default:
+		return typesystem.TRecord{}, false
 	}
 }

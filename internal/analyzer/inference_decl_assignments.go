@@ -525,8 +525,53 @@ func inferFunctionLiteral(ctx *InferenceContext, n *ast.FunctionLiteral, table *
 		ctx.ExpectedReturnTypes[n.Body] = expectedFuncType.ReturnType
 	}
 
+	// Resolve the lambda's expected return type so early `return` statements in
+	// non-tail branches are checked against it. Priority:
+	//   1. The lambda's own explicit return annotation — its local contract.
+	//   2. Contextual return type (expectedFuncType.ReturnType).
+	//   3. nil (inferred) — shadows the enclosing function's return type so
+	//      early returns are not wrongly checked against the outer type.
+	//
+	// The lambda's own `n.ReturnType` is built in a *throwaway* child scope of
+	// enclosedTable. This lets BuildType resolve existing types (including the
+	// lambda's parameter type variables) through the outer chain, while keeping
+	// the "implicit generic discovery" side effect (DefineType of fresh TVars
+	// for lowercase names) isolated in the throwaway scope. Building directly in
+	// enclosedTable would mutate it before body inference and disrupt body
+	// inference for instance methods (e.g. `fun pure(a) -> Either<e, a>`).
+	// The lambda's explicit return type is still validated against the body by
+	// the existing check below (UnifyAllowExtraWithResolver(retType, bodyType)).
+	var lambdaRetType typesystem.Type
+	var rigidReturnVars map[string]typesystem.Kind
+	hasAnnotation := false
+	if n.ReturnType != nil {
+		tmpScope := symbols.NewEnclosedSymbolTable(enclosedTable, symbols.ScopeFunction)
+		var tmpErrs []*diagnostics.DiagnosticError
+		lambdaRetType = BuildType(n.ReturnType, tmpScope, &tmpErrs)
+		// Ignore tmpErrs here: real validation/error reporting happens in the
+		// post-body check below, which builds n.ReturnType in enclosedTable.
+		lambdaRetType = OpenRecords(lambdaRetType, ctx.FreshVar)
+		// Free variables introduced by an explicit annotation are generic
+		// parameters of that annotation, not inference placeholders. Treat them as
+		// rigid while validating early returns (`fun(x: t) -> t { ... }`).
+		rigidSubst := make(typesystem.Subst)
+		freeVars := lambdaRetType.FreeTypeVariables()
+		rigidReturnVars = make(map[string]typesystem.Kind, len(freeVars))
+		for _, tv := range freeVars {
+			rigidSubst[tv.Name] = typesystem.TCon{Name: tv.Name, KindVal: tv.Kind()}
+			rigidReturnVars[tv.Name] = tv.Kind()
+		}
+		lambdaRetType = lambdaRetType.Apply(rigidSubst)
+		hasAnnotation = true
+	} else if expectedFuncType != nil {
+		lambdaRetType = expectedFuncType.ReturnType
+		hasAnnotation = true
+	}
+
+	ctx.PushReturnTypeExpectation(lambdaRetType, hasAnnotation, rigidReturnVars)
 	// Infer body
 	bodyType, sBody, err := inferFn(n.Body, enclosedTable)
+	ctx.PopReturnType()
 	if err != nil {
 		return nil, nil, err
 	}

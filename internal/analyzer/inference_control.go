@@ -470,13 +470,46 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 			lastType = typesystem.Nil
 		} else if rs, ok := stmt.(*ast.ReturnStatement); ok {
 			var retType typesystem.Type = typesystem.Nil
+			// The expected return type for this return statement comes from two sources:
+			//   1. Context-sensitive propagation (ExpectedReturnTypes) — only set when
+			//      this block is in tail/value position.
+			//   2. The enclosing function's declared return type (ReturnTypeStack) —
+			//      always available inside a function body, covering early returns in
+			//      non-tail branches (e.g. inside an `if` that is not the last statement).
+			// We prefer the context-sensitive one (more refined) and fall back to the
+			// function-level one so early returns are still checked against the signature.
+			expectedForReturn := expectedReturnType
+			returnExpectation, hasReturnExpectation := ctx.CurrentReturnExpectation()
+			if returnExpectation.Check && returnExpectation.Type != nil {
+				// An explicit declaration is the function's contract. In particular,
+				// its generic parameters may be rigid skolems and must not be replaced
+				// by a more weakly represented contextual TVar.
+				expectedForReturn = returnExpectation.Type
+			} else if expectedForReturn == nil {
+				expectedForReturn = returnExpectation.Type
+			}
+			// When the expected type is an unbound type variable, the enclosing
+			// function's return type is being *inferred*. Different return branches
+			// are then allowed to produce a union return type (see
+			// tests/unit/complex/expected_union_context_test.lang), so per-branch
+			// checking would wrongly reject legitimate programs. Skip the mismatch
+			// check in that case; context-sensitive inference of the value below is
+			// still guided by the type variable.
+			checkMismatch := expectedForReturn != nil
+			if hasReturnExpectation {
+				checkMismatch = returnExpectation.Check && expectedForReturn != nil
+			} else if _, isTVar := expectedForReturn.(typesystem.TVar); isTVar {
+				// Legacy/no-stack inference path. A TVar here has no declared
+				// contract, so let branch inference resolve it.
+				checkMismatch = false
+			}
 			if rs.Value != nil {
 				// Propagate expected return type to return expression
-				if expectedReturnType != nil {
+				if expectedForReturn != nil {
 					if ctx.ExpectedReturnTypes == nil {
 						ctx.ExpectedReturnTypes = make(map[ast.Node]typesystem.Type)
 					}
-					ctx.ExpectedReturnTypes[rs.Value] = expectedReturnType
+					ctx.ExpectedReturnTypes[rs.Value] = expectedForReturn
 				}
 				t, s, err := inferFn(rs.Value, enclosedTable)
 				if err != nil {
@@ -485,6 +518,42 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				totalSubst = s.Compose(totalSubst)
 				ctx.GlobalSubst = s.Compose(ctx.GlobalSubst)
 				retType = t
+			}
+			// Verify the returned value matches the function's declared return type.
+			// Without this, an early `return` in one branch can return a value of
+			// type T where List<T> (or any other type) is expected, slipping past the
+			// body-level check (which only inspects the trailing expression) and
+			// failing at runtime instead of compile time.
+			if checkMismatch {
+				globalForCheck := ctx.GlobalSubst
+				totalForCheck := totalSubst
+				if len(returnExpectation.RigidTypeVars) > 0 {
+					globalForCheck = withoutRigidReturnSubstitutions(ctx.GlobalSubst, returnExpectation.RigidTypeVars)
+					totalForCheck = withoutRigidReturnSubstitutions(totalSubst, returnExpectation.RigidTypeVars)
+				}
+				resolvedRet := retType.Apply(globalForCheck).Apply(totalForCheck)
+				resolvedExpected := expectedForReturn.Apply(globalForCheck).Apply(totalForCheck)
+				if len(returnExpectation.RigidTypeVars) > 0 {
+					rigidSubst := make(typesystem.Subst, len(returnExpectation.RigidTypeVars))
+					for name, kind := range returnExpectation.RigidTypeVars {
+						rigidSubst[name] = typesystem.TCon{Name: name, KindVal: kind}
+					}
+					resolvedRet = resolvedRet.Apply(rigidSubst)
+					resolvedExpected = resolvedExpected.Apply(rigidSubst)
+				}
+				retResolver := &ResolverWrapper{Table: enclosedTable, Ctx: ctx}
+				// Use AllowExtra (width subtyping) so an early `return` follows the
+				// same rules as the trailing/tail expression of a lambda or function
+				// body: a record with extra fields is accepted where a narrower
+				// record type is declared (e.g. returning {x,y,z} where -> {x,y}).
+				// Using strict UnifyWithResolver here would make early returns
+				// stricter than tail expressions within the same function.
+				s, err := typesystem.UnifyAllowExtraWithResolver(resolvedExpected, resolvedRet, retResolver)
+				if err != nil {
+					return nil, nil, inferErrorf(rs, "return type mismatch: expected %s, got %s", resolvedExpected, resolvedRet)
+				}
+				totalSubst = s.Compose(totalSubst)
+				ctx.GlobalSubst = s.Compose(ctx.GlobalSubst)
 			}
 			return retType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
 		} else if id, ok := stmt.(*ast.InstanceDeclaration); ok {
@@ -767,7 +836,18 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 				}
 			}
 
+			// Push the nested function's return type so early `return` statements
+			// inside non-tail branches are checked against its signature.
+			var rigidReturnVars map[string]typesystem.Kind
+			if fs.ReturnType != nil && len(typeParamVars) > 0 {
+				rigidReturnVars = make(map[string]typesystem.Kind, len(typeParamVars))
+				for i, tv := range typeParamVars {
+					rigidReturnVars[typeParamNames[i]] = tv.Kind()
+				}
+			}
+			ctx.PushReturnTypeExpectation(skolemRetType, fs.ReturnType != nil, rigidReturnVars)
 			bodyType, sBody, err := inferFn(fs.Body, fnScope)
+			ctx.PopReturnType()
 
 			// Filter out constraints satisfied by local context (ActiveConstraints)
 			// This prevents them from bubbling up to outer scopes where the local type params are unknown
@@ -913,6 +993,19 @@ func inferBlockStatement(ctx *InferenceContext, n *ast.BlockStatement, table *sy
 	ctx.PendingWitnesses = append(oldPending, unresolvedWitnesses...)
 
 	return lastType.Apply(ctx.GlobalSubst).Apply(totalSubst), totalSubst, nil
+}
+
+func withoutRigidReturnSubstitutions(s typesystem.Subst, rigidVars map[string]typesystem.Kind) typesystem.Subst {
+	if len(s) == 0 || len(rigidVars) == 0 {
+		return s
+	}
+	filtered := make(typesystem.Subst, len(s))
+	for name, replacement := range s {
+		if _, rigid := rigidVars[name]; !rigid {
+			filtered[name] = replacement
+		}
+	}
+	return filtered
 }
 
 func inferForExpression(ctx *InferenceContext, n *ast.ForExpression, table *symbols.SymbolTable, inferFn func(ast.Node, *symbols.SymbolTable) (typesystem.Type, typesystem.Subst, error)) (typesystem.Type, typesystem.Subst, error) {

@@ -1,0 +1,78 @@
+// Minimal repro: inline record literal assigned to a typed alias field
+// in a cross-module update breaks dot access via a typed getter.
+//
+// Symptom (runtime): getItem(box).fails => "cannot get field from NIL"
+// Direct match on box.item with `item: Item` still works.
+// Workaround: use makeItem(...) instead of an inline record literal.
+//
+// Run: funxy tests/funxy_stored_target_literal_repro.lang
+
+import "lib/test" (*)
+import "./literal_repro" (*)
+
+fun bumpBad(box: Box) -> Box {
+    match box.item {
+        _: Nil -> box
+        item: Item -> {...box, item: {target: item.target, weight: item.weight, fails: item.fails + 1}}
+    }
+}
+
+fun bumpGood(box: Box) -> Box {
+    match box.item {
+        _: Nil -> box
+        item: Item -> {...box, item: makeItem(item.target, item.weight, item.fails + 1)}
+    }
+}
+
+testRun("constructor update: getter works", \ -> {
+    box = bumpGood({item: makeItem(Red, 3, 1)})
+    assertEquals(2, getItem(box).fails)
+})
+
+testRun("inline literal update: getter works", \ -> {
+    box = bumpBad({item: makeItem(Red, 3, 1)})
+    assertEquals(2, getItem(box).fails)
+})
+
+testRun("inline literal update: direct match still works", \ -> {
+    box = bumpBad({item: makeItem(Red, 3, 1)})
+    match box.item {
+        _: Nil -> assertTrue(false)
+        item: Item -> assertEquals(2, item.fails)
+    }
+})
+
+type alias ChoiceA = { a: Int }
+type alias ChoiceB = { b: Int }
+type alias ChoiceBox = { item: ChoiceA | ChoiceB }
+
+fun makeChoiceB(b: Int) -> ChoiceB {
+    {b: b}
+}
+
+fun replaceWithChoiceB(box: ChoiceBox) -> ChoiceBox {
+    {...box, item: {b: 2}}
+}
+
+testRun("inline union literal selects the matching nominal record", \ -> {
+    box: ChoiceBox = {item: makeChoiceB(1)}
+    updated = replaceWithChoiceB(box)
+    assertTrue(typeOf(updated.item, ChoiceB))
+})
+
+type alias GenericEntry<t> = { value: t }
+type alias GenericBox = { item: GenericEntry<Int> }
+
+fun makeGenericEntry(value: Int) -> GenericEntry<Int> {
+    {value: value}
+}
+
+fun replaceGenericEntry(box: GenericBox) -> GenericBox {
+    {...box, item: {value: 2}}
+}
+
+testRun("inline spread update preserves generic nominal record", \ -> {
+    box: GenericBox = {item: makeGenericEntry(1)}
+    updated = replaceGenericEntry(box)
+    assertTrue(typeOf(updated.item, GenericEntry(Int)))
+})

@@ -1,0 +1,27 @@
+// Regression: an early `return` in a non-tail branch must be checked against
+// the function's declared return type at compile time.
+//
+// Bug: `return items[-1]` returns a single Tag where List<Tag> is declared.
+// The body-level check only inspected the trailing expression, so this slipped
+// through and failed at runtime ("type Tag is not iterable") instead of being
+// rejected by the compiler.
+//
+// Expected: compile-time type error on the mismatched return branch.
+type Tag = Alpha | Beta | Gamma
+
+fun pickTags(items: List<Tag>) -> List<Tag> {
+    if len(items) >= 3 {
+        return items[-1]
+    }
+    [items[-1]]
+}
+
+fun countTags(tags: List<Tag>) -> Int {
+    n = 0
+    for tag in tags {
+        n = n + 1
+    }
+    n
+}
+
+print(countTags(pickTags([Alpha, Beta, Gamma])))
