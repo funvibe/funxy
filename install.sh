@@ -9,6 +9,7 @@ install_funxy() {
 # Configuration
 REPO="funvibe/funxy"
 INSTALL_DIR="/usr/local/bin"
+DOCS_DIR="/usr/local/share/funxy-docs"
 BIN_NAME="funxy"
 LSP_BIN_NAME="funxy-lsp"
 
@@ -104,6 +105,27 @@ download_binary() {
 
 download_binary "$BIN_NAME"
 
+download_docs() {
+    local archive_url="https://github.com/$REPO/archive/refs/tags/$LATEST_TAG.tar.gz"
+
+    log "Downloading documentation from $archive_url..."
+    if ! curl -L -f -o "$TMP_DIR/source.tar.gz" "$archive_url"; then
+        error "Failed to download documentation for $LATEST_TAG."
+    fi
+
+    mkdir -p "$TMP_DIR/source"
+    if ! tar -xzf "$TMP_DIR/source.tar.gz" -C "$TMP_DIR/source" --strip-components=1; then
+        error "Failed to extract documentation archive."
+    fi
+    if [ ! -d "$TMP_DIR/source/docs" ]; then
+        error "Documentation directory not found in the $LATEST_TAG source archive."
+    fi
+
+    log "Documentation download complete."
+}
+
+download_docs
+
 # Ask about LSP (if interactive)
 DOWNLOAD_LSP=true
 if [ -e /dev/tty ]; then
@@ -151,8 +173,29 @@ else
     log "Non-interactive mode, installing to $INSTALL_DIR"
 fi
 
+# 5. Choose documentation directory
+if [ -e /dev/tty ]; then
+    echo ""
+    printf "Install documentation to ${BLUE}${DOCS_DIR}${NC}? [Y/n] "
+    read -r answer < /dev/tty
+    case "$answer" in
+        [nN]*)
+            printf "Enter documentation directory: "
+            read -r custom_docs_dir < /dev/tty
+            if [ -z "$custom_docs_dir" ]; then
+                error "No documentation directory specified"
+            fi
+            # Expand ~ to home directory
+            DOCS_DIR="${custom_docs_dir/#\~/$HOME}"
+            ;;
+    esac
+else
+    log "Non-interactive mode, installing documentation to $DOCS_DIR"
+fi
+
 # Create directory if needed
 mkdir -p "$INSTALL_DIR" 2>/dev/null || sudo mkdir -p "$INSTALL_DIR"
+mkdir -p "$DOCS_DIR" 2>/dev/null || sudo mkdir -p "$DOCS_DIR"
 
 # Install
 log "Installing to $INSTALL_DIR..."
@@ -173,6 +216,14 @@ else
     fi
 fi
 
+log "Installing documentation to $DOCS_DIR..."
+if [ -w "$DOCS_DIR" ]; then
+    cp -R "$TMP_DIR/source/docs/." "$DOCS_DIR/"
+else
+    log "Requires sudo for $DOCS_DIR"
+    sudo cp -R "$TMP_DIR/source/docs/." "$DOCS_DIR/"
+fi
+
 echo ""
 if [ -f "$INSTALL_DIR/$BIN_NAME" ]; then
     success "✓ $INSTALL_DIR/$BIN_NAME"
@@ -185,6 +236,11 @@ if [ "$HAS_LSP" = true ]; then
     else
         error "$INSTALL_DIR/$LSP_BIN_NAME not found"
     fi
+fi
+if [ -f "$DOCS_DIR/BASICS.md" ]; then
+    success "✓ $DOCS_DIR"
+else
+    error "Documentation not found in $DOCS_DIR"
 fi
 
 }
