@@ -44,6 +44,10 @@ error() {
     exit 1
 }
 
+has_interactive_tty() {
+    [ -t 1 ] && [ -c /dev/tty ] && ( : < /dev/tty ) 2>/dev/null
+}
+
 # 1. Detect OS and Arch
 OS="$(uname -s)"
 ARCH="$(uname -m)"
@@ -128,7 +132,7 @@ download_docs
 
 # Ask about LSP (if interactive)
 DOWNLOAD_LSP=true
-if [ -e /dev/tty ]; then
+if has_interactive_tty; then
     echo ""
     printf "Download LSP (Language Server Protocol) binary? [Y/n] "
     read -r answer < /dev/tty
@@ -153,8 +157,8 @@ else
 fi
 
 # 4. Choose install directory
-# If /dev/tty is available (interactive), ask the user; otherwise use default
-if [ -e /dev/tty ]; then
+# If an interactive terminal is available, ask the user; otherwise use default
+if has_interactive_tty; then
     echo ""
     printf "Install to ${BLUE}${INSTALL_DIR}${NC}? [Y/n] "
     read -r answer < /dev/tty
@@ -174,7 +178,7 @@ else
 fi
 
 # 5. Choose documentation directory
-if [ -e /dev/tty ]; then
+if has_interactive_tty; then
     echo ""
     printf "Install documentation to ${BLUE}${DOCS_DIR}${NC}? [Y/n] "
     read -r answer < /dev/tty
