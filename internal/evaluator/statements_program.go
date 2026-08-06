@@ -313,6 +313,10 @@ func GetVirtualModuleBuiltins(name string) *StringMap {
 		builtins = ProtoBuiltins()
 	case "term":
 		builtins = TermBuiltins()
+	case "termio":
+		RegisterTermIOBuiltins(env)
+		applyVirtualPackageTypes("termio", env.GetStore())
+		return env.GetStore()
 	default:
 		// Check ext/* registry for dynamically registered modules
 		if extBuiltins := GetExtBuiltins(name); extBuiltins != nil {
@@ -532,10 +536,32 @@ func (e *Evaluator) EvaluateModule(mod *modules.Module) (Object, error) {
 	e.BaseDir = mod.Dir
 	defer func() { e.BaseDir = oldBaseDir }()
 
-	for _, file := range mod.OrderedFiles() {
-		res := e.Eval(file, env)
-		if isError(res) {
-			return nil, fmt.Errorf("runtime error in %s: %s", mod.Name, res.Inspect())
+	files := mod.OrderedFiles()
+
+	// Imports belong to the package scope. Evaluate every file's imports before
+	// any other top-level statement so constants and expressions do not depend
+	// on the order in which package files happen to be loaded.
+	for _, file := range files {
+		for _, stmt := range file.Statements {
+			if _, ok := stmt.(*ast.ImportStatement); !ok {
+				continue
+			}
+			res := e.Eval(stmt, env)
+			if isError(res) {
+				return nil, fmt.Errorf("runtime error in %s: %s", mod.Name, res.Inspect())
+			}
+		}
+	}
+
+	for _, file := range files {
+		for _, stmt := range file.Statements {
+			if _, ok := stmt.(*ast.ImportStatement); ok {
+				continue
+			}
+			res := e.Eval(stmt, env)
+			if isError(res) {
+				return nil, fmt.Errorf("runtime error in %s: %s", mod.Name, res.Inspect())
+			}
 		}
 	}
 

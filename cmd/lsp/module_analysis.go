@@ -97,9 +97,7 @@ func (s *LanguageServer) analyzeModuleDocument(content string, uri string, ctx c
 	for _, fileAST := range orderedFiles {
 		errors = append(errors, sem.AnalyzeNaming(fileAST, pipeCtx)...)
 	}
-	for _, fileAST := range orderedFiles {
-		errors = append(errors, sem.AnalyzeHeaders(fileAST, pipeCtx)...)
-	}
+	errors = append(errors, sem.AnalyzePackageHeaders(orderedFiles, pipeCtx)...)
 	for _, fileAST := range orderedFiles {
 		errors = append(errors, sem.AnalyzeInstances(fileAST, pipeCtx)...)
 	}

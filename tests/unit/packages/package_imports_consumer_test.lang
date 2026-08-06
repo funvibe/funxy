@@ -1,0 +1,6 @@
+import "lib/test" (testRun, assertEquals)
+import "./package_imports_lib" (exportedImportResult)
+
+testRun("imported packages use package-wide imports", fun() -> {
+    assertEquals(exportedImportResult(), "{\"_type\":\"JNull\"}")
+})

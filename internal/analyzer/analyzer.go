@@ -281,6 +281,59 @@ func (a *Analyzer) AnalyzeHeaders(node ast.Node, ctx *pipeline.PipelineContext) 
 	return w.getErrors()
 }
 
+// AnalyzePackageHeaders runs the headers pass for a complete package.
+//
+// Imports are package-wide, so every file's imports must be registered before
+// any type or function signature is resolved. Keeping the two phases separate
+// also makes header analysis independent of file ordering. Duplicate-import
+// tracking remains per-file because each import phase uses its own walker.
+func (a *Analyzer) AnalyzePackageHeaders(programs []*ast.Program, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
+	var errors []*diagnostics.DiagnosticError
+
+	// Phase 1: collect imports from every package file.
+	for _, program := range programs {
+		if program == nil {
+			continue
+		}
+		errors = append(errors, a.AnalyzeHeaders(filterProgramStatements(program, true), ctx)...)
+	}
+
+	// Phase 2: resolve declarations after the package import set is complete.
+	for _, program := range programs {
+		if program == nil {
+			continue
+		}
+		errors = append(errors, a.AnalyzeHeaders(filterProgramStatements(program, false), ctx)...)
+	}
+
+	return errors
+}
+
+// filterProgramStatements returns a shallow program copy containing either
+// imports (plus the package declaration, which establishes analyzer context)
+// or all non-import statements. AST declarations themselves are not copied, so
+// TypeMap entries continue to refer to the original nodes.
+func filterProgramStatements(program *ast.Program, importsOnly bool) *ast.Program {
+	filtered := *program
+	filtered.Statements = make([]ast.Statement, 0, len(program.Statements))
+
+	for _, stmt := range program.Statements {
+		_, isImport := stmt.(*ast.ImportStatement)
+		_, isPackage := stmt.(*ast.PackageDeclaration)
+		if (importsOnly && (isImport || isPackage)) || (!importsOnly && !isImport) {
+			filtered.Statements = append(filtered.Statements, stmt)
+		}
+	}
+
+	if importsOnly {
+		filtered.Imports = program.Imports
+	} else {
+		filtered.Imports = nil
+	}
+
+	return &filtered
+}
+
 // AnalyzeInstances runs the instances pass
 func (a *Analyzer) AnalyzeInstances(node ast.Node, ctx *pipeline.PipelineContext) []*diagnostics.DiagnosticError {
 	// Reuse existing TypeMap and InferenceContext from Headers pass

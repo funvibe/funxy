@@ -1,0 +1,19 @@
+import "lib/termio" (InputEvent)
+import "lib/test" (testRun, assertEquals)
+
+fun eventLabel(event: InputEvent) -> String {
+    match event {
+        KeyEvent(key) -> "key:" ++ key
+        TextEvent(text) -> "text:" ++ text
+    }
+}
+
+testRun("KeyEvent is a tagged InputEvent", fun() -> {
+    event: InputEvent = KeyEvent("enter")
+    assertEquals("key:enter", eventLabel(event))
+})
+
+testRun("TextEvent cannot collide with a special key name", fun() -> {
+    event: InputEvent = TextEvent("enter")
+    assertEquals("text:enter", eventLabel(event))
+})

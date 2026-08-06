@@ -36,7 +36,7 @@ curl -sSL https://raw.githubusercontent.com/funvibe/funxy/main/install.sh | bash
 ```
 *Open Windows Terminal → Ubuntu/WSL tab, then run the same command
 
-Or download manually from [releases](https://github.com/funvibe/funxy/releases), or build from source: `git clone ... && cd funxy && make build` (Go 1.23+).
+Or download manually from [releases](https://github.com/funvibe/funxy/releases), or build from source: `git clone ... && cd funxy && make build` (Go 1.25.3+).
 
 ## Build & Distribution
 
@@ -219,6 +219,7 @@ Ranges and comprehensions, pipes, error propagation, tail call optimization, arg
 | `lib/sys` | Args, env, exec, exePath, scriptDir |
 | `lib/task` | async/await |
 | `lib/term` | Colors, prompts, spinners, progress bars, tables |
+| `lib/termio` | Lossless Unix terminal key and bracketed-paste events |
 | `lib/test` | Unit testing |
 | `lib/time` | Time and timing |
 | `lib/tuple` | Tuple manipulation |

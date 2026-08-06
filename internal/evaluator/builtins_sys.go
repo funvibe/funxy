@@ -79,6 +79,7 @@ func builtinExit(e *Evaluator, args ...Object) Object {
 		return newError("exit expects an integer argument, got %s", args[0].Type())
 	}
 
+	_ = stopTermInputSession()
 	os.Exit(int(code.Value))
 	return &Nil{} // unreachable
 }

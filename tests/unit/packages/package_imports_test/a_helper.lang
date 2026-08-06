@@ -1,0 +1,13 @@
+package package_imports_test
+
+// Package imports are also ready before top-level expressions are evaluated.
+packageEncoded = jsonEncode(JNull)
+packageRoot = math.sqrt(81.0)
+
+// Json and JNull are imported by the entry file, which is analyzed last.
+fun packageNull() -> Json { JNull }
+
+// These values and aliases are imported by z_imports.lang, after this file.
+fun packageJson(value: Json) -> String { jsonEncode(value) }
+fun packageSqrt(value: Float) -> Float { math.sqrt(value) }
+fun packageNow() -> Date { dateNow() }

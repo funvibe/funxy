@@ -1,0 +1,11 @@
+package package_imports_test
+
+import "lib/test" (testRun, assertEquals)
+import "lib/json" (Json)
+
+testRun("imports are visible throughout a package", fun() -> {
+    assertEquals(packageEncoded, "{\"_type\":\"JNull\"}")
+    assertEquals(packageRoot, 9.0)
+    assertEquals(packageJson(packageNull()), "{\"_type\":\"JNull\"}")
+    assertEquals(packageSqrt(81.0), 9.0)
+})

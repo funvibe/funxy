@@ -61,7 +61,7 @@ func TestVirtualModulesConsistency(t *testing.T) {
 		"lib/sql", "lib/ws", "lib/date", "lib/rand", "lib/test",
 		"lib/http", "lib/regex", "lib/crypto", "lib/json", "lib/char",
 		"lib/bignum", "lib/tuple", "lib/sys", "lib/io", "lib/bytes",
-		"lib/bits", "lib/map", "lib/yaml", "lib/vmm", "lib/rpc",
+		"lib/bits", "lib/map", "lib/yaml", "lib/vmm", "lib/rpc", "lib/termio",
 	}
 
 	for _, pkgPath := range pkgNames {

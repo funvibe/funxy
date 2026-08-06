@@ -243,6 +243,7 @@ func (w *walker) VisitImportStatement(n *ast.ImportStatement) {
 
 									variantTaggedType := tagModule(variantSym.Type, packageName, exportedTypes)
 									w.symbolTable.DefineConstructor(variantName, variantTaggedType, origin)
+									w.symbolTable.RegisterVariant(symName, variantName)
 								}
 							}
 						}
@@ -528,11 +529,9 @@ func (w *walker) analyzeRegularModule(loadedMod LoadedModule, pathToCheck string
 				w.addErrors(errs)
 			}
 
-			// Pass 2: Declarations (Headers) - Resolve Types and Signatures
-			for _, file := range loadedMod.GetFiles() {
-				errs := modAnalyzer.AnalyzeHeaders(file, w.ctx)
-				w.addErrors(errs)
-			}
+			// Pass 2: collect package-wide imports, then resolve all declarations.
+			// This must be a package pass so signatures never depend on file order.
+			w.addErrors(modAnalyzer.AnalyzePackageHeaders(loadedMod.GetFiles(), w.ctx))
 
 			// Pass 3: Instances - Check trait implementations
 			// This is done after all headers (types/traits/signatures) are known

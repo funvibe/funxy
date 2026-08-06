@@ -347,6 +347,9 @@ func enterRawMode() error {
 	if rawModeActive {
 		return nil
 	}
+	if termInputSessionActive() {
+		return fmt.Errorf("lib/termio terminal input is already active")
+	}
 
 	fd := int(os.Stdin.Fd())
 

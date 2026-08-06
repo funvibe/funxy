@@ -1,0 +1,7 @@
+package package_imports_test
+
+// A package may merge imports from multiple files, including selective imports
+// from the same module path.
+import "lib/json" (jsonEncode)
+import "lib/date" (Date, dateNow)
+import "lib/math" as math

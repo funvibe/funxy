@@ -93,9 +93,7 @@ func (sap *SemanticAnalyzerProcessor) analyzeEntryModule(ctx *pipeline.PipelineC
 	for _, fileAST := range orderedFiles {
 		errors = append(errors, analyzer.AnalyzeNaming(fileAST, ctx)...)
 	}
-	for _, fileAST := range orderedFiles {
-		errors = append(errors, analyzer.AnalyzeHeaders(fileAST, ctx)...)
-	}
+	errors = append(errors, analyzer.AnalyzePackageHeaders(orderedFiles, ctx)...)
 	for _, fileAST := range orderedFiles {
 		errors = append(errors, analyzer.AnalyzeInstances(fileAST, ctx)...)
 	}

@@ -62,6 +62,7 @@
 | `lib/sys` | System interaction (sysArgs, sysEnv, sysExit, sysExec, sysExePath, sysScriptDir) | `sysArgs`, `sysEnv`, `sysExec`, `sysExePath` |
 | `lib/task` | Asynchronous computations with Tasks (Futures/Promises) | `async`, `await`, `awaitTimeout` |
 | `lib/term` | Terminal UI: colors, styles, prompts, spinners, progress bars, tables. Auto-detects color support, respects $NO_COLOR. | `red`, `bold`, `confirm`, `select`, `table`, `spinnerStart` |
+| `lib/termio` | Lossless managed Unix terminal input with tagged key and bracketed-paste events. | `withTerminalInput`, `readInputEvent`, `InputEvent` |
 | `lib/test` | Testing framework with assertions and mocking | `assert`, `testRun`, `assertEquals` |
 | `lib/time` | Time and timing functions | `timeNow`, `sleep`, `sleepMs` |
 | `lib/tuple` | Tuple manipulation functions | `fst`, `snd`, `tupleSwap` |

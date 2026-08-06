@@ -1,0 +1,7 @@
+package package_imports_lib (exportedImportResult)
+
+import "lib/json" (Json)
+
+fun exportedImportResult() -> String {
+    encodeImportedType(JNull)
+}

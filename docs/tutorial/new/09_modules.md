@@ -31,6 +31,11 @@ package mypackage
 
 ## Importing
 
+Imports are package-wide. A value, type, ADT constructor, or module alias
+imported by any package file is available in every other file. All imports are
+collected before declarations and top-level code are processed, so visibility
+does not depend on file order.
+
 Import as module object:
 
 ```rust
@@ -62,6 +67,9 @@ import "lib/list" (*)
 ## Single Import Rule
 
 Each module can be imported only once per file.
+
+Different files may import the same module path; their selected symbols are
+merged in the package scope. Conflicting local names remain an error.
 
 ```text
 // Wrong

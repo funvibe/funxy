@@ -1,0 +1,6 @@
+package package_imports_lib
+
+// Both the type and value imports are declared in later package files.
+fun encodeImportedType(value: Json) -> String {
+    jsonEncode(value)
+}

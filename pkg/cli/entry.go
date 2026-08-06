@@ -166,9 +166,7 @@ func runModule(path string) {
 	for _, fileAST := range mod.OrderedFiles() {
 		errors = append(errors, analyzer.AnalyzeNaming(fileAST, ctx)...)
 	}
-	for _, fileAST := range mod.OrderedFiles() {
-		errors = append(errors, analyzer.AnalyzeHeaders(fileAST, ctx)...)
-	}
+	errors = append(errors, analyzer.AnalyzePackageHeaders(mod.OrderedFiles(), ctx)...)
 	for _, fileAST := range mod.OrderedFiles() {
 		errors = append(errors, analyzer.AnalyzeInstances(fileAST, ctx)...)
 	}
@@ -1842,10 +1840,8 @@ func compileLibraryToBundle(libPath, alias string) (*vm.BundledModule, error) {
 			return nil, fmt.Errorf("analysis error (naming): %v", errs[0])
 		}
 	}
-	for _, fileAST := range mod.OrderedFiles() {
-		if errs := analyzer.AnalyzeHeaders(fileAST, ctx); len(errs) > 0 {
-			return nil, fmt.Errorf("analysis error (headers): %v", errs[0])
-		}
+	if errs := analyzer.AnalyzePackageHeaders(mod.OrderedFiles(), ctx); len(errs) > 0 {
+		return nil, fmt.Errorf("analysis error (headers): %v", errs[0])
 	}
 	for _, fileAST := range mod.OrderedFiles() {
 		if errs := analyzer.AnalyzeInstances(fileAST, ctx); len(errs) > 0 {

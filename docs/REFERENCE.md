@@ -1186,6 +1186,12 @@ math/
 └── matrix.lang  ← Internal file
 ```
 
+All files share one package scope, including imports. An import declared in the
+entry file or any internal file is available to declarations and top-level code
+throughout the package. Funxy collects imports from every package file before
+resolving type signatures or evaluating other top-level statements, so
+visibility does not depend on file names or load order.
+
 ### Export Syntax
 ```rust
 package math (Vector, add)  // Export only Vector and add
@@ -1228,8 +1234,10 @@ import "ext/redis" (redisGet, redisSet)            // Another Go package
 Extension modules are defined in `funxy.yaml` and compiled into the binary via `funxy build`. See [Section 22: Go Extensions](#22-go-extensions).
 
 ### Single Import Rule
-- Each module can be imported only once per file
-- Choose one import style per module
+- Each module path can be imported only once in the same file
+- Imports from different files are combined in the package scope
+- The same module may be imported by different files; their selected symbols are merged
+- Conflicting local names from different modules are a compilation error
 
 ### ADT Constructor Auto-Import
 ```rust
@@ -1605,6 +1613,7 @@ For full APIs, see `docs/BUILTINS.md` or `./funxy -help lib/<name>`.
 | `lib/string` | String utilities |
 | `lib/flag` | CLI flag parsing |
 | `lib/term` | Terminal UI: colors, styles, prompts, spinners, progress bars, tables |
+| `lib/termio` | Lossless managed Unix input with tagged key and bracketed-paste events |
 | `lib/test` | Testing framework |
 | `lib/math` | Mathematical functions |
 | `lib/tuple` | Tuple utilities |
@@ -1889,6 +1898,108 @@ if confirm("Deploy?") {
 // Tables
 table(["Name", "Role"], [["Alice", "Admin"], ["Bob", "User"]])
 ```
+
+#### lib/termio
+
+`lib/termio` owns `/dev/tty` for the duration of a callback and parses terminal
+input as a continuous byte stream. It is intended for TUI event loops that must
+not lose fast input or interpret pasted newline and tab characters as commands.
+
+```rust
+import "lib/termio" (withTerminalInput, readInputEvent, InputEvent)
+
+fun inputLoop() {
+    match readInputEvent(1000) {
+        Some(KeyEvent("escape")) -> Nil
+        Some(KeyEvent(key)) -> {
+            print("key: " ++ key)
+            inputLoop()
+        }
+        Some(TextEvent(text)) -> {
+            print("paste: " ++ text)
+            inputLoop()
+        }
+        None -> inputLoop()
+        _ -> inputLoop()
+    }
+}
+
+withTerminalInput(inputLoop)
+```
+
+```rust
+type InputEvent = KeyEvent String | TextEvent String
+
+withTerminalInput : (() -> A) -> A
+readInputEvent : (timeoutMs?: Int = 0) -> Option<InputEvent>
+```
+
+`KeyEvent` represents one keyboard event. The following names are the stable
+API; consumers do not need to guess terminal-specific spellings:
+
+| Input | `KeyEvent` value |
+|---|---|
+| Printable Unicode character | That one-character string; ASCII space is `space` |
+| CR or LF | `enter` |
+| Tab | `tab` |
+| Backspace or Delete byte (BS/DEL) | `backspace` |
+| Escape, after a 100 ms ambiguity timeout | `escape` |
+| NUL | `ctrl+space` |
+| Control bytes 1–26 | `ctrl+a` through `ctrl+z`, except the named Tab, LF, BS, and CR cases above |
+| FS, GS, RS, US | `ctrl+\\`, `ctrl+]`, `ctrl+^`, `ctrl+_` |
+| Cursor keys | `up`, `down`, `left`, `right` |
+| Navigation keys | `home`, `end`, `insert`, `delete`, `pageup`, `pagedown` |
+| Shift+Tab | `shift+tab` |
+| Function keys | `f1` through `f12` |
+| Escape plus printable ASCII | `alt+` followed by that literal character; Space is `alt+space` |
+
+A complete but unknown CSI or SS3 escape sequence is returned verbatim in the
+`KeyEvent` string, including the leading U+001B Escape character. For example,
+an unrecognized `ESC [ 1 ; 5 A` byte sequence has the six-character value
+U+001B followed by `[1;5A`; it is not converted to a newly invented key name.
+
+`TextEvent` contains one bracketed paste exactly as decoded from valid UTF-8.
+CR (`\r`), LF (`\n`), CRLF, tabs, multiline text, and a trailing newline are
+not normalized or interpreted as commands. Thus `KeyEvent("enter")` and
+`TextEvent("enter")` remain distinct. A UTF-8 character may be split across
+any number of system reads. Invalid or truncated UTF-8 cannot be represented
+losslessly by Funxy `String`, so it produces a clear runtime error instead of
+silently inserting a replacement character.
+
+The distinction requires bracketed-paste support from the terminal emulator.
+Without it, pasted bytes still arrive without chunk loss but are indistinguishable
+from ordinary `KeyEvent` values.
+
+The wrapper enables raw mode and bracketed paste, then restores the exact saved
+terminal mode when the callback returns or fails. Sessions are reusable after
+cleanup, so `withTerminalInput` → another terminal owner such as Codex attach →
+another `withTerminalInput` is supported; nested or overlapping sessions are
+rejected.
+
+`readInputEvent()` is non-blocking; pass a positive timeout in milliseconds to
+wait. `None` means only that no event was available before the requested wait
+ended (immediately when the timeout is zero). Failure to open `/dev/tty`,
+terminal-mode/control-sequence failures, readiness-wait/`read` errors, EOF,
+invalid UTF-8, and the terminal stream closing are runtime errors from
+`readInputEvent` or `withTerminalInput`, with the failed operation in the
+message.
+
+An incomplete bracketed paste may retain at most 16 MiB while waiting for
+`ESC [ 201 ~`. Exceeding the limit is a runtime error; text is never truncated
+and returned as though it were complete. An unterminated escape sequence is
+similarly limited to 4 KiB.
+
+With raw mode active, physical Ctrl+C is `KeyEvent("ctrl+c")` because terminal
+signal generation is disabled. An externally delivered SIGHUP, SIGINT,
+SIGQUIT, or SIGTERM first disables bracketed paste, restores the terminal and
+unregisters termio's handlers, then re-delivers the same signal with its default
+disposition. A parent process therefore observes termination by the original
+signal. After an ordinary session exit, any signal subscriptions that existed
+before the session remain installed.
+
+Do not combine an active `withTerminalInput` session with `termRaw`, `readKey`,
+or another stdin/`/dev/tty` reader. Functional support is limited to Linux,
+macOS, FreeBSD, and OpenBSD.
 
 ### Security and Identifiers
 

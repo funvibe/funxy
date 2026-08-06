@@ -363,6 +363,7 @@ func InitDocumentation() {
 	initYamlDocs()
 	initFlagDocs()
 	initTermDocs()
+	initTermIODocs()
 	initGrpcDocs()
 	initProtoDocs()
 	initVmmDocs()
@@ -1625,6 +1626,28 @@ func initTermDocs() {
 		"tableOnly": {Description: "Print formatted table with Unicode box-drawing, clearing line first. tableOnly(headers, rows)", Category: "Table"},
 	}
 	pkg := generatePackageDocs("lib/term", "Terminal UI: colors, styles, prompts, spinners, progress bars, tables. Auto-detects color support, respects $NO_COLOR.", meta, nil)
+	RegisterDocPackage(pkg)
+}
+
+func initTermIODocs() {
+	meta := map[string]*DocMeta{
+		"withTerminalInput": {
+			Description: "Run a callback with exclusive raw /dev/tty input and bracketed paste; always restores the terminal afterwards",
+			Category:    "Lifecycle",
+		},
+		"readInputEvent": {
+			Description: "Read KeyEvent or TextEvent; None means timeout/no event, while input failures are runtime errors",
+			Category:    "Input",
+		},
+	}
+	types := []*DocEntry{
+		{
+			Name:        "InputEvent",
+			Signature:   "KeyEvent(String) | TextEvent(String)",
+			Description: "Tagged terminal input event: a key press or bracketed-paste text",
+		},
+	}
+	pkg := generatePackageDocs("lib/termio", "Lossless Unix terminal input with key/text events and bracketed paste.", meta, types)
 	RegisterDocPackage(pkg)
 }
 

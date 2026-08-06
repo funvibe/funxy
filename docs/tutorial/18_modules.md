@@ -40,6 +40,7 @@ math/
 1. The entry file (`pkgname/pkgname.lang`) controls what the package exports
 2. Internal files declare `package pkgname` without export list
 3. All files in the package can access each other's symbols
+4. Imports declared in any file are visible throughout the package
 
 **math/math.lang** (entry file):
 ```rust
@@ -83,6 +84,12 @@ Trailing commas are allowed.
 ## Imports
 
 Funxy enforces a **strict single-import rule**: a module can be imported only once per file. This prevents ambiguity and keeps dependencies clear.
+
+Imports use package scope. Funxy collects imports from all files before resolving
+type signatures or evaluating other top-level statements, so imported values,
+types, ADT constructors, and module aliases are available in every package file.
+The same path may appear in different files; those imports are merged. A local
+name imported from different modules is still a compilation error.
 
 ```rust
 import "lib/list"           // Import as module object
