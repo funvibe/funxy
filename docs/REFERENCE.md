@@ -1941,6 +1941,7 @@ API; consumers do not need to guess terminal-specific spellings:
 |---|---|
 | Printable Unicode character | That one-character string; ASCII space is `space` |
 | CR or LF | `enter` |
+| Shift+Enter reported through CSI-u | `shift+enter` |
 | Tab | `tab` |
 | Backspace or Delete byte (BS/DEL) | `backspace` |
 | Escape, after a 100 ms ambiguity timeout | `escape` |
@@ -1953,7 +1954,7 @@ API; consumers do not need to guess terminal-specific spellings:
 | Function keys | `f1` through `f12` |
 | Escape plus printable ASCII | `alt+` followed by that literal character; Space is `alt+space` |
 
-A complete but unknown CSI or SS3 escape sequence is returned verbatim in the
+A complete but unknown CSI, CSI-u, or SS3 escape sequence is returned verbatim in the
 `KeyEvent` string, including the leading U+001B Escape character. For example,
 an unrecognized `ESC [ 1 ; 5 A` byte sequence has the six-character value
 U+001B followed by `[1;5A`; it is not converted to a newly invented key name.
@@ -1970,11 +1971,20 @@ The distinction requires bracketed-paste support from the terminal emulator.
 Without it, pasted bytes still arrive without chunk loss but are indistinguishable
 from ordinary `KeyEvent` values.
 
-The wrapper enables raw mode and bracketed paste, then restores the exact saved
-terminal mode when the callback returns or fails. Sessions are reusable after
-cleanup, so `withTerminalInput` → another terminal owner such as Codex attach →
-another `withTerminalInput` is supported; nested or overlapping sessions are
-rejected.
+After raw mode is active, the wrapper probes for the Kitty keyboard protocol.
+On a supporting terminal it pushes an enhanced keyboard-mode frame that reports
+all keys as unambiguous escape sequences and includes associated text in CSI-u,
+allowing physical Shift+Enter to arrive as `shift+enter` without changing
+printable-key behavior. The probe reply is consumed internally; user input
+received during the probe remains queued.
+Unsupported terminals retain legacy input, where a plain CR or LF is inherently
+ambiguous and therefore remains `enter` even if Shift was held.
+
+Cleanup pops the keyboard-mode frame, disables bracketed paste, and restores the
+exact saved terminal mode when the callback returns or fails. Sessions are
+reusable after cleanup, so `withTerminalInput` → another terminal owner such as
+Codex attach → another `withTerminalInput` is supported; nested or overlapping
+sessions are rejected.
 
 `readInputEvent()` is non-blocking; pass a positive timeout in milliseconds to
 wait. `None` means only that no event was available before the requested wait
@@ -1991,11 +2001,12 @@ similarly limited to 4 KiB.
 
 With raw mode active, physical Ctrl+C is `KeyEvent("ctrl+c")` because terminal
 signal generation is disabled. An externally delivered SIGHUP, SIGINT,
-SIGQUIT, or SIGTERM first disables bracketed paste, restores the terminal and
-unregisters termio's handlers, then re-delivers the same signal with its default
-disposition. A parent process therefore observes termination by the original
-signal. After an ordinary session exit, any signal subscriptions that existed
-before the session remain installed.
+SIGQUIT, or SIGTERM first pops enhanced keyboard mode when active, disables
+bracketed paste, restores the terminal and unregisters termio's handlers, then
+re-delivers the same signal with its default disposition. A parent process
+therefore observes termination by the original signal. After an ordinary
+session exit, any signal subscriptions that existed before the session remain
+installed.
 
 Do not combine an active `withTerminalInput` session with `termRaw`, `readKey`,
 or another stdin/`/dev/tty` reader. Functional support is limited to Linux,

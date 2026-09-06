@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/funvibe/funxy/internal/typesystem"
 	"time"
@@ -19,6 +20,8 @@ type termInputEvent struct {
 	kind  termInputEventKind
 	value string
 }
+
+var errTermInputSignalTermination = errors.New("terminal input interrupted by process signal")
 
 func keyInputEvent(value string) termInputEvent {
 	return termInputEvent{kind: termInputKey, value: value}
@@ -100,6 +103,12 @@ func builtinReadInputEvent(e *Evaluator, args ...Object) Object {
 		ctx = context.Background()
 	}
 	event, ok, err := waitTermInputEvent(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	if errors.Is(err, errTermInputSignalTermination) {
+		// The Unix signal handler is restoring the terminal and will re-deliver
+		// the original signal immediately afterwards. Do not let the callback
+		// escape through an artificial stream-closed runtime error first.
+		select {}
+	}
 	if err != nil {
 		return newError("readInputEvent: %s", err)
 	}

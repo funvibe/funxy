@@ -3,6 +3,7 @@
 package evaluator
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -18,8 +19,13 @@ import (
 )
 
 const (
-	bracketedPasteEnable  = "\x1b[?2004h"
-	bracketedPasteDisable = "\x1b[?2004l"
+	bracketedPasteEnable      = "\x1b[?2004h"
+	bracketedPasteDisable     = "\x1b[?2004l"
+	kittyKeyboardQuery        = "\x1b[?u"
+	primaryDeviceAttrsQuery   = "\x1b[c"
+	kittyKeyboardPush         = "\x1b[>24u" // report all keys (8) + associated text (16)
+	kittyKeyboardPop          = "\x1b[<u"
+	kittyKeyboardProbeTimeout = 100 * time.Millisecond
 )
 
 type termInputDevice interface {
@@ -100,11 +106,15 @@ type termInputSession struct {
 	stopErr  error
 	readErr  error
 
-	device  termInputDevice
-	oldMode syscall.Termios
-	events  chan termInputEvent
-	stop    chan struct{}
-	done    chan struct{}
+	signalTerminating bool
+	signalExit        chan struct{}
+
+	device              termInputDevice
+	oldMode             syscall.Termios
+	kittyKeyboardActive bool
+	events              chan termInputEvent
+	stop                chan struct{}
+	done                chan struct{}
 }
 
 var defaultTermInputSession termInputSession
@@ -151,28 +161,69 @@ func (s *termInputSession) start(device termInputDevice) error {
 	if err := writeTermInputControl(device, bracketedPasteEnable); err != nil {
 		disableErr := writeTermInputControl(device, bracketedPasteDisable)
 		restoreErr := device.setTermios(oldMode)
-		_ = device.Close()
-		return errors.Join(fmt.Errorf("enable bracketed paste: %w", err), disableErr, restoreErr)
+		closeErr := device.Close()
+		return errors.Join(
+			fmt.Errorf("enable bracketed paste: %w", err),
+			wrapTermInputError("disable bracketed paste", disableErr),
+			wrapTermInputError("restore terminal mode", restoreErr),
+			wrapTermInputError("close terminal", closeErr),
+		)
+	}
+
+	kittySupported, initialInput, err := probeKittyKeyboard(device)
+	if err != nil {
+		disableErr := writeTermInputControl(device, bracketedPasteDisable)
+		restoreErr := device.setTermios(oldMode)
+		closeErr := device.Close()
+		return errors.Join(
+			fmt.Errorf("detect enhanced keyboard protocol: %w", err),
+			wrapTermInputError("disable bracketed paste", disableErr),
+			wrapTermInputError("restore terminal mode", restoreErr),
+			wrapTermInputError("close terminal", closeErr),
+		)
+	}
+	if kittySupported {
+		if err := writeTermInputControl(device, kittyKeyboardPush); err != nil {
+			// A failed write can still have delivered a complete push before
+			// returning its error, so always attempt a balancing pop.
+			popErr := writeTermInputControl(device, kittyKeyboardPop)
+			disableErr := writeTermInputControl(device, bracketedPasteDisable)
+			restoreErr := device.setTermios(oldMode)
+			closeErr := device.Close()
+			return errors.Join(
+				fmt.Errorf("enable enhanced keyboard reporting: %w", err),
+				wrapTermInputError("restore enhanced keyboard mode", popErr),
+				wrapTermInputError("disable bracketed paste", disableErr),
+				wrapTermInputError("restore terminal mode", restoreErr),
+				wrapTermInputError("close terminal", closeErr),
+			)
+		}
 	}
 
 	s.active = true
 	s.stopErr = nil
 	s.readErr = nil
+	s.signalTerminating = false
+	s.signalExit = make(chan struct{})
 	s.device = device
 	s.oldMode = oldMode
+	s.kittyKeyboardActive = kittySupported
 	s.events = make(chan termInputEvent, 64)
 	s.stop = make(chan struct{})
 	s.done = make(chan struct{})
 
-	go s.readLoop(device, s.events, s.stop, s.done)
+	go s.readLoop(device, initialInput, s.events, s.stop, s.done)
 	return nil
 }
 
-func (s *termInputSession) readLoop(device termInputDevice, events chan<- termInputEvent, stop <-chan struct{}, done chan<- struct{}) {
+func (s *termInputSession) readLoop(device termInputDevice, initialInput []byte, events chan<- termInputEvent, stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	defer close(events)
 
 	parser := &termInputParser{}
+	if !sendTermInputEvents(events, stop, parser.feed(initialInput)) {
+		return
+	}
 	buf := make([]byte, 4096)
 	for {
 		select {
@@ -262,19 +313,31 @@ func (s *termInputSession) stopSession() error {
 	stopping := s.stopping
 	device := s.device
 	oldMode := s.oldMode
+	kittyKeyboardActive := s.kittyKeyboardActive
 	stop := s.stop
 	done := s.done
 	close(stop)
 	s.mu.Unlock()
 
 	<-done
+	var keyboardErr error
+	if kittyKeyboardActive {
+		keyboardErr = writeTermInputControl(device, kittyKeyboardPop)
+	}
 	disableErr := writeTermInputControl(device, bracketedPasteDisable)
 	restoreErr := device.setTermios(oldMode)
 	closeErr := device.Close()
-	cleanupErr := errors.Join(disableErr, restoreErr, closeErr)
+	cleanupErr := errors.Join(
+		wrapTermInputError("restore enhanced keyboard mode", keyboardErr),
+		wrapTermInputError("disable bracketed paste", disableErr),
+		wrapTermInputError("restore terminal mode", restoreErr),
+		wrapTermInputError("close terminal", closeErr),
+	)
 
 	s.mu.Lock()
 	s.device = nil
+	s.kittyKeyboardActive = false
+	s.signalExit = nil
 	s.events = nil
 	s.stop = nil
 	s.done = nil
@@ -286,16 +349,150 @@ func (s *termInputSession) stopSession() error {
 	return cleanupErr
 }
 
+func wrapTermInputError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", action, err)
+}
+
+// probeKittyKeyboard follows the protocol's capability query with a primary
+// device-attributes query. A keyboard reply received before the DA reply means
+// the protocol is supported. Protocol replies are consumed here; unrelated
+// bytes are returned to the normal stream parser so a racing key press cannot
+// be lost or exposed late as a fake reply event.
+func probeKittyKeyboard(device termInputDevice) (bool, []byte, error) {
+	if err := writeTermInputControl(device, kittyKeyboardQuery+primaryDeviceAttrsQuery); err != nil {
+		return false, nil, err
+	}
+
+	deadline := time.Now().Add(kittyKeyboardProbeTimeout)
+	var pending []byte
+	var input []byte
+	keyboardReply := false
+	buf := make([]byte, 256)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			input = append(input, pending...)
+			return keyboardReply, input, nil
+		}
+		ready, err := device.waitReadable(remaining)
+		if err != nil {
+			return false, nil, err
+		}
+		if !ready {
+			input = append(input, pending...)
+			return keyboardReply, input, nil
+		}
+
+		n, readErr := device.Read(buf)
+		if n > 0 {
+			pending = append(pending, buf[:n]...)
+			var preserved []byte
+			var gotKeyboard, gotDeviceAttrs bool
+			pending, preserved, gotKeyboard, gotDeviceAttrs = consumeKittyProbeResponses(pending)
+			input = append(input, preserved...)
+			keyboardReply = keyboardReply || gotKeyboard
+			if readErr != nil {
+				return false, nil, readErr
+			}
+			if gotDeviceAttrs {
+				input = append(input, pending...)
+				return keyboardReply, input, nil
+			}
+		}
+		if readErr != nil {
+			return false, nil, readErr
+		}
+		if n == 0 {
+			return false, nil, io.ErrNoProgress
+		}
+	}
+}
+
+func consumeKittyProbeResponses(data []byte) (pending, preserved []byte, keyboardReply, deviceAttrs bool) {
+	csiPrefix := []byte("\x1b[")
+	for len(data) > 0 {
+		start := bytes.Index(data, csiPrefix)
+		if start < 0 {
+			keep := longestSuffixPrefix(data, csiPrefix)
+			preserved = append(preserved, data[:len(data)-keep]...)
+			return data[len(data)-keep:], preserved, keyboardReply, deviceAttrs
+		}
+		preserved = append(preserved, data[:start]...)
+		data = data[start:]
+		end := csiSequenceEnd(data)
+		if end < 0 {
+			return data, preserved, keyboardReply, deviceAttrs
+		}
+
+		sequence := data[:end]
+		switch {
+		case isKittyKeyboardReply(sequence):
+			keyboardReply = true
+		case isPrimaryDeviceAttrsReply(sequence):
+			deviceAttrs = true
+		default:
+			preserved = append(preserved, sequence...)
+		}
+		data = data[end:]
+	}
+	return nil, preserved, keyboardReply, deviceAttrs
+}
+
+func isKittyKeyboardReply(sequence []byte) bool {
+	if len(sequence) < 5 || !bytes.HasPrefix(sequence, []byte("\x1b[?")) || sequence[len(sequence)-1] != 'u' {
+		return false
+	}
+	return decimalCSIParams(sequence[3 : len(sequence)-1])
+}
+
+func isPrimaryDeviceAttrsReply(sequence []byte) bool {
+	if len(sequence) < 5 || !bytes.HasPrefix(sequence, []byte("\x1b[?")) || sequence[len(sequence)-1] != 'c' {
+		return false
+	}
+	return decimalCSIParams(sequence[3 : len(sequence)-1])
+}
+
+func decimalCSIParams(params []byte) bool {
+	if len(params) == 0 {
+		return false
+	}
+	for _, field := range bytes.Split(params, []byte{';'}) {
+		if len(field) == 0 {
+			return false
+		}
+		for _, b := range field {
+			if b < '0' || b > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (s *termInputSession) wait(ctx context.Context, timeout time.Duration) (termInputEvent, bool, error) {
 	s.mu.Lock()
+	if s.signalTerminating {
+		s.mu.Unlock()
+		return termInputEvent{}, false, errTermInputSignalTermination
+	}
 	if !s.active {
 		s.mu.Unlock()
 		return termInputEvent{}, false, fmt.Errorf("no active terminal input session; call inside withTerminalInput")
 	}
 	events := s.events
+	signalExit := s.signalExit
 	s.mu.Unlock()
 
 	receive := func(event termInputEvent, ok bool) (termInputEvent, bool, error) {
+		s.mu.Lock()
+		signalTerminating := s.signalTerminating
+		s.mu.Unlock()
+		if signalTerminating {
+			return termInputEvent{}, false, errTermInputSignalTermination
+		}
 		if ok {
 			if event.kind == termInputError {
 				return termInputEvent{}, false, errors.New(event.value)
@@ -313,6 +510,8 @@ func (s *termInputSession) wait(ctx context.Context, timeout time.Duration) (ter
 
 	if timeout <= 0 {
 		select {
+		case <-signalExit:
+			return termInputEvent{}, false, errTermInputSignalTermination
 		case event, ok := <-events:
 			return receive(event, ok)
 		case <-ctx.Done():
@@ -325,12 +524,26 @@ func (s *termInputSession) wait(ctx context.Context, timeout time.Duration) (ter
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
+	case <-signalExit:
+		return termInputEvent{}, false, errTermInputSignalTermination
 	case event, ok := <-events:
 		return receive(event, ok)
 	case <-timer.C:
 		return termInputEvent{}, false, nil
 	case <-ctx.Done():
 		return termInputEvent{}, false, ctx.Err()
+	}
+}
+
+func (s *termInputSession) beginSignalTermination() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.signalTerminating {
+		return
+	}
+	s.signalTerminating = true
+	if s.signalExit != nil {
+		close(s.signalExit)
 	}
 }
 
@@ -415,6 +628,7 @@ func installTermInputSignalCleanup() {
 			// otherwise exit after raw mode was set but before cleanup was ready.
 			rawMu.Lock()
 			rawMu.Unlock()
+			defaultTermInputSession.beginSignalTermination()
 			_ = stopTermInputSession()
 			if unixSignal, ok := sig.(syscall.Signal); ok {
 				// Restore the default disposition and re-deliver the same signal so

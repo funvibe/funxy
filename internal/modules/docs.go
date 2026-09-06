@@ -1632,7 +1632,7 @@ func initTermDocs() {
 func initTermIODocs() {
 	meta := map[string]*DocMeta{
 		"withTerminalInput": {
-			Description: "Run a callback with exclusive raw /dev/tty input and bracketed paste; always restores the terminal afterwards",
+			Description: "Run a callback with exclusive raw /dev/tty input, bracketed paste, and enhanced keyboard reporting when supported; always restores terminal state afterwards",
 			Category:    "Lifecycle",
 		},
 		"readInputEvent": {
@@ -1647,7 +1647,7 @@ func initTermIODocs() {
 			Description: "Tagged terminal input event: a key press or bracketed-paste text",
 		},
 	}
-	pkg := generatePackageDocs("lib/termio", "Lossless Unix terminal input with key/text events and bracketed paste.", meta, types)
+	pkg := generatePackageDocs("lib/termio", "Lossless Unix terminal input with key/text events, bracketed paste, and CSI-u Shift+Enter support.", meta, types)
 	RegisterDocPackage(pkg)
 }
 

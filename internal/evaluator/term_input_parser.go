@@ -220,23 +220,17 @@ func mapCSISequence(seq []byte) string {
 	if len(seq) < 3 {
 		return string(seq)
 	}
-	if len(seq) == 3 {
-		switch seq[2] {
-		case 'A':
-			return "up"
-		case 'B':
-			return "down"
-		case 'C':
-			return "right"
-		case 'D':
-			return "left"
-		case 'H':
-			return "home"
-		case 'F':
-			return "end"
-		case 'Z':
-			return "shift+tab"
+	if seq[len(seq)-1] == 'u' {
+		if key, ok := mapCSIUSequence(seq); ok {
+			return key
 		}
+		return string(seq)
+	}
+	if key, ok := mapCSI1FunctionalSequence(seq); ok {
+		return key
+	}
+	if len(seq) == 3 && seq[2] == 'Z' {
+		return "shift+tab"
 	}
 
 	if seq[len(seq)-1] == '~' {
@@ -266,6 +260,197 @@ func mapCSISequence(seq []byte) string {
 
 	// Unknown terminal sequences remain lossless in the KeyEvent payload.
 	return string(seq)
+}
+
+// mapCSI1FunctionalSequence handles the canonical Kitty form used for arrows,
+// Home/End, and F1/F2/F4. Unmodified legacy sequences omit "1;1"; report-all
+// mode may include it. Lock modifiers do not change the stable key name, while
+// other modifiers remain lossless because termio has no names for them.
+func mapCSI1FunctionalSequence(seq []byte) (string, bool) {
+	var key string
+	switch seq[len(seq)-1] {
+	case 'A':
+		key = "up"
+	case 'B':
+		key = "down"
+	case 'C':
+		key = "right"
+	case 'D':
+		key = "left"
+	case 'H':
+		key = "home"
+	case 'F':
+		key = "end"
+	case 'P':
+		key = "f1"
+	case 'Q':
+		key = "f2"
+	case 'S':
+		key = "f4"
+	default:
+		return "", false
+	}
+
+	params := string(seq[2 : len(seq)-1])
+	if params == "" {
+		return key, true
+	}
+	fields := strings.Split(params, ";")
+	if len(fields) != 2 || fields[0] != "1" {
+		return "", false
+	}
+	modifierBits, eventType, ok := parseKittyModifier(fields[1])
+	if !ok || modifierBits != 0 || eventType != 1 {
+		return "", false
+	}
+	return key, true
+}
+
+// mapCSIUSequence maps the subset of the Kitty keyboard protocol represented
+// by termio's stable key vocabulary. Complete but malformed/unsupported CSI-u
+// sequences deliberately return ok=false so the caller preserves them
+// verbatim instead of guessing.
+func mapCSIUSequence(seq []byte) (string, bool) {
+	if len(seq) < 4 || !bytes.HasPrefix(seq, []byte("\x1b[")) || seq[len(seq)-1] != 'u' {
+		return "", false
+	}
+
+	fields := strings.Split(string(seq[2:len(seq)-1]), ";")
+	if len(fields) == 0 || len(fields) > 3 || fields[0] == "" || strings.Contains(fields[0], ":") {
+		return "", false
+	}
+	keyCode, err := strconv.Atoi(fields[0])
+	if err != nil || keyCode < 0 || keyCode > utf8.MaxRune || keyCode >= 0xd800 && keyCode <= 0xdfff {
+		return "", false
+	}
+
+	modifierBits, eventType, ok := parseKittyModifier("")
+	if len(fields) >= 2 {
+		modifierBits, eventType, ok = parseKittyModifier(fields[1])
+	}
+	if !ok {
+		return "", false
+	}
+	// termio currently exposes key presses only. Repeat/release sequences are
+	// losslessly preserved if a surrounding terminal mode requests them.
+	if eventType != 1 {
+		return "", false
+	}
+
+	if len(fields) == 3 && fields[2] != "" {
+		if text, ok := decodeCSIUText(fields[2]); ok {
+			switch modifierBits {
+			case 0, 1: // Plain or Shift: associated text is the produced character(s).
+				return text, true
+			case 2, 3: // Preserve legacy Alt+text naming, including Shift+Alt.
+				if text == " " {
+					return "alt+space", true
+				}
+				return "alt+" + text, true
+			default:
+				return "", false
+			}
+		}
+		return "", false
+	}
+
+	switch keyCode {
+	case 13:
+		switch modifierBits {
+		case 0:
+			return "enter", true
+		case 1:
+			return "shift+enter", true
+		}
+	case 9:
+		switch modifierBits {
+		case 0:
+			return "tab", true
+		case 1:
+			return "shift+tab", true
+		}
+	case 8, 127:
+		if modifierBits == 0 {
+			return "backspace", true
+		}
+	case 27:
+		if modifierBits == 0 {
+			return "escape", true
+		}
+	case 32:
+		switch modifierBits {
+		case 0:
+			return "space", true
+		case 2:
+			return "alt+space", true
+		case 4:
+			return "ctrl+space", true
+		}
+	}
+
+	if keyCode >= 32 && keyCode < 57344 && keyCode != 127 {
+		r := rune(keyCode)
+		switch modifierBits {
+		case 0:
+			return string(r), true
+		case 2:
+			return "alt+" + string(r), true
+		case 4:
+			if r >= 'a' && r <= 'z' {
+				return "ctrl+" + string(r), true
+			}
+		}
+	}
+
+	return "", false
+}
+
+func parseKittyModifier(field string) (modifierBits, eventType int, ok bool) {
+	modifierValue := 1
+	eventType = 1
+	if field != "" {
+		parts := strings.Split(field, ":")
+		if len(parts) > 2 || parts[0] == "" {
+			return 0, 0, false
+		}
+		var err error
+		modifierValue, err = strconv.Atoi(parts[0])
+		if err != nil || modifierValue < 1 {
+			return 0, 0, false
+		}
+		if len(parts) == 2 {
+			if parts[1] == "" {
+				return 0, 0, false
+			}
+			eventType, err = strconv.Atoi(parts[1])
+			if err != nil {
+				return 0, 0, false
+			}
+		}
+	}
+
+	// Lock modifiers do not change stable key names. For text-producing keys,
+	// their effect is already reflected in the associated-text field.
+	modifierBits = modifierValue - 1
+	modifierBits &^= (1 << 6) | (1 << 7) // caps_lock, num_lock
+	return modifierBits, eventType, true
+}
+
+func decodeCSIUText(encoded string) (string, bool) {
+	parts := strings.Split(encoded, ":")
+	var text strings.Builder
+	for _, part := range parts {
+		if part == "" {
+			return "", false
+		}
+		codePoint, err := strconv.Atoi(part)
+		if err != nil || codePoint < 0x20 || codePoint >= 0x7f && codePoint <= 0x9f ||
+			codePoint > utf8.MaxRune || codePoint >= 0xd800 && codePoint <= 0xdfff {
+			return "", false
+		}
+		text.WriteRune(rune(codePoint))
+	}
+	return text.String(), text.Len() > 0
 }
 
 func mapSS3Sequence(seq []byte) string {

@@ -38,6 +38,56 @@ func TestTermInputParserEscapeSequenceAcrossEveryReadBoundary(t *testing.T) {
 	}
 }
 
+func TestTermInputParserShiftEnterAcrossEveryReadBoundary(t *testing.T) {
+	sequence := []byte("\x1b[13;2u")
+	for split := 1; split < len(sequence); split++ {
+		t.Run(string(rune('0'+split)), func(t *testing.T) {
+			p := &termInputParser{}
+			if got := p.feed(sequence[:split]); len(got) != 0 {
+				t.Fatalf("first chunk emitted incomplete sequence: %#v", got)
+			}
+			assertTermInputEvents(t, p.feed(sequence[split:]), []termInputEvent{keyInputEvent("shift+enter")})
+		})
+	}
+}
+
+func TestTermInputParserCSIUCompatibility(t *testing.T) {
+	p := &termInputParser{}
+	assertTermInputEvents(t, p.feed([]byte("\r\n\x1b[13u\x1b[13;1u\x1b[9u\x1b[9;2u\x1b[127u")), []termInputEvent{
+		keyInputEvent("enter"), keyInputEvent("enter"),
+		keyInputEvent("enter"), keyInputEvent("enter"),
+		keyInputEvent("tab"), keyInputEvent("shift+tab"), keyInputEvent("backspace"),
+	})
+}
+
+func TestTermInputParserCSIUAssociatedTextAndControls(t *testing.T) {
+	p := &termInputParser{}
+	assertTermInputEvents(t, p.feed([]byte("\x1b[97u\x1b[97;2;65u\x1b[0;1;1078u\x1b[97;3;97u\x1b[99;5u")), []termInputEvent{
+		keyInputEvent("a"), keyInputEvent("A"), keyInputEvent("ж"), keyInputEvent("alt+a"), keyInputEvent("ctrl+c"),
+	})
+}
+
+func TestTermInputParserEnhancedModeKeepsStableFunctionalKeys(t *testing.T) {
+	p := &termInputParser{}
+	assertTermInputEvents(t, p.feed([]byte("\x1b[1;1A\x1b[1;65C\x1b[P\x1b[1;1Q\x1b[13;1~")), []termInputEvent{
+		keyInputEvent("up"), keyInputEvent("right"), keyInputEvent("f1"), keyInputEvent("f2"), keyInputEvent("f3"),
+	})
+}
+
+func TestTermInputParserUnsupportedCSIURemainsVerbatim(t *testing.T) {
+	p := &termInputParser{}
+	for _, sequence := range []string{
+		"\x1b[13;5u",     // Ctrl+Enter is not in the stable vocabulary.
+		"\x1b[13;2:2u",   // Repeat events are not requested or normalized.
+		"\x1b[13;:u",     // Malformed modifier.
+		"\x1b[0;1;13u",   // Associated text cannot contain a control code.
+		"\x1b[97;9;97u",  // Unsupported Super modifier, even with associated text.
+		"\x1b[57358;65u", // Known protocol PUA code, but not a stable termio key name.
+	} {
+		assertTermInputEvents(t, p.feed([]byte(sequence)), []termInputEvent{keyInputEvent(sequence)})
+	}
+}
+
 func TestTermInputParserSequenceAndPayloadInOneRead(t *testing.T) {
 	p := &termInputParser{}
 	assertTermInputEvents(t, p.feed([]byte("\x1b[Axy")), []termInputEvent{

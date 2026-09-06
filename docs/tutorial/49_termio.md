@@ -30,6 +30,7 @@ The `KeyEvent` vocabulary is part of the API:
 |---|---|
 | Printable Unicode character | The one-character string; ASCII space is `space` |
 | CR or LF | `enter` |
+| Shift+Enter reported through CSI-u | `shift+enter` |
 | Tab | `tab` |
 | BS or DEL | `backspace` |
 | Standalone Escape | `escape` after a 100 ms ambiguity timeout |
@@ -42,9 +43,14 @@ The `KeyEvent` vocabulary is part of the API:
 | Function keys | `f1`…`f12` |
 | Escape plus printable ASCII | `alt+` plus the literal character; Space is `alt+space` |
 
-A complete unknown CSI or SS3 sequence is returned verbatim, including its
+A complete unknown CSI, CSI-u, or SS3 sequence is returned verbatim, including its
 leading U+001B Escape character. For example, unknown `ESC [ 1 ; 5 A` becomes
 U+001B followed by `[1;5A`, not a guessed name such as `ctrl+up`.
+
+A legacy terminal normally sends the same CR byte for Enter and Shift+Enter;
+that distinction cannot be reconstructed. `shift+enter` is emitted only when
+the terminal preserves Shift in a CSI-u keyboard event. Plain CR and LF always
+remain `enter`.
 
 ## Managed lifecycle
 
@@ -72,11 +78,19 @@ fun loop() {
 withTerminalInput(loop)
 ```
 
-The wrapper opens `/dev/tty`, saves its mode, enables raw mode and bracketed
-paste, and then invokes the callback. It disables bracketed paste and restores
-the saved terminal mode after a normal return, evaluator error, `sysExit`, or a
-handled Unix termination signal. A completed session leaves no reader behind,
-so a program may leave for another terminal owner and later call
+The wrapper opens `/dev/tty`, saves its mode, and enables raw mode and bracketed
+paste. It then probes for the Kitty keyboard protocol. When supported, termio
+pushes a keyboard-mode frame with report-all-keys and associated-text enabled;
+this exposes Shift+Enter as CSI-u while preserving printable Unicode according
+to the active keyboard layout and the existing stable names for functional
+keys. Protocol replies are consumed internally, and any user input received
+during probing is retained for the normal event stream. A terminal without
+protocol support stays in legacy mode without guessing.
+
+Cleanup pops the keyboard frame when active, disables bracketed paste, and
+restores the saved terminal mode after a normal return, evaluator error,
+`sysExit`, or a handled Unix termination signal. A completed session leaves no
+reader behind, so a program may leave for another terminal owner and later call
 `withTerminalInput` again. Nested or overlapping sessions are rejected.
 
 `readInputEvent()` is non-blocking by default. A positive timeout waits for that
